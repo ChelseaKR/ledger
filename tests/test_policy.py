@@ -340,3 +340,51 @@ def test_disclose_sealed_record_visible_to_steward() -> None:
     )
     dr = disclose(sealed, _steward(), _NOW)
     assert dr.fields == {"body": "protected"}
+
+
+# --- regression: timestamp comparison must be chronological and fail closed ----
+# A prior implementation compared ISO timestamps as raw strings. That is correct
+# only for identically-formatted UTC values; a malformed, date-only, or
+# differently-offset `unseal_at` could flip a SEALED_UNTIL field open to the
+# public (a fail-OPEN safety bug). These pin the chronological, fail-closed rule.
+
+
+@pytest.mark.disclosure
+@pytest.mark.parametrize(
+    "now,unseal_at",
+    [
+        ("not-a-date", "also-bad"),  # both malformed
+        ("2030-01-01T00:00:00Z", "garbage"),  # malformed unseal date
+        ("2030-01-01T00:00:00Z", "2027-01-01"),  # date-only (naive) unseal date
+    ],
+)
+def test_sealed_until_fails_closed_on_bad_timestamp(now: str, unseal_at: str) -> None:
+    # A seal with an unparseable/incomparable unseal date stays SEALED to the public.
+    assert is_visible(AccessPolicy.SEALED_UNTIL, anonymous(), now, unseal_at=unseal_at) is False
+
+
+@pytest.mark.disclosure
+def test_sealed_until_compares_chronologically_not_lexically() -> None:
+    anon = anonymous()
+    # Mixed but valid formats: "Z" vs explicit "+00:00" offset. Lexicographic
+    # comparison would get this wrong; chronological comparison gets it right.
+    # now is BEFORE unseal_at chronologically -> still sealed.
+    assert (
+        is_visible(
+            AccessPolicy.SEALED_UNTIL,
+            anon,
+            "2026-12-31T23:59:59+00:00",
+            unseal_at="2027-01-01T00:00:00Z",
+        )
+        is False
+    )
+    # now is AFTER unseal_at chronologically -> visible.
+    assert (
+        is_visible(
+            AccessPolicy.SEALED_UNTIL,
+            anon,
+            "2027-01-01T00:00:01+00:00",
+            unseal_at="2027-01-01T00:00:00Z",
+        )
+        is True
+    )

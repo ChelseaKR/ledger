@@ -23,7 +23,25 @@ from ledger.models import (
     Grant,
     PayloadFile,
     Record,
+    parse_iso,
 )
+
+
+def _unseal_reached(now: str, unseal_at: str) -> bool:
+    """True iff the instant ``now`` has reached ``unseal_at``.
+
+    Timestamps are parsed to timezone-aware datetimes and compared
+    *chronologically*, never lexicographically: comparing ISO strings with ``>=``
+    is correct only for identically-formatted UTC values, and a corrupted,
+    date-only, or differently-offset ``unseal_at`` could otherwise make a sealed
+    value spring open. Any parse or comparison failure fails CLOSED (returns
+    ``False``), so bad data keeps a record sealed rather than exposing it
+    (safety, fail-closed, robustness).
+    """
+    try:
+        return parse_iso(now) >= parse_iso(unseal_at)
+    except (ValueError, TypeError):
+        return False
 
 
 def is_visible(
@@ -67,7 +85,7 @@ def is_visible(
         case AccessPolicy.SEALED_UNTIL:
             if effective.is_steward:
                 return True
-            return unseal_at is not None and now >= unseal_at
+            return unseal_at is not None and _unseal_reached(now, unseal_at)
         case AccessPolicy.SEALED_CONDITIONAL:
             if effective.is_steward:
                 return True
