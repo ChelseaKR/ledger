@@ -102,6 +102,6 @@ jobs:
       - name: Vulnerable dependency scan (pip-audit)
         run: pip-audit -r <(pip freeze) || true
       - name: Secret scan (gitleaks)
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@v3
         env:
           GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "false"
