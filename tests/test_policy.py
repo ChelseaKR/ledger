@@ -114,9 +114,19 @@ def test_sealed_until_visible_exactly_at_date() -> None:
     assert is_visible(AccessPolicy.SEALED_UNTIL, _anon(), _NOW, unseal_at=_NOW) is True
 
 
-def test_sealed_until_visible_to_steward_before_date() -> None:
-    """A steward sees a SEALED_UNTIL field even before its unseal date (administration)."""
-    assert is_visible(AccessPolicy.SEALED_UNTIL, _steward(), _NOW, unseal_at=_FUTURE) is True
+def test_temporal_seal_binds_even_a_steward_before_date() -> None:
+    """A dated SEALED_UNTIL is a temporal embargo that binds EVERY tier until the date.
+
+    Regression (user research C3): a record labelled "sealed until <date>" must not be
+    silently readable by a steward before that date — an embargo is a promise to time,
+    not an access level. An *undated* seal remains a steward-readable access-level seal,
+    and once the date passes the embargo opens to everyone."""
+    # Before the date: hidden even from a steward.
+    assert is_visible(AccessPolicy.SEALED_UNTIL, _steward(), _NOW, unseal_at=_FUTURE) is False
+    # Undated seal: still an access-level seal a steward may read.
+    assert is_visible(AccessPolicy.SEALED_UNTIL, _steward(), _NOW, unseal_at=None) is True
+    # After the date: open to all, including anonymous.
+    assert is_visible(AccessPolicy.SEALED_UNTIL, _anon(), _FUTURE, unseal_at=_NOW) is True
 
 
 # --- SEALED_CONDITIONAL: steward, or condition met --------------------------
@@ -289,16 +299,24 @@ def test_disclose_member_sees_public_and_community() -> None:
     assert set(dr.redactions) == {"contact_log", "diary"}
 
 
-def test_disclose_steward_sees_all_fields() -> None:
-    """A steward sees every field, including the sealed diary, with nothing withheld."""
+def test_disclose_steward_sees_access_level_fields_but_not_the_embargo() -> None:
+    """A steward sees every access-level-sealed field, but NOT the temporally-embargoed
+    diary before its date — the embargo binds the steward too (user research C3)."""
     dr = disclose(_mixed_record(), _steward(), _NOW)
     assert dr.fields == {
         "story": "We cooked for four hundred.",
         "venue": "The union hall",
         "contact_log": "steward notes",
-        "diary": "opens later",
     }
-    assert dr.redactions == ()
+    # The dated "diary" is embargoed until _FUTURE, so even a steward sees it withheld.
+    assert dr.redactions == ("diary",)
+
+
+def test_disclose_steward_sees_embargo_after_date() -> None:
+    """Once the embargo date passes, the steward (and everyone) sees the diary."""
+    dr = disclose(_mixed_record(), _steward(), _FUTURE)
+    assert dr.fields.get("diary") == "opens later"
+    assert "diary" not in dr.redactions
 
 
 def test_disclose_always_includes_title_and_warnings() -> None:

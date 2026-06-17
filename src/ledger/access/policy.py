@@ -65,8 +65,11 @@ def is_visible(
     * ``PUBLIC`` -- visible to everyone.
     * ``COMMUNITY`` -- a steward, or a grant whose ``levels`` include COMMUNITY.
     * ``STEWARDS`` -- a steward only.
-    * ``SEALED_UNTIL`` -- a steward, or ``now`` has reached ``unseal_at`` (which
-      must be set); a seal with no date is sealed indefinitely.
+    * ``SEALED_UNTIL`` -- two cases. With an ``unseal_at`` date it is a *temporal
+      embargo* that binds EVERY tier, including stewards, until ``now`` reaches the
+      date, after which it opens to all; a steward does not bypass it (an embargo is
+      a promise to time, not an access level). With no date it is an indefinite
+      access-level seal that a steward may read.
     * ``SEALED_CONDITIONAL`` -- a steward, or ``unseal_condition`` is set and is
       present in ``conditions_met``.
 
@@ -83,9 +86,17 @@ def is_visible(
         case AccessPolicy.STEWARDS:
             return effective.is_steward
         case AccessPolicy.SEALED_UNTIL:
-            if effective.is_steward:
-                return True
-            return unseal_at is not None and _unseal_reached(now, unseal_at)
+            if unseal_at is not None:
+                # A *temporal* seal ("sealed until <date>") is an embargo: a promise
+                # made to time, not an access level. It binds EVERY tier, including
+                # stewards, until the date passes — then it opens to all. A steward
+                # who must reach embargoed content before the date does so through an
+                # explicit, logged mechanism, not by silently bypassing the seal
+                # (fail-closed; honours the date the contributor was promised).
+                return _unseal_reached(now, unseal_at)
+            # An indefinite seal (no date) is an access-level seal a steward may
+            # read, as the threat model documents.
+            return effective.is_steward
         case AccessPolicy.SEALED_CONDITIONAL:
             if effective.is_steward:
                 return True
