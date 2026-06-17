@@ -1,0 +1,31 @@
+name: codeql
+
+# Vulnerability management: static security analysis on every change to main and on
+# a weekly schedule, so a newly-discovered class of bug is caught even with no code
+# change (security-aware maintenance).
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "27 4 * * 1" # Mondays, 04:27 UTC
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: CodeQL analyze (python)
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: python
+          queries: security-and-quality
+      - uses: github/codeql-action/analyze@v3

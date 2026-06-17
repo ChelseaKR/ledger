@@ -1,0 +1,39 @@
+ledger — a privacy-first community archive for queer histories and mutual-aid knowledge
+Copyright (C) 2026 Chelsea Kelly-Reif
+
+This program is free software: you can redistribute it and/or modify it under the
+terms of the GNU Affero General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later version.
+The full license text is in the file LICENSE.
+
+------------------------------------------------------------------------------
+Independence statement
+------------------------------------------------------------------------------
+
+ledger is an independent, personal open-source project. It is not affiliated with,
+sponsored by, or endorsed by any employer, client, government, or institutional
+customer. It contains no proprietary, confidential, or client material. It was
+built for and with community archivists and mutual-aid organizers.
+
+------------------------------------------------------------------------------
+Standards referenced (no code included; for interoperability)
+------------------------------------------------------------------------------
+
+ledger implements or interoperates with the following open standards. They are
+named for traceability; their specifications are owned by their respective bodies.
+
+  - BagIt File Packaging Format          IETF RFC 8493
+  - PREMIS Data Dictionary for           Library of Congress
+    Preservation Metadata
+  - Dublin Core Metadata Element Set     DCMI / ISO 15836
+  - OAIS Reference Model                  ISO 14721 / CCSDS 650.0
+  - WCAG 2.2                              W3C
+  - Revised Section 508 Standards         U.S. Access Board, 36 CFR Part 1194
+
+------------------------------------------------------------------------------
+Third-party runtime dependency
+------------------------------------------------------------------------------
+
+  - cryptography (Apache-2.0 OR BSD-3-Clause)
+    https://github.com/pyca/cryptography
+    Used solely by the encrypted contributor-identity vault.

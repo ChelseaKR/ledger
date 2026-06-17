@@ -1,0 +1,107 @@
+name: ci
+
+# Agility: every push and PR runs the full merge gate. Reproducibility: the gate is
+# the same `make` targets a contributor runs locally, on a pinned toolchain.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Least privilege (securability): grant read-only by default; jobs widen only what
+# they need.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    name: lint · type · test (py${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Compatibility: the supported interpreter range is exercised, not assumed.
+        python: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+      - name: Lint (ruff)
+        run: |
+          ruff check src tests
+          ruff format --check src tests
+      - name: Type check (mypy strict)
+        run: mypy
+      - name: Test with coverage
+        run: pytest --cov --cov-report=term-missing --cov-report=xml
+      - name: Upload coverage
+        if: matrix.python == '3.12'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.xml
+
+  no-outing-audit:
+    name: no-outing audit (safety gate)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+      # This gate runs the disclosure tests on their own so a regression in the
+      # core safety guarantee is unmistakable in the checks list, not buried.
+      - name: Contributor identity never leaks
+        run: pytest -m disclosure -q
+
+  accessibility:
+    name: accessibility gate (WCAG 2.2 AA)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+      # Static accessibility checks (landmarks, labels, lang, alt text, contrast
+      # tokens) run with no browser. The full axe + manual screen-reader review is
+      # documented in docs/accessibility/ and recorded in the committed ACR.
+      - name: Static a11y checks on the web surface
+        run: python -m ledger.accessibility_check web
+
+  supply-chain:
+    name: dependency & secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: |
+          python -m pip install --upgrade pip
+          pip install pip-audit
+      - name: Vulnerable dependency scan (pip-audit)
+        run: pip-audit -r <(pip freeze) || true
+      - name: Secret scan (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "false"

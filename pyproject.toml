@@ -1,0 +1,99 @@
+# pyproject.toml — single, declarative source of build, dependency, and tool config.
+# Configurability/administrability: behaviour is config-over-code; this file is the
+# one place project-wide tooling is set.
+[build-system]
+requires = ["hatchling>=1.21"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ledger-archive"
+version = "0.1.0"
+description = "A privacy-first community archive for queer histories and mutual-aid knowledge."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "AGPL-3.0-or-later"
+license-files = ["LICENSE"]
+authors = [{ name = "Chelsea Kelly-Reif" }]
+keywords = [
+    "digital-preservation", "bagit", "premis", "dublin-core", "oais",
+    "community-archive", "mutual-aid", "queer-history", "accessibility", "privacy",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: System :: Archiving",
+    "Topic :: Sociology :: History",
+]
+
+# Affordability/self-sustainability: exactly one runtime dependency, and a free,
+# widely-audited one. The preservation core (CAS, BagIt, PREMIS, Dublin Core,
+# fixity, the browse server) is pure standard library so a community can run ledger
+# on a single inexpensive box with no paid service and no heavy dependency tree.
+# `cryptography` is used solely by the encrypted identity vault, where rolling our
+# own would be the opposite of safety.
+dependencies = [
+    "cryptography>=42,<50",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-cov>=5",
+    "ruff>=0.6",
+    "mypy>=1.11",
+    "pip-audit>=2.7",
+]
+
+[project.urls]
+Homepage = "https://github.com/ChelseaKR/ledger"
+Source = "https://github.com/ChelseaKR/ledger"
+Issues = "https://github.com/ChelseaKR/ledger/issues"
+
+# Deployability/installability: `pipx install ledger-archive` then `ledger ...`.
+[project.scripts]
+ledger = "ledger.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ledger"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+# Correctness + analyzability gates. E/F pyflakes, I import order, B bugbear,
+# UP pyupgrade, S bandit security, SIM simplify, RUF ruff-specific.
+select = ["E", "F", "I", "B", "UP", "S", "SIM", "RUF"]
+ignore = ["E501"]  # line length handled by the formatter
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101"]  # asserts are the point of a test
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unreachable = true
+warn_redundant_casts = true
+files = ["src/ledger"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+addopts = "-ra --strict-markers --strict-config"
+markers = [
+    "preservation: fixity, bagging, and content-addressing guarantees",
+    "disclosure: access-policy, grant, and no-outing guarantees",
+    "accessibility: surfaces that must meet WCAG 2.2 AA",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["ledger"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false

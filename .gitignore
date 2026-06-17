@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Local runtime data — an archive's bags, store, and vault must never be committed.
+# These hold contributor records and (encrypted) identity material. Keeping them out
+# of version control is part of the no-outing guarantee, not a convenience.
+/var/
+*.ledgerstore/
+*.vault
+*.bag/
+instance/
+local-archive/
+
+# Secrets — never commit. See SECURITY.md.
+.env
+.env.*
+*.key
+*.pem
+secrets/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
