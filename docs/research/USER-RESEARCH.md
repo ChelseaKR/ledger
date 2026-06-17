@@ -16,6 +16,11 @@ by a lead-researcher pass and cross-checked against the code.
 > to something the persona actually observed in the running system, and several were caught
 > independently by three or more personas.
 
+> **Reading note.** Sections 1–8 and 10 record the study **as conducted** (the friction the
+> panel hit). Section 9 records the **remediation**: every finding in the roadmap has since been
+> implemented and tested. Where §1–§8 say a gap is "absent" or "not yet", read it as the
+> as-studied state; see §9 for what shipped.
+
 ---
 
 ## 1. Executive summary
@@ -257,17 +262,38 @@ slightly chatty about what you deposited."*
 
 ---
 
-## 9. Acted on this cycle
+## 9. Remediation status — the full roadmap, implemented
 
-**C3 / P0 — temporal seal enforcement (fixed).** `ledger.access.is_visible` now treats a
-`SEALED_UNTIL` field that carries an `unseal_at` date as a *temporal* seal that binds **every**
-tier, including stewards, until the date is reached — fail-closed, matching the project's
-disclosure thesis and the promise made to contributors. An indefinite seal (no date) remains an
-access-level seal a steward may read, as the threat model documents. A steward can still see the
-record *exists* (its existence is governed by the record-level default policy) but the embargoed
-field is reported under "Withheld" until the date. Covered by a new regression test. The
-remaining P0s (contributor agency, content retrieval, the web safety surface) are feature work
-scoped in the roadmap above.
+Every finding in §8 has been remediated. Each item is implemented, tested (the suite grew from
+174 to 285 tests), and passes the merge gate (ruff, mypy --strict, the no-outing audit, and the
+accessibility checker). Status by priority:
+
+| Item | Status | What shipped |
+|---|---|---|
+| **P0** temporal seals | ✅ | `is_visible` treats a dated `SEALED_UNTIL` as an embargo binding **every** tier (incl. stewards) until the date; undated seals stay steward-readable. Regression-tested. |
+| **P0** contributor agency | ✅ | `consent.py` (request model, append-only store, HMAC claim tokens) + a "Manage or withdraw your consent" form on every record (`GET`/`POST /record/{id}/consent`); requests queue for stewards. |
+| **P0** content retrieval | ✅ | `GET /record/{id}/file/{name}` — access-controlled (only disclosed payloads), served from the content store so it is fixity-verified by construction. The filename is now a real link. |
+| **P0** web safety surface | ✅ | `/about`, `/governance`, `/how-it-works`, `/proof` in plain language from new governance config fields; footer links; discloses that stewards can read sealed *content*. |
+| **P1** HTML status page | ✅ | `/status` is an accessible page ("Everything is healthy" + last-verified counts); `/healthz` keeps the JSON. |
+| **P1** CW interstitial a11y + post-publication CW | ✅ | Interstitial is `role="alert"` with the warning as the page `h1` (announced on load); `ledger cw` adds warnings after publication. |
+| **P1** state copy | ✅ | Distinct, plain "no matches"/withheld copy; per-field withheld **reasons** for insiders, a **count** for outsiders. |
+| **P1** search over Dublin Core | ✅ | `search.py` indexes title + all DC fields + visible field values; subject/type **facets** are browsable; non-Latin query hint. |
+| **P1** steward console | ✅ | Gated `/steward` lists open consent requests (closable) with a "sealed above your access" note; actions via the audited CLI. |
+| **P2** i18n | ✅ | `i18n.py`: `Accept-Language` negotiation, en/es UI strings, plain-language content-warning glosses, friendly labels ("Continue", not "Proceed"). |
+| **P2** side-channels | ✅ | Versioned `Server` header suppressed; outsiders get a withheld **count**, not the enumerated reasons. (Constant-time id probing remains a documented residual.) |
+| **P2** scholarly/interop metadata | ✅ | `oai.py`: minimal OAI-PMH (`/oai`) + `/sitemap.xml`, **public records only**; `dc:date` backfilled from a title year at ingest. |
+| **P2** absolute seal + at-rest encryption | ✅ | New `AccessPolicy.SEALED` (restricted from everyone, incl. stewards); such field values are encrypted at rest via the vault; the content-vs-identity distinction is stated in the UI. |
+| **P3** low-bandwidth perf | ✅ | `Cache-Control` + `ETag` + gzip + `304` on static assets. |
+| **P3** continuity / honesty | ✅ | `docs/CONTINUITY.md` (bus-factor + security-response plan) and `docs/ADOPTING.md` (deployment-readiness checklist); a reference-implementation banner on every page. |
+
+**Documented residual risk (honest, not hidden):** constant-time equalization of a denied-id vs
+a true-404 over HTTP is impractical and remains a minor timing side-channel; the independent WCAG
+2.2 AA contrast audit the ACR already admits it owes is still owed (now also called out in
+`docs/ADOPTING.md`); and a full, separately-encrypted-payload tier beyond absolute-`SEALED`
+*fields* is left as future work. None of these affect the core no-outing guarantee.
+
+*(The two findings the panel raised that were also genuine code defects — the unenforced embargo
+and, found alongside it, the steward-bypass semantics — are fixed and regression-tested.)*
 
 ---
 
