@@ -17,7 +17,15 @@ from ledger.access.grants import anonymous, community_member, steward
 from ledger.config import Config
 from ledger.identity import IdentityVault
 from ledger.ingest import Archive
-from ledger.models import AccessPolicy, DublinCore, Field, Record
+from ledger.models import (
+    AccessPolicy,
+    ContentAddress,
+    DublinCore,
+    Field,
+    HashAlgo,
+    PayloadFile,
+    Record,
+)
 
 _NOW = "2026-06-17T00:00:00Z"
 
@@ -104,6 +112,38 @@ def test_sealed_field_encrypted_at_rest(tmp_path: Path, monkeypatch: pytest.Monk
     on_disk = (archive.bags_dir / rec.record_id / "record.json").read_text()
     assert "DO-NOT-PERSIST-PLAINTEXT" not in on_disk  # encrypted at rest
     assert "enc:" in on_disk
+
+
+def test_sealed_payload_encrypted_at_rest(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """An absolute-SEALED payload FILE is stored as ciphertext, not clear bytes."""
+    monkeypatch.setenv("LEDGER_VAULT_KEY", Fernet.generate_key().decode())
+    cfg = Config.default("Probe", tmp_path)
+    cfg.save(tmp_path / "store" / "config.json")
+    archive = Archive.init(cfg)
+    secret = tmp_path / "secret.txt"
+    secret.write_text("SEALED-PAYLOAD-PLAINTEXT-MARKER")
+    rec = Record(
+        title="t",
+        default_policy=AccessPolicy.PUBLIC,
+        dublin_core=DublinCore(title=["t"]),
+        payloads=[
+            PayloadFile(
+                filename="secret.txt",
+                address=ContentAddress(HashAlgo.SHA256, "0" * 64),
+                policy=AccessPolicy.SEALED,
+            )
+        ],
+    )
+    aip = archive.ingest({secret.name: secret}, rec, now=_NOW)
+    # The bytes in the bag's data/ are ciphertext: the plaintext marker is absent.
+    on_disk = (aip.bag.payload_dir / "secret.txt").read_bytes()
+    assert b"SEALED-PAYLOAD-PLAINTEXT-MARKER" not in on_disk
+    # And a steward disclosure withholds the sealed payload entirely.
+    from ledger.access import disclose
+    from ledger.access.grants import steward
+
+    dr = disclose(archive.get(rec.record_id), steward("s"), _NOW)
+    assert all(p.filename != "secret.txt" for p in dr.payloads)
 
 
 def test_sealed_field_requires_vault(tmp_path: Path) -> None:

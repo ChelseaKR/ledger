@@ -15,7 +15,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ledger.accessibility_check import check_dir, check_html
+from ledger.accessibility_check import (
+    audit_css_contrast,
+    check_dir,
+    check_html,
+    contrast_ratio,
+)
 
 # A minimal, fully accessible document: declared lang, non-empty title, exactly one
 # h1, a main landmark, a skip link, a labelled input, and a captioned, scoped table.
@@ -112,6 +117,27 @@ def test_unlabelled_input_and_positive_tabindex_fail() -> None:
     joined = "\n".join(problems)
     assert "<label for>" in joined or "associated <label" in joined
     assert "positive tabindex" in joined
+
+
+def test_contrast_ratio_known_values() -> None:
+    """Black on white is the maximum 21:1; identical colours are 1:1."""
+    assert round(contrast_ratio("#000000", "#ffffff"), 1) == 21.0
+    assert round(contrast_ratio("#777777", "#777777"), 1) == 1.0
+
+
+def test_contrast_audit_passes_real_stylesheet() -> None:
+    """Every colour pair in the shipped stylesheet meets WCAG AA (verified, not owed)."""
+    css = (Path(__file__).resolve().parent.parent / "web" / "static" / "app.css").read_text()
+    assert audit_css_contrast(css, label="app.css") == []
+
+
+def test_contrast_audit_flags_a_failing_pair() -> None:
+    """A low-contrast token is caught, so the gate enforces AA rather than trusting it."""
+    bad = ":root{--ink:#bbbbbb;--bg:#ffffff;--muted:#cccccc;--surface:#ffffff;"
+    bad += "--link:#bbbbbb;--link-visited:#bbbbbb;--accent:#bbbbbb;"
+    bad += "--warn-ink:#bbbbbb;--warn-bg:#ffffff;--border:#eeeeee;}"
+    problems = audit_css_contrast(bad, label="bad.css")
+    assert any("below WCAG AA" in p for p in problems)
 
 
 def test_check_dir_against_real_web_passes() -> None:

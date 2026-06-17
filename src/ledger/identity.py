@@ -251,6 +251,25 @@ class IdentityVault:
                 "sealed-content decryption failed (wrong key or tampering)"
             ) from exc
 
+    def encrypt_bytes(self, data: bytes) -> bytes:
+        """Encrypt arbitrary bytes under the vault key (authenticated Fernet token).
+
+        Used to encrypt an absolute-``SEALED`` payload FILE at rest, so the bytes a
+        contributor sealed from everyone are ciphertext in the content store and the
+        bag — never clear-text on a stolen disk or a hostile replica (user research
+        P2-4, payload tier). Such a payload is never served on any read path, so it
+        is only encrypted, never decrypted, on the request path."""
+        return self._fernet.encrypt(data)
+
+    def decrypt_bytes(self, token: bytes) -> bytes:
+        """Inverse of :meth:`encrypt_bytes` (for an authorized off-path recovery)."""
+        try:
+            return self._fernet.decrypt(token)
+        except InvalidToken as exc:
+            raise IdentityVaultError(
+                "sealed-payload decryption failed (wrong key or tampering)"
+            ) from exc
+
     # --- key helpers --------------------------------------------------------
 
     @staticmethod

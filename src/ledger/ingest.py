@@ -27,6 +27,7 @@ import mimetypes
 import os
 import re
 import shutil
+import tempfile
 from pathlib import Path
 
 from ledger.access import disclose, is_listable
@@ -276,11 +277,11 @@ def ingest_sip(
     declared = {p.filename: p for p in record.payloads}
     payload_entries: list[PayloadFile] = []
     fixity_events: list[PremisEvent] = []
+    # The sources actually stored + bagged (ciphertext for absolute-SEALED files).
+    bag_payload: dict[str, Path] = {}
+    sealed_tmp: Path | None = None
     for filename in sorted(sip.payload):
         source = sip.payload[filename]
-        digests = hash_file_multi(source, (HashAlgo.SHA256, HashAlgo.BLAKE2B))
-        address = store.put_file(source)
-        size = source.stat().st_size
         existing = declared.get(filename)
         if existing is not None:
             media_type = existing.media_type
@@ -290,6 +291,26 @@ def ingest_sip(
             guessed, _ = mimetypes.guess_type(filename)
             media_type = guessed or "application/octet-stream"
         policy = existing.policy if existing is not None else record.default_policy
+        # An absolute-SEALED payload FILE is encrypted at rest: the content store and
+        # the bag hold ciphertext, never the clear bytes, so a stolen disk or hostile
+        # replica reveals nothing (user research P2-4, payload tier). It is never
+        # served on any read path, so it is only encrypted, never decrypted.
+        if policy is AccessPolicy.SEALED:
+            if vault is None:
+                raise LedgerError(
+                    "a 'sealed' (absolute) payload requires a vault key for at-rest encryption"
+                )
+            if sealed_tmp is None:
+                sealed_tmp = Path(tempfile.mkdtemp(prefix="ledger-sealed-"))
+            store_source = sealed_tmp / filename
+            store_source.parent.mkdir(parents=True, exist_ok=True)
+            store_source.write_bytes(vault.encrypt_bytes(source.read_bytes()))
+        else:
+            store_source = source
+        digests = hash_file_multi(store_source, (HashAlgo.SHA256, HashAlgo.BLAKE2B))
+        address = store.put_file(store_source)
+        size = store_source.stat().st_size
+        bag_payload[filename] = store_source
         payload_entries.append(
             PayloadFile(
                 filename=filename,
@@ -391,7 +412,7 @@ def ingest_sip(
         #    or identity_ref then fails validation).
         bag = write_bag(
             bag_dir,
-            dict(sip.payload),
+            bag_payload,
             bag_info=bag_info,
             extra_tag_files={
                 _RECORD_FILENAME: record_json.encode("utf-8"),
@@ -406,6 +427,11 @@ def ingest_sip(
             vault.revoke(sealed_ref)
         shutil.rmtree(bag_dir, ignore_errors=True)
         raise
+    finally:
+        # The encrypted-payload temp files have been copied into the bag and store;
+        # remove the clear staging area in all cases.
+        if sealed_tmp is not None:
+            shutil.rmtree(sealed_tmp, ignore_errors=True)
 
     return AIP(
         bag=bag,
@@ -525,10 +551,20 @@ class Archive:
         self.bags_dir.mkdir(parents=True, exist_ok=True)
         self.records_dir.mkdir(parents=True, exist_ok=True)
 
-        # The vault is needed for a sealed identity OR any absolute-SEALED field
-        # (which is encrypted at rest); open it only then (least privilege).
-        needs_vault = identity is not None or any(
-            fld.policy is AccessPolicy.SEALED for fld in record.fields
+        # The vault is needed for a sealed identity, any absolute-SEALED field, or
+        # any absolute-SEALED payload file (all encrypted at rest); open it only
+        # then (least privilege). A payload's policy is its declared one, else the
+        # record default — so a SEALED default over a non-empty payload set counts.
+        declared = {p.filename: p for p in record.payloads}
+        payload_sealed = bool(payload) and any(
+            (declared[name].policy if name in declared else record.default_policy)
+            is AccessPolicy.SEALED
+            for name in payload
+        )
+        needs_vault = (
+            identity is not None
+            or any(fld.policy is AccessPolicy.SEALED for fld in record.fields)
+            or payload_sealed
         )
         vault = self._open_vault(vault_key) if needs_vault else None
         sip = SIP(record=record, payload=dict(payload), identity=identity)

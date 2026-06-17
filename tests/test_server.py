@@ -179,17 +179,23 @@ def test_api_record_returns_200_json(server: tuple[HTTPServer, str, str]) -> Non
     assert "identity_ref" not in data
 
 
-def test_healthz_returns_200_with_fixity_summary(server: tuple[HTTPServer, str, str]) -> None:
-    """``GET /healthz`` returns 200 with a counts-only fixity summary."""
+def test_healthz_returns_200_with_status_only_for_outsiders(
+    server: tuple[HTTPServer, str, str],
+) -> None:
+    """``GET /healthz`` gives an outsider status + all_verified, but NOT the counts.
+
+    The absolute counts include sealed/community records, so revealing them to the
+    public would leak the total archive size and let an observer poll for new
+    sealed records (P2-2). Counts are gated to a steward grant (asserted in
+    test_server_remediation, which provisions one)."""
     _httpd, base, _rid = server
     status, body, headers = _get(base, "/healthz")
     assert status == 200
     assert headers.get("content-type", "").startswith("application/json")
     data = json.loads(body)
     assert data["status"] == "ok"
-    fixity = data["fixity"]
-    assert fixity["bags_audited"] >= 1
-    assert fixity["bags_failed"] == 0
+    assert data["all_verified"] is True
+    assert "fixity" not in data  # counts are not exposed to outsiders
 
 
 # --- the no-outing rule, across every response -----------------------------

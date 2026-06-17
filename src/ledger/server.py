@@ -40,6 +40,7 @@ import html
 import http.server
 import json
 import os
+import time
 from collections.abc import Iterable
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlsplit
@@ -613,6 +614,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         error page or JSON error whose message names no protected content
         (no-outing rule).
         """
+        self._t0 = time.monotonic()
         parts = urlsplit(self.path)
         path = parts.path
         params = parse_qs(parts.query)
@@ -664,6 +666,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         claim token, not an account, proves authorship); steward actions are gated
         to a steward grant. Unmatched POSTs 404. Any error renders a safe page.
         """
+        self._t0 = time.monotonic()
         path = urlsplit(self.path).path
         try:
             if path.startswith("/record/") and path.endswith("/consent"):
@@ -902,8 +905,24 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             ),
         )
 
+    # A response-time floor for neutral 404s. A record that EXISTS but is not
+    # listable returns 404 only after disclose() reads its manifest; a nonexistent
+    # id returns 404 after a quick miss. Holding every neutral 404 to a fixed
+    # minimum makes the two indistinguishable by timing for normal-sized records,
+    # so an observer cannot confirm a sealed record exists by how fast it is denied
+    # (user research P2-2). Best-effort, not a cryptographic guarantee for very
+    # large manifests; the threaded server keeps the wait from blocking others.
+    _NOT_FOUND_FLOOR_S = 0.02
+
+    def _floor_not_found(self) -> None:
+        elapsed = time.monotonic() - getattr(self, "_t0", time.monotonic())
+        remaining = self._NOT_FOUND_FLOOR_S - elapsed
+        if remaining > 0:
+            time.sleep(remaining)
+
     def _handle_not_found(self) -> None:
         """Render the shared, neutral 404 page (reveals nothing about existence)."""
+        self._floor_not_found()
         main_html = _error_main_html(
             "Not found",
             "We could not find anything at that address, or it is not available to you.",
@@ -934,6 +953,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         try:
             record = self._archive().disclose(record_id, grant)
         except (AccessDenied, ObjectNotFound):
+            self._floor_not_found()  # equalize not-found vs not-authorized timing
             self._send_json(404, {"error": "not found"})
             return
         self._send_json(200, record.to_dict(withheld_reasons=_is_insider(grant)))
@@ -941,40 +961,36 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
     # --- health -------------------------------------------------------------
 
     def _handle_healthz(self) -> None:
-        """``GET /healthz`` — JSON health plus an identity-free fixity summary.
+        """``GET /healthz`` — JSON health, with counts gated to stewards.
 
-        Reports ``status`` and counts only — bags audited, how many passed, how
-        many showed fixity drift — drawn from :meth:`Archive.audit_fixity`. No bag
-        path, file name, digest, record id, or identity appears, so the health
-        endpoint is safe to expose to a monitor (no-outing rule; observability).
+        An outsider gets only ``status`` and an ``all_verified`` boolean. The
+        absolute counts (bags audited / files checked) include sealed and
+        community records, so revealing them to the public would leak the TOTAL
+        size of the archive — letting an observer learn that sealed records exist
+        and poll for when one is added (user research P2-2). Only a steward grant
+        sees the numbers; a monitor uses a provisioned grant. No path, digest, id,
+        or identity ever appears (no-outing rule).
         """
         archive = self._archive()
+        grant = self._resolve_grant()
         try:
             reports = archive.audit_fixity()
         except LedgerError:
-            # A structurally broken bag must not take down health reporting, and
-            # its details must not leak: report degraded with counts only.
-            self._send_json(
-                503,
-                {"status": "degraded", "fixity": {"error": "audit failed"}},
-            )
+            self._send_json(503, {"status": "degraded", "all_verified": False})
             return
         passed = sum(1 for _name, r in reports if r.ok)
         failed = len(reports) - passed
-        files_checked = sum(r.checked for _name, r in reports)
         status = "ok" if failed == 0 else "degraded"
-        self._send_json(
-            200 if failed == 0 else 503,
-            {
-                "status": status,
-                "fixity": {
-                    "bags_audited": len(reports),
-                    "bags_passed": passed,
-                    "bags_failed": failed,
-                    "files_checked": files_checked,
-                },
-            },
-        )
+        code = 200 if failed == 0 else 503
+        body: dict[str, object] = {"status": status, "all_verified": failed == 0}
+        if grant.is_steward:
+            body["fixity"] = {
+                "bags_audited": len(reports),
+                "bags_passed": passed,
+                "bags_failed": failed,
+                "files_checked": sum(r.checked for _name, r in reports),
+            }
+        self._send_json(code, body)
 
     def _handle_status(self) -> None:
         """``GET /status`` — a human-readable health page (not raw JSON).
@@ -986,6 +1002,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         """
         lang = self._lang()
         archive = self._archive()
+        grant = self._resolve_grant()
         try:
             reports = archive.audit_fixity()
             passed = sum(1 for _n, r in reports if r.ok)
@@ -995,12 +1012,17 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             headline = (
                 "Everything is healthy." if healthy else "Some records need a steward's attention."
             )
-            detail = (
-                f"{passed} of {total} record package(s) passed every integrity check "
-                f"({files} file checksum(s) verified)."
-                if total
-                else "No records are stored yet."
-            )
+            # Absolute counts include sealed records, so the exact numbers are shown
+            # only to a steward; everyone else gets the qualitative headline (P2-2).
+            if grant.is_steward and total:
+                detail = (
+                    f"{passed} of {total} record package(s) passed every integrity check "
+                    f"({files} file checksum(s) verified)."
+                )
+            elif healthy:
+                detail = "Every stored record passed its most recent integrity check."
+            else:
+                detail = "One or more records did not pass their integrity check."
         except LedgerError:
             headline, detail = "Status check failed.", "An integrity check could not be completed."
         main_html = (
@@ -1319,7 +1341,10 @@ def make_server(
     interfering (modularity, testability).
     """
     grants = load_grants(grants_path) if grants_path is not None else {}
-    httpd = http.server.HTTPServer((host, port), ArchiveRequestHandler)
+    # Threaded so the per-request response-time floor (which equalizes the timing of
+    # a not-found vs a not-authorized record) never serializes other requests
+    # (availability, responsiveness) — and so the site serves several readers at once.
+    httpd = http.server.ThreadingHTTPServer((host, port), ArchiveRequestHandler)
     # Attach the dependencies the handler reads per request.
     httpd.archive = archive  # type: ignore[attr-defined]
     httpd.grants = grants  # type: ignore[attr-defined]

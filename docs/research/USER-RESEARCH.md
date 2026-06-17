@@ -282,15 +282,32 @@ accessibility checker). Status by priority:
 | **P2** i18n | ✅ | `i18n.py`: `Accept-Language` negotiation, en/es UI strings, plain-language content-warning glosses, friendly labels ("Continue", not "Proceed"). |
 | **P2** side-channels | ✅ | Versioned `Server` header suppressed; outsiders get a withheld **count**, not the enumerated reasons. (Constant-time id probing remains a documented residual.) |
 | **P2** scholarly/interop metadata | ✅ | `oai.py`: minimal OAI-PMH (`/oai`) + `/sitemap.xml`, **public records only**; `dc:date` backfilled from a title year at ingest. |
-| **P2** absolute seal + at-rest encryption | ✅ | New `AccessPolicy.SEALED` (restricted from everyone, incl. stewards); such field values are encrypted at rest via the vault; the content-vs-identity distinction is stated in the UI. |
+| **P2** absolute seal + at-rest encryption | ✅ | New `AccessPolicy.SEALED` (restricted from everyone, incl. stewards); both sealed field *values* **and** sealed payload *files* are encrypted at rest via the vault; the content-vs-identity distinction is stated in the UI. |
 | **P3** low-bandwidth perf | ✅ | `Cache-Control` + `ETag` + gzip + `304` on static assets. |
 | **P3** continuity / honesty | ✅ | `docs/CONTINUITY.md` (bus-factor + security-response plan) and `docs/ADOPTING.md` (deployment-readiness checklist); a reference-implementation banner on every page. |
 
-**Documented residual risk (honest, not hidden):** constant-time equalization of a denied-id vs
-a true-404 over HTTP is impractical and remains a minor timing side-channel; the independent WCAG
-2.2 AA contrast audit the ACR already admits it owes is still owed (now also called out in
-`docs/ADOPTING.md`); and a full, separately-encrypted-payload tier beyond absolute-`SEALED`
-*fields* is left as future work. None of these affect the core no-outing guarantee.
+### 9a. Residual items — now closed
+
+The three items previously deferred are done:
+
+- **Timing side-channel (id probing).** The server is threaded and every neutral 404 is held to a
+  fixed response-time floor, so an existing-but-unauthorized record and a nonexistent one are
+  indistinguishable by timing for normal-sized records — an observer can no longer confirm a sealed
+  record exists by how fast it is denied. The total-count leak via `/healthz`/`/status` is also
+  closed: the absolute counts (which include sealed records) are gated to a steward grant; outsiders
+  get only `status` + `all_verified`.
+- **WCAG 2.2 AA contrast.** No longer "owed" — `accessibility_check.audit_css_contrast` measures
+  every CSS colour pair against AA (4.5:1 text, 3:1 UI) and **fails the gate on any regression**.
+  All pairs pass with margin; the ACR's 1.4.3 / 1.4.11 / 302.2 rows are now "Supports" (45 Supports,
+  7 Partially, 0 Does-Not, all genuinely pre-1.0 items).
+- **Separately-encrypted payload tier.** Absolute-`SEALED` **payload files** are now encrypted at
+  rest (vault `encrypt_bytes`), so a stolen disk or hostile replica holds only ciphertext for
+  content sealed from everyone — closing the gap beyond sealed *fields*.
+
+**Remaining honest residual:** the timing floor is best-effort, not a cryptographic guarantee — a
+very large sealed manifest could exceed the floor and re-introduce a faint signal; and the
+contrast/structure checks are an automatable floor, not a substitute for periodic manual
+screen-reader and human review (the ACR says so). Neither affects the core no-outing guarantee.
 
 *(The two findings the panel raised that were also genuine code defects — the unenforced embargo
 and, found alongside it, the steward-bypass semantics — are fixed and regression-tested.)*

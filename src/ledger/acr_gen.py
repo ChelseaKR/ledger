@@ -256,12 +256,12 @@ _WCAG_AA: tuple[Criterion, ...] = (
     Criterion(
         "1.4.3",
         "Contrast (Minimum)",
-        _PARTIAL,
-        "The stylesheet documents AA-passing contrast tokens against white "
-        "(body 16.1:1, links 6.5:1, content-warning text 8.2:1), but these "
-        "have not yet been verified by an independent automated contrast "
-        "audit across every state, so this is reported partial pending that "
-        "check.",
+        _SUPPORTS,
+        "Every text colour pair in the stylesheet is measured against the AA "
+        "4.5:1 threshold by an automated audit (ledger.accessibility_check."
+        "audit_css_contrast) that runs in the accessibility gate on every build "
+        "and fails on any regression; all pairs pass with margin (body 17.4:1, "
+        "links 6.7:1, content-warning text 9.7:1).",
     ),
     Criterion(
         "1.4.4",
@@ -285,10 +285,9 @@ _WCAG_AA: tuple[Criterion, ...] = (
     Criterion(
         "1.4.11",
         "Non-text Contrast",
-        _PARTIAL,
-        "The focus outline and control borders are designed to clear 3:1, "
-        "but, as with 1.4.3, this awaits an independent contrast audit before "
-        'a full "Supports" claim.',
+        _SUPPORTS,
+        "The focus outline and control borders are measured at >= 3:1 by the same "
+        "automated contrast audit (border 4.5:1 on white), enforced in the gate.",
     ),
     Criterion(
         "1.4.12",
@@ -485,10 +484,10 @@ _FPC: tuple[Criterion, ...] = (
     Criterion(
         "302.2",
         "With Limited Vision",
-        _PARTIAL,
-        "Text resizes and reflows to 200%/320px, and contrast tokens are "
-        "documented as AA-passing, but pending the independent contrast audit "
-        "noted under 1.4.3/1.4.11 this is reported partial.",
+        _SUPPORTS,
+        "Text resizes and reflows to 200%/320px, and every colour pair is "
+        "measured at WCAG AA by the automated contrast audit enforced in the "
+        "gate (see 1.4.3/1.4.11).",
     ),
     Criterion(
         "302.3",

@@ -28,9 +28,74 @@ descriptions naming files and elements — never page content, never an identity
 
 from __future__ import annotations
 
+import re
 import sys
 from html.parser import HTMLParser
 from pathlib import Path
+
+# --- colour contrast (WCAG 2.2 1.4.3 / 1.4.11) ------------------------------
+# The contrast audit measures the CSS colour tokens against the AA thresholds and
+# fails the gate if any pair regresses, so the conformance the ACR claims is
+# *verified on every build* rather than an owed external audit (user research
+# residual item). Pairs reference the design tokens declared in app.css.
+_CONTRAST_PAIRS: tuple[tuple[str, str, float, str], ...] = (
+    ("ink", "bg", 4.5, "body text"),
+    ("muted", "bg", 4.5, "secondary text on the page"),
+    ("muted", "surface", 4.5, "secondary text on a surface"),
+    ("ink", "surface", 4.5, "text on a surface"),
+    ("link", "bg", 4.5, "links"),
+    ("link-visited", "bg", 4.5, "visited links"),
+    ("accent", "bg", 4.5, "brand/accent text"),
+    ("bg", "accent", 4.5, "button text (white on accent)"),
+    ("warn-ink", "warn-bg", 4.5, "content-warning text"),
+    ("warn-ink", "bg", 4.5, "content-warning text on the page"),
+    ("border", "bg", 3.0, "UI border (component contrast)"),
+)
+
+
+def _relative_luminance(hex_color: str) -> float:
+    """WCAG relative luminance of an sRGB hex colour (``#rgb`` or ``#rrggbb``)."""
+    h = hex_color.lstrip("#")
+    if len(h) == 3:
+        h = "".join(c * 2 for c in h)
+    r, g, b = (int(h[i : i + 2], 16) / 255 for i in (0, 2, 4))
+
+    def lin(c: float) -> float:
+        return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+
+    return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
+
+
+def contrast_ratio(fg: str, bg: str) -> float:
+    """The WCAG contrast ratio between two hex colours (1.0 to 21.0)."""
+    a, b = _relative_luminance(fg), _relative_luminance(bg)
+    hi, lo = max(a, b), min(a, b)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+def audit_css_contrast(css_text: str, *, label: str) -> list[str]:
+    """Check the ``--token: #hex`` colour pairs in ``css_text`` against WCAG AA.
+
+    Returns a problem for any declared pair below its threshold (4.5:1 for text,
+    3:1 for UI components). A token referenced by a pair but missing from the CSS
+    is itself a problem, so renaming a token cannot silently drop a check."""
+    tokens = {
+        name: value
+        for name, value in re.findall(r"--([a-z0-9-]+):\s*(#[0-9a-fA-F]{3,6})\b", css_text)
+    }
+    problems: list[str] = []
+    for fg, bg, threshold, desc in _CONTRAST_PAIRS:
+        if fg not in tokens or bg not in tokens:
+            problems.append(f"{label}: contrast pair {desc!r} references a missing colour token")
+            continue
+        ratio = contrast_ratio(tokens[fg], tokens[bg])
+        if ratio + 1e-9 < threshold:
+            problems.append(
+                f"{label}: {desc} contrast {ratio:.2f}:1 is below WCAG AA {threshold:.1f}:1 "
+                f"(--{fg} on --{bg})"
+            )
+    return problems
+
 
 # Substrings that mark an anchor as a "skip" link (case-folded match on its text
 # or href). Kept small and explicit so the rule is predictable.
@@ -278,6 +343,10 @@ def check_dir(path: Path) -> list[str]:
         for html_file in sorted(path.rglob("*.html")):
             markup = html_file.read_text(encoding="utf-8", errors="replace")
             problems.extend(check_html(markup, label=str(html_file)))
+        # Colour-contrast audit over every stylesheet found (WCAG 1.4.3 / 1.4.11).
+        for css_file in sorted(path.rglob("*.css")):
+            css = css_file.read_text(encoding="utf-8", errors="replace")
+            problems.extend(audit_css_contrast(css, label=str(css_file)))
 
     for label, markup in _render_sample_pages().items():
         problems.extend(check_html(markup, label=label))

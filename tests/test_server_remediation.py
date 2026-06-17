@@ -238,3 +238,17 @@ def test_no_identity_leak_on_new_surfaces(site: tuple[str, str, str]) -> None:
     for path in surfaces:
         _, body, _ = _get(base, path, grant="boss")
         assert _SENTINEL not in body, f"identity leaked on {path}"
+
+
+# --- residual: count side-channel gated to stewards (P2-2) -------------------
+
+
+def test_healthz_counts_gated_to_steward(site: tuple[str, str, str]) -> None:
+    base, _pub, _comm = site
+    _, anon_body, _ = _get(base, "/healthz")
+    anon = json.loads(anon_body)
+    assert "fixity" not in anon  # outsider sees no counts (total size not leaked)
+    assert anon["all_verified"] is True
+    _, boss_body, _ = _get(base, "/healthz", grant="boss")
+    boss = json.loads(boss_body)
+    assert boss["fixity"]["bags_audited"] >= 2  # a steward sees the real counts

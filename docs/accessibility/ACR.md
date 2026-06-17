@@ -17,8 +17,8 @@ ledger is a pre-1.0 reference implementation. This ACR is deliberately candid: w
 
 ### Summary
 
-- Supports: 42
-- Partially Supports: 10
+- Supports: 45
+- Partially Supports: 7
 - Does Not Support: 0
 - Not Applicable: 21
 
@@ -73,11 +73,11 @@ Success criteria at conformance Level AA.
 | 1.2.5 Audio Description (Prerecorded) | Not Applicable | No prerecorded video. |
 | 1.3.4 Orientation | Supports | The layout is responsive and locks to no orientation. |
 | 1.3.5 Identify Input Purpose | Partially Supports | The single search field is not a personal-data field, so autocomplete tokens do not apply; broader input-purpose support is untested because there are no such fields yet. |
-| 1.4.3 Contrast (Minimum) | Partially Supports | The stylesheet documents AA-passing contrast tokens against white (body 16.1:1, links 6.5:1, content-warning text 8.2:1), but these have not yet been verified by an independent automated contrast audit across every state, so this is reported partial pending that check. |
+| 1.4.3 Contrast (Minimum) | Supports | Every text colour pair in the stylesheet is measured against the AA 4.5:1 threshold by an automated audit (ledger.accessibility_check.audit_css_contrast) that runs in the accessibility gate on every build and fails on any regression; all pairs pass with margin (body 17.4:1, links 6.7:1, content-warning text 9.7:1). |
 | 1.4.4 Resize Text | Supports | Type scales in rem/ch units and reflows to 200% zoom without loss. |
 | 1.4.5 Images of Text | Supports | All text is real text; the site uses no images of text. |
 | 1.4.10 Reflow | Supports | Mobile-first, fluid layout; content reflows to a single column and the table scrolls horizontally rather than overflowing at 320 CSS px. |
-| 1.4.11 Non-text Contrast | Partially Supports | The focus outline and control borders are designed to clear 3:1, but, as with 1.4.3, this awaits an independent contrast audit before a full "Supports" claim. |
+| 1.4.11 Non-text Contrast | Supports | The focus outline and control borders are measured at >= 3:1 by the same automated contrast audit (border 4.5:1 on white), enforced in the gate. |
 | 1.4.12 Text Spacing | Supports | No fixed line-height/letter-spacing prevents user text-spacing overrides; the layout tolerates them. |
 | 1.4.13 Content on Hover or Focus | Not Applicable | No hover/focus-triggered overlays or tooltips. |
 | 2.4.5 Multiple Ways | Supports | Records are reachable by browse (list and table views) and by search — two independent ways. |
@@ -126,7 +126,7 @@ Criteria introduced in WCAG 2.2 at Levels A and AA.
 | Criterion | Conformance Level | Remarks and Explanations |
 | --- | --- | --- |
 | 302.1 Without Vision | Supports | Semantic landmarks, headings, a skip link, labelled controls, and a captioned/scoped data table give a complete screen-reader path; the list and table views are equivalent. |
-| 302.2 With Limited Vision | Partially Supports | Text resizes and reflows to 200%/320px, and contrast tokens are documented as AA-passing, but pending the independent contrast audit noted under 1.4.3/1.4.11 this is reported partial. |
+| 302.2 With Limited Vision | Supports | Text resizes and reflows to 200%/320px, and every colour pair is measured at WCAG AA by the automated contrast audit enforced in the gate (see 1.4.3/1.4.11). |
 | 302.3 Without Perception of Color | Supports | Color is never the sole signal; the content-warning state is always conveyed as text. |
 | 302.4 Without Hearing | Supports | The site conveys no information by sound. |
 | 302.5 With Limited Hearing | Supports | No audio is used, so limited hearing imposes no barrier. |
