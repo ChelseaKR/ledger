@@ -92,9 +92,14 @@ class _Accessibility(HTMLParser):
         elif tag == "img" and "alt" not in attr:
             self.img_missing_alt += 1
         elif tag == "input":
-            element_id = attr.get("id")
-            if element_id:
-                self.input_ids.add(element_id)
+            # hidden/submit/button/reset/image inputs are not user-editable fields
+            # and legitimately need no <label for> (WCAG 1.3.1 applies to inputs
+            # that take user input); only count the rest.
+            input_type = attr.get("type", "text").casefold()
+            if input_type in {"hidden", "submit", "button", "reset", "image"}:
+                pass
+            elif attr.get("id"):
+                self.input_ids.add(attr["id"])
             else:
                 self.inputs_without_id += 1
         elif tag == "label":

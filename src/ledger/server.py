@@ -34,18 +34,22 @@ trusted beyond looking up an existing grant (least privilege, securability).
 
 from __future__ import annotations
 
+import gzip
+import hashlib
 import html
 import http.server
 import json
+import os
 from collections.abc import Iterable
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlsplit
 
+from ledger import consent, i18n, oai, search
 from ledger.access import anonymous
 from ledger.access.grants import load_grants
 from ledger.errors import AccessDenied, LedgerError, ObjectNotFound
 from ledger.ingest import Archive
-from ledger.models import AccessPolicy, DisclosedRecord, Grant
+from ledger.models import AccessPolicy, DisclosedRecord, Grant, now_iso
 
 
 def _is_insider(grant: Grant) -> bool:
@@ -133,7 +137,9 @@ def _page(title: str, *, lang: str, main_html: str, nav_html: str = "") -> str:
         f'  <link rel="stylesheet" href="{_STYLESHEET_HREF}">\n'
         "</head>\n"
         "<body>\n"
-        '  <a class="skip-link" href="#main">Skip to main content</a>\n'
+        f'  <a class="skip-link" href="#main">{_esc(i18n.t(lang, "skip_link"))}</a>\n'
+        '  <p class="banner" role="note">Reference implementation — sample data is '
+        "synthetic.</p>\n"
         "  <header>\n"
         '    <p class="brand"><a href="/">ledger — community archive</a></p>'
         f"{nav_block}\n"
@@ -142,8 +148,10 @@ def _page(title: str, *, lang: str, main_html: str, nav_html: str = "") -> str:
         f"{main_html}\n"
         "  </main>\n"
         "  <footer>\n"
-        "    <p>A privacy-first community archive. Contributor identities are never "
-        "shown here.</p>\n"
+        f"    <p>{_esc(i18n.t(lang, 'footer_privacy'))}</p>\n"
+        f'    <p class="meta"><a href="/about">{_esc(i18n.t(lang, "nav_about"))}</a> · '
+        '<a href="/governance">Governance</a> · '
+        '<a href="/how-it-works">How it works</a></p>\n'
         "  </footer>\n"
         "</body>\n"
         "</html>\n"
@@ -250,24 +258,62 @@ def _records_table_html(records: Iterable[DisclosedRecord]) -> str:
     )
 
 
+def _facets_html(records: list[DisclosedRecord]) -> str:
+    """Browsable subject/type facets so a topic is reachable, not just a title.
+
+    Each facet value links to a filtered browse (``/?subject=...``), turning the
+    careful Dublin Core into a finding aid rather than decoration (user research
+    P1-4). Built from already-disclosed records, so a facet never reveals a value
+    a viewer may not see.
+    """
+    blocks: list[str] = []
+    for field_name, label in (("subject", "Subjects"), ("type", "Types")):
+        items = search.facets(records, field_name)
+        if not items:
+            continue
+        links = "\n".join(
+            f'        <li><a href="/?{field_name}={quote(f.value)}">{_esc(f.value)}</a> '
+            f'<span class="muted">({f.count})</span></li>'
+            for f in items
+        )
+        blocks.append(
+            f'    <section aria-labelledby="facet-{field_name}">\n'
+            f'      <h2 id="facet-{field_name}">{label}</h2>\n'
+            f'      <ul class="facets">\n{links}\n      </ul>\n'
+            "    </section>"
+        )
+    return "\n".join(blocks)
+
+
 def _browse_main_html(
     records: list[DisclosedRecord],
     *,
     heading: str,
     query: str = "",
+    lang: str = "en",
+    all_records: list[DisclosedRecord] | None = None,
 ) -> str:
     """Compose the browse/search ``<main>``: one ``<h1>``, the form, then both views.
 
     Renders the list and the table as two complete, equivalent presentations of
-    the same records (accessibility — equivalent list and table views). Heading
-    order is ``h1`` (page) then ``h2`` (each view) then ``h3`` (list items), with
-    no levels skipped (accessibility — sane heading order).
+    the same records (accessibility — equivalent list and table views), plus
+    browsable subject/type facets. Heading order is ``h1`` (page) then ``h2`` (each
+    view) then ``h3`` (list items), with no levels skipped (accessibility).
     """
     count = len(records)
+    # The empty state distinguishes "no matches" from a permission problem, in
+    # plain language (user research T5/P1-3) — without revealing that anything is
+    # hidden (the public list simply omits non-listable records).
+    if count == 0:
+        empty = f'    <p class="empty">{_esc(i18n.t(lang, "empty_no_matches"))}</p>\n'
+    else:
+        empty = ""
+    facets = _facets_html(all_records if all_records is not None else records)
     return (
         f"    <h1>{_esc(heading)}</h1>\n"
         f"    {_search_form(query)}"
         f'    <p class="count">{count} record(s) shown.</p>\n'
+        f"{empty}"
         '    <section aria-labelledby="list-heading">\n'
         '      <h2 id="list-heading">Records (list view)</h2>\n'
         f"      {_records_list_html(records)}\n"
@@ -275,11 +321,14 @@ def _browse_main_html(
         '    <section aria-labelledby="table-heading">\n'
         '      <h2 id="table-heading">Records (table view)</h2>\n'
         f"      {_records_table_html(records)}\n"
-        "    </section>"
+        "    </section>\n"
+        f"{facets}"
     )
 
 
-def _record_main_html(record: DisclosedRecord, *, proceed: bool, insider: bool = False) -> str:
+def _record_main_html(
+    record: DisclosedRecord, *, proceed: bool, insider: bool = False, lang: str = "en"
+) -> str:
     """Compose the single-record ``<main>``, with a content-warning interstitial.
 
     If the record carries content warnings and the viewer has not yet chosen to
@@ -297,20 +346,26 @@ def _record_main_html(record: DisclosedRecord, *, proceed: bool, insider: bool =
     """
     rid = record.record_id
     if record.content_warnings and not proceed:
-        warnings = "\n".join(f"      <li>{_esc(w)}</li>" for w in record.content_warnings)
+        # Each tag is glossed in plain language so a non-native or low-literacy
+        # reader can actually decide whether to view it (user research T9/P2-1).
+        warnings = "\n".join(
+            f"      <li>{_esc(i18n.gloss_cw(lang, w))}</li>" for w in record.content_warnings
+        )
         proceed_href = f"/record/{quote(rid)}?proceed=1#content"
+        # role="alert" + an h1 that IS the warning means a screen reader announces the
+        # warning the instant the page loads and lands on it first, instead of a user
+        # reading into gated content unawares (user research T13/P1-2; WCAG 4.1.3).
         return (
-            f"    <h1>{_esc(record.title)}</h1>\n"
-            '    <section class="interstitial" role="region" '
-            'aria-labelledby="cw-heading">\n'
-            '      <h2 id="cw-heading">Content warnings</h2>\n'
-            "      <p>This record carries the following content warnings. "
-            "Review them before continuing.</p>\n"
+            '    <section class="interstitial" role="alert" aria-labelledby="cw-heading">\n'
+            f'      <h1 id="cw-heading" tabindex="-1">{_esc(i18n.t(lang, "content_warning_heading"))}'
+            f": {_esc(record.title)}</h1>\n"
+            "      <p>This record carries the following content warnings. Review them "
+            "before continuing.</p>\n"
             "      <ul>\n"
             f"{warnings}\n"
             "      </ul>\n"
             f'      <p><a class="proceed" href="{_esc(proceed_href)}">'
-            "Proceed to the content</a></p>\n"
+            f"{_esc(i18n.t(lang, 'proceed'))}</a></p>\n"
             "    </section>"
         )
 
@@ -355,12 +410,13 @@ def _record_main_html(record: DisclosedRecord, *, proceed: bool, insider: bool =
             "    </section>"
         )
 
-    # Payload files the viewer may see.
+    # Payload files the viewer may see — each is a real, fixity-verified download
+    # link (user research C4: the filename was previously an inert false affordance).
     if record.payloads:
         files = "\n".join(
-            f"      <li>{_esc(p.filename)} "
-            f'<span class="muted">({_esc(p.media_type)}, '
-            f"{p.size_bytes} bytes)</span></li>"
+            f'      <li><a href="/record/{quote(rid)}/file/{quote(p.filename)}">'
+            f"{_esc(p.filename)}</a> "
+            f'<span class="muted">({_esc(p.media_type)}, {p.size_bytes} bytes)</span></li>'
             for p in record.payloads
         )
         parts.append(
@@ -399,7 +455,14 @@ def _record_main_html(record: DisclosedRecord, *, proceed: bool, insider: bool =
             "    </section>"
         )
 
-    parts.append('    <p><a href="/">Back to all records</a></p>')
+    # The contributor's front door: act on the promise that consent is revocable
+    # (user research P0-2). Shown to everyone — only the claim token (issued at
+    # ingest) lets the actual contributor file a request.
+    parts.append(
+        f'    <p class="consent-link"><a href="/record/{quote(rid)}/consent">'
+        "Are you the contributor? Manage or withdraw your consent</a></p>"
+    )
+    parts.append(f'    <p><a href="/">{_esc(i18n.t(lang, "back_to_records"))}</a></p>')
     return "\n".join(parts)
 
 
@@ -434,7 +497,11 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
     """
 
     # Bound onto the server in `make_server`; mirrored here for type-checked access.
-    server_version = "ledger/0.1"
+    # A generic Server header with no version, and an empty sys_version, so the
+    # response does not advertise the exact runtime to an attacker (user research
+    # P2-2: suppress the version side-channel).
+    server_version = "ledger"
+    sys_version = ""
     protocol_version = "HTTP/1.1"
 
     # --- safety: a scrubbed access log -------------------------------------
@@ -524,9 +591,13 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         self._send(status, body, "application/json; charset=utf-8")
 
     def _lang(self) -> str:
-        """The archive's primary configured language, defaulting to English."""
-        languages = self._archive().config.languages
-        return languages[0] if languages else "en"
+        """Negotiate the response language from the viewer's ``Accept-Language``.
+
+        A non-native reader gets localized UI strings and content-warning glosses
+        where available, falling back to English (user research P2-1). Negotiation
+        is against the languages ledger actually has strings for (``i18n.SUPPORTED``).
+        """
+        return i18n.negotiate(self.headers.get("Accept-Language"))
 
     # --- routing ------------------------------------------------------------
 
@@ -547,11 +618,32 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         params = parse_qs(parts.query)
         try:
             if path == "/":
-                self._handle_browse()
+                self._handle_browse(params)
             elif path == "/search":
                 self._handle_search(params)
             elif path == "/healthz":
                 self._handle_healthz()
+            elif path == "/status":
+                self._handle_status()
+            elif path == "/about":
+                self._handle_about()
+            elif path == "/governance":
+                self._handle_governance()
+            elif path == "/how-it-works":
+                self._handle_how_it_works()
+            elif path == "/proof":
+                self._handle_proof()
+            elif path == "/oai":
+                self._handle_oai(params)
+            elif path == "/sitemap.xml":
+                self._handle_sitemap()
+            elif path == "/steward":
+                self._handle_steward_console()
+            elif path.startswith("/record/") and "/file/" in path:
+                rid, _, name = path[len("/record/") :].partition("/file/")
+                self._handle_file(rid, name)
+            elif path.startswith("/record/") and path.endswith("/consent"):
+                self._handle_consent_form(path[len("/record/") : -len("/consent")])
             elif path.startswith("/record/"):
                 self._handle_record(path[len("/record/") :], params)
             elif path == "/api/records":
@@ -565,42 +657,222 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         except BrokenPipeError:  # pragma: no cover - client disconnected
             pass
 
-    # --- HTML routes --------------------------------------------------------
+    def do_POST(self) -> None:
+        """Route a POST: the contributor consent form and steward request actions.
 
-    def _handle_browse(self) -> None:
-        """``GET /`` — the accessible browse page (list + table equivalents)."""
+        These are the only writes the site accepts. Consent submission is open (a
+        claim token, not an account, proves authorship); steward actions are gated
+        to a steward grant. Unmatched POSTs 404. Any error renders a safe page.
+        """
+        path = urlsplit(self.path).path
+        try:
+            if path.startswith("/record/") and path.endswith("/consent"):
+                self._post_consent(path[len("/record/") : -len("/consent")])
+            elif path.startswith("/steward/requests/") and path.endswith("/resolve"):
+                rid = path[len("/steward/requests/") : -len("/resolve")]
+                self._post_resolve_request(rid)
+            else:
+                self._handle_not_found()
+        except BrokenPipeError:  # pragma: no cover - client disconnected
+            pass
+
+    def _read_form(self) -> dict[str, str]:
+        """Read and parse a urlencoded POST body into a flat string mapping.
+
+        Bounded by Content-Length; a missing/oversized length yields an empty form
+        rather than reading unbounded input (robustness)."""
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            return {}
+        if length <= 0 or length > 64 * 1024:
+            return {}
+        raw = self.rfile.read(length).decode("utf-8", "replace")
+        return {k: v[0] for k, v in parse_qs(raw).items() if v}
+
+    def _consent_store(self) -> consent.ConsentRequestStore:
+        return consent.ConsentRequestStore(self._archive().logs_dir / "consent-requests.json")
+
+    def _post_consent(self, raw_id: str) -> None:
+        """``POST /record/{id}/consent`` — file a contributor consent request.
+
+        The record must be listable to the viewer (else a neutral 404 that never
+        confirms a sealed record exists). A claim token issued at ingest is verified
+        when a server claim secret is configured (LEDGER_CLAIM_SECRET); the request
+        is queued for a steward either way and no automatic action is taken. The
+        contributor's message is stored for the steward but never logged or echoed
+        in an error (no-outing rule)."""
+        record_id = _decode_id(raw_id)
         grant = self._resolve_grant()
-        records = self._archive().browse(grant)
-        main_html = _browse_main_html(records, heading="Browse the archive")
+        lang = self._lang()
+        try:
+            self._archive().disclose(record_id, grant)
+        except (AccessDenied, ObjectNotFound):
+            self._handle_not_found()
+            return
+        form = self._read_form()
+        kind = form.get("kind", "")
+        if kind not in consent.VALID_KINDS:
+            self._send_html(
+                400,
+                _page(
+                    "Invalid request",
+                    lang=lang,
+                    main_html=_error_main_html("Invalid request", "Please choose a valid action."),
+                    nav_html=_nav_html(lang),
+                ),
+            )
+            return
+        secret = os.environ.get("LEDGER_CLAIM_SECRET", "").encode("utf-8")
+        verified = bool(secret) and consent.verify_claim_token(
+            record_id, form.get("claim", ""), secret
+        )
+        note = "" if not secret else (" (verified)" if verified else " (claim token not verified)")
+        req = consent.ConsentRequest(
+            record_id=record_id, kind=kind, message=form.get("message", "")
+        )
+        self._consent_store().add(req)
+        rt = self._archive().config.consent_response_time or "A steward will review your request."
+        main_html = (
+            "    <h1>Request received</h1>\n"
+            f"    <p>Your request to {_esc(kind)} this record has been recorded{_esc(note)}. "
+            f"A steward will review it. {_esc(rt)}</p>\n"
+            f"    <p>Your reference is <code>{_esc(req.request_id)}</code>.</p>\n"
+            '    <p><a href="/">Back to all records</a></p>'
+        )
         self._send_html(
-            200,
-            _page("Browse", lang=self._lang(), main_html=main_html, nav_html=_nav_html()),
+            200, _page("Request received", lang=lang, main_html=main_html, nav_html=_nav_html(lang))
         )
 
-    def _handle_search(self, params: dict[str, list[str]]) -> None:
-        """``GET /search?q=`` — filter disclosed titles/descriptions by ``q``.
+    def _post_resolve_request(self, raw_id: str) -> None:
+        """``POST /steward/requests/{id}/resolve`` — a steward closes a request."""
+        grant = self._resolve_grant()
+        if not grant.is_steward:
+            self._handle_not_found()
+            return
+        status = self._read_form().get("status", "acknowledged")
+        if status not in consent.VALID_STATUSES:
+            status = "acknowledged"
+        self._consent_store().resolve(_decode_id(raw_id), status)
+        self.send_response(303)
+        self.send_header("Location", "/steward")
+        self.end_headers()
 
-        The filter runs over already-disclosed records, so it can never surface a
-        field the grant may not see (safety — search respects disclosure). The
-        query is echoed back only through :func:`html.escape` (security).
+    def _handle_steward_console(self) -> None:
+        """``GET /steward`` — a steward's accountable console (gated).
+
+        Shows the open consent/takedown requests a steward must act on, and is
+        candid that some material may be sealed above the steward's own access
+        (user research P1-5/T7). Actioning consent changes and takedowns is done
+        with the audited CLI (``ledger policy`` / ``takedown`` / ``cw``); this
+        console lets a steward see and close incoming requests."""
+        grant = self._resolve_grant()
+        lang = self._lang()
+        if not grant.is_steward:
+            self._handle_not_found()
+            return
+        open_reqs = self._consent_store().open_requests()
+        if open_reqs:
+            rows = "\n".join(
+                "      <li>\n"
+                f"        <strong>{_esc(r.kind)}</strong> on record "
+                f'<a href="/record/{quote(r.record_id)}">{_esc(r.record_id)}</a> '
+                f'<span class="muted">({_esc(r.created_at)}, ref {_esc(r.request_id)})</span>\n'
+                f'        <form method="post" action="/steward/requests/{quote(r.request_id)}/resolve">\n'
+                '          <input type="hidden" name="status" value="resolved">\n'
+                '          <button type="submit">Mark resolved</button>\n'
+                "        </form>\n"
+                "      </li>"
+                for r in open_reqs
+            )
+            requests_html = f'    <ul class="requests">\n{rows}\n    </ul>'
+        else:
+            requests_html = "    <p>No open requests.</p>"
+        main_html = (
+            "    <h1>Steward console</h1>\n"
+            '    <section aria-labelledby="req-heading">\n'
+            '      <h2 id="req-heading">Open consent &amp; takedown requests</h2>\n'
+            f"{requests_html}\n"
+            "    </section>\n"
+            '    <section aria-labelledby="note-heading">\n'
+            '      <h2 id="note-heading">Before you act</h2>\n'
+            "      <p>You can read access-restricted content to do your work, but content "
+            "sealed with the 'sealed' policy — and every contributor's identity — is "
+            "restricted even from you. Some records may be sealed above your access; their "
+            "absence here does not mean they do not exist.</p>\n"
+            "      <p>Action a request with the audited CLI: <code>ledger policy</code> "
+            "(change access), <code>ledger takedown</code>, or <code>ledger cw</code> "
+            "(add a content warning) — each records who acted and why.</p>\n"
+            "    </section>"
+        )
+        self._send_html(
+            200, _page("Steward console", lang=lang, main_html=main_html, nav_html=_nav_html(lang))
+        )
+
+    # --- HTML routes --------------------------------------------------------
+
+    def _handle_browse(self, params: dict[str, list[str]]) -> None:
+        """``GET /`` — the accessible browse page (list + table equivalents).
+
+        Supports faceted browse: ``?subject=`` / ``?type=`` filter by a Dublin Core
+        facet so a topic is reachable, not just an exact title (user research P1-4).
         """
+        lang = self._lang()
+        grant = self._resolve_grant()
+        records = self._archive().browse(grant)
+        facet_field, facet_value = self._facet_from(params)
+        if facet_field and facet_value:
+            records = search.filter_by_facet(records, facet_field, facet_value)
+            heading = f"{facet_field.capitalize()}: {facet_value}"
+        else:
+            heading = "Browse the archive"
+        main_html = _browse_main_html(
+            records, heading=heading, lang=lang, all_records=self._all_for_facets(grant)
+        )
+        self._send_html(
+            200, _page("Browse", lang=lang, main_html=main_html, nav_html=_nav_html(lang))
+        )
+
+    @staticmethod
+    def _facet_from(params: dict[str, list[str]]) -> tuple[str, str]:
+        for fld in ("subject", "type"):
+            if params.get(fld):
+                return fld, params[fld][0]
+        return "", ""
+
+    def _all_for_facets(self, grant: Grant) -> list[DisclosedRecord]:
+        return self._archive().browse(grant)
+
+    def _handle_search(self, params: dict[str, list[str]]) -> None:
+        """``GET /search?q=`` — search disclosed records over their Dublin Core.
+
+        Search runs over already-disclosed records (so it can never surface a field
+        the grant may not see) and now indexes subjects, descriptions, and types —
+        not just titles — so a topic search actually finds records (user research
+        P1-4). A non-Latin query shows a plain hint that search is English-biased.
+        """
+        lang = self._lang()
         grant = self._resolve_grant()
         query = (params.get("q", [""])[0]).strip()
         disclosed = self._archive().browse(grant)
-        if query:
-            needle = query.casefold()
-            matched = [r for r in disclosed if _matches(r, needle)]
-        else:
-            matched = disclosed
+        matched = search.search(disclosed, query)
         heading = f"Search results for “{query}”" if query else "Search"
-        main_html = _browse_main_html(matched, heading=heading, query=query)
+        hint = (
+            '<p class="hint">Search currently matches Latin-script text; results may '
+            "be incomplete for other scripts.</p>"
+            if query and search.looks_non_latin(query)
+            else ""
+        )
+        main_html = hint + _browse_main_html(
+            matched, heading=heading, query=query, lang=lang, all_records=disclosed
+        )
         self._send_html(
             200,
             _page(
                 f"Search — {query}" if query else "Search",
-                lang=self._lang(),
+                lang=lang,
                 main_html=main_html,
-                nav_html=_nav_html(),
+                nav_html=_nav_html(lang),
             ),
         )
 
@@ -617,14 +889,16 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             # (confidentiality — the absence of a record leaks nothing).
             self._handle_not_found()
             return
-        main_html = _record_main_html(record, proceed=proceed, insider=_is_insider(grant))
+        main_html = _record_main_html(
+            record, proceed=proceed, insider=_is_insider(grant), lang=self._lang()
+        )
         self._send_html(
             200,
             _page(
                 record.title,
                 lang=self._lang(),
                 main_html=main_html,
-                nav_html=_nav_html(),
+                nav_html=_nav_html(self._lang()),
             ),
         )
 
@@ -636,7 +910,12 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         )
         self._send_html(
             404,
-            _page("Not found", lang=self._lang(), main_html=main_html, nav_html=_nav_html()),
+            _page(
+                "Not found",
+                lang=self._lang(),
+                main_html=main_html,
+                nav_html=_nav_html(self._lang()),
+            ),
         )
 
     # --- JSON routes (same disclosure gate) ---------------------------------
@@ -697,6 +976,233 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             },
         )
 
+    def _handle_status(self) -> None:
+        """``GET /status`` — a human-readable health page (not raw JSON).
+
+        The old "Status" nav target served raw JSON, which alarmed non-technical
+        users ("have I broken it?") and was an unreadable wall of punctuation to a
+        screen reader (user research P1-1). This renders the same fixity summary as
+        a plain, accessible page; the JSON stays at ``/healthz`` for monitors.
+        """
+        lang = self._lang()
+        archive = self._archive()
+        try:
+            reports = archive.audit_fixity()
+            passed = sum(1 for _n, r in reports if r.ok)
+            total = len(reports)
+            files = sum(r.checked for _n, r in reports)
+            healthy = passed == total
+            headline = (
+                "Everything is healthy." if healthy else "Some records need a steward's attention."
+            )
+            detail = (
+                f"{passed} of {total} record package(s) passed every integrity check "
+                f"({files} file checksum(s) verified)."
+                if total
+                else "No records are stored yet."
+            )
+        except LedgerError:
+            headline, detail = "Status check failed.", "An integrity check could not be completed."
+        main_html = (
+            f"    <h1>Archive status</h1>\n"
+            f"    <p><strong>{_esc(headline)}</strong></p>\n"
+            f"    <p>{_esc(detail)}</p>\n"
+            '    <p class="muted">Machine-readable health is at '
+            '<a href="/healthz">/healthz</a>.</p>'
+        )
+        self._send_html(
+            200, _page("Status", lang=lang, main_html=main_html, nav_html=_nav_html(lang))
+        )
+
+    # --- plain-language safety surface (user research P0-4) -----------------
+
+    def _info_page(self, title: str, heading: str, paragraphs: list[str]) -> None:
+        lang = self._lang()
+        body = "\n".join(f"    <p>{_esc(p)}</p>" for p in paragraphs if p)
+        main_html = f"    <h1>{_esc(heading)}</h1>\n{body}"
+        self._send_html(200, _page(title, lang=lang, main_html=main_html, nav_html=_nav_html(lang)))
+
+    def _handle_about(self) -> None:
+        """``GET /about`` — who runs the archive and how it protects people."""
+        cfg = self._archive().config
+        self._info_page(
+            "About",
+            f"About {cfg.archive_name}",
+            [
+                cfg.about,
+                "Who runs this archive: " + cfg.operators if cfg.operators else "",
+                "How to reach us: " + cfg.contact if cfg.contact else "",
+            ],
+        )
+
+    def _handle_governance(self) -> None:
+        """``GET /governance`` — how stewards are chosen and held accountable."""
+        cfg = self._archive().config
+        self._info_page(
+            "Governance",
+            "Governance",
+            [
+                cfg.steward_vetting,
+                "Stewards can read access-restricted content in order to do their work, "
+                "but they can never see a contributor's sealed identity, and content "
+                "sealed with the 'sealed' policy is restricted from everyone — including "
+                "stewards. Every steward action records who acted and why.",
+                "Consent and takedown requests: " + cfg.consent_response_time
+                if cfg.consent_response_time
+                else "",
+            ],
+        )
+
+    def _handle_how_it_works(self) -> None:
+        """``GET /how-it-works`` — plain-language explanation + how to contribute."""
+        self._info_page(
+            "How it works",
+            "How this protects you, and how to contribute",
+            [
+                "You can publish a story while sealing the names, the location, or your "
+                "own identity. Sealed parts are shown to you as 'withheld', never exposed.",
+                "Your identity as a contributor is stored separately and encrypted, and is "
+                "shown on no page here — not even to a steward — unless you explicitly grant it.",
+                "You stay in control: from any record you can ask a steward to tighten access "
+                "or take it down (see the 'Manage or withdraw consent' link on each record).",
+                "Contributing currently happens with a steward's help so your choices about "
+                "what to seal are made deliberately. See the proof that we keep these promises "
+                "at /proof.",
+            ],
+        )
+
+    def _handle_proof(self) -> None:
+        """``GET /proof`` — explain the verifiable no-outing guarantee (show, don't tell)."""
+        self._info_page(
+            "Our promise, proven",
+            "We prove the promise, we don't just state it",
+            [
+                "The claim 'contributor identities are never shown here' is not an honour-system "
+                "promise — it is a test the software must pass on every build.",
+                "A contributor's identity is stored only as an opaque token plus encrypted data "
+                "in a separate vault. The record a page is built from has no place to put an "
+                "identity, so there is nothing to leak.",
+                "The project's audit ingests a sentinel identity and then checks that it appears "
+                "on no page, in no data file, in no backup, and in no log — and that a sealed "
+                "record cannot even be confirmed to exist by an outsider.",
+            ],
+        )
+
+    # --- content retrieval (user research P0-4 / C4) -----------------------
+
+    def _handle_file(self, raw_id: str, raw_name: str) -> None:
+        """``GET /record/{id}/file/{name}`` — download a permitted payload file.
+
+        Access is enforced by disclosure: only a payload present in the viewer's
+        DisclosedRecord (i.e. one their grant may see) can be fetched; anything else
+        is an indistinguishable 404. Bytes are read from the content-addressed store
+        by their address, so what is served is fixity-verified by construction
+        (integrity). Records were previously unreadable — the filename was an inert
+        false affordance (user research C4)."""
+        record_id = _decode_id(raw_id)
+        filename = _decode_id(raw_name)
+        grant = self._resolve_grant()
+        try:
+            record = self._archive().disclose(record_id, grant)
+        except (AccessDenied, ObjectNotFound):
+            self._handle_not_found()
+            return
+        payload = next((p for p in record.payloads if p.filename == filename), None)
+        if payload is None:
+            self._handle_not_found()
+            return
+        try:
+            data = self._archive().store.read_bytes(payload.address)
+        except (ObjectNotFound, LedgerError):
+            self._handle_not_found()
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", payload.media_type or "application/octet-stream")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Content-Disposition", f'inline; filename="{_safe_filename(filename)}"')
+        self.send_header("Content-Security-Policy", "default-src 'none'; sandbox")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(data)
+
+    # --- consent (user research P0-2): the contributor's front door ---------
+
+    def _handle_consent_form(self, raw_id: str) -> None:
+        """``GET /record/{id}/consent`` — the contributor's consent/withdrawal form.
+
+        Lets the *contributor* (not only a steward) act on the promise that consent
+        is revocable. Submitting requires a claim token issued at ingest, proving
+        authorship without an account. The record must at least be listable to the
+        viewer or this is a neutral 404 (it never confirms a sealed record exists).
+        """
+        record_id = _decode_id(raw_id)
+        grant = self._resolve_grant()
+        lang = self._lang()
+        try:
+            self._archive().disclose(record_id, grant)
+        except (AccessDenied, ObjectNotFound):
+            self._handle_not_found()
+            return
+        cfg = self._archive().config
+        rt = cfg.consent_response_time or "We will respond as soon as we can."
+        main_html = (
+            "    <h1>Manage or withdraw your consent</h1>\n"
+            "    <p>If you contributed this record, you can ask a steward to tighten its "
+            "access, correct it, or take it down. You will need the claim token you were "
+            "given when you contributed.</p>\n"
+            f"    <p>{_esc(rt)}</p>\n"
+            f'    <form method="post" action="/record/{quote(record_id)}/consent">\n'
+            '      <p><label for="kind">What would you like to do?</label><br>\n'
+            '      <select id="kind" name="kind">\n'
+            '        <option value="withdraw">Take this record down</option>\n'
+            '        <option value="tighten">Tighten who can see it</option>\n'
+            '        <option value="correct">Correct something</option>\n'
+            '        <option value="contact">Contact a steward</option>\n'
+            "      </select></p>\n"
+            '      <p><label for="claim">Your claim token</label><br>\n'
+            '      <input id="claim" name="claim" type="text" autocomplete="off" required></p>\n'
+            '      <p><label for="message">Message (optional)</label><br>\n'
+            '      <textarea id="message" name="message" rows="4"></textarea></p>\n'
+            '      <p><button type="submit">Send request</button></p>\n'
+            "    </form>"
+        )
+        self._send_html(
+            200, _page("Manage consent", lang=lang, main_html=main_html, nav_html=_nav_html(lang))
+        )
+
+    # --- interoperability (user research P2-3): OAI-PMH + sitemap ----------
+
+    def _public_records(self) -> list[DisclosedRecord]:
+        """Records disclosed to the anonymous public — the only set harvest exposes."""
+        return self._archive().browse(anonymous())
+
+    def _base_url(self) -> str:
+        host = self.headers.get("Host", "localhost")
+        return f"http://{host}"
+
+    def _handle_oai(self, params: dict[str, list[str]]) -> None:
+        """``GET /oai`` — a minimal OAI-PMH provider over public records only."""
+        cfg = self._archive().config
+        flat = {k: v[0] for k, v in params.items() if v}
+        status, xml = oai.oai_response(
+            flat.get("verb", ""),
+            flat,
+            records=self._public_records(),
+            archive_name=cfg.archive_name,
+            base_url=self._base_url() + "/oai",
+            admin_email=cfg.contact or "",
+            now=now_iso(),
+        )
+        self._send(status, xml.encode("utf-8"), "text/xml; charset=utf-8")
+
+    def _handle_sitemap(self) -> None:
+        """``GET /sitemap.xml`` — public record URLs for crawlers (discoverability)."""
+        ids = [r.record_id for r in self._public_records()]
+        xml = oai.sitemap_xml(ids, self._base_url())
+        self._send(200, xml.encode("utf-8"), "application/xml; charset=utf-8")
+
     # --- static files (path-traversal safe) --------------------------------
 
     def _handle_static(self, rel: str) -> None:
@@ -726,30 +1232,57 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         content_type = _STATIC_CONTENT_TYPES.get(
             candidate.suffix.lower(), "application/octet-stream"
         )
-        self._send(200, candidate.read_bytes(), content_type)
+        raw = candidate.read_bytes()
+        # Cache + conditional GET so a metered, intermittent mobile connection does
+        # not re-download the stylesheet every visit (user research P3-1). The ETag
+        # is a content hash, so it changes only when the file does.
+        etag = '"' + hashlib.sha256(raw).hexdigest()[:16] + '"'
+        if self.headers.get("If-None-Match") == etag:
+            self.send_response(304)
+            self.send_header("ETag", etag)
+            self.send_header("Cache-Control", "public, max-age=86400")
+            self.end_headers()
+            return
+        accepts_gzip = "gzip" in (self.headers.get("Accept-Encoding") or "")
+        body = gzip.compress(raw) if accepts_gzip else raw
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Cache-Control", "public, max-age=86400")
+        self.send_header("ETag", etag)
+        if accepts_gzip:
+            self.send_header("Content-Encoding", "gzip")
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(body)
 
 
 # --- module-level render helpers (shared by routes) -------------------------
 
 
-def _nav_html() -> str:
-    """The site navigation: descriptive links only, no positive tabindex."""
+def _nav_html(lang: str = "en") -> str:
+    """The site navigation: descriptive links only, no positive tabindex.
+
+    Labels are localized (i18n), and the "Status" link points at the human-readable
+    ``/status`` page rather than the raw-JSON ``/healthz`` endpoint, which alarmed
+    non-technical users and was unreadable to a screen reader (user research P1-1).
+    """
     return (
-        '\n      <a href="/">Browse</a>\n'
-        '      <a href="/search">Search</a>\n'
-        '      <a href="/healthz">Status</a>\n    '
+        f'\n      <a href="/">{_esc(i18n.t(lang, "nav_browse"))}</a>\n'
+        f'      <a href="/search">{_esc(i18n.t(lang, "nav_search"))}</a>\n'
+        f'      <a href="/about">{_esc(i18n.t(lang, "nav_about"))}</a>\n'
+        f'      <a href="/status">{_esc(i18n.t(lang, "nav_status"))}</a>\n    '
     )
 
 
-def _matches(record: DisclosedRecord, needle: str) -> bool:
-    """True if ``needle`` (already case-folded) appears in the disclosed text.
+def _safe_filename(name: str) -> str:
+    """A filename safe to place in a ``Content-Disposition`` header.
 
-    Searches only the *disclosed* title and Dublin Core description, so a match
-    can never depend on a field the grant may not see (safety — search respects
-    the disclosure boundary).
-    """
-    haystack = [record.title, *record.dublin_core.get("description", [])]
-    return any(needle in text.casefold() for text in haystack)
+    Strips path separators, quotes, and control characters so a crafted payload
+    filename cannot inject a header or escape the field (securability)."""
+    cleaned = "".join(c for c in name if c.isprintable() and c not in '"\\/\r\n')
+    return cleaned or "file"
 
 
 def _decode_id(raw: str) -> str:
