@@ -43,7 +43,7 @@ from ledger.models import (
     Record,
     now_iso,
 )
-from ledger.moderate import change_consent, takedown
+from ledger.moderate import add_content_warning, change_consent, takedown
 from ledger.replicate import verify_replicas
 from ledger.server import serve
 
@@ -267,6 +267,25 @@ def _cmd_policy(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_cw(args: argparse.Namespace) -> int:
+    """``cw`` — add a content warning to an existing record, after publication.
+
+    Content warnings were creation-only, which meant harm surfacing after a record
+    was published could not be flagged (user research P1-2). This records an
+    accountable ``warn`` moderation decision and persists the warning so the next
+    render shows it before the material (safety, accountability).
+    """
+    archive = _open_archive(Path(args.root))
+    record = archive.get(args.id)
+    now = args.now if args.now else now_iso()
+    updated, event, action = add_content_warning(
+        record, args.warning, actor=args.actor, reason=args.reason, now=now
+    )
+    _persist_record(archive, updated, event)
+    print(f"content warning {args.warning!r} added to {args.id} by {action.actor}")
+    return 0
+
+
 def _cmd_takedown(args: argparse.Namespace) -> int:
     """``takedown`` — record an accountable takedown and remove stored copies.
 
@@ -444,6 +463,15 @@ def _build_parser() -> argparse.ArgumentParser:
     p_policy.add_argument("--reason", required=True, help="rationale (required, auditable)")
     p_policy.add_argument("--now", help="ISO-8601 timestamp")
     p_policy.set_defaults(func=_cmd_policy)
+
+    p_cw = sub.add_parser("cw", help="add a content warning to an existing record")
+    p_cw.add_argument("--root", required=True)
+    p_cw.add_argument("--id", required=True)
+    p_cw.add_argument("--warning", required=True, help="the content-warning tag to add")
+    p_cw.add_argument("--actor", required=True, help="steward id making the change")
+    p_cw.add_argument("--reason", required=True, help="rationale (required, auditable)")
+    p_cw.add_argument("--now", help="ISO-8601 timestamp")
+    p_cw.set_defaults(func=_cmd_cw)
 
     p_takedown = sub.add_parser("takedown", help="record a takedown and remove copies")
     p_takedown.add_argument("--root", required=True)
