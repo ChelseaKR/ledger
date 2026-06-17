@@ -1,0 +1,312 @@
+"""Replication with verify-on-arrival and quarantine-and-heal.
+
+Preservation survives loss only if there is more than one good copy and a
+discipline for keeping the copies honest. This module mirrors whole BagIt bags to
+configured :class:`~ledger.config.StorageLocation` targets and enforces three
+rules, each tied to a named quality attribute:
+
+* **Verify-on-arrival** -> reliability: a bag is re-validated at its destination,
+  so a copy that arrived torn (a dropped block, a truncated transfer) is caught at
+  write time rather than discovered years later when it is needed.
+* **Quarantine-and-heal** -> recoverability / resilience / fault-tolerance: a copy
+  that fails validation is moved aside into a sibling ``quarantine/`` directory and
+  the failure is recorded as a labelled preservation event; a later :func:`heal`
+  rebuilds any failing or missing replica from a copy that still validates.
+* **Never trust a divergent copy** -> integrity: healing only ever copies *from* a
+  replica that has just passed full RFC 8493 validation, and :func:`heal` refuses
+  to act at all when no replica validates — there is nothing trustworthy to copy.
+
+Tolerating an unreachable location (:func:`verify_replicas` reports ``ok=False``
+rather than raising) serves degradability / availability: one offline mirror must
+not blind the steward to the health of the others.
+
+No-outing: this module moves and validates opaque bag *directories*. It places
+only bag directory names, storage-location names, and bag paths into events and
+exception messages — never a contributor identity, a sealed field, or any payload
+byte. Bag bytes are copied, never read into a log, a metric, or an error.
+"""
+
+from __future__ import annotations
+
+import shutil
+from collections.abc import Sequence
+from dataclasses import dataclass
+from pathlib import Path
+
+from ledger.bag import validate_bag
+from ledger.config import StorageLocation
+from ledger.errors import BagValidationError, FixityError, ReplicationError
+from ledger.fixity import AuditReport
+from ledger.models import PremisEvent, PremisEventType
+
+_QUARANTINE_DIR = "quarantine"
+
+
+def _rejected(message: str, event: PremisEvent) -> ReplicationError:
+    """Build a :class:`~ledger.errors.ReplicationError` carrying its quarantine event.
+
+    Failure transparency: the ``QUARANTINE`` preservation event is attached to the
+    raised error — both as ``error.quarantine_event`` for direct access and as the
+    second positional ``arg`` — so the caller can log the labelled event rather than
+    re-deriving why the replica was rejected. The message itself names only the bag
+    and location, never any payload content (no-outing).
+    """
+    error = ReplicationError(message, event)
+    # ``setattr`` keeps mypy --strict happy without redefining the exception class
+    # (errors.py is the shared contract and must not be edited).
+    setattr(error, "quarantine_event", event)  # noqa: B010
+    return error
+
+
+@dataclass(frozen=True)
+class ReplicaStatus:
+    """The health of one replica of a bag at one location (inspectability).
+
+    ``ok`` is true only when the replica exists, is structurally a bag, and every
+    payload file matches every manifest digest. ``report`` is the per-file audit
+    when one could be produced, or an empty :class:`~ledger.fixity.AuditReport`
+    when the replica was missing or unreadable — so a missing copy and a corrupt
+    copy are both representable without raising (failure transparency).
+    """
+
+    location: str
+    bag: str
+    report: AuditReport
+    ok: bool
+
+
+def _replica_path(location_path: str, bag_name: str) -> Path:
+    """The on-disk path a bag named ``bag_name`` occupies inside a location."""
+    return Path(location_path) / bag_name
+
+
+def _copy_bag(source: Path, dest: Path) -> None:
+    """Copy a whole bag directory ``source`` to ``dest``, replacing any prior copy.
+
+    Replacing first (integrity): a stale or partially written copy at ``dest`` is
+    removed before the fresh copy is laid down, so the destination is never a mix
+    of two generations of the bag.
+    """
+    if dest.exists():
+        shutil.rmtree(dest)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(source, dest)
+
+
+def _quarantine(bad_copy: Path, location_path: str) -> Path:
+    """Move a failed copy into the location's sibling ``quarantine/`` directory.
+
+    Recoverability / integrity: a copy that failed verification is isolated where
+    a read path will not serve it, yet kept (not deleted) so a steward can inspect
+    why it diverged. The bad copy displaces any same-named prior quarantine entry.
+    Returns the path the copy was moved to.
+    """
+    quarantine_root = Path(location_path) / _QUARANTINE_DIR
+    quarantine_root.mkdir(parents=True, exist_ok=True)
+    target = quarantine_root / bad_copy.name
+    if target.exists():
+        shutil.rmtree(target)
+    shutil.move(str(bad_copy), str(target))
+    return target
+
+
+def replicate_bag(
+    bag_dir: Path,
+    location: StorageLocation,
+    *,
+    agent: str,
+    now: str,
+) -> PremisEvent:
+    """Copy the bag at ``bag_dir`` into ``location`` and verify it on arrival.
+
+    The bag directory is copied into ``location.path`` under its existing name,
+    then re-validated in place. On success a :class:`~ledger.models.PremisEvent` of
+    type ``REPLICATION`` with ``outcome="success"`` is returned and recorded.
+
+    Verify-on-arrival (reliability): validation runs at the *destination*, so a
+    transfer that corrupted or truncated the copy is caught immediately. On a
+    validation failure the bad copy is quarantined (moved to a sibling
+    ``quarantine/`` directory) and a ``QUARANTINE`` event with ``outcome="failure"``
+    is constructed and attached to a :class:`~ledger.errors.ReplicationError`, which
+    is then raised: the condition is surfaced and auditable, never hidden (failure
+    transparency). The caller reads the event off ``error.quarantine_event``.
+
+    Determinism: the supplied ``now`` stamps every event, so replication runs are
+    reproducible and golden-testable.
+    """
+    bag_name = bag_dir.name
+    dest = _replica_path(location.path, bag_name)
+    _copy_bag(bag_dir, dest)
+
+    try:
+        report = validate_bag(dest)
+    except BagValidationError as exc:
+        # Structurally not a valid bag at the destination: quarantine and surface.
+        quarantine_path = _quarantine(dest, location.path)
+        event = PremisEvent(
+            event_type=PremisEventType.QUARANTINE,
+            agent=agent,
+            outcome="failure",
+            detail=(
+                f"replica of bag {bag_name!r} at location {location.name!r} failed "
+                f"validation on arrival ({exc}); quarantined to {quarantine_path}"
+            ),
+            linked_object=bag_name,
+            event_datetime=now,
+        )
+        raise _rejected(
+            f"replica of bag {bag_name!r} rejected at location {location.name!r}",
+            event,
+        ) from exc
+
+    if not report.ok:
+        # Structurally a bag, but a payload digest drifted: same quarantine path.
+        quarantine_path = _quarantine(dest, location.path)
+        event = PremisEvent(
+            event_type=PremisEventType.QUARANTINE,
+            agent=agent,
+            outcome="failure",
+            detail=(
+                f"replica of bag {bag_name!r} at location {location.name!r} failed "
+                f"fixity on arrival ({len(report.failed)} file(s)); "
+                f"quarantined to {quarantine_path}"
+            ),
+            linked_object=bag_name,
+            event_datetime=now,
+        )
+        raise _rejected(
+            f"replica of bag {bag_name!r} rejected at location {location.name!r}",
+            event,
+        )
+
+    return PremisEvent(
+        event_type=PremisEventType.REPLICATION,
+        agent=agent,
+        outcome="success",
+        detail=(
+            f"bag {bag_name!r} replicated to location {location.name!r} and "
+            f"verified on arrival ({report.checked} file(s) checked)"
+        ),
+        linked_object=bag_name,
+        event_datetime=now,
+    )
+
+
+def verify_replicas(
+    bag_name: str,
+    locations: Sequence[StorageLocation],
+) -> list[ReplicaStatus]:
+    """Validate every replica of ``bag_name`` across ``locations``.
+
+    Returns one :class:`ReplicaStatus` per location, in the order given. A replica
+    that is missing or that raises while being read is reported with ``ok=False``
+    and an empty audit report rather than aborting the sweep — one unreachable or
+    absent mirror must not hide the health of the others (degradability /
+    availability, failure transparency). A replica whose files drift is reported
+    with ``ok=False`` and the per-file report that proves it (inspectability).
+    """
+    statuses: list[ReplicaStatus] = []
+    for location in locations:
+        replica = _replica_path(location.path, bag_name)
+        if not replica.exists():
+            statuses.append(
+                ReplicaStatus(
+                    location=location.name,
+                    bag=bag_name,
+                    report=AuditReport(results=[]),
+                    ok=False,
+                )
+            )
+            continue
+        try:
+            report = validate_bag(replica)
+        except (BagValidationError, OSError):
+            # Malformed bag or unreadable location: degrade to not-ok, never raise.
+            statuses.append(
+                ReplicaStatus(
+                    location=location.name,
+                    bag=bag_name,
+                    report=AuditReport(results=[]),
+                    ok=False,
+                )
+            )
+            continue
+        statuses.append(
+            ReplicaStatus(
+                location=location.name,
+                bag=bag_name,
+                report=report,
+                ok=report.ok,
+            )
+        )
+    return statuses
+
+
+def heal(
+    bag_name: str,
+    locations: Sequence[StorageLocation],
+    *,
+    agent: str,
+    now: str,
+) -> list[PremisEvent]:
+    """Rebuild every failing or missing replica of ``bag_name`` from a good one.
+
+    Recoverability / resilience: :func:`verify_replicas` first sorts the replicas
+    into trustworthy and untrustworthy. If at least one replica validates, each
+    failing or missing replica is overwritten by copying from a verified source and
+    re-validated on arrival, and a ``REPLICATION`` event with ``outcome="success"``
+    is recorded for each heal performed; the returned list is empty when every
+    replica was already healthy (idempotence — healing a healthy fleet is a no-op).
+
+    Integrity: the copy source is always a replica that *just* passed full
+    validation, so a divergent copy can never propagate. If **no** replica
+    validates there is nothing trustworthy to heal from, and a
+    :class:`~ledger.errors.FixityError` is raised rather than blessing a bad copy
+    (never trust a divergent copy).
+
+    Determinism: ``now`` stamps each event; the source replica is chosen as the
+    first healthy one in ``locations`` order, so repeated runs are reproducible.
+    """
+    statuses = verify_replicas(bag_name, locations)
+    by_location = {location.name: location for location in locations}
+
+    healthy = [status for status in statuses if status.ok]
+    if not healthy:
+        raise FixityError(
+            f"no validating replica of bag {bag_name!r}: nothing trustworthy to heal from"
+        )
+
+    source_location = by_location[healthy[0].location]
+    source_path = _replica_path(source_location.path, bag_name)
+
+    events: list[PremisEvent] = []
+    for status in statuses:
+        if status.ok:
+            continue
+        target_location = by_location[status.location]
+        dest = _replica_path(target_location.path, bag_name)
+        _copy_bag(source_path, dest)
+
+        # Verify-on-arrival again: a heal that itself arrived torn is not "healed".
+        report = validate_bag(dest)
+        if not report.ok:
+            raise FixityError(
+                f"healed replica of bag {bag_name!r} at location "
+                f"{target_location.name!r} failed fixity on arrival"
+            )
+
+        events.append(
+            PremisEvent(
+                event_type=PremisEventType.REPLICATION,
+                agent=agent,
+                outcome="success",
+                detail=(
+                    f"bag {bag_name!r} healed at location {target_location.name!r} "
+                    f"from location {source_location.name!r} and verified on arrival "
+                    f"({report.checked} file(s) checked)"
+                ),
+                linked_object=bag_name,
+                event_datetime=now,
+            )
+        )
+    return events

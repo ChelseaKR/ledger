@@ -1,0 +1,48 @@
+name: Accessibility barrier
+description: Report something that makes ledger hard or impossible to use
+labels: ["accessibility"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Accessibility is a release-blocking requirement here, not a nice-to-have.
+        Thank you for reporting a barrier — please be as specific as you can.
+  - type: input
+    id: page
+    attributes:
+      label: Where
+      description: The page, route, or surface (e.g. the browse list, a record view).
+    validations:
+      required: true
+  - type: textarea
+    id: barrier
+    attributes:
+      label: The barrier
+      description: What blocked you or made the task hard?
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What should happen instead
+    validations:
+      required: true
+  - type: input
+    id: at
+    attributes:
+      label: Assistive technology / settings (if any)
+      description: e.g. NVDA 2024.x + Firefox, VoiceOver + Safari, 200% zoom, keyboard only.
+    validations:
+      required: false
+  - type: dropdown
+    id: wcag
+    attributes:
+      label: Related WCAG 2.2 area (if known)
+      options:
+        - "Not sure"
+        - "Perceivable (text alternatives, contrast, adaptable)"
+        - "Operable (keyboard, focus, navigation, target size)"
+        - "Understandable (readable, predictable, input assistance)"
+        - "Robust (parsing, name/role/value, status messages)"
+    validations:
+      required: false

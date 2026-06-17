@@ -1,0 +1,147 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ledger.example/schema/record.schema.json",
+  "title": "Ledger record manifest",
+  "description": "The serialized descriptive + access manifest for one archived item. A record NEVER carries a contributor identity: identity is encoded only as the opaque `identity_ref` token resolvable solely through the encrypted vault. This schema structurally forbids any top-level `contributor_name`, `identity`, or `name` property (no-outing rule).",
+  "type": "object",
+  "additionalProperties": false,
+  "unevaluatedProperties": false,
+  "required": [
+    "record_id",
+    "title",
+    "default_policy",
+    "dublin_core",
+    "fields",
+    "payloads",
+    "content_warnings",
+    "identity_ref",
+    "created_at"
+  ],
+  "not": {
+    "anyOf": [
+      { "required": ["contributor_name"] },
+      { "required": ["identity"] },
+      { "required": ["name"] }
+    ]
+  },
+  "propertyNames": {
+    "not": {
+      "enum": ["contributor_name", "identity", "name"]
+    }
+  },
+  "properties": {
+    "record_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Stable opaque identifier for the record."
+    },
+    "title": {
+      "type": "string",
+      "description": "Human-readable title of the archived item."
+    },
+    "default_policy": {
+      "$ref": "#/$defs/accessPolicy",
+      "description": "Disclosure level applied where a field or payload does not state its own."
+    },
+    "dublin_core": {
+      "$ref": "#/$defs/dublinCore",
+      "description": "Collection-level Dublin Core description. Never an individual contributor's identity."
+    },
+    "fields": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/field" },
+      "description": "Structured descriptive fields, each with its own disclosure policy."
+    },
+    "payloads": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/payload" },
+      "description": "Content-addressed files in the bag, each with its own disclosure policy."
+    },
+    "content_warnings": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Advisory content warnings shown ahead of disclosure."
+    },
+    "identity_ref": {
+      "type": ["string", "null"],
+      "description": "Opaque token into the encrypted identity vault, or null. NEVER a name or contact."
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "UTC ISO-8601 creation timestamp."
+    }
+  },
+  "$defs": {
+    "accessPolicy": {
+      "type": "string",
+      "enum": [
+        "public",
+        "community",
+        "stewards",
+        "sealed-until",
+        "sealed-conditional"
+      ]
+    },
+    "dublinCore": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "DCMI Metadata Element Set (ISO 15836). Every element is repeatable, so each is an array of strings; empty elements are omitted.",
+      "properties": {
+        "title": { "$ref": "#/$defs/stringList" },
+        "creator": { "$ref": "#/$defs/stringList" },
+        "subject": { "$ref": "#/$defs/stringList" },
+        "description": { "$ref": "#/$defs/stringList" },
+        "publisher": { "$ref": "#/$defs/stringList" },
+        "contributor": { "$ref": "#/$defs/stringList" },
+        "date": { "$ref": "#/$defs/stringList" },
+        "type": { "$ref": "#/$defs/stringList" },
+        "format": { "$ref": "#/$defs/stringList" },
+        "identifier": { "$ref": "#/$defs/stringList" },
+        "source": { "$ref": "#/$defs/stringList" },
+        "language": { "$ref": "#/$defs/stringList" },
+        "relation": { "$ref": "#/$defs/stringList" },
+        "coverage": { "$ref": "#/$defs/stringList" },
+        "rights": { "$ref": "#/$defs/stringList" }
+      }
+    },
+    "stringList": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "field": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "value", "policy"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "value": { "type": "string" },
+        "policy": { "$ref": "#/$defs/accessPolicy" },
+        "unseal_at": {
+          "type": ["string", "null"],
+          "description": "ISO-8601 instant at which a sealed-until field opens, or null."
+        },
+        "unseal_condition": {
+          "type": ["string", "null"],
+          "description": "Free-text condition for a sealed-conditional field, or null."
+        }
+      }
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["filename", "address", "media_type", "size_bytes", "policy"],
+      "properties": {
+        "filename": { "type": "string", "minLength": 1 },
+        "address": {
+          "type": "string",
+          "pattern": "^(sha256|blake2b):[0-9a-f]+$",
+          "description": "Content address as `<algo>:<hexdigest>`."
+        },
+        "media_type": { "type": "string" },
+        "size_bytes": { "type": "integer", "minimum": 0 },
+        "policy": { "$ref": "#/$defs/accessPolicy" }
+      }
+    }
+  }
+}

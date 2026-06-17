@@ -1,0 +1,12 @@
+# Discoverability + safety: steer security and sensitive reports to the private
+# path instead of public issues.
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security or privacy vulnerability (private)
+    url: https://github.com/ChelseaKR/ledger/security/advisories/new
+    about: >
+      For anything that could expose a contributor identity or a sealed value, use
+      private vulnerability reporting — never a public issue. See SECURITY.md.
+  - name: Question or discussion
+    url: https://github.com/ChelseaKR/ledger/discussions
+    about: Ask a question or propose an idea before filing a bug.

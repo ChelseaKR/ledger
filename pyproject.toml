@@ -78,6 +78,7 @@ python_version = "3.11"
 strict = true
 warn_unreachable = true
 warn_redundant_casts = true
+mypy_path = "src"
 files = ["src/ledger"]
 
 [tool.pytest.ini_options]

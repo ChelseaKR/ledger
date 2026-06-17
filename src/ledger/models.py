@@ -167,9 +167,21 @@ class PremisEvent:
 # `creator` of an archived record is the *community/collection*, not the (possibly
 # closeted) person who contributed it. Identity lives only in the vault.
 DC_ELEMENTS: tuple[str, ...] = (
-    "title", "creator", "subject", "description", "publisher", "contributor",
-    "date", "type", "format", "identifier", "source", "language", "relation",
-    "coverage", "rights",
+    "title",
+    "creator",
+    "subject",
+    "description",
+    "publisher",
+    "contributor",
+    "date",
+    "type",
+    "format",
+    "identifier",
+    "source",
+    "language",
+    "relation",
+    "coverage",
+    "rights",
 )
 
 
@@ -332,7 +344,6 @@ def with_redaction(record: Record, field_name: str) -> Record:
     event. The original (unredacted) record stays access-controlled elsewhere.
     """
     new_fields = [
-        replace(f, value="[redacted]") if f.name == field_name else f
-        for f in record.fields
+        replace(f, value="[redacted]") if f.name == field_name else f for f in record.fields
     ]
     return replace(record, fields=new_fields)

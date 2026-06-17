@@ -1,0 +1,118 @@
+# infra/docker-compose.yml — one-box, no-cloud self-host for ledger.
+#
+# This stands up a single `ledger serve` process backed by a named volume that
+# holds the entire archive. No hosted database, no object store, no managed
+# service: everything a community needs lives on this one box (affordability,
+# self-sustainability).
+#
+# Run from the repository root:
+#   cp infra/.env.example infra/.env   # then edit infra/.env (see that file)
+#   docker compose -f infra/docker-compose.yml up -d
+#
+# See infra/README.md for the full runbook (first-time setup, backups, replicas,
+# fixity audits, takedowns, upgrades).
+
+services:
+  ledger:
+    # Build the image from the repository root using infra/Dockerfile. The build
+    # context MUST be the repo root (`.` resolved relative to this file's parent's
+    # parent) because the Dockerfile copies pyproject.toml, src/, and web/.
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile
+    image: ledger:local
+    container_name: ledger
+
+    # Survive reboots and crashes, but do not fight an operator who stops it on
+    # purpose (operability). `unless-stopped` restarts on failure and on host
+    # reboot, yet stays down after a deliberate `docker compose stop`.
+    restart: unless-stopped
+
+    # Secrets and tunables come from infra/.env (NEVER committed — it is in
+    # .gitignore). Copy infra/.env.example to infra/.env and fill it in. The
+    # vault key in particular must never be hard-coded here.
+    env_file:
+      - .env
+
+    # Defaults applied if a value is absent from .env. LEDGER_VAULT_KEY is
+    # intentionally NOT defaulted: a missing key should surface as a warning, not
+    # be silently replaced by a useless empty key.
+    environment:
+      LEDGER_ROOT: /data
+      LEDGER_ARCHIVE_NAME: ${LEDGER_ARCHIVE_NAME:-community-archive}
+      LEDGER_PORT: ${LEDGER_PORT:-8000}
+
+    # Publish ONLY on the host loopback (127.0.0.1). The archive must not face the
+    # public internet directly; put a vetted reverse proxy (Caddy, nginx, etc.) in
+    # front of it on the host to terminate TLS and add rate limiting/auth. Change
+    # the left-hand host port if 8000 is taken; keep the 127.0.0.1 binding.
+    ports:
+      - "127.0.0.1:${LEDGER_PORT:-8000}:8000"
+
+    volumes:
+      # The archive lives here. This single named volume holds EVERYTHING that
+      # matters: the content-addressed store, every BagIt bag, the records and
+      # PREMIS logs, config.json, AND the encrypted identity.vault.
+      #
+      # !!! SENSITIVE DATA — READ THIS !!!
+      # This volume contains contributor records and the (encrypted) contributor
+      # identity vault. You MUST:
+      #   * back it up regularly (see infra/README.md → Backups), and
+      #   * access-control the box and the volume: only stewards should be able to
+      #     read it. The vault is encrypted, but the records and metadata are not.
+      # Losing this volume loses the archive. Leaking it is a safety incident.
+      - archive-data:/data
+
+      # OPTIONAL, READ-ONLY: a pre-provisioned grants file. Uncomment and point
+      # LEDGER_GRANTS_PATH at it in .env to grant named subjects more than the
+      # anonymous/public view. An absent file means everyone is anonymous
+      # (deny by default).
+      # - ./grants.json:/data/grants.json:ro
+
+    # Resource-light defaults so this runs comfortably on a small VPS. ledger's
+    # core is pure standard library; the server is single-process. Raise these if
+    # you ingest large media or serve many concurrent readers. (`deploy.resources`
+    # limits are honored by `docker compose up` on modern Docker Engine.)
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+        reservations:
+          memory: 128M
+
+    # Defense in depth: no new privileges, and a read-only root filesystem with a
+    # small writable tmpfs. The archive's only writable location is the /data
+    # volume, so the rest of the container image can stay immutable at runtime
+    # (securability — least privilege, smaller blast radius).
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /home/ledger
+
+    # Container-level healthcheck mirrors the image HEALTHCHECK; compose surfaces
+    # it in `docker compose ps` so a steward can see archive health at a glance.
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/healthz"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+    # Bounded, rotated logs so a long-running box does not fill its disk. Logs are
+    # scrubbed of contributor identity by construction (see server.py), but they
+    # still should not grow without limit (operability).
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+volumes:
+  # Named, Docker-managed volume. To put the archive on a specific disk (e.g. a
+  # larger or more durable mount), replace this with a bind mount or a `driver_opts`
+  # device — but keep the sensitivity and backup warnings above in mind.
+  archive-data:
+    name: ledger-archive-data

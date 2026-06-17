@@ -39,3 +39,6 @@ secrets/
 .idea/
 .vscode/
 *.swp
+
+# Claude Code session tooling (not part of the project)
+.claude/

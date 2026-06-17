@@ -1,0 +1,59 @@
+name: Bug report
+description: Report a defect in ledger (redaction-safe — read the first note)
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ### Before you write anything
+
+        **Never paste a real sealed value, a real contributor identity, or any
+        record content that is not already public.** If the bug involves protected
+        data, describe the *shape* of the problem and reproduce it with the
+        synthetic fixtures in `tests/fixtures/` (they carry sentinel values made
+        for exactly this). A bug report must not itself become a leak.
+
+        If this bug could expose a contributor identity or a sealed value, **stop**
+        and use private reporting instead: see SECURITY.md.
+  - type: checkboxes
+    id: redaction-safe
+    attributes:
+      label: Redaction-safe confirmation
+      options:
+        - label: This report contains no real sealed content and no real personal identity.
+          required: true
+        - label: I have read SECURITY.md and this is not a contributor-exposure vulnerability (those go through private reporting).
+          required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you observe? Describe behaviour, not protected content.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce (with synthetic fixtures)
+      description: Commands or code using tests/fixtures/, not real records.
+      render: shell
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: ledger version / commit
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: OS and Python version
+    validations:
+      required: false

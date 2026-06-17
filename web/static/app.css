@@ -1,0 +1,371 @@
+/* app.css — ledger's one stylesheet for the accessible browse/search site.
+ *
+ * Design goals, each tied to a quality attribute:
+ *   - mobile-first, fluid layout            -> mobility / ubiquity (works on a
+ *                                              cheap phone, scales up to desktop)
+ *   - high contrast, colour never the only
+ *     signal                                -> accessibility (WCAG 2.2 AA)
+ *   - strong :focus-visible indicator,
+ *     visible skip link                     -> keyboard accessibility
+ *   - prefers-reduced-motion honoured       -> accessibility (vestibular safety)
+ *   - no web fonts, no JS, no images needed -> affordability / portability
+ *
+ * Colour tokens & contrast (documented for the AA contrast requirement, 4.5:1
+ * for normal text, 3:1 for large text and UI components, against #ffffff):
+ *   --ink       #1a1a1a on --bg #ffffff   = 16.1:1  (body text)
+ *   --muted     #595959 on --bg #ffffff   =  7.0:1  (secondary text)
+ *   --link      #0b5cab on --bg #ffffff   =  6.5:1  (links)
+ *   --accent    #6a1b9a on --bg #ffffff   =  8.0:1  (focus ring / brand)
+ *   --warn-ink  #7a1d1d on --warn-bg #fff4f4 = 8.2:1 (content-warning text)
+ * Every pairing clears AA; the focus ring also clears the 3:1 non-text minimum.
+ */
+
+:root {
+  --bg: #ffffff;
+  --ink: #1a1a1a;
+  --muted: #595959;
+  --link: #0b5cab;
+  --link-visited: #6a1b9a;
+  --accent: #6a1b9a;
+  --border: #767676; /* 4.5:1 on white — passes the UI-component contrast rule */
+  --surface: #f4f4f6;
+  --warn-bg: #fff4f4;
+  --warn-ink: #7a1d1d;
+  --warn-border: #7a1d1d;
+  --radius: 6px;
+  --space: 1rem;
+}
+
+/* Mobile-first base: comfortable line length, generous tap targets. */
+* {
+  box-sizing: border-box;
+}
+
+html {
+  font-size: 100%;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial,
+    sans-serif;
+  line-height: 1.6;
+}
+
+/* --- skip link: first focusable element, visible on focus --------------- */
+/* It is moved off-screen until focused, then anchored top-left so a keyboard
+ * user lands on a clearly visible control (WCAG 2.4.1 Bypass Blocks). */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 100;
+  padding: 0.75rem 1rem;
+  background: var(--accent);
+  color: #ffffff;
+  font-weight: 700;
+  text-decoration: none;
+  border-radius: 0 0 var(--radius) 0;
+}
+
+.skip-link:focus {
+  left: 0;
+}
+
+/* --- landmarks & layout ------------------------------------------------- */
+header,
+main,
+footer {
+  padding: var(--space);
+}
+
+main {
+  max-width: 70ch;
+  margin: 0 auto;
+}
+
+header {
+  border-bottom: 2px solid var(--border);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space);
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.brand {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 700;
+}
+
+.brand a {
+  color: var(--ink);
+}
+
+nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+footer {
+  border-top: 2px solid var(--border);
+  margin-top: 2rem;
+  color: var(--muted);
+}
+
+/* --- typography & headings (sane order, clear hierarchy) ---------------- */
+h1 {
+  font-size: 1.75rem;
+  line-height: 1.25;
+  margin-top: 0;
+}
+
+h2 {
+  font-size: 1.35rem;
+  margin-top: 2rem;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.25rem;
+}
+
+h3 {
+  font-size: 1.1rem;
+  margin: 0 0 0.25rem;
+}
+
+p {
+  margin: 0.5rem 0;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.count {
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+/* --- links: descriptive, underlined (colour is not the only signal) ----- */
+a {
+  color: var(--link);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+a:visited {
+  color: var(--link-visited);
+}
+
+a:hover {
+  text-decoration-thickness: 2px;
+}
+
+/* --- focus-visible: a strong, consistent keyboard indicator ------------- */
+/* A thick outline plus offset clears the 3:1 non-text contrast minimum and is
+ * impossible to miss while tabbing (WCAG 2.4.7 Focus Visible, 2.4.11). */
+:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* main is focusable (tabindex=-1) as the skip-link target but should not show a
+ * ring when programmatically focused via the skip link. */
+main:focus {
+  outline: none;
+}
+
+/* --- search form ------------------------------------------------------- */
+.search {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: end;
+  margin: 1rem 0;
+}
+
+.search label {
+  flex-basis: 100%;
+  font-weight: 600;
+}
+
+.search input[type="search"] {
+  flex: 1 1 14rem;
+  min-height: 2.75rem; /* >= 44px tap target (WCAG 2.5.8 Target Size) */
+  padding: 0.5rem 0.75rem;
+  font-size: 1rem;
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--ink);
+}
+
+button {
+  min-height: 2.75rem;
+  padding: 0.5rem 1.25rem;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #ffffff;
+  background: var(--accent);
+  border: 2px solid var(--accent);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+button:hover {
+  background: #531478;
+}
+
+/* --- record list view -------------------------------------------------- */
+.record-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.record-list li {
+  padding: 1rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+/* --- content-warning badge: text label, not colour/icon alone ---------- */
+.badge {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 0.1rem 0.5rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--warn-ink);
+  background: var(--warn-bg);
+  border: 1px solid var(--warn-border);
+  border-radius: var(--radius);
+  vertical-align: middle;
+}
+
+/* --- record table view (the documented non-visual equivalent) ---------- */
+.record-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 1rem;
+}
+
+.record-table caption {
+  text-align: left;
+  color: var(--muted);
+  padding-bottom: 0.5rem;
+}
+
+.record-table th,
+.record-table td {
+  text-align: left;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.record-table thead th {
+  background: var(--surface);
+}
+
+/* Let the table scroll horizontally on a narrow screen rather than overflow. */
+@media (max-width: 40rem) {
+  .record-table {
+    display: block;
+    overflow-x: auto;
+  }
+}
+
+/* --- definition lists for record details ------------------------------- */
+dl {
+  margin: 0;
+}
+
+.field {
+  display: grid;
+  grid-template-columns: minmax(8rem, 12rem) 1fr;
+  gap: 0.5rem 1rem;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid var(--surface);
+}
+
+.field dt {
+  font-weight: 700;
+}
+
+.field dd {
+  margin: 0;
+}
+
+@media (max-width: 32rem) {
+  .field {
+    grid-template-columns: 1fr;
+    gap: 0.1rem;
+  }
+}
+
+/* --- content-warning interstitial (programmatic + textual) ------------- */
+/* The interstitial reads as text first; the border/background only reinforce a
+ * signal that is already conveyed in words (colour is not the only signal). */
+.interstitial,
+.cw-note {
+  background: var(--warn-bg);
+  border: 2px solid var(--warn-border);
+  border-left-width: 6px;
+  border-radius: var(--radius);
+  padding: 1rem;
+  color: var(--warn-ink);
+}
+
+.interstitial h2 {
+  margin-top: 0;
+  border-bottom: none;
+  color: var(--warn-ink);
+}
+
+.proceed {
+  display: inline-block;
+  margin-top: 0.5rem;
+  font-weight: 700;
+}
+
+/* --- visually-hidden: present to assistive tech, off the visual canvas --- */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.empty {
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* --- reduced motion: disable any transition/animation ------------------ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* --- wider screens: a touch more breathing room ------------------------ */
+@media (min-width: 60rem) {
+  h1 {
+    font-size: 2rem;
+  }
+}

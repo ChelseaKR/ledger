@@ -1,0 +1,5 @@
+[SYNTHETIC TEST DATA — not a real person, no personal data]
+
+Time-sealed material (sample). A reflection the contributor asked to keep sealed
+until a future date. The bytes are benign and identity-free; the seal is a
+disclosure policy, enforced at read time, not a property of the content.

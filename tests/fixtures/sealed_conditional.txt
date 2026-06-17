@@ -1,0 +1,5 @@
+[SYNTHETIC TEST DATA — not a real person, no personal data]
+
+Condition-sealed material (sample). Material the contributor asked to keep sealed
+until a named condition is met (for example, a community vote). Benign and
+identity-free; the condition gates disclosure at read time only.
