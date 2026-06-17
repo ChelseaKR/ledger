@@ -1,0 +1,31 @@
+# Caddyfile — TLS reverse proxy for the ledger demo (caddy:2-alpine service).
+#
+# Caddy terminates HTTPS for {$LEDGER_DOMAIN} and forwards plaintext to the
+# `ledger` app on the internal docker network. It auto-provisions a Let's
+# Encrypt certificate (ACME account = {$ACME_EMAIL}) and auto-redirects
+# 80 -> 443, so neither needs to be configured here.
+#
+# Placeholders {$VAR} read from the container environment, populated by
+# docker compose --env-file from the root-only /opt/ledger/.env.
+#
+# NOTE: no Content-Security-Policy is set here on purpose — the app sends its
+# own per-route CSP, and overriding it would break the styled pages.
+
+{$LEDGER_DOMAIN} {
+	tls {$ACME_EMAIL}
+
+	encode gzip
+
+	header {
+		# Force HTTPS for two years, including subdomains.
+		Strict-Transport-Security "max-age=63072000; includeSubDomains"
+		# Disable MIME-type sniffing.
+		X-Content-Type-Options "nosniff"
+		# Don't leak the referring URL to other origins.
+		Referrer-Policy "no-referrer"
+		# Don't advertise the server software.
+		-Server
+	}
+
+	reverse_proxy ledger:8000
+}

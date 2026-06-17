@@ -39,6 +39,16 @@ if [ ! -f "${LEDGER_ROOT}/store/config.json" ]; then
     ledger init --root "${LEDGER_ROOT}" --name "${LEDGER_ARCHIVE_NAME}"
 fi
 
+# Optional, default OFF: seed SYNTHETIC demo records into an empty archive. For
+# the public showcase deployment only (LEDGER_DEMO_SEED=1); it only runs when no
+# records exist yet (idempotent). NEVER set this on a real archive.
+if [ "${LEDGER_DEMO_SEED:-0}" = "1" ] && [ -f /app/seed_demo.py ]; then
+    if [ -z "$(ls -A "${LEDGER_ROOT}/store/records" 2>/dev/null || true)" ]; then
+        echo "ledger: seeding synthetic demo records (LEDGER_DEMO_SEED=1)" >&2
+        python /app/seed_demo.py || echo "ledger: demo seed failed; serving empty archive" >&2
+    fi
+fi
+
 echo "ledger: serving '${LEDGER_ARCHIVE_NAME}' on 0.0.0.0:${LEDGER_PORT} (container-internal)" >&2
 # shellcheck disable=SC2086  # GRANTS_ARG is intentionally word-split when present.
 exec ledger serve --root "${LEDGER_ROOT}" --host 0.0.0.0 --port "${LEDGER_PORT}" ${GRANTS_ARG}

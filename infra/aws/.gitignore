@@ -1,0 +1,13 @@
+# Terraform working files and anything holding secrets or state — never commit.
+**/.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+terraform.tfvars
+*.auto.tfvars
+override.tf
+override.tf.json
+# Source bundle built by deploy.sh (git archive of the committed tree).
+terraform/.build/
+# The committed provider lock (.terraform.lock.hcl) is intentionally NOT ignored.

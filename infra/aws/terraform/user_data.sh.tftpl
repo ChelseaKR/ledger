@@ -1,0 +1,74 @@
+#!/bin/bash
+# user_data.sh — first-boot provisioning for the ledger demo box (Amazon Linux 2023).
+#
+# Installs Docker + the compose plugin, pulls the application source bundle from
+# S3, generates the demo secrets once into SSM Parameter Store (so they never
+# enter Terraform state and survive instance replacement), writes a root-only
+# .env, and brings up the ledger + Caddy stack. Caddy obtains a Let's Encrypt
+# certificate for the domain once DNS points at this box's elastic IP.
+set -euxo pipefail
+
+REGION="${region}"
+BUCKET="${bucket}"
+SOURCE_KEY="${source_key}"
+APP=/opt/ledger/app
+ENV_FILE=/opt/ledger/.env
+VAULT_KEY_PARAM="/${name_prefix}/vault_key"
+CLAIM_SECRET_PARAM="/${name_prefix}/claim_secret"
+
+# --- packages ---------------------------------------------------------------
+dnf update -y
+dnf install -y docker unzip
+systemctl enable --now docker
+
+# Docker Compose v2 plugin (AL2023 does not ship it in dnf).
+mkdir -p /usr/libexec/docker/cli-plugins
+ARCH=$(uname -m)
+curl -fsSL "https://github.com/docker/compose/releases/download/v2.29.7/docker-compose-linux-$${ARCH}" \
+  -o /usr/libexec/docker/cli-plugins/docker-compose
+chmod +x /usr/libexec/docker/cli-plugins/docker-compose
+
+# --- application source -----------------------------------------------------
+mkdir -p "$APP"
+aws s3 cp "s3://$${BUCKET}/$${SOURCE_KEY}" /opt/ledger/source.zip --region "$REGION"
+unzip -o /opt/ledger/source.zip -d "$APP"
+
+# --- secrets: generate once, reuse on replacement ---------------------------
+# A Fernet key is urlsafe-base64 of 32 random bytes — generatable with the Python
+# standard library alone, so no extra packages are needed on the host.
+get_or_create() {
+  local name="$1"; shift
+  local val
+  val=$(aws ssm get-parameter --name "$name" --with-decryption --region "$REGION" \
+        --query 'Parameter.Value' --output text 2>/dev/null || true)
+  if [ -z "$val" ] || [ "$val" = "None" ]; then
+    val=$("$@")
+    aws ssm put-parameter --name "$name" --type SecureString --value "$val" \
+        --overwrite --region "$REGION" >/dev/null
+  fi
+  printf '%s' "$val"
+}
+gen_vault_key() { python3 -c 'import os,base64;print(base64.urlsafe_b64encode(os.urandom(32)).decode())'; }
+gen_claim()     { python3 -c 'import secrets;print(secrets.token_hex(32))'; }
+
+VAULT_KEY=$(get_or_create "$VAULT_KEY_PARAM" gen_vault_key)
+CLAIM_SECRET=$(get_or_create "$CLAIM_SECRET_PARAM" gen_claim)
+
+# --- runtime env (root-only) ------------------------------------------------
+umask 077
+cat > "$ENV_FILE" <<EOF
+LEDGER_DOMAIN=${domain}
+ACME_EMAIL=${acme_email}
+LEDGER_ARCHIVE_NAME=${archive_name}
+LEDGER_PORT=8000
+LEDGER_DEMO_SEED=1
+LEDGER_VAULT_KEY=$${VAULT_KEY}
+LEDGER_CLAIM_SECRET=$${CLAIM_SECRET}
+EOF
+chmod 600 "$ENV_FILE"
+
+# --- bring up the stack -----------------------------------------------------
+cd "$APP"
+docker compose -f infra/aws/docker-compose.deploy.yml --env-file "$ENV_FILE" up -d --build
+
+echo "ledger demo: stack is up. Caddy will issue a TLS certificate for ${domain} once DNS resolves to this host." >&2

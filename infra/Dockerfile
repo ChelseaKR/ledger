@@ -80,4 +80,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
 # Use a small shell entrypoint so LEDGER_ARCHIVE_NAME / LEDGER_PORT / LEDGER_ROOT
 # env vars map onto the CLI's flags (the CLI takes flags, not env, for these).
 COPY infra/entrypoint.sh /usr/local/bin/ledger-entrypoint
+# Synthetic demo seed, run by the entrypoint only when LEDGER_DEMO_SEED=1 (the
+# public showcase deployment). Unused and harmless for a real archive.
+COPY infra/seed_demo.py /app/seed_demo.py
 ENTRYPOINT ["/usr/local/bin/ledger-entrypoint"]

@@ -1,0 +1,172 @@
+# infra/aws/docker-compose.deploy.yml — the PUBLIC DEMO stack for ledger.
+#
+# This is the showcase deployment that runs on a single EC2 box behind a domain.
+# It is NOT a real archive: it serves SYNTHETIC seed data only (LEDGER_DEMO_SEED=1)
+# so anyone can poke at a live ledger without touching a community's records.
+#
+# Topology (least exposure):
+#   * `caddy`  — the ONLY service that faces the host/internet. It binds 80/443 on
+#                the host, terminates TLS (Let's Encrypt via the ACME_EMAIL), and
+#                reverse-proxies to `ledger` over a private, internal-only network.
+#   * `ledger` — the application. It publishes NO host ports. It is reachable ONLY
+#                from `caddy` across the internal docker network, never from the
+#                host or the public internet directly.
+#
+# Configuration comes entirely from a root-only env file supplied at deploy time:
+#   docker compose -f infra/aws/docker-compose.deploy.yml --env-file /opt/ledger/.env up -d --build
+# That .env (written by Terraform's user_data, mode 0600, never committed) provides
+# LEDGER_DOMAIN, ACME_EMAIL, LEDGER_ARCHIVE_NAME, LEDGER_PORT, LEDGER_DEMO_SEED,
+# LEDGER_VAULT_KEY, and LEDGER_CLAIM_SECRET. The ${VAR} interpolations below are
+# resolved from that file — there are no committed secrets here.
+#
+# Run from the repository root (the compose `--env-file` invocation above assumes
+# this CWD) so the build context and the ./Caddyfile bind path resolve correctly.
+
+services:
+  # ---------------------------------------------------------------------------
+  # ledger — the application. Internal-only: NO host ports are published. The
+  # only way to reach it is `caddy`, which shares the `internal` network below.
+  # ---------------------------------------------------------------------------
+  ledger:
+    # Build the image from the repository root using infra/Dockerfile. The build
+    # context MUST be the repo root (`../..` resolved relative to this file at
+    # infra/aws/) because the Dockerfile copies pyproject.toml, src/, and web/.
+    build:
+      context: ../..
+      dockerfile: infra/Dockerfile
+    image: ledger:demo
+
+    # Survive reboots and crashes, but do not fight an operator who stops it on
+    # purpose (operability). `unless-stopped` restarts on failure and on host
+    # reboot, yet stays down after a deliberate `docker compose stop`.
+    restart: unless-stopped
+
+    # Configuration via ${VAR} interpolation from the deploy-time --env-file. The
+    # vault key and claim secret are NEVER hard-coded here; they arrive from the
+    # root-only /opt/ledger/.env. LEDGER_DEMO_SEED=1 marks this as the synthetic
+    # public showcase — the entrypoint seeds demo records into an empty archive.
+    environment:
+      LEDGER_ROOT: /data
+      LEDGER_ARCHIVE_NAME: ${LEDGER_ARCHIVE_NAME}
+      LEDGER_PORT: 8000
+      LEDGER_DEMO_SEED: 1
+      LEDGER_VAULT_KEY: ${LEDGER_VAULT_KEY}
+      LEDGER_CLAIM_SECRET: ${LEDGER_CLAIM_SECRET}
+
+    # Deliberately NO `ports:` mapping. Only `caddy` faces the host; `ledger` is
+    # reachable solely over the internal network below. Publishing a host port
+    # here would bypass TLS and the reverse proxy — do not add one.
+
+    # Attach only to the internal, non-host-facing network. This service has no
+    # route to the host and is not reachable from outside `caddy`.
+    networks:
+      - internal
+
+    volumes:
+      # The (synthetic) archive lives here: content-addressed store, BagIt bags,
+      # records, PREMIS logs, config.json, and the encrypted identity vault. A
+      # named, Docker-managed volume so demo data survives container rebuilds.
+      - archive-data:/data
+
+    # Resource-light limits so the demo runs comfortably on a small EC2 box and
+    # cannot starve `caddy`. (`deploy.resources` limits are honored by
+    # `docker compose up` on modern Docker Engine.)
+    deploy:
+      resources:
+        limits:
+          cpus: "0.75"
+          memory: 512M
+
+    # Defense in depth: no new privileges, so a compromised process cannot gain
+    # additional capabilities (securability — least privilege, smaller blast
+    # radius).
+    security_opt:
+      - no-new-privileges:true
+
+    # Container-level healthcheck mirrors the image HEALTHCHECK; compose surfaces
+    # it in `docker compose ps`, and `caddy` can wait on a healthy upstream.
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/healthz"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+    # Bounded, rotated logs so a long-running box does not fill its disk.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # ---------------------------------------------------------------------------
+  # caddy — the ONLY host-facing service. Terminates TLS on 80/443, fetches a
+  # Let's Encrypt certificate for LEDGER_DOMAIN, and reverse-proxies to `ledger`
+  # over the internal network. Lives on BOTH networks: `internal` to reach
+  # `ledger`, and the default host-facing network to accept public traffic.
+  # ---------------------------------------------------------------------------
+  caddy:
+    image: caddy:2-alpine
+
+    # Survive reboots and crashes, but yield to a deliberate operator stop.
+    restart: unless-stopped
+
+    # The ONLY published host ports in this stack: HTTP (for the ACME challenge
+    # and an HTTPS redirect) and HTTPS. Everything else stays internal.
+    ports:
+      - "80:80"
+      - "443:443"
+
+    # Domain + ACME contact email come from the deploy-time --env-file. Caddy
+    # uses LEDGER_DOMAIN to request the certificate and ACME_EMAIL as the
+    # registration/notification address.
+    environment:
+      LEDGER_DOMAIN: ${LEDGER_DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL}
+
+    volumes:
+      # The site config (read-only). Resolved relative to this file at infra/aws/.
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Persist issued certificates and Caddy's runtime config across restarts so
+      # the demo does not re-request a certificate (and risk ACME rate limits)
+      # every time the container is recreated.
+      - caddy-data:/data
+      - caddy-config:/config
+
+    # Bring `ledger` up first so the upstream exists when Caddy starts proxying.
+    depends_on:
+      - ledger
+
+    # On BOTH networks: `internal` to reach the `ledger` upstream by service name,
+    # and `default` (host-facing) to accept inbound 80/443 from the internet.
+    networks:
+      - internal
+      - default
+
+    # Defense in depth: no new privileges (securability — least privilege).
+    security_opt:
+      - no-new-privileges:true
+
+    # Bounded, rotated logs so a long-running box does not fill its disk.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+networks:
+  # Private, non-host-facing network shared by `ledger` and `caddy`. `internal:
+  # true` means no bridge to the host network: traffic on it never leaves the
+  # box, and `ledger` cannot be reached except via `caddy`.
+  internal:
+    internal: true
+  # The implicit host-facing network, declared explicitly so `caddy` can attach
+  # to it alongside `internal` and accept inbound public traffic on 80/443.
+  default:
+
+volumes:
+  # The synthetic demo archive (see the ledger service volume note above).
+  archive-data:
+  # Caddy's certificate store and runtime config, persisted across restarts.
+  caddy-data:
+  caddy-config:

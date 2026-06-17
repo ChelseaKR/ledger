@@ -1,0 +1,17 @@
+# Copy to terraform.tfvars and edit. terraform.tfvars is gitignored.
+
+# Required: the domain the demo will serve, and an ACME contact email.
+domain     = "ledger.example.com"
+acme_email = "you@example.com"
+
+# Optional overrides (defaults shown).
+aws_region    = "us-east-1"
+instance_type = "t4g.small"
+archive_name  = "Rosewater Community Archive (demo)"
+
+# If your domain's DNS is in Route 53, set the hosted-zone id and the A record is
+# created for you. Otherwise leave empty and point DNS at the `elastic_ip` output.
+# route53_zone_id = "Z0123456789ABCDEFGHIJ"
+
+# Leave empty to disable inbound SSH and use SSM Session Manager instead.
+# allow_ssh_cidr = "203.0.113.4/32"
