@@ -315,6 +315,26 @@ def ingest_sip(
     # Stamp the manifest with the injected ingest instant so a golden ingest is
     # byte-reproducible rather than carrying the wall-clock construction time.
     record.created_at = now
+    # Minimum-metadata profile: backfill dc:date from a 4-digit year in the title
+    # when no date was given, so a record is at least roughly datable for scholarship
+    # and search (user research P2-3) without inventing precision.
+    if not record.dublin_core.date:
+        year = re.search(r"\b(1[89]\d{2}|20\d{2})\b", record.title)
+        if year:
+            record.dublin_core.date = [year.group(1)]
+
+    # Absolute-SEALED fields are encrypted AT REST so a stolen disk or hostile
+    # replica reveals nothing, not even to a steward (user research P2-4). Such a
+    # field is never disclosed on any read path, so it is only ever encrypted, never
+    # decrypted here. It requires the vault, like an identity.
+    if any(fld.policy is AccessPolicy.SEALED for fld in record.fields):
+        if vault is None:
+            raise LedgerError(
+                "a 'sealed' (absolute) field requires a vault key for at-rest encryption"
+            )
+        for fld in record.fields:
+            if fld.policy is AccessPolicy.SEALED and not fld.value.startswith("enc:"):
+                fld.value = vault.encrypt_text(fld.value)
 
     # 2. Refuse a collision BEFORE sealing any identity, so a failed ingest cannot
     #    leave an orphaned, unreachable identity in the vault (#correctness, consent).
@@ -505,7 +525,12 @@ class Archive:
         self.bags_dir.mkdir(parents=True, exist_ok=True)
         self.records_dir.mkdir(parents=True, exist_ok=True)
 
-        vault = self._open_vault(vault_key) if identity is not None else None
+        # The vault is needed for a sealed identity OR any absolute-SEALED field
+        # (which is encrypted at rest); open it only then (least privilege).
+        needs_vault = identity is not None or any(
+            fld.policy is AccessPolicy.SEALED for fld in record.fields
+        )
+        vault = self._open_vault(vault_key) if needs_vault else None
         sip = SIP(record=record, payload=dict(payload), identity=identity)
         aip = ingest_sip(sip, self.store, vault, bags_dir=self.bags_dir, agent=agent, now=stamp)
 

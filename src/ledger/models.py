@@ -112,10 +112,20 @@ class AccessPolicy(StrEnum):
     STEWARDS = "stewards"
     SEALED_UNTIL = "sealed-until"
     SEALED_CONDITIONAL = "sealed-conditional"
+    # An ABSOLUTE seal: restricted from everyone on every read path, including
+    # stewards. There is no grant that satisfies it. Used for content a contributor
+    # needs kept from even the people who run the archive; such values are encrypted
+    # at rest at ingest rather than left as clear text in the manifest
+    # (user research C8 / P2-4 — the "seal from everyone, including stewards" tier).
+    SEALED = "sealed"
 
     @property
     def is_sealed(self) -> bool:
-        return self in (AccessPolicy.SEALED_UNTIL, AccessPolicy.SEALED_CONDITIONAL)
+        return self in (
+            AccessPolicy.SEALED_UNTIL,
+            AccessPolicy.SEALED_CONDITIONAL,
+            AccessPolicy.SEALED,
+        )
 
 
 # --- preservation metadata --------------------------------------------------
@@ -273,6 +283,23 @@ class Record:
 
 
 @dataclass(frozen=True)
+class Redaction:
+    """One withheld field or payload, with a SAFE reason for the withholding.
+
+    `reason` is a human label derived from the policy (e.g. "community members
+    only", "sealed until 2030-01-01") — never the protected value. Surfacing the
+    reason to a *legitimate* viewer is honesty (user research T5/P1-3); a read path
+    serving an outsider should generalize it so the set of reasons cannot become
+    targeting metadata (user research T12/P2-2). `category` is the raw policy value
+    so a UI can style it; it carries no value either.
+    """
+
+    name: str
+    reason: str
+    category: str
+
+
+@dataclass(frozen=True)
 class DisclosedRecord:
     """The ONLY record shape a read path (browse, search, API, export) may emit.
 
@@ -288,10 +315,22 @@ class DisclosedRecord:
     fields: dict[str, str]
     payloads: tuple[PayloadFile, ...]
     content_warnings: tuple[str, ...]
-    redactions: tuple[str, ...]  # names of fields/payloads withheld, for honesty
+    withheld: tuple[Redaction, ...]  # fields/payloads withheld, each with a safe reason
 
-    def to_dict(self) -> dict[str, object]:
-        return {
+    @property
+    def redactions(self) -> tuple[str, ...]:
+        """The names of withheld fields/payloads (compatibility accessor)."""
+        return tuple(r.name for r in self.withheld)
+
+    def to_dict(self, *, withheld_reasons: bool = True) -> dict[str, object]:
+        """Serialize for an API response.
+
+        `withheld_reasons=False` emits only a count of withheld parts, not their
+        names or reasons — the form a read path serves to an *outsider* so the
+        redaction set cannot be scraped as targeting metadata (P2-2). With reasons,
+        each withheld part is named for a legitimate viewer (honesty, P1-3).
+        """
+        out: dict[str, object] = {
             "record_id": self.record_id,
             "title": self.title,
             "dublin_core": {k: list(v) for k, v in self.dublin_core.items()},
@@ -306,8 +345,14 @@ class DisclosedRecord:
                 for p in self.payloads
             ],
             "content_warnings": list(self.content_warnings),
-            "redactions": list(self.redactions),
         }
+        if withheld_reasons:
+            out["withheld"] = [
+                {"name": r.name, "reason": r.reason, "category": r.category} for r in self.withheld
+            ]
+        else:
+            out["withheld_count"] = len(self.withheld)
+        return out
 
 
 # --- grants & viewers -------------------------------------------------------

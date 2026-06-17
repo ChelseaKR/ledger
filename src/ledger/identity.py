@@ -226,6 +226,31 @@ class IdentityVault:
         """Return whether *ref* currently maps to a stored identity."""
         return ref in self._store
 
+    # --- at-rest encryption of absolute-sealed content ----------------------
+
+    def encrypt_text(self, plaintext: str) -> str:
+        """Encrypt arbitrary text under the vault key, returning a tagged token.
+
+        Used to store an absolute-``SEALED`` field value as ciphertext at rest, so a
+        stolen disk or a hostile replica host reveals nothing — not even to a steward
+        — for content a contributor sealed from everyone (user research P2-4). The
+        token is prefixed so a reader can tell sealed-at-rest content from plain
+        text. Encryption is authenticated (Fernet), so tampering is detected.
+        """
+        return "enc:" + self._fernet.encrypt(plaintext.encode("utf-8")).decode("ascii")
+
+    def decrypt_text(self, token: str) -> str:
+        """Inverse of :meth:`encrypt_text`. Raises :class:`IdentityVaultError` on a
+        wrong key or tampering, never echoing the token or plaintext."""
+        if not token.startswith("enc:"):
+            raise IdentityVaultError("not a sealed-at-rest token")
+        try:
+            return self._fernet.decrypt(token[4:].encode("ascii")).decode("utf-8")
+        except InvalidToken as exc:
+            raise IdentityVaultError(
+                "sealed-content decryption failed (wrong key or tampering)"
+            ) from exc
+
     # --- key helpers --------------------------------------------------------
 
     @staticmethod

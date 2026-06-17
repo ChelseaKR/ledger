@@ -23,6 +23,7 @@ from ledger.models import (
     Grant,
     PayloadFile,
     Record,
+    Redaction,
     parse_iso,
 )
 
@@ -72,6 +73,8 @@ def is_visible(
       access-level seal that a steward may read.
     * ``SEALED_CONDITIONAL`` -- a steward, or ``unseal_condition`` is set and is
       present in ``conditions_met``.
+    * ``SEALED`` -- absolute: visible to no one, not even a steward. There is no
+      grant that satisfies it.
 
     The decision is pure in its arguments (no clock, no randomness) for
     determinism/determinability.
@@ -101,6 +104,11 @@ def is_visible(
             if effective.is_steward:
                 return True
             return unseal_condition is not None and unseal_condition in conditions_met
+        case AccessPolicy.SEALED:
+            # An ABSOLUTE seal: restricted from everyone, including stewards. No
+            # grant satisfies it — there is no read path on which it is disclosed
+            # (the "seal from everyone" tier; such values are encrypted at rest).
+            return False
 
 
 def is_listable(
@@ -160,7 +168,7 @@ def disclose(
         raise AccessDenied(record.record_id)
 
     visible_fields: dict[str, str] = {}
-    withheld: list[str] = []
+    withheld: list[Redaction] = []
     for fld in record.fields:
         if is_visible(
             fld.policy,
@@ -172,14 +180,20 @@ def disclose(
         ):
             visible_fields[fld.name] = fld.value
         else:
-            withheld.append(fld.name)
+            withheld.append(
+                Redaction(fld.name, withheld_reason(fld.policy, fld.unseal_at), fld.policy.value)
+            )
 
     payloads: list[PayloadFile] = []
     for payload in record.payloads:
         if is_visible(payload.policy, grant, now, conditions_met=conditions_met):
             payloads.append(payload)
         else:
-            withheld.append(payload.filename)
+            withheld.append(
+                Redaction(
+                    payload.filename, withheld_reason(payload.policy, None), payload.policy.value
+                )
+            )
 
     # `dublin_core` is collection-level descriptive metadata; pass it through but
     # never add identity (no-outing rule). `to_dict` already drops empty elements.
@@ -190,5 +204,30 @@ def disclose(
         fields=visible_fields,
         payloads=tuple(payloads),
         content_warnings=tuple(record.content_warnings),
-        redactions=tuple(withheld),
+        withheld=tuple(withheld),
     )
+
+
+def withheld_reason(policy: AccessPolicy, unseal_at: str | None) -> str:
+    """A safe, human label for *why* a field/payload is withheld — never its value.
+
+    The phrasing is plain (user research P1-3): a legitimate viewer should be able
+    to tell "not for you yet" (community/steward) from "locked until a date" from
+    "restricted from everyone", without the label leaking the content. A read path
+    serving an outsider generalizes this to a count (P2-2).
+    """
+    match policy:
+        case AccessPolicy.COMMUNITY:
+            return "shared with community members"
+        case AccessPolicy.STEWARDS:
+            return "restricted to stewards"
+        case AccessPolicy.SEALED_UNTIL:
+            if unseal_at:
+                return f"sealed until {unseal_at[:10]}"
+            return "sealed (no opening date set)"
+        case AccessPolicy.SEALED_CONDITIONAL:
+            return "sealed until a condition is met"
+        case AccessPolicy.SEALED:
+            return "sealed from everyone, including stewards"
+        case _:
+            return "restricted"

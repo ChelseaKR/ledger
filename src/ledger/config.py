@@ -122,6 +122,15 @@ class Config:
     default_policy: AccessPolicy = AccessPolicy.SEALED_UNTIL
     content_warnings: list[str] = field(default_factory=list)
     languages: list[str] = field(default_factory=lambda: ["en"])
+    # Public-facing governance/operator text (user research P0-4). These power the
+    # on-site About/Governance/How-it-works pages so the at-risk contributor can see
+    # who runs the archive and how they are held accountable — instead of an
+    # unverifiable footer line. All are plain strings a steward edits in the config.
+    about: str = ""
+    operators: str = ""
+    steward_vetting: str = ""
+    consent_response_time: str = ""
+    contact: str = ""
     schema_version: int = CONFIG_SCHEMA_VERSION
 
     def validate(self) -> None:
@@ -172,6 +181,11 @@ class Config:
             "default_policy": self.default_policy.value,
             "content_warnings": list(self.content_warnings),
             "languages": list(self.languages),
+            "about": self.about,
+            "operators": self.operators,
+            "steward_vetting": self.steward_vetting,
+            "consent_response_time": self.consent_response_time,
+            "contact": self.contact,
         }
 
     def save(self, path: Path) -> None:
@@ -240,6 +254,11 @@ class Config:
             default_policy=default_policy,
             content_warnings=[str(w) for w in _as_list(migrated.get("content_warnings", []))],
             languages=[str(lang) for lang in _as_list(migrated.get("languages", ["en"]))],
+            about=str(migrated.get("about", "")),
+            operators=str(migrated.get("operators", "")),
+            steward_vetting=str(migrated.get("steward_vetting", "")),
+            consent_response_time=str(migrated.get("consent_response_time", "")),
+            contact=str(migrated.get("contact", "")),
             schema_version=CONFIG_SCHEMA_VERSION,
         )
         config.validate()
@@ -296,6 +315,24 @@ class Config:
             default_policy=AccessPolicy.SEALED_UNTIL,
             content_warnings=list(_STARTER_CONTENT_WARNINGS),
             languages=["en"],
+            about=(
+                "This is a community-governed archive. Records are preserved with "
+                "fixity-checked, content-addressed BagIt packaging, and access is "
+                "consent-based: a contributor decides what is public, community-only, "
+                "restricted to stewards, or sealed. A contributor's identity is stored "
+                "separately, encrypted, and is never shown on any page."
+            ),
+            operators=(
+                "Edit this in your config to name the collective or people who run this "
+                "archive, so contributors can see who they are trusting."
+            ),
+            steward_vetting=(
+                "Describe how stewards are chosen and held accountable. Stewards can read "
+                "access-restricted content (but never a contributor's sealed identity); "
+                "content sealed with the 'sealed' policy is restricted from everyone."
+            ),
+            consent_response_time="We aim to respond to consent and takedown requests within 7 days.",
+            contact="Set a contact path (email or secure form) in your config.",
             schema_version=CONFIG_SCHEMA_VERSION,
         )
 

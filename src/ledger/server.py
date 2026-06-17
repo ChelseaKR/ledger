@@ -45,7 +45,17 @@ from ledger.access import anonymous
 from ledger.access.grants import load_grants
 from ledger.errors import AccessDenied, LedgerError, ObjectNotFound
 from ledger.ingest import Archive
-from ledger.models import DisclosedRecord, Grant
+from ledger.models import AccessPolicy, DisclosedRecord, Grant
+
+
+def _is_insider(grant: Grant) -> bool:
+    """Whether a viewer is a trusted insider (community member or steward).
+
+    An insider is shown *why* each part is withheld (honesty, P1-3); an outsider
+    gets only a count, so the set of redaction reasons cannot be scraped as
+    targeting metadata about what a record hides (P2-2)."""
+    return grant.is_steward or AccessPolicy.COMMUNITY in grant.levels
+
 
 # Where the bundled, framework-free web assets live, resolved relative to this
 # module so the server works from any working directory (portability). The static
@@ -269,7 +279,7 @@ def _browse_main_html(
     )
 
 
-def _record_main_html(record: DisclosedRecord, *, proceed: bool) -> str:
+def _record_main_html(record: DisclosedRecord, *, proceed: bool, insider: bool = False) -> str:
     """Compose the single-record ``<main>``, with a content-warning interstitial.
 
     If the record carries content warnings and the viewer has not yet chosen to
@@ -362,14 +372,30 @@ def _record_main_html(record: DisclosedRecord, *, proceed: bool) -> str:
             "    </section>"
         )
 
-    # Redactions, stated plainly in text so the partial view is honest.
-    if record.redactions:
-        withheld = ", ".join(_esc(name) for name in record.redactions)
+    # Withheld parts, stated plainly so the partial view is honest. An insider sees
+    # each part and WHY (e.g. "sealed until 2030-01-01"); an outsider sees only a
+    # count, so the redaction reasons can't be scraped as targeting metadata (P2-2).
+    if record.withheld:
+        if insider:
+            rows = "\n".join(
+                f"      <li>{_esc(r.name)} — {_esc(r.reason)}</li>" for r in record.withheld
+            )
+            body = (
+                "      <p>Some parts of this record are not available under your current "
+                "access:</p>\n"
+                f'      <ul class="withheld-list">\n{rows}\n      </ul>'
+            )
+        else:
+            n = len(record.withheld)
+            noun = "detail is" if n == 1 else "details are"
+            body = (
+                f"      <p>{n} {noun} restricted under your current access. If you are "
+                "a community member or steward, sign in to see what is withheld and why.</p>"
+            )
         parts.append(
             '    <section aria-labelledby="redactions-heading">\n'
             '      <h2 id="redactions-heading">Withheld</h2>\n'
-            "      <p>The following parts of this record are not available under "
-            f"your current access: {withheld}.</p>\n"
+            f"{body}\n"
             "    </section>"
         )
 
@@ -591,7 +617,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             # (confidentiality — the absence of a record leaks nothing).
             self._handle_not_found()
             return
-        main_html = _record_main_html(record, proceed=proceed)
+        main_html = _record_main_html(record, proceed=proceed, insider=_is_insider(grant))
         self._send_html(
             200,
             _page(
@@ -619,7 +645,8 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         """``GET /api/records`` — JSON of every listable record's disclosed shape."""
         grant = self._resolve_grant()
         records = self._archive().browse(grant)
-        self._send_json(200, {"records": [r.to_dict() for r in records]})
+        reasons = _is_insider(grant)
+        self._send_json(200, {"records": [r.to_dict(withheld_reasons=reasons) for r in records]})
 
     def _handle_api_record(self, raw_id: str) -> None:
         """``GET /api/record/{id}`` — JSON of one record's disclosed shape."""
@@ -630,7 +657,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         except (AccessDenied, ObjectNotFound):
             self._send_json(404, {"error": "not found"})
             return
-        self._send_json(200, record.to_dict())
+        self._send_json(200, record.to_dict(withheld_reasons=_is_insider(grant)))
 
     # --- health -------------------------------------------------------------
 

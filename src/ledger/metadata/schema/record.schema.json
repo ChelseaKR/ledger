@@ -80,7 +80,8 @@
         "community",
         "stewards",
         "sealed-until",
-        "sealed-conditional"
+        "sealed-conditional",
+        "sealed"
       ]
     },
     "dublinCore": {

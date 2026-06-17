@@ -224,10 +224,13 @@ def test_sealed_field_absent_from_anonymous_view(server: tuple[HTTPServer, str, 
     assert _SEALED_FIELD not in record_json
     # The public field IS present, proving the record is genuinely disclosed.
     assert "A public account." in record_html
-    # And the withheld field is named honestly in the disclosed shape.
+    # To an OUTSIDER (anonymous) the API discloses only a COUNT of withheld parts,
+    # never their names, so the redaction set can't be scraped as targeting metadata.
     data = json.loads(record_json)
-    assert "real_names" in data["redactions"]
+    assert data.get("withheld_count", 0) >= 1
+    assert "withheld" not in data  # no per-field names/reasons for an outsider
     assert "real_names" not in data["fields"]
+    assert "real_names" not in record_json
 
 
 def test_server_log_is_identity_free(tmp_path: Path) -> None:

@@ -15,7 +15,7 @@ from ledger.access.grants import (
     community_member,
     steward,
 )
-from ledger.access.policy import disclose, is_listable, is_visible
+from ledger.access.policy import disclose, is_listable, is_visible, withheld_reason
 from ledger.access.redaction import redact_field, redact_payload
 
 __all__ = [
@@ -28,4 +28,5 @@ __all__ = [
     "redact_field",
     "redact_payload",
     "steward",
+    "withheld_reason",
 ]
