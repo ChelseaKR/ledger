@@ -145,6 +145,13 @@ class Config:
             )
         if not self.archive_name:
             raise ConfigError("archive_name must not be empty")
+        # An empty store_root or vault_path silently resolves to the current working
+        # directory — a footgun that would scatter an archive's bags and vault into
+        # whatever directory ledger happened to run from. Refuse it (correctness).
+        if not self.store_root:
+            raise ConfigError("store_root must not be empty")
+        if not self.vault_path:
+            raise ConfigError("vault_path must not be empty")
         if not isinstance(self.default_policy, AccessPolicy):
             raise ConfigError(f"unknown default_policy: {self.default_policy!r}")
         for location in self.locations:
@@ -176,6 +183,15 @@ class Config:
         — readers see either the old file or the complete new one.
         """
         self.validate()
+        # load() can READ .toml (via tomllib), but the standard library has no TOML
+        # writer. Rather than silently write JSON bytes into a .toml file (which
+        # would then fail to round-trip), refuse it with a clear message
+        # (correctness, least surprise).
+        if path.suffix == ".toml":
+            raise ConfigError(
+                "TOML output is not supported; write a .json config "
+                "(TOML configs can still be read by load())"
+            )
         path.parent.mkdir(parents=True, exist_ok=True)
         text = json.dumps(self.to_dict(), indent=2, sort_keys=True, ensure_ascii=False)
         tmp = path.with_name(f"{path.name}.tmp")
@@ -263,12 +279,20 @@ class Config:
         a freshly stood-up archive reveals nothing until a steward consciously opens
         it. One ``local`` storage location named ``primary`` is provided as the
         authoritative copy; mirrors are added later.
+
+        A storage location's ``path`` is the directory that *directly contains bag
+        directories*, which for the local store is ``store/bags`` (where the Archive
+        writes them) — not ``store`` itself. Pointing ``primary`` there is what lets
+        ``ledger replicas`` and the replication layer find the authoritative bags
+        instead of reporting the healthy primary as missing (correctness).
         """
         return cls(
             archive_name=archive_name,
             store_root=str(root / "store"),
             vault_path=str(root / "identity.vault"),
-            locations=[StorageLocation(name="primary", path=str(root / "store"), kind="local")],
+            locations=[
+                StorageLocation(name="primary", path=str(root / "store" / "bags"), kind="local")
+            ],
             default_policy=AccessPolicy.SEALED_UNTIL,
             content_warnings=list(_STARTER_CONTENT_WARNINGS),
             languages=["en"],

@@ -23,7 +23,9 @@ depth).
 from __future__ import annotations
 
 import json
+import mimetypes
 import os
+import re
 import shutil
 from pathlib import Path
 
@@ -31,10 +33,10 @@ from ledger.access import disclose, is_listable
 from ledger.bag import validate_bag, write_bag
 from ledger.cas import ContentStore
 from ledger.config import Config
-from ledger.errors import LedgerError, ObjectNotFound
+from ledger.errors import BagValidationError, LedgerError, ObjectNotFound
 from ledger.fixity import AuditReport, hash_file_multi
 from ledger.identity import ContributorIdentity, IdentityVault
-from ledger.metadata.dublincore import write_sidecar
+from ledger.metadata.dublincore import to_json as dublincore_to_json
 from ledger.metadata.premis import PremisLog
 from ledger.models import (
     AccessPolicy,
@@ -42,6 +44,7 @@ from ledger.models import (
     DisclosedRecord,
     DublinCore,
     Field,
+    FixityResult,
     Grant,
     HashAlgo,
     PayloadFile,
@@ -194,22 +197,35 @@ def _as_dicts(value: object) -> list[dict[str, object]]:
 # --- no-outing audit --------------------------------------------------------
 
 
+# Identity tokens shorter than this are not substring-scanned: a 2-3 char value
+# (e.g. a pronoun) would false-positive against ordinary prose. Such short fields
+# are protected structurally (they never flow into a manifest), not by this scan.
+_MIN_SCAN_TOKEN = 4
+
+
 def _assert_identity_free(text: str, identity: ContributorIdentity | None, where: str) -> None:
-    """Raise if any non-empty identity field value appears in ``text``.
+    """Raise if a contributor's name/contact/notes appears in ``text``.
 
     Defense in depth for the no-outing rule: even though identity is supposed to
-    flow only into the vault, every clear-text artifact (bag-info, record
-    manifest, Dublin Core sidecar, PREMIS log) is re-scanned for the contributor's
-    name/contact/pronouns/notes before the AIP is returned. A hit means a coding
-    error leaked identity, so we fail loudly rather than persist it (safety).
+    flow only into the vault, every clear-text artifact (bag-info, record manifest,
+    Dublin Core, PREMIS log) is re-scanned *before anything is written to disk*. A
+    hit means a coding error leaked identity, so we fail closed (safety).
 
-    The exception names only *where* the leak was found, never the leaked value
-    itself (threat model: error messages disclose nothing).
+    The match is case-insensitive and word-bounded rather than a naive substring,
+    so an identity that legitimately shares a fragment with prose (e.g. a name that
+    is also a common word) does not block an honest ingest (correctness). Pronouns
+    and very short values are skipped — they are protected structurally, not here.
+    The exception names only *where* a leak was found, never the value (threat
+    model: error messages disclose nothing).
     """
     if identity is None:
         return
-    for value in (identity.name, identity.contact, identity.pronouns, identity.notes):
-        if value and value in text:
+    haystack = text.casefold()
+    for value in (identity.name, identity.contact, identity.notes):
+        token = value.strip().casefold()
+        if len(token) < _MIN_SCAN_TOKEN:
+            continue
+        if re.search(rf"\b{re.escape(token)}\b", haystack):
             raise LedgerError(f"no-outing violation: contributor identity present in {where}")
 
 
@@ -266,7 +282,13 @@ def ingest_sip(
         address = store.put_file(source)
         size = source.stat().st_size
         existing = declared.get(filename)
-        media_type = existing.media_type if existing is not None else "application/octet-stream"
+        if existing is not None:
+            media_type = existing.media_type
+        else:
+            # Infer from the filename so the Files list and API report something
+            # meaningful instead of always octet-stream (correctness, usability).
+            guessed, _ = mimetypes.guess_type(filename)
+            media_type = guessed or "application/octet-stream"
         policy = existing.policy if existing is not None else record.default_policy
         payload_entries.append(
             PayloadFile(
@@ -290,64 +312,87 @@ def ingest_sip(
             )
         )
     record.payloads = payload_entries
+    # Stamp the manifest with the injected ingest instant so a golden ingest is
+    # byte-reproducible rather than carrying the wall-clock construction time.
+    record.created_at = now
 
-    # 2. Seal identity into the vault and replace it with an opaque ref. The
-    #    identity must touch nothing else (no-outing rule).
-    if sip.identity is not None and vault is not None:
-        record.identity_ref = vault.add(sip.identity)
-
-    # 3. Write the BagIt bag. bag-info names the collection, never a person.
+    # 2. Refuse a collision BEFORE sealing any identity, so a failed ingest cannot
+    #    leave an orphaned, unreachable identity in the vault (#correctness, consent).
     bag_dir = bags_dir / record.record_id
     if bag_dir.exists():
         # An item is bagged exactly once; refuse to clobber a prior AIP silently.
         raise LedgerError(f"bag already exists for record {record.record_id}")
-    bag_info = {
-        "Source-Organization": record.dublin_core.publisher[0]
-        if record.dublin_core.publisher
-        else "ledger archive",
-        "Bagging-Date": now,
-        "External-Identifier": record.record_id,
-    }
-    bag = write_bag(bag_dir, dict(sip.payload), bag_info=bag_info)
 
-    # 4. Document the item as tag files inside the bag (covered by tag manifest).
-    record_path = bag_dir / _RECORD_FILENAME
-    dc_path = bag_dir / _DC_FILENAME
-    premis_path = bag_dir / _PREMIS_FILENAME
+    # 3. Seal identity into the vault and replace it with an opaque ref. Everything
+    #    after this point is wrapped so any failure revokes the ref (no orphan).
+    sealed_ref: str | None = None
+    if sip.identity is not None and vault is not None:
+        sealed_ref = vault.add(sip.identity)
+        record.identity_ref = sealed_ref
 
-    record_json = serialize_record(record)
-    record_path.write_text(record_json, encoding="utf-8", newline="\n")
-    write_sidecar(record.dublin_core, dc_path)
+    try:
+        # Build every clear-text artifact IN MEMORY first.
+        bag_info = {
+            "Source-Organization": record.dublin_core.publisher[0]
+            if record.dublin_core.publisher
+            else "ledger archive",
+            "Bagging-Date": now,
+            "External-Identifier": record.record_id,
+        }
+        bag_info_text = "Payload-Oxum: …\n" + "".join(f"{k}: {v}\n" for k, v in bag_info.items())
+        record_json = serialize_record(record)
+        dc_json = dublincore_to_json(record.dublin_core)
 
-    premis = PremisLog()
-    premis.record(
-        PremisEvent(
-            event_type=PremisEventType.INGESTION,
-            agent=agent,
-            outcome="success",
-            detail=f"ingested {len(payload_entries)} payload file(s) into bag {bag.name}",
-            linked_object=record.record_id,
-            event_datetime=now,
+        premis = PremisLog()
+        premis.record(
+            PremisEvent(
+                event_type=PremisEventType.INGESTION,
+                agent=agent,
+                outcome="success",
+                detail=f"ingested {len(payload_entries)} payload file(s) for {record.record_id}",
+                linked_object=record.record_id,
+                event_datetime=now,
+            )
         )
-    )
-    for event in fixity_events:
-        premis.record(event)
-    premis.write(premis_path)
+        for event in fixity_events:
+            premis.record(event)
+        premis_json = premis.to_json()
 
-    # Defense in depth: re-scan every clear-text artifact for the identity. A hit
-    # means a leak slipped past the structural guards, so fail loudly (safety).
-    bag_info_text = (bag_dir / "bag-info.txt").read_text(encoding="utf-8")
-    _assert_identity_free(bag_info_text, sip.identity, "bag-info.txt")
-    _assert_identity_free(record_json, sip.identity, "record manifest")
-    _assert_identity_free(dc_path.read_text(encoding="utf-8"), sip.identity, "dublin core sidecar")
-    _assert_identity_free(premis.to_json(), sip.identity, "premis log")
+        # 4. Defense in depth: scan every artifact for the identity BEFORE a single
+        #    byte is written to disk, so a coding-error leak fails closed and leaves
+        #    nothing behind (safety — the guarantee must fail CLOSED).
+        _assert_identity_free(bag_info_text, sip.identity, "bag-info.txt")
+        _assert_identity_free(record_json, sip.identity, "record manifest")
+        _assert_identity_free(dc_json, sip.identity, "dublin core")
+        _assert_identity_free(premis_json, sip.identity, "premis log")
+
+        # 5. Write the bag with the metadata as tag files, so their integrity is
+        #    covered by the bag's own tag manifest (tampering with a record's policy
+        #    or identity_ref then fails validation).
+        bag = write_bag(
+            bag_dir,
+            dict(sip.payload),
+            bag_info=bag_info,
+            extra_tag_files={
+                _RECORD_FILENAME: record_json.encode("utf-8"),
+                _DC_FILENAME: dc_json.encode("utf-8"),
+                _PREMIS_FILENAME: premis_json.encode("utf-8"),
+            },
+        )
+    except BaseException:
+        # Any failure after sealing must not orphan the identity or leave a partial
+        # bag on disk (consent, fail-closed). Revoke then clean up, then re-raise.
+        if sealed_ref is not None and vault is not None:
+            vault.revoke(sealed_ref)
+        shutil.rmtree(bag_dir, ignore_errors=True)
+        raise
 
     return AIP(
         bag=bag,
         record=record,
-        premis_path=premis_path,
-        dc_path=dc_path,
-        record_path=record_path,
+        premis_path=bag_dir / _PREMIS_FILENAME,
+        dc_path=bag_dir / _DC_FILENAME,
+        record_path=bag_dir / _RECORD_FILENAME,
     )
 
 
@@ -517,10 +562,15 @@ class Archive:
         """
         if not self.records_dir.exists():
             return []
-        records = [
-            deserialize_record(path.read_text(encoding="utf-8"))
-            for path in self.records_dir.glob("*.json")
-        ]
+        records: list[Record] = []
+        for path in self.records_dir.glob("*.json"):
+            try:
+                records.append(deserialize_record(path.read_text(encoding="utf-8")))
+            except (LedgerError, ValueError, OSError):
+                # One unreadable manifest must not take down the whole browse/audit
+                # path; skip it so the rest of the archive stays available
+                # (degradability, availability). It is still caught by audit_fixity.
+                continue
         records.sort(key=lambda r: (r.created_at, r.record_id))
         return records
 
@@ -539,39 +589,53 @@ class Archive:
                 out.append(disclose(record, grant, stamp))
         return out
 
-    def resolve_identity(self, record_id: str, grant: Grant) -> ContributorIdentity:
+    def resolve_identity(
+        self, record_id: str, grant: Grant, now: str | None = None
+    ) -> ContributorIdentity:
         """Resolve the contributor identity behind ``record_id`` under ``grant``.
 
         Looks up the record's opaque ``identity_ref`` and asks the vault to decrypt
-        it, gated by the grant. Raises :class:`~ledger.errors.AccessDenied` unless
-        ``grant.identity_unseal`` names that ref (least privilege — the vault
-        decides), or :class:`~ledger.errors.LedgerError` if the record has no
-        sealed identity. The identity is returned only to the authorized caller and
-        never logged or persisted (no-outing rule).
+        it, gated by the grant *at instant ``now``*. An expired grant unseals
+        nothing, exactly like every other read path (least privilege, fail-closed).
+        Raises :class:`~ledger.errors.AccessDenied` unless ``grant.identity_unseal``
+        names that ref and the grant is unexpired, or
+        :class:`~ledger.errors.LedgerError` if the record has no sealed identity.
+        The identity is returned only to the authorized caller and never logged or
+        persisted (no-outing rule).
         """
+        stamp = now if now is not None else now_iso()
         record = self.get(record_id)
         if record.identity_ref is None:
             raise LedgerError(f"record {record_id} has no sealed identity")
         vault = self._open_vault(None)
-        return vault.resolve(record.identity_ref, grant)
+        return vault.resolve(record.identity_ref, grant, stamp)
 
     # --- audit --------------------------------------------------------------
 
-    def audit_fixity(self) -> list[AuditReport]:
-        """Validate every stored bag against RFC 8493 structure and its manifests.
+    def audit_fixity(self) -> list[tuple[str, AuditReport]]:
+        """Validate every stored bag, returning ``(bag_name, report)`` per bag.
 
-        Walks ``bags/`` and runs :func:`ledger.bag.validate_bag` on each, returning
-        one :class:`~ledger.fixity.AuditReport` per bag in stable name order so a
-        steward sees each per-file outcome and can spot drift early (inspectability,
-        failure transparency). A structurally broken bag surfaces as a
-        :class:`~ledger.errors.BagValidationError` from the underlying validator
-        rather than being swallowed.
+        Walks ``bags/`` and runs :func:`ledger.bag.validate_bag` on each in stable
+        name order so a steward sees each per-file outcome and can spot drift early
+        (inspectability, failure transparency). A *structurally* broken bag does not
+        abort the sweep: it is turned into a report with one failing result naming
+        the structural problem, so one bad bag never hides the health of the rest
+        (degradability, failure transparency).
         """
         if not self.bags_dir.exists():
             return []
-        reports: list[AuditReport] = []
+        reports: list[tuple[str, AuditReport]] = []
         for bag_path in sorted(p for p in self.bags_dir.iterdir() if p.is_dir()):
-            reports.append(validate_bag(bag_path))
+            try:
+                reports.append((bag_path.name, validate_bag(bag_path)))
+            except BagValidationError as exc:
+                synthetic = FixityResult(
+                    path=bag_path.name,
+                    algo=HashAlgo.SHA256,
+                    expected="structurally valid bag",
+                    actual=f"invalid: {exc}",
+                )
+                reports.append((bag_path.name, AuditReport(results=[synthetic])))
         return reports
 
 

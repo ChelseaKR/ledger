@@ -413,19 +413,25 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
 
     # --- safety: a scrubbed access log -------------------------------------
 
-    def log_message(self, format: str, *args: object) -> None:
-        """Emit a minimal, identity-free access log line.
+    def log_request(self, code: int | str = "-", size: int | str = "-") -> None:
+        """Emit a minimal, identity-free access line with the *real* status.
 
-        Overrides the default, which would echo the raw request line. We log the
-        method, the response status, and the *path only* with its query string
-        stripped, so a grant subject or a search term can never reach the log
-        (no-outing rule — logs disclose nothing). The ``X-Ledger-Grant`` header
-        and request body are never logged.
+        The default would log ``self.requestline`` verbatim — which includes the
+        query string (e.g. ``/search?q=...``) and so could record a search term.
+        We log only the method, the query-stripped path, and the response ``code``
+        the framework passes in, so a grant subject or search term never reaches the
+        log (no-outing rule — logs disclose nothing).
         """
         path = urlsplit(self.path).path
-        status = args[1] if len(args) > 1 else "?"
-        self.log_date_time_string()  # keep BaseHTTPRequestHandler's timestamp
-        super().log_message("%s %s %s", self.command or "?", path, status)
+        super().log_message("%s %s %s", self.command or "?", path, code)
+
+    def log_error(self, format: str, *args: object) -> None:
+        """Log errors without echoing any request data.
+
+        Error logging never formats the (possibly sensitive) request line or args;
+        it records a fixed, scrubbed line keyed on the query-stripped path only.
+        """
+        super().log_message("error handling %s", urlsplit(self.path).path)
 
     # --- grant resolution (deny by default) --------------------------------
 
@@ -647,9 +653,9 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
                 {"status": "degraded", "fixity": {"error": "audit failed"}},
             )
             return
-        passed = sum(1 for r in reports if r.ok)
+        passed = sum(1 for _name, r in reports if r.ok)
         failed = len(reports) - passed
-        files_checked = sum(r.checked for r in reports)
+        files_checked = sum(r.checked for _name, r in reports)
         status = "ok" if failed == 0 else "degraded"
         self._send_json(
             200 if failed == 0 else 503,
@@ -676,11 +682,15 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         directories) with a known suffix are served; an unknown suffix falls back
         to ``application/octet-stream`` and is never treated as active content.
         """
-        candidate = (_STATIC_ROOT / _decode_id(rel)).resolve()
+        candidate = _STATIC_ROOT / _decode_id(rel)
         try:
+            # resolve() itself raises ValueError on an embedded NUL byte, so it must
+            # be inside the guard or a crafted path crashes the handler with no
+            # response (robustness, securability). relative_to() rejects any escape.
+            candidate = candidate.resolve()
             candidate.relative_to(_STATIC_ROOT)
         except ValueError:
-            # The resolved path escaped the static root — refuse without detail.
+            # The path was malformed or escaped the static root — refuse, no detail.
             self._handle_not_found()
             return
         if not candidate.is_file():

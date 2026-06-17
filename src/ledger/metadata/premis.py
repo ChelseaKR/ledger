@@ -27,14 +27,26 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
-from xml.sax.saxutils import escape
+from xml.sax.saxutils import escape as _sax_escape
 
 from ledger.models import PremisEvent, PremisEventType, canonical_json
 
 __all__ = ["PremisLog", "to_premis_xml"]
+
+# Characters XML 1.0 forbids even when escaped. PREMIS detail/agent text can carry
+# arbitrary operator-supplied content, so strip these before escaping to keep the
+# emitted XML well-formed (standards compliance, interoperability, robustness).
+_ILLEGAL_XML = re.compile("[^\x09\x0a\x0d\x20-\ud7ff\ue000-\ufffd\U00010000-\U0010ffff]")
+
+
+def escape(value: str) -> str:
+    """XML-escape ``value`` after removing characters XML 1.0 disallows."""
+    return _sax_escape(_ILLEGAL_XML.sub("", value))
+
 
 _PREMIS_NS = "http://www.loc.gov/premis/v3"
 

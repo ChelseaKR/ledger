@@ -26,10 +26,23 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
-from xml.sax.saxutils import escape
+from xml.sax.saxutils import escape as _sax_escape
 
 from ledger.models import DC_ELEMENTS, DublinCore, canonical_json
+
+# Characters XML 1.0 forbids even when escaped (most C0 control codes). An archive
+# accepts arbitrary contributor text, so stripping these before escaping keeps the
+# emitted XML well-formed and parseable by any conformant reader (standards
+# compliance, interoperability, robustness).
+_ILLEGAL_XML = re.compile("[^\x09\x0a\x0d\x20-\ud7ff\ue000-\ufffd\U00010000-\U0010ffff]")
+
+
+def escape(value: str) -> str:
+    """XML-escape ``value`` after removing characters XML 1.0 disallows."""
+    return _sax_escape(_ILLEGAL_XML.sub("", value))
+
 
 __all__ = [
     "from_json",

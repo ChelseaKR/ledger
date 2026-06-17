@@ -106,17 +106,23 @@ class ModerationAction:
         """Reconstruct an action from its serialized form.
 
         Round-trips :meth:`to_dict`; re-validates via ``__post_init__`` so a
-        malformed on-disk entry is rejected on read (integrity).
+        malformed on-disk entry is rejected on read (integrity). A missing required
+        field raises :class:`~ledger.errors.ModerationError` (not a bare
+        ``KeyError``), matching the documented "rejected on read" contract so a
+        caller catches one error family (analyzability).
         """
-        return cls(
-            action=data["action"],
-            actor=data["actor"],
-            reason=data["reason"],
-            target_record=data["target_record"],
-            action_id=data["action_id"],
-            appeal_of=data.get("appeal_of"),
-            at=data["at"],
-        )
+        try:
+            return cls(
+                action=data["action"],
+                actor=data["actor"],
+                reason=data["reason"],
+                target_record=data["target_record"],
+                action_id=data["action_id"],
+                appeal_of=data.get("appeal_of"),
+                at=data["at"],
+            )
+        except KeyError as exc:
+            raise ModerationError(f"malformed moderation entry: missing {exc}") from exc
 
 
 class ModerationLog:

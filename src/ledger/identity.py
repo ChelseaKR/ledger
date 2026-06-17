@@ -35,7 +35,7 @@ from cryptography.fernet import Fernet, InvalidToken
 from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
 
 from ledger.errors import AccessDenied, IdentityVaultError
-from ledger.models import Grant, canonical_json
+from ledger.models import PUBLIC_GRANT, Grant, canonical_json
 
 # scrypt cost parameters (RFC 7914). These are interactive-login-grade and produce
 # a 32-byte key that is base64-encoded into a Fernet key. Chosen for resistance to
@@ -187,16 +187,24 @@ class IdentityVault:
         self._persist()
         return ref
 
-    def resolve(self, ref: str, grant: Grant) -> ContributorIdentity:
-        """Decrypt and return the identity for *ref*, gated by *grant*.
+    def resolve(self, ref: str, grant: Grant, now: str) -> ContributorIdentity:
+        """Decrypt and return the identity for *ref*, gated by *grant* at *now*.
 
-        Raises :class:`~ledger.errors.AccessDenied` if *ref* is not in
-        ``grant.identity_unseal`` (the grant check runs before any lookup, so the
-        decision does not depend on whether the ref exists -> least privilege).
+        Resolving an identity is the single most sensitive disclosure in the
+        system, so it enforces the *same* time-bounding as every other read path:
+        an expired grant is downgraded to the anonymous public grant before the
+        check, and the public grant unseals nothing. A stale or time-revoked
+        credential therefore can never out a contributor -> safety, least
+        privilege, fail-closed.
+
+        Raises :class:`~ledger.errors.AccessDenied` if the (effective) grant does
+        not name *ref* in ``identity_unseal`` (the grant check runs before any
+        lookup, so the decision does not depend on whether the ref exists).
         Raises :class:`IdentityVaultError` if the ref is unknown or decryption
         fails.
         """
-        if ref not in grant.identity_unseal:
+        effective = PUBLIC_GRANT if grant.is_expired(now) else grant
+        if ref not in effective.identity_unseal:
             # Name the ref and the missing capability, never the protected value.
             raise AccessDenied(f"grant does not permit unsealing identity ref {ref}")
         token = self._store.get(ref)
@@ -274,8 +282,13 @@ class IdentityVault:
         payload = canonical_json(self._store)
         tmp = self._path.with_name(f"{self._path.name}.{os.getpid()}.tmp")
         try:
-            tmp.write_text(payload, encoding="utf-8")
+            # Create owner-only (0o600) BEFORE writing any ciphertext, so the vault
+            # is never momentarily world-readable on a shared host -> confidentiality.
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                handle.write(payload)
             os.replace(tmp, self._path)
+            os.chmod(self._path, 0o600)
         except OSError as exc:
             tmp.unlink(missing_ok=True)
             raise IdentityVaultError(f"vault could not be written: {self._path}") from exc

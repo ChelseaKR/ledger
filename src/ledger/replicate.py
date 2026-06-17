@@ -86,7 +86,13 @@ def _copy_bag(source: Path, dest: Path) -> None:
     Replacing first (integrity): a stale or partially written copy at ``dest`` is
     removed before the fresh copy is laid down, so the destination is never a mix
     of two generations of the bag.
+
+    Self-copy guard (data loss): if ``source`` and ``dest`` resolve to the same
+    directory, return untouched — deleting ``dest`` first would destroy the very
+    bag we meant to copy, potentially the only good replica.
     """
+    if source.resolve() == dest.resolve():
+        return
     if dest.exists():
         shutil.rmtree(dest)
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -264,36 +270,65 @@ def heal(
     :class:`~ledger.errors.FixityError` is raised rather than blessing a bad copy
     (never trust a divergent copy).
 
+    Resilience: a heal that itself arrives torn is quarantined and recorded as a
+    ``QUARANTINE`` failure event, and the sweep CONTINUES to the other targets, so
+    one bad destination neither serves a divergent copy nor discards the heals
+    already completed. The returned list therefore contains an event per attempted
+    heal (success or quarantine).
+
     Determinism: ``now`` stamps each event; the source replica is chosen as the
     first healthy one in ``locations`` order, so repeated runs are reproducible.
+    Locations and their statuses are paired by index (not by name), so two targets
+    that happen to share a name are still healed independently and correctly.
     """
     statuses = verify_replicas(bag_name, locations)
-    by_location = {location.name: location for location in locations}
+    paired = list(zip(locations, statuses, strict=True))
 
-    healthy = [status for status in statuses if status.ok]
+    healthy = [(location, status) for location, status in paired if status.ok]
     if not healthy:
         raise FixityError(
             f"no validating replica of bag {bag_name!r}: nothing trustworthy to heal from"
         )
 
-    source_location = by_location[healthy[0].location]
+    source_location, _ = healthy[0]
     source_path = _replica_path(source_location.path, bag_name)
 
     events: list[PremisEvent] = []
-    for status in statuses:
+    for target_location, status in paired:
         if status.ok:
             continue
-        target_location = by_location[status.location]
         dest = _replica_path(target_location.path, bag_name)
+        if dest.resolve() == source_path.resolve():
+            # Same physical copy as the source (e.g. a duplicate location entry):
+            # it is already the good bag, nothing to heal.
+            continue
         _copy_bag(source_path, dest)
 
-        # Verify-on-arrival again: a heal that itself arrived torn is not "healed".
-        report = validate_bag(dest)
-        if not report.ok:
-            raise FixityError(
-                f"healed replica of bag {bag_name!r} at location "
-                f"{target_location.name!r} failed fixity on arrival"
+        # Verify-on-arrival again: a heal that itself arrived torn must be
+        # quarantined (never left live and servable) — then continue.
+        try:
+            report = validate_bag(dest)
+            torn = not report.ok
+            checked = report.checked
+        except BagValidationError:
+            torn = True
+            checked = 0
+        if torn:
+            quarantine_path = _quarantine(dest, target_location.path)
+            events.append(
+                PremisEvent(
+                    event_type=PremisEventType.QUARANTINE,
+                    agent=agent,
+                    outcome="failure",
+                    detail=(
+                        f"heal of bag {bag_name!r} at location {target_location.name!r} "
+                        f"arrived torn; quarantined to {quarantine_path}"
+                    ),
+                    linked_object=bag_name,
+                    event_datetime=now,
+                )
             )
+            continue
 
         events.append(
             PremisEvent(
@@ -303,7 +338,7 @@ def heal(
                 detail=(
                     f"bag {bag_name!r} healed at location {target_location.name!r} "
                     f"from location {source_location.name!r} and verified on arrival "
-                    f"({report.checked} file(s) checked)"
+                    f"({checked} file(s) checked)"
                 ),
                 linked_object=bag_name,
                 event_datetime=now,

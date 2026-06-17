@@ -144,9 +144,11 @@ def _cmd_ingest(args: argparse.Namespace) -> int:
         payload[source.name] = source
 
     identity: ContributorIdentity | None = None
-    if args.contributor_name:
+    # Seal whenever ANY contributor material is supplied, so a contact given without
+    # a name is never silently dropped (data loss of sensitive input -> safety).
+    if args.contributor_name or args.contributor_contact:
         identity = ContributorIdentity(
-            name=args.contributor_name,
+            name=args.contributor_name or "",
             contact=args.contributor_contact or "",
         )
 
@@ -185,6 +187,10 @@ def _cmd_show(args: argparse.Namespace) -> int:
 
 def _cmd_serve(args: argparse.Namespace) -> int:
     """``serve`` — run the accessible browse server (blocking) on host/port."""
+    if not 0 <= args.port <= 65535:
+        # Reject out-of-range ports with a clean error instead of letting the socket
+        # layer raise an uncaught OverflowError (operability — predictable failure).
+        raise LedgerError(f"port out of range (0-65535): {args.port}")
     archive = _open_archive(Path(args.root))
     grants_path = Path(args.grants) if args.grants else None
     print(f"serving {archive.config.archive_name!r} on http://{args.host}:{args.port}")
@@ -201,17 +207,15 @@ def _cmd_audit(args: argparse.Namespace) -> int:
     """
     archive = _open_archive(Path(args.root))
     reports = archive.audit_fixity()
-    bag_dirs = (
-        sorted(p.name for p in archive.bags_dir.iterdir() if p.is_dir())
-        if archive.bags_dir.exists()
-        else []
-    )
     failures = 0
-    for name, report in zip(bag_dirs, reports, strict=False):
-        status = "PASS" if report.ok else "FAIL"
-        if not report.ok:
+    for name, report in reports:
+        # A structurally broken bag arrives here as a report with a failing result
+        # (audit_fixity no longer aborts the sweep), so it shows as FAIL and the
+        # remaining bags are still audited (degradability, failure transparency).
+        ok = report.ok
+        if not ok:
             failures += 1
-        print(f"{status}\t{name}\t({report.checked} file(s) checked)")
+        print(f"{'PASS' if ok else 'FAIL'}\t{name}\t({report.checked} file(s) checked)")
     summary = "PASS" if failures == 0 else "FAIL"
     print(f"{summary}: {len(reports)} bag(s) audited, {failures} failed")
     return 0 if failures == 0 else 1
@@ -266,10 +270,12 @@ def _cmd_policy(args: argparse.Namespace) -> int:
 def _cmd_takedown(args: argparse.Namespace) -> int:
     """``takedown`` — record an accountable takedown and remove stored copies.
 
-    The decision is recorded first (so the audit trail is complete even if
-    removal is retried), then the bag and the fast-lookup manifest are deleted
-    from every configured local/mirror location (autonomy, consent). Only the
-    record id and counts are printed (no-outing rule).
+    Order matters and is now honoured: (1) the accountable decision is recorded and
+    durably persisted FIRST, so the audit trail of *why* survives even if removal is
+    interrupted or retried; (2) the contributor identity is revoked from the vault
+    (right to be forgotten); (3) every stored copy is deleted from the bag, the
+    fast-lookup manifest, and each configured location. Only the record id and
+    counts are printed (no-outing rule).
     """
     import shutil
 
@@ -277,6 +283,37 @@ def _cmd_takedown(args: argparse.Namespace) -> int:
     now = args.now if args.now else now_iso()
     event, action = takedown(args.id, actor=args.actor, reason=args.reason, now=now)
 
+    # Capture the sealed identity ref BEFORE any deletion, so step 2 can revoke it.
+    identity_ref: str | None = None
+    try:
+        identity_ref = archive.get(args.id).identity_ref
+    except LedgerError:
+        identity_ref = None
+
+    # 1. Record and DURABLY persist the decision first (accountability — the record
+    #    of why a takedown happened must outlive the data it concerns).
+    log_path = archive.logs_dir / "takedowns.premis.json"
+    archive.logs_dir.mkdir(parents=True, exist_ok=True)
+    log = PremisLog.read(log_path) if log_path.exists() else PremisLog()
+    log.record(event)
+    log.write(log_path)
+
+    # 2. Revoke the contributor identity from the vault. A vault that cannot be
+    #    opened is NOT skipped silently — warn so a steward can revoke by hand
+    #    (consent / right to be forgotten, failure transparency).
+    revoked = False
+    if identity_ref is not None:
+        try:
+            archive._open_vault(None).revoke(identity_ref)
+            revoked = True
+        except LedgerError as exc:
+            print(
+                f"warning: could not revoke identity from the vault ({exc}); "
+                "revoke it manually to complete the takedown",
+                file=sys.stderr,
+            )
+
+    # 3. Remove every stored copy.
     removed = 0
     bag_dir = archive.bags_dir / args.id
     if bag_dir.exists():
@@ -292,14 +329,8 @@ def _cmd_takedown(args: argparse.Namespace) -> int:
             shutil.rmtree(replica)
             removed += 1
 
-    # Record the decision in the archive-level log so the takedown is auditable.
-    log_path = archive.logs_dir / "takedowns.premis.json"
-    archive.logs_dir.mkdir(parents=True, exist_ok=True)
-    log = PremisLog.read(log_path) if log_path.exists() else PremisLog()
-    log.record(event)
-    log.write(log_path)
-
-    print(f"record {args.id} taken down by {action.actor}; {removed} copy(ies) removed")
+    suffix = "; identity revoked" if revoked else ""
+    print(f"record {args.id} taken down by {action.actor}; {removed} copy(ies) removed{suffix}")
     return 0
 
 

@@ -104,10 +104,12 @@ def test_full_lifecycle_ingest_disclose_replicate_consent(tmp_path: Path) -> Non
     assert PremisEventType.INGESTION in event_types
     assert PremisEventType.FIXITY_CHECK in event_types
 
-    # The stored bag is structurally valid (audit passes).
+    # The stored bag is structurally valid (audit passes). audit_fixity now returns
+    # (bag_name, report) pairs so a broken bag can be reported without aborting.
     reports = archive.audit_fixity()
     assert len(reports) == 1
-    assert reports[0].ok
+    _name, report = reports[0]
+    assert report.ok
 
     # --- 2. DISCLOSE -------------------------------------------------------
     # Anonymous: sees the public field, not the sealed field; honest about it.

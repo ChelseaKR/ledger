@@ -25,6 +25,7 @@ _NAME = "Robin Vasquez"
 _CONTACT = "robin@example.org"
 _PRONOUNS = "they/them"
 _NOTES = "prefers contact via the collective"
+_NOW = "2026-01-01T00:00:00Z"
 
 
 def _identity() -> ContributorIdentity:
@@ -70,7 +71,7 @@ def test_resolve_requires_ref_in_grant(tmp_path: Path) -> None:
     """resolve returns the identity only when the grant names the ref in identity_unseal."""
     vault = _new_vault(tmp_path)
     ref = vault.add(_identity())
-    resolved = vault.resolve(ref, _unseal_grant(ref))
+    resolved = vault.resolve(ref, _unseal_grant(ref), _NOW)
     assert resolved.name == _NAME
     assert resolved.contact == _CONTACT
     assert resolved.pronouns == _PRONOUNS
@@ -82,7 +83,7 @@ def test_resolve_denied_without_unseal_grant(tmp_path: Path) -> None:
     vault = _new_vault(tmp_path)
     ref = vault.add(_identity())
     with pytest.raises(AccessDenied):
-        vault.resolve(ref, build_grant("nobody"))
+        vault.resolve(ref, build_grant("nobody"), _NOW)
 
 
 def test_resolve_denied_even_for_steward_without_unseal(tmp_path: Path) -> None:
@@ -90,7 +91,22 @@ def test_resolve_denied_even_for_steward_without_unseal(tmp_path: Path) -> None:
     vault = _new_vault(tmp_path)
     ref = vault.add(_identity())
     with pytest.raises(AccessDenied):
-        vault.resolve(ref, steward("steward"))
+        vault.resolve(ref, steward("steward"), _NOW)
+
+
+def test_resolve_denied_for_expired_grant_even_with_unseal_token(tmp_path: Path) -> None:
+    """An EXPIRED grant must not unseal an identity, even if it names the ref.
+
+    Regression for the critical fail-open bug where resolve() ignored grant expiry:
+    resolving an identity is the most sensitive disclosure, so a stale/time-revoked
+    credential must be downgraded to the public grant and denied (fail-closed)."""
+    vault = _new_vault(tmp_path)
+    ref = vault.add(_identity())
+    expired = build_grant("custodian", identity_unseal=(ref,), expires_at="2020-01-01T00:00:00Z")
+    with pytest.raises(AccessDenied):
+        vault.resolve(ref, expired, _NOW)  # _NOW (2026) is well past expiry
+    # The very same grant, evaluated before its expiry, still works (not deletion).
+    assert vault.resolve(ref, expired, "2019-06-01T00:00:00Z").name == _NAME
 
 
 def test_resolve_denied_message_omits_contents(tmp_path: Path) -> None:
@@ -98,7 +114,7 @@ def test_resolve_denied_message_omits_contents(tmp_path: Path) -> None:
     vault = _new_vault(tmp_path)
     ref = vault.add(_identity())
     with pytest.raises(AccessDenied) as excinfo:
-        vault.resolve(ref, build_grant("nobody"))
+        vault.resolve(ref, build_grant("nobody"), _NOW)
     message = str(excinfo.value)
     for secret in (_NAME, _CONTACT, _PRONOUNS, _NOTES):
         assert secret not in message
@@ -112,7 +128,7 @@ def test_resolve_grant_check_precedes_lookup(tmp_path: Path) -> None:
     """
     vault = _new_vault(tmp_path)
     with pytest.raises(AccessDenied):
-        vault.resolve("a-ref-that-does-not-exist", build_grant("nobody"))
+        vault.resolve("a-ref-that-does-not-exist", build_grant("nobody"), _NOW)
 
 
 def test_resolve_unknown_ref_with_grant_raises_vault_error(tmp_path: Path) -> None:
@@ -120,7 +136,7 @@ def test_resolve_unknown_ref_with_grant_raises_vault_error(tmp_path: Path) -> No
     vault = _new_vault(tmp_path)
     bogus = "phantom-ref"
     with pytest.raises(IdentityVaultError):
-        vault.resolve(bogus, _unseal_grant(bogus))
+        vault.resolve(bogus, _unseal_grant(bogus), _NOW)
 
 
 # --- wrong key fails as a vault error ---------------------------------------
@@ -167,7 +183,7 @@ def test_revoke_removes_mapping(tmp_path: Path) -> None:
     vault.revoke(ref)
     assert vault.contains(ref) is False
     with pytest.raises(IdentityVaultError):
-        vault.resolve(ref, _unseal_grant(ref))
+        vault.resolve(ref, _unseal_grant(ref), _NOW)
 
 
 def test_revoke_is_idempotent(tmp_path: Path) -> None:
@@ -236,5 +252,5 @@ def test_roundtrip_through_reopen_resolves(tmp_path: Path) -> None:
     ref = vault.add(_identity())
 
     reopened = IdentityVault.open(path, key)
-    resolved = reopened.resolve(ref, _unseal_grant(ref))
+    resolved = reopened.resolve(ref, _unseal_grant(ref), _NOW)
     assert resolved.name == _NAME

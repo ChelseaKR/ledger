@@ -329,7 +329,20 @@ class Grant:
     expires_at: str | None = None
 
     def is_expired(self, now: str) -> bool:
-        return self.expires_at is not None and parse_iso(now) >= parse_iso(self.expires_at)
+        """Whether this grant has expired at instant ``now``.
+
+        Fails CLOSED: a grant with no expiry never expires, but a grant whose
+        ``expires_at`` (or the supplied ``now``) is malformed is treated as
+        *expired* rather than crashing the disclosure decision. A corrupt
+        timestamp must downgrade a credential to the public grant, never widen
+        access (safety, robustness; mirrors access.policy._unseal_reached).
+        """
+        if self.expires_at is None:
+            return False
+        try:
+            return parse_iso(now) >= parse_iso(self.expires_at)
+        except (ValueError, TypeError):
+            return True
 
 
 # The anonymous public: sees only what is `PUBLIC` and unsealed. This is the grant

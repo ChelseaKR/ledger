@@ -109,8 +109,11 @@ def test_validate_bag_passes_on_good_bag(tmp_path: Path, payload_sources: dict[s
     bag = _make_bag(tmp_path / "bag", payload_sources)
     report = validate_bag(bag.path)
     assert report.ok
-    # Two payload files times two algorithms = four per-file checks.
-    assert report.checked == 4
+    # Validation now covers tag files too, so tampering with metadata is caught:
+    # 2 payload files x 2 algos = 4 payload checks, plus 4 tag files
+    # (bagit.txt, bag-info.txt, manifest-sha256, manifest-blake2b) x 2 tag manifests
+    # = 8 tag checks, for 12 per-file checks in total.
+    assert report.checked == 12
 
 
 @pytest.mark.preservation
