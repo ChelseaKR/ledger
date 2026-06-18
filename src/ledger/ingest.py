@@ -671,6 +671,104 @@ class Archive:
         vault = self._open_vault(None)
         return vault.resolve(record.identity_ref, grant, stamp)
 
+    # --- key rotation -------------------------------------------------------
+
+    def rekey_vault(
+        self,
+        new_key: bytes,
+        *,
+        old_key: bytes | None = None,
+        agent: str = "ledger",
+        now: str | None = None,
+    ) -> int:
+        """Rotate the identity-vault key, re-encrypting every sealed identity.
+
+        Rotation is a deliberate, recorded act, like every other sensitive steward
+        operation in ledger: it opens the vault with the current key (``old_key`` or
+        ``LEDGER_VAULT_KEY``), re-encrypts every identity under ``new_key`` (atomic —
+        the vault is untouched unless all entries re-encrypt), and appends a
+        ``REKEY`` PREMIS event to ``logs/key-rotations.premis.json`` so the rotation
+        is auditable. Only a count is recorded; no key, ref plaintext, or identity is
+        ever logged (no-outing rule).
+
+        Refuses (fail-closed) when the archive holds absolute-``SEALED`` content at
+        rest — a sealed field value or payload encrypted under the *same* vault key.
+        Rotating the identity entries alone would orphan that content, so rather than
+        silently strand it the rotation stops and tells the steward, leaving the
+        harder re-bagging migration for a deliberate, separate step. The common
+        archive (identity sealing and temporal seals, no absolute at-rest seals)
+        rotates cleanly.
+
+        Returns the number of identities re-encrypted. Raises
+        :class:`~ledger.errors.LedgerError` if there is no vault to rotate or if
+        absolute-sealed at-rest content is present.
+        """
+        if not self.vault_path.exists():
+            raise LedgerError("no identity vault exists to rekey")
+        for record in self._all_records():
+            sealed_at_rest = (
+                any(f.policy is AccessPolicy.SEALED for f in record.fields)
+                or any(p.policy is AccessPolicy.SEALED for p in record.payloads)
+                or (record.default_policy is AccessPolicy.SEALED and bool(record.payloads))
+            )
+            if sealed_at_rest:
+                raise LedgerError(
+                    "cannot rekey: the archive holds absolute-sealed content encrypted "
+                    "under the current vault key; rotating identities alone would orphan "
+                    "it. A full re-bagging migration is required first."
+                )
+        stamp = now if now is not None else now_iso()
+        vault = self._open_vault(old_key)
+        count = vault.rekey(new_key)
+
+        self.logs_dir.mkdir(parents=True, exist_ok=True)
+        log_path = self.logs_dir / "key-rotations.premis.json"
+        log = PremisLog.read(log_path) if log_path.exists() else PremisLog()
+        log.record(
+            PremisEvent(
+                event_type=PremisEventType.REKEY,
+                agent=agent,
+                outcome="success",
+                detail=f"identity vault rekeyed; {count} identity(ies) re-encrypted",
+                linked_object=None,
+                event_datetime=stamp,
+            )
+        )
+        log.write(log_path)
+        return count
+
+    # --- readiness ----------------------------------------------------------
+
+    def check_readiness(self) -> tuple[bool, str]:
+        """Cheap structural readiness probe for ``/healthz`` (no unsealing).
+
+        Confirms the archive can serve *at all* before the more expensive fixity
+        sweep, so a liveness check can distinguish "the process is up but the store
+        or vault is unreachable" from "everything is fine". It reads no payload,
+        unseals no identity, and returns only a generic, non-identity-bearing reason
+        code (no-outing rule):
+
+        * ``store-unreadable`` — the store root is missing or not readable.
+        * ``records-unreadable`` — the records directory is missing or not readable.
+        * ``vault-unopenable`` — a vault key is provisioned and a vault file exists,
+          but it cannot be opened with that key (wrong key or tampering). An archive
+          with no vault yet is still ready — affordability: contributors may not have
+          been sealed yet.
+
+        Returns ``(ready, reason)`` where ``reason`` is ``""`` when ready.
+        """
+        if not self.store_root.is_dir() or not os.access(self.store_root, os.R_OK):
+            return (False, "store-unreadable")
+        if not self.records_dir.is_dir() or not os.access(self.records_dir, os.R_OK):
+            return (False, "records-unreadable")
+        key = _vault_key_from_env()
+        if key is not None and self.vault_path.exists():
+            try:
+                IdentityVault.open(self.vault_path, key)
+            except LedgerError:
+                return (False, "vault-unopenable")
+        return (True, "")
+
     # --- audit --------------------------------------------------------------
 
     def audit_fixity(self) -> list[tuple[str, AuditReport]]:

@@ -82,7 +82,9 @@ active abuse) subject to prompt ratification.
    default system means a removed steward immediately falls back to their underlying
    membership level. If the removed steward held the vault key or an `identity_unseal`
    grant, **the key must be rotated and the grant revoked** — removal of the steward
-   grant alone does not undo a key they have already seen.
+   grant alone does not undo a key they have already seen. Rotation is a first-class,
+   recorded operation: `ledger vault rekey` re-encrypts the vault under a new key and
+   logs a `REKEY` PREMIS event (see the steward runbook in `infra/README.md`).
 3. **Record and review.** The removal, its reason, and any emergency action are recorded
    and reviewed by the community at the next opportunity. An emergency suspension that the
    community does not ratify is reversed.

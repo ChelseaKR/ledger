@@ -145,6 +145,7 @@ class PremisEventType(StrEnum):
     QUARANTINE = "quarantine"
     VALIDATION = "validation"
     MODERATION = "moderation"
+    REKEY = "key rotation"
 
 
 @dataclass(frozen=True)

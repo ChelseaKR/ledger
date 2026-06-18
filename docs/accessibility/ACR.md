@@ -17,8 +17,8 @@ ledger is a pre-1.0 reference implementation. This ACR is deliberately candid: w
 
 ### Summary
 
-- Supports: 45
-- Partially Supports: 7
+- Supports: 46
+- Partially Supports: 6
 - Does Not Support: 0
 - Not Applicable: 21
 
@@ -88,7 +88,7 @@ Success criteria at conformance Level AA.
 | 3.2.4 Consistent Identification | Supports | Components with the same function are labelled identically across pages. |
 | 3.3.3 Error Suggestion | Partially Supports | As with 3.3.1, the lone search field offers little to suggest; richer error suggestion is untested for want of a rich form. |
 | 3.3.4 Error Prevention (Legal, Financial, Data) | Not Applicable | The public surface is read-only; it commits no legal, financial, or data transactions. |
-| 4.1.3 Status Messages | Partially Supports | Result counts are rendered in the page text, but they are not yet announced via an aria-live region, so a dynamic status announcement is only partially supported. |
+| 4.1.3 Status Messages | Supports | The result count and empty-state message are rendered inside a polite live region (role="status", aria-live="polite") on the browse/search surface, so a screen reader announces how many records a search returned without a change of focus. A server test asserts the live region is present. |
 
 ### WCAG 2.2 — New Criteria (A/AA)
 

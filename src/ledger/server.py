@@ -310,11 +310,17 @@ def _browse_main_html(
     else:
         empty = ""
     facets = _facets_html(all_records if all_records is not None else records)
+    # The result count and empty state live in a polite status region so a screen
+    # reader announces "N record(s) shown" after a search without the user hunting
+    # for it — the dynamic status message WCAG 4.1.3 asks for. The region is present
+    # on every render so the announcement fires on the results page as it loads.
     return (
         f"    <h1>{_esc(heading)}</h1>\n"
         f"    {_search_form(query)}"
-        f'    <p class="count">{count} record(s) shown.</p>\n'
+        '    <div class="results-status" role="status" aria-live="polite">\n'
+        f'      <p class="count">{count} record(s) shown.</p>\n'
         f"{empty}"
+        "    </div>\n"
         '    <section aria-labelledby="list-heading">\n'
         '      <h2 id="list-heading">Records (list view)</h2>\n'
         f"      {_records_list_html(records)}\n"
@@ -973,16 +979,29 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         """
         archive = self._archive()
         grant = self._resolve_grant()
+        # Structural readiness first: a liveness probe must fail when the store or
+        # vault is unreachable, not just when a checksum drifts. The reason code is
+        # generic infrastructure state — never a path, id, or identity (no-outing).
+        ready, reason = archive.check_readiness()
+        if not ready:
+            self._send_json(
+                503, {"status": "degraded", "all_verified": False, "ready": False, "reason": reason}
+            )
+            return
         try:
             reports = archive.audit_fixity()
         except LedgerError:
-            self._send_json(503, {"status": "degraded", "all_verified": False})
+            self._send_json(503, {"status": "degraded", "all_verified": False, "ready": True})
             return
         passed = sum(1 for _name, r in reports if r.ok)
         failed = len(reports) - passed
         status = "ok" if failed == 0 else "degraded"
         code = 200 if failed == 0 else 503
-        body: dict[str, object] = {"status": status, "all_verified": failed == 0}
+        body: dict[str, object] = {
+            "status": status,
+            "all_verified": failed == 0,
+            "ready": True,
+        }
         if grant.is_steward:
             body["fixity"] = {
                 "bags_audited": len(reports),

@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -383,6 +384,34 @@ def _cmd_add_location(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_vault_rekey(args: argparse.Namespace) -> int:
+    """``vault rekey`` — rotate the identity-vault key, re-encrypting every identity.
+
+    Both keys travel as environment variables, never on the command line: the
+    current key in ``LEDGER_VAULT_KEY`` and the new key in ``LEDGER_NEW_VAULT_KEY``
+    (confidentiality — a key in argv would land in shell history and the process
+    table). The rotation is atomic and records a ``REKEY`` PREMIS event; only a
+    count is printed, never a key or an identity (no-outing rule). After it
+    succeeds, the steward sets ``LEDGER_VAULT_KEY`` to the new key going forward.
+    """
+    archive = _open_archive(Path(args.root))
+    new_raw = os.environ.get("LEDGER_NEW_VAULT_KEY")
+    if not new_raw:
+        raise LedgerError(
+            "set LEDGER_NEW_VAULT_KEY to the new vault key (via the environment, never argv)"
+        )
+    old_raw = os.environ.get("LEDGER_VAULT_KEY")
+    now = args.now if args.now else now_iso()
+    count = archive.rekey_vault(
+        new_raw.encode("ascii"),
+        old_key=old_raw.encode("ascii") if old_raw else None,
+        agent=args.actor,
+        now=now,
+    )
+    print(f"rekeyed {count} identity(ies); set LEDGER_VAULT_KEY to the new key going forward")
+    return 0
+
+
 def _cmd_demo(args: argparse.Namespace) -> int:
     """``demo`` — run the self-contained, scripted no-outing proof end to end."""
     return demo.main()
@@ -492,6 +521,16 @@ def _build_parser() -> argparse.ArgumentParser:
     p_loc.add_argument("--path", required=True)
     p_loc.add_argument("--kind", default="mirror", choices=["local", "mirror"])
     p_loc.set_defaults(func=_cmd_add_location)
+
+    p_vault = sub.add_parser("vault", help="identity-vault maintenance")
+    vault_sub = p_vault.add_subparsers(dest="vault_command", required=True, metavar="SUBCOMMAND")
+    p_rekey = vault_sub.add_parser(
+        "rekey", help="rotate the vault key (keys via env vars, never argv)"
+    )
+    p_rekey.add_argument("--root", required=True)
+    p_rekey.add_argument("--actor", required=True, help="steward id performing the rotation")
+    p_rekey.add_argument("--now", help="ISO-8601 timestamp")
+    p_rekey.set_defaults(func=_cmd_vault_rekey)
 
     p_demo = sub.add_parser("demo", help="run the scripted end-to-end no-outing proof")
     p_demo.set_defaults(func=_cmd_demo)

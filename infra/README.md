@@ -185,6 +185,44 @@ bit-intact.
 
 ---
 
+## Rotating the vault key
+
+Key rotation is a *when*, not an *if* — a steward who held the key leaves, you
+suspect the key was exposed, or your community sets a rotation cadence. `ledger
+vault rekey` re-encrypts every sealed identity under a new key in one atomic step
+and records a `REKEY` PREMIS event in `logs/key-rotations.premis.json`. The refs in
+every record are unchanged, so nothing else has to move.
+
+Both keys are passed **through the environment, never on the command line** (a key
+in `argv` lands in shell history and the process table): the current key in
+`LEDGER_VAULT_KEY` and the new key in `LEDGER_NEW_VAULT_KEY`.
+
+```sh
+# Generate the new key and hold it somewhere safe FIRST.
+NEW_KEY="$(docker run --rm python:3.12-slim python -c \
+  'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')"
+
+# Rotate. LEDGER_VAULT_KEY already lives in infra/.env (the current key).
+docker compose -f infra/docker-compose.yml exec \
+  -e LEDGER_NEW_VAULT_KEY="$NEW_KEY" \
+  ledger ledger vault rekey --root /data --actor <your-steward-id>
+
+# On success: replace LEDGER_VAULT_KEY in infra/.env with $NEW_KEY, then restart.
+docker compose -f infra/docker-compose.yml up -d
+```
+
+The command prints only a count — never a key or an identity. **After it succeeds,
+update `LEDGER_VAULT_KEY` to the new key** (and re-do your separately-stored key
+backup); the old key no longer opens the vault.
+
+> **One limitation, by design.** If your archive holds *absolute-sealed* content
+> (a field or payload sealed from everyone, encrypted at rest under the same key),
+> `vault rekey` refuses rather than silently orphaning it — that content needs a
+> full re-bagging migration first. Archives that use identity sealing and temporal
+> seals (the common case) rotate cleanly.
+
+---
+
 ## Adding a replica location
 
 Durability comes from copies in independent places — a member's drive, a second
@@ -333,6 +371,7 @@ ledger browse   --root /data [--as steward]                  # what a viewer can
 ledger takedown --root /data --id <id> --actor <s> --reason <why>
 ledger policy   --root /data --id <id> --level <lvl> --actor <s> --reason <why>
 ledger add-location --root /data --name <n> --path <p> --kind mirror
+ledger vault rekey --root /data --actor <s>                   # rotate the vault key (keys via env)
 ```
 
 `docker compose down -v` would delete the volume and the entire archive with it.

@@ -226,6 +226,51 @@ class IdentityVault:
         """Return whether *ref* currently maps to a stored identity."""
         return ref in self._store
 
+    def __len__(self) -> int:
+        """Number of sealed identities in the vault (no contents revealed)."""
+        return len(self._store)
+
+    # --- key rotation -------------------------------------------------------
+
+    def rekey(self, new_key: bytes) -> int:
+        """Re-encrypt every sealed identity under *new_key* and persist atomically.
+
+        Key rotation is a *when*, not an *if* (steward turnover, a suspected
+        exposure, a compliance cadence), so it must be a first-class, recoverable
+        operation rather than a manual file-surgery a steward improvises. Every
+        entry is decrypted with the current key and re-encrypted with the new one;
+        the swap to the new key happens only after *all* entries re-encrypt, so a
+        failure part-way through leaves the vault untouched (atomicity, fault
+        tolerance). The refs are unchanged — they are random and key-independent —
+        so no record that points at the vault needs to change (unlinkability holds
+        across a rotation).
+
+        Returns the number of identities re-encrypted. Never echoes a key, a ref's
+        plaintext, or any ciphertext (no-outing rule). Raises
+        :class:`IdentityVaultError` on an invalid *new_key* or if any stored entry
+        fails to decrypt with the current key (wrong current key or tampering),
+        before anything is written.
+        """
+        try:
+            new_fernet = Fernet(new_key)
+        except (ValueError, TypeError) as exc:
+            raise IdentityVaultError("invalid Fernet key") from exc
+        # Re-encrypt into a fresh map first; only commit if every entry succeeds, so
+        # a mid-rotation failure cannot leave a half-rotated vault -> integrity.
+        rotated: dict[str, str] = {}
+        for ref, token in self._store.items():
+            try:
+                raw = self._fernet.decrypt(token.encode("ascii"))
+            except InvalidToken as exc:
+                raise IdentityVaultError(
+                    "identity decryption failed during rekey (wrong key or tampering)"
+                ) from exc
+            rotated[ref] = new_fernet.encrypt(raw).decode("ascii")
+        self._fernet = new_fernet
+        self._store = rotated
+        self._persist()
+        return len(rotated)
+
     # --- at-rest encryption of absolute-sealed content ----------------------
 
     def encrypt_text(self, plaintext: str) -> str:

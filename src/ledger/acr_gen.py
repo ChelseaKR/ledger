@@ -354,10 +354,11 @@ _WCAG_AA: tuple[Criterion, ...] = (
     Criterion(
         "4.1.3",
         "Status Messages",
-        _PARTIAL,
-        "Result counts are rendered in the page text, but they are not yet "
-        "announced via an aria-live region, so a dynamic status announcement "
-        "is only partially supported.",
+        _SUPPORTS,
+        "The result count and empty-state message are rendered inside a polite "
+        'live region (role="status", aria-live="polite") on the browse/search '
+        "surface, so a screen reader announces how many records a search returned "
+        "without a change of focus. A server test asserts the live region is present.",
     ),
 )
 

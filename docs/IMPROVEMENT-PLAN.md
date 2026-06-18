@@ -8,6 +8,15 @@
 >
 > **Drafted: 2026-06-17.** Planning document, not a contract; sequence and scope are
 > subject to maintainer judgement.
+>
+> **Execution status (2026-06-18).** P1-1 through P1-4 and P2-1 and P2-3 are
+> implemented in this branch: the backup→restore disaster-recovery test (`make
+> backup-test`), a recorded `ledger vault rekey` key-rotation path, a deeper
+> `/healthz` readiness probe, replication interruption/partial-transfer tests, the
+> WCAG 4.1.3 live-region for result counts (ACR row upgraded to *Supports*), and a
+> concurrent-ingest safety test. **P2-2** (split `server.py`) and **P2-4** (refactor
+> `demo.py`) are intentionally deferred — internal refactors with higher churn and
+> lower user-visible value, best done as their own focused changes.
 
 ## How to read this
 
