@@ -28,6 +28,7 @@ import json
 import threading
 import urllib.request
 from contextlib import redirect_stderr, redirect_stdout
+from dataclasses import dataclass, replace
 from pathlib import Path
 from tempfile import mkdtemp
 
@@ -135,6 +136,100 @@ def _require(condition: bool, message: str) -> None:
         raise RuntimeError(message)
 
 
+def _build_demo_record(config: Config) -> Record:
+    """Build the synthetic oral-history record the proof ingests.
+
+    The ``story`` field is public; ``real_names`` carries the sealed-field sentinel
+    and is sealed-until, so the record exercises both selective disclosure and the
+    no-outing guarantee in one object. Kept as a helper so :func:`main` reads as a
+    sequence of named steps rather than one long block.
+    """
+    return Record(
+        title="Thursday nights at the center",
+        default_policy=AccessPolicy.PUBLIC,
+        dublin_core=DublinCore(
+            title=["Thursday nights at the center"],
+            description=["A short oral history of weekly mutual-aid gatherings."],
+            publisher=[config.archive_name],
+            type=["oral history"],
+            language=["en"],
+        ),
+        fields=[
+            Field(
+                name="story",
+                value="We met at the community center on Thursdays.",
+                policy=AccessPolicy.PUBLIC,
+            ),
+            Field(
+                name="real_names",
+                value=f"private participant roster: {_SENTINEL_SEALED_FIELD}",
+                policy=AccessPolicy.SEALED_UNTIL,
+            ),
+        ],
+        content_warnings=["outing"],
+    )
+
+
+@dataclass(frozen=True)
+class _PublicSurfaces:
+    """Every public surface the no-outing proof renders, plus the captured logs.
+
+    Grouping them in one value keeps :func:`main` legible: it gathers the surfaces
+    in one call, then asserts the sentinel is absent from each.
+    """
+
+    steward_record_html: str
+    steward_record_json: str
+    anon_browse_html: str
+    anon_record_html: str
+    anon_search_html: str
+    anon_records_json: str
+    anon_record_json: str
+    healthz: str
+    server_logs: str
+
+
+def _collect_public_surfaces(archive: Archive, grants_path: Path, rid: str) -> _PublicSurfaces:
+    """Drive the in-process server over loopback and return every public surface.
+
+    A steward grant (the *most* privileged read-path viewer) and the anonymous
+    public both fetch the record, and all server log output is captured so the proof
+    can assert no sentinel reaches a log either. The server is always shut down and
+    closed, even on error (resource hygiene).
+    """
+    httpd = make_server(archive, host="127.0.0.1", port=0, grants_path=grants_path)
+    raw_host, port = httpd.server_address[0], httpd.server_address[1]
+    host = raw_host.decode("ascii") if isinstance(raw_host, (bytes, bytearray)) else str(raw_host)
+    port = int(port)
+
+    log_buffer = io.StringIO()
+    server_thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    try:
+        with redirect_stderr(log_buffer), redirect_stdout(log_buffer):
+            server_thread.start()
+            surfaces = _PublicSurfaces(
+                steward_record_html=_http_get(
+                    host, port, f"/record/{rid}?proceed=1", subject="steward-1"
+                ),
+                steward_record_json=_http_get(
+                    host, port, f"/api/record/{rid}", subject="steward-1"
+                ),
+                anon_browse_html=_http_get(host, port, "/"),
+                anon_record_html=_http_get(host, port, f"/record/{rid}?proceed=1"),
+                anon_search_html=_http_get(host, port, "/search?q=Thursday"),
+                anon_records_json=_http_get(host, port, "/api/records"),
+                anon_record_json=_http_get(host, port, f"/api/record/{rid}"),
+                healthz=_http_get(host, port, "/healthz"),
+                server_logs="",  # filled in below, after the buffer is final
+            )
+            httpd.shutdown()
+        server_thread.join(timeout=5)
+    finally:
+        httpd.server_close()
+    # Replace with the now-complete captured log text (frozen dataclass -> rebuild).
+    return replace(surfaces, server_logs=log_buffer.getvalue())
+
+
 def main() -> int:
     """Run the scripted end-to-end no-outing proof; return ``0`` on success.
 
@@ -165,30 +260,7 @@ def main() -> int:
     # --- 2. Ingest with a sealed sentinel identity -------------------------
     _header("2. Ingest a synthetic oral history WITH a sealed sentinel identity")
     story_path = _synthetic_story_path(workdir)
-    record = Record(
-        title="Thursday nights at the center",
-        default_policy=AccessPolicy.PUBLIC,
-        dublin_core=DublinCore(
-            title=["Thursday nights at the center"],
-            description=["A short oral history of weekly mutual-aid gatherings."],
-            publisher=[config.archive_name],
-            type=["oral history"],
-            language=["en"],
-        ),
-        fields=[
-            Field(
-                name="story",
-                value="We met at the community center on Thursdays.",
-                policy=AccessPolicy.PUBLIC,
-            ),
-            Field(
-                name="real_names",
-                value=f"private participant roster: {_SENTINEL_SEALED_FIELD}",
-                policy=AccessPolicy.SEALED_UNTIL,
-            ),
-        ],
-        content_warnings=["outing"],
-    )
+    record = _build_demo_record(config)
     identity = ContributorIdentity(name=_SENTINEL_NAME, contact=_SENTINEL_CONTACT)
     aip = archive.ingest(
         {story_path.name: story_path},
@@ -238,36 +310,10 @@ def main() -> int:
         encoding="utf-8",
     )
 
-    httpd = make_server(archive, host="127.0.0.1", port=0, grants_path=grants_path)
-    raw_host, port = httpd.server_address[0], httpd.server_address[1]
-    host = raw_host.decode("ascii") if isinstance(raw_host, (bytes, bytearray)) else str(raw_host)
-    port = int(port)
-
-    # Capture ALL server log output to prove logs never carry a sentinel either.
-    log_buffer = io.StringIO()
-    server_thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     rid = record.record_id
-    try:
-        with redirect_stderr(log_buffer), redirect_stdout(log_buffer):
-            server_thread.start()
-
-            # Render the public HTTP surface both as the most-privileged steward
-            # and as the anonymous public, after proceeding past the content-warning
-            # interstitial in each case.
-            steward_html = _http_get(host, port, f"/record/{rid}?proceed=1", subject="steward-1")
-            steward_record_json = _http_get(host, port, f"/api/record/{rid}", subject="steward-1")
-            anon_browse_html = _http_get(host, port, "/")
-            anon_record_html = _http_get(host, port, f"/record/{rid}?proceed=1")
-            anon_search_html = _http_get(host, port, "/search?q=Thursday")
-            anon_records_json = _http_get(host, port, "/api/records")
-            anon_record_json = _http_get(host, port, f"/api/record/{rid}")
-            healthz = _http_get(host, port, "/healthz")
-
-            httpd.shutdown()
-        server_thread.join(timeout=5)
-    finally:
-        httpd.server_close()
-    captured_logs = log_buffer.getvalue()
+    # Render every public HTTP surface — as the most-privileged steward and as the
+    # anonymous public — and capture all server logs, in one helper.
+    surfaces = _collect_public_surfaces(archive, grants_path, rid)
 
     # In-process disclose/browse outputs, as steward and as the anonymous public.
     steward_grant = steward("demo-steward")
@@ -292,25 +338,35 @@ def main() -> int:
     #     steward's authorized view, the on-disk record manifest, and all logs. Its
     #     only home is the encrypted vault (where it exists solely as ciphertext).
     print("  (a) contributor identity must be absent from EVERY surface:")
-    _assert_free_of("record HTML (as steward, proceeded)", steward_html, _IDENTITY_SENTINELS)
-    _assert_free_of("/api/record/{id} JSON (as steward)", steward_record_json, _IDENTITY_SENTINELS)
+    _assert_free_of(
+        "record HTML (as steward, proceeded)", surfaces.steward_record_html, _IDENTITY_SENTINELS
+    )
+    _assert_free_of(
+        "/api/record/{id} JSON (as steward)", surfaces.steward_record_json, _IDENTITY_SENTINELS
+    )
     _assert_free_of("disclose() JSON (as steward)", steward_disclosed_json, _IDENTITY_SENTINELS)
-    _assert_free_of("browse HTML (anonymous)", anon_browse_html, _IDENTITY_SENTINELS)
-    _assert_free_of("record HTML (anonymous, proceeded)", anon_record_html, _IDENTITY_SENTINELS)
-    _assert_free_of("search HTML (anonymous)", anon_search_html, _IDENTITY_SENTINELS)
-    _assert_free_of("/api/records JSON (anonymous)", anon_records_json, _IDENTITY_SENTINELS)
-    _assert_free_of("/api/record/{id} JSON (anonymous)", anon_record_json, _IDENTITY_SENTINELS)
-    _assert_free_of("/healthz JSON", healthz, _IDENTITY_SENTINELS)
-    _assert_free_of("captured server log output", captured_logs, _IDENTITY_SENTINELS)
+    _assert_free_of("browse HTML (anonymous)", surfaces.anon_browse_html, _IDENTITY_SENTINELS)
+    _assert_free_of(
+        "record HTML (anonymous, proceeded)", surfaces.anon_record_html, _IDENTITY_SENTINELS
+    )
+    _assert_free_of("search HTML (anonymous)", surfaces.anon_search_html, _IDENTITY_SENTINELS)
+    _assert_free_of(
+        "/api/records JSON (anonymous)", surfaces.anon_records_json, _IDENTITY_SENTINELS
+    )
+    _assert_free_of(
+        "/api/record/{id} JSON (anonymous)", surfaces.anon_record_json, _IDENTITY_SENTINELS
+    )
+    _assert_free_of("/healthz JSON", surfaces.healthz, _IDENTITY_SENTINELS)
+    _assert_free_of("captured server log output", surfaces.server_logs, _IDENTITY_SENTINELS)
     for name, text in on_disk.items():
         _assert_free_of(f"on-disk artifact {name}", text, _IDENTITY_SENTINELS)
 
     # (b) The SEALED field proves selective disclosure: hidden from the anonymous
     #     public on every read path, yet visible to an authorized steward.
     print("  (b) sealed field must be absent from the ANONYMOUS public view:")
-    _assert_free_of("record HTML (anonymous)", anon_record_html, (_SENTINEL_SEALED_FIELD,))
+    _assert_free_of("record HTML (anonymous)", surfaces.anon_record_html, (_SENTINEL_SEALED_FIELD,))
     _assert_free_of(
-        "/api/record/{id} JSON (anonymous)", anon_record_json, (_SENTINEL_SEALED_FIELD,)
+        "/api/record/{id} JSON (anonymous)", surfaces.anon_record_json, (_SENTINEL_SEALED_FIELD,)
     )
     _assert_free_of("disclose() JSON (anonymous)", anon_disclosed_json, (_SENTINEL_SEALED_FIELD,))
     _require(
