@@ -294,7 +294,7 @@ def _render_sample_pages() -> dict[str, str]:
         from ledger.config import Config
         from ledger.ingest import Archive
         from ledger.models import AccessPolicy, DublinCore, Field, Record
-        from ledger.server import (
+        from ledger.render import (
             _browse_main_html,
             _page,
             _record_main_html,
