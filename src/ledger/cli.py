@@ -194,8 +194,22 @@ def _cmd_serve(args: argparse.Namespace) -> int:
         raise LedgerError(f"port out of range (0-65535): {args.port}")
     archive = _open_archive(Path(args.root))
     grants_path = Path(args.grants) if args.grants else None
+    if args.allow_contributions and not os.environ.get("LEDGER_VAULT_KEY"):
+        # The contribution form offers an optional sealed contact, which must be
+        # encrypted into the vault on submit. Refuse to enable the write path without
+        # a key rather than risk dropping a contributor's sealed details (safety).
+        raise LedgerError(
+            "--allow-contributions requires LEDGER_VAULT_KEY so contributor contact "
+            "details can be sealed into the vault"
+        )
     print(f"serving {archive.config.archive_name!r} on http://{args.host}:{args.port}")
-    serve(archive, host=args.host, port=args.port, grants_path=grants_path)
+    serve(
+        archive,
+        host=args.host,
+        port=args.port,
+        grants_path=grants_path,
+        allow_contributions=args.allow_contributions,
+    )
     return 0
 
 
@@ -478,6 +492,11 @@ def _build_parser() -> argparse.ArgumentParser:
     p_serve.add_argument("--host", default="127.0.0.1")
     p_serve.add_argument("--port", type=int, default=8000)
     p_serve.add_argument("--grants", help="path to a pre-provisioned grants JSON file")
+    p_serve.add_argument(
+        "--allow-contributions",
+        action="store_true",
+        help="enable the /contribute submission form (requires LEDGER_VAULT_KEY)",
+    )
     p_serve.set_defaults(func=_cmd_serve)
 
     p_audit = sub.add_parser("audit", help="validate every bag's fixity")

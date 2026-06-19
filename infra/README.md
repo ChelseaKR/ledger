@@ -120,6 +120,33 @@ docker compose -f infra/docker-compose.yml exec ledger ledger browse --root /dat
 `.env` is present and identity sealing works. If you prefer a one-off container,
 use `run --rm` instead — it also reads `.env`.
 
+### Letting contributors submit from the browser (optional)
+
+By default the server is read-only. To let contributors submit a record themselves
+(rather than a steward at the CLI), start the server with `--allow-contributions`.
+A `/contribute` form then accepts a title, an account, content warnings, an optional
+**sealed** contact, and a *requested* visibility:
+
+```sh
+# Requires LEDGER_VAULT_KEY so a contributor's sealed contact can be encrypted.
+ledger serve --root /data --allow-contributions
+```
+
+Safety properties of the contribution path, by construction:
+
+- **Nothing is published by submitting.** Every submission lands *sealed-pending*; a
+  steward must review it (`ledger browse --as steward`, then `ledger policy …`)
+  before it becomes visible. Nothing goes public by inaction.
+- **No-outing.** A contributor's name/contact is optional, sealed into the vault on
+  submit, and never echoed on the confirmation page, in a log, or in an error.
+- **Off by default.** A read-only deployment never grows a write path unless you opt
+  in, and `--allow-contributions` refuses to start without `LEDGER_VAULT_KEY`.
+
+> **Operator note.** The form is an open, unauthenticated POST. On a public-facing
+> deployment, put it behind a reverse-proxy rate limit (and/or an invite link or
+> CAPTCHA) to deter spam. Binary file upload is intentionally not yet supported on
+> this path — stewards attach payload files via `ledger ingest`.
+
 ---
 
 ## Backups

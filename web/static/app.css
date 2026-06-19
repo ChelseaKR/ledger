@@ -369,3 +369,51 @@ dl {
     font-size: 2rem;
   }
 }
+
+/* --- contribution form ------------------------------------------------- */
+.contribute fieldset {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin: var(--space) 0;
+  padding: var(--space);
+}
+.contribute legend {
+  font-weight: 700;
+  padding: 0 0.4rem;
+}
+.contribute label {
+  display: inline-block;
+}
+.contribute input[type="text"],
+.contribute textarea {
+  display: block;
+  width: 100%;
+  max-width: 40rem;
+  margin-top: 0.25rem;
+  padding: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--ink);
+  font: inherit;
+}
+.contribute .cw-option,
+.contribute .vis-option {
+  margin: 0.25rem 0;
+}
+.contribute .cw-option label,
+.contribute .vis-option label {
+  margin-left: 0.4rem;
+}
+.contribute .hint {
+  color: var(--muted);
+  margin: 0.25rem 0 0.5rem;
+}
+.contribute .error,
+p.error {
+  color: var(--warn-ink);
+  background: var(--warn-bg);
+  border: 1px solid var(--warn-border);
+  border-radius: var(--radius);
+  padding: 0.5rem 0.75rem;
+}

@@ -45,7 +45,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlsplit
 
-from ledger import consent, i18n, oai, search
+from ledger import consent, contribute, i18n, oai, search
 from ledger.access import anonymous
 from ledger.access.grants import load_grants
 from ledger.errors import AccessDenied, LedgerError, ObjectNotFound
@@ -564,6 +564,19 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         grants = getattr(self.server, "grants", None)
         return grants if isinstance(grants, dict) else {}
 
+    def _allow_contributions(self) -> bool:
+        """Whether the contributor submission surface is enabled on this server.
+
+        Off by default: an existing read-only deployment never grows a write path by
+        surprise. A steward opts in explicitly (``serve --allow-contributions``), so
+        the closed default is the safe one (least privilege, least surprise).
+        """
+        return bool(getattr(self.server, "allow_contributions", False))
+
+    def _nav(self) -> str:
+        """Site navigation for the current request, including Contribute when enabled."""
+        return _nav_html(self._lang(), contribute=self._allow_contributions())
+
     # --- response helpers ---------------------------------------------------
 
     def _send(self, status: int, body: bytes, content_type: str) -> None:
@@ -647,6 +660,8 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
                 self._handle_sitemap()
             elif path == "/steward":
                 self._handle_steward_console()
+            elif path == "/contribute":
+                self._handle_contribute_form()
             elif path.startswith("/record/") and "/file/" in path:
                 rid, _, name = path[len("/record/") :].partition("/file/")
                 self._handle_file(rid, name)
@@ -675,7 +690,9 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         self._t0 = time.monotonic()
         path = urlsplit(self.path).path
         try:
-            if path.startswith("/record/") and path.endswith("/consent"):
+            if path == "/contribute":
+                self._post_contribute()
+            elif path.startswith("/record/") and path.endswith("/consent"):
                 self._post_consent(path[len("/record/") : -len("/consent")])
             elif path.startswith("/steward/requests/") and path.endswith("/resolve"):
                 rid = path[len("/steward/requests/") : -len("/resolve")]
@@ -728,7 +745,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
                     "Invalid request",
                     lang=lang,
                     main_html=_error_main_html("Invalid request", "Please choose a valid action."),
-                    nav_html=_nav_html(lang),
+                    nav_html=self._nav(),
                 ),
             )
             return
@@ -750,7 +767,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             '    <p><a href="/">Back to all records</a></p>'
         )
         self._send_html(
-            200, _page("Request received", lang=lang, main_html=main_html, nav_html=_nav_html(lang))
+            200, _page("Request received", lang=lang, main_html=main_html, nav_html=self._nav())
         )
 
     def _post_resolve_request(self, raw_id: str) -> None:
@@ -815,7 +832,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             "    </section>"
         )
         self._send_html(
-            200, _page("Steward console", lang=lang, main_html=main_html, nav_html=_nav_html(lang))
+            200, _page("Steward console", lang=lang, main_html=main_html, nav_html=self._nav())
         )
 
     # --- HTML routes --------------------------------------------------------
@@ -838,9 +855,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         main_html = _browse_main_html(
             records, heading=heading, lang=lang, all_records=self._all_for_facets(grant)
         )
-        self._send_html(
-            200, _page("Browse", lang=lang, main_html=main_html, nav_html=_nav_html(lang))
-        )
+        self._send_html(200, _page("Browse", lang=lang, main_html=main_html, nav_html=self._nav()))
 
     @staticmethod
     def _facet_from(params: dict[str, list[str]]) -> tuple[str, str]:
@@ -881,7 +896,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
                 f"Search — {query}" if query else "Search",
                 lang=lang,
                 main_html=main_html,
-                nav_html=_nav_html(lang),
+                nav_html=self._nav(),
             ),
         )
 
@@ -907,7 +922,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
                 record.title,
                 lang=self._lang(),
                 main_html=main_html,
-                nav_html=_nav_html(self._lang()),
+                nav_html=self._nav(),
             ),
         )
 
@@ -939,7 +954,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
                 "Not found",
                 lang=self._lang(),
                 main_html=main_html,
-                nav_html=_nav_html(self._lang()),
+                nav_html=self._nav(),
             ),
         )
 
@@ -963,6 +978,67 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             self._send_json(404, {"error": "not found"})
             return
         self._send_json(200, record.to_dict(withheld_reasons=_is_insider(grant)))
+
+    # --- contributor submission (opt-in write path) -------------------------
+
+    def _handle_contribute_form(self, *, error: str | None = None, status: int = 200) -> None:
+        """``GET /contribute`` — the accessible contribution form, when enabled.
+
+        Returns a neutral 404 when the submission surface is off, so a read-only
+        deployment never advertises a write path (least privilege). The form itself
+        is plain about review-before-publish and sealed contact (no-outing rule)."""
+        if not self._allow_contributions():
+            self._handle_not_found()
+            return
+        lang = self._lang()
+        main_html = contribute.render_contribute_main(self._archive().config, error=error)
+        self._send_html(
+            status, _page("Contribute", lang=lang, main_html=main_html, nav_html=self._nav())
+        )
+
+    def _post_contribute(self) -> None:
+        """``POST /contribute`` — accept a submission through the one ingest path.
+
+        The submission is built into a *sealed-pending* record (nothing is published
+        by inaction) and any contributor contact is sealed into the identity vault by
+        :meth:`Archive.ingest`; the confirmation page echoes back none of it (the
+        no-outing rule, by construction). Invalid input re-renders the form with a
+        generic message and a 400; a sealing failure (e.g. a missing vault key)
+        renders a safe error that names no submitted value."""
+        if not self._allow_contributions():
+            self._handle_not_found()
+            return
+        form = self._read_form()
+        try:
+            submission = contribute.parse_submission(form, self._archive().config)
+        except LedgerError as exc:
+            self._handle_contribute_form(error=str(exc), status=400)
+            return
+        try:
+            self._archive().ingest(
+                {},
+                submission.record,
+                identity=submission.identity,
+                agent="contribution",
+                now=now_iso(),
+            )
+        except LedgerError:
+            # Name nothing the contributor submitted; just decline cleanly.
+            self._handle_contribute_form(
+                error="Your contribution could not be saved right now. Please try again.",
+                status=503,
+            )
+            return
+        lang = self._lang()
+        self._send_html(
+            200,
+            _page(
+                "Thank you",
+                lang=lang,
+                main_html=contribute.render_thanks_main(),
+                nav_html=self._nav(),
+            ),
+        )
 
     # --- health -------------------------------------------------------------
 
@@ -1051,9 +1127,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             '    <p class="muted">Machine-readable health is at '
             '<a href="/healthz">/healthz</a>.</p>'
         )
-        self._send_html(
-            200, _page("Status", lang=lang, main_html=main_html, nav_html=_nav_html(lang))
-        )
+        self._send_html(200, _page("Status", lang=lang, main_html=main_html, nav_html=self._nav()))
 
     # --- plain-language safety surface (user research P0-4) -----------------
 
@@ -1061,7 +1135,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         lang = self._lang()
         body = "\n".join(f"    <p>{_esc(p)}</p>" for p in paragraphs if p)
         main_html = f"    <h1>{_esc(heading)}</h1>\n{body}"
-        self._send_html(200, _page(title, lang=lang, main_html=main_html, nav_html=_nav_html(lang)))
+        self._send_html(200, _page(title, lang=lang, main_html=main_html, nav_html=self._nav()))
 
     def _handle_about(self) -> None:
         """``GET /about`` — who runs the archive and how it protects people."""
@@ -1210,7 +1284,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             "    </form>"
         )
         self._send_html(
-            200, _page("Manage consent", lang=lang, main_html=main_html, nav_html=_nav_html(lang))
+            200, _page("Manage consent", lang=lang, main_html=main_html, nav_html=self._nav())
         )
 
     # --- interoperability (user research P2-3): OAI-PMH + sitemap ----------
@@ -1302,18 +1376,22 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
 # --- module-level render helpers (shared by routes) -------------------------
 
 
-def _nav_html(lang: str = "en") -> str:
+def _nav_html(lang: str = "en", *, contribute: bool = False) -> str:
     """The site navigation: descriptive links only, no positive tabindex.
 
     Labels are localized (i18n), and the "Status" link points at the human-readable
     ``/status`` page rather than the raw-JSON ``/healthz`` endpoint, which alarmed
     non-technical users and was unreadable to a screen reader (user research P1-1).
+    The Contribute link appears only when the submission surface is enabled on the
+    server, so a read-only deployment never advertises a write path it does not have.
     """
+    contribute_link = '      <a href="/contribute">Contribute</a>\n' if contribute else ""
     return (
         f'\n      <a href="/">{_esc(i18n.t(lang, "nav_browse"))}</a>\n'
         f'      <a href="/search">{_esc(i18n.t(lang, "nav_search"))}</a>\n'
         f'      <a href="/about">{_esc(i18n.t(lang, "nav_about"))}</a>\n'
-        f'      <a href="/status">{_esc(i18n.t(lang, "nav_status"))}</a>\n    '
+        f'      <a href="/status">{_esc(i18n.t(lang, "nav_status"))}</a>\n'
+        f"{contribute_link}    "
     )
 
 
@@ -1345,6 +1423,7 @@ def make_server(
     host: str = "127.0.0.1",
     port: int = 8000,
     grants_path: Path | None = None,
+    allow_contributions: bool = False,
 ) -> http.server.HTTPServer:
     """Build (but do not start) the browse server bound to ``archive``.
 
@@ -1367,6 +1446,7 @@ def make_server(
     # Attach the dependencies the handler reads per request.
     httpd.archive = archive  # type: ignore[attr-defined]
     httpd.grants = grants  # type: ignore[attr-defined]
+    httpd.allow_contributions = allow_contributions  # type: ignore[attr-defined]
     return httpd
 
 
@@ -1376,6 +1456,7 @@ def serve(
     host: str = "127.0.0.1",
     port: int = 8000,
     grants_path: Path | None = None,
+    allow_contributions: bool = False,
 ) -> None:
     """Build and run the browse server until interrupted (blocking).
 
@@ -1383,7 +1464,13 @@ def serve(
     point. Binds to loopback by default (securability) and shuts down cleanly on
     ``KeyboardInterrupt`` so a steward can stop it without a traceback (usability).
     """
-    httpd = make_server(archive, host=host, port=port, grants_path=grants_path)
+    httpd = make_server(
+        archive,
+        host=host,
+        port=port,
+        grants_path=grants_path,
+        allow_contributions=allow_contributions,
+    )
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:  # pragma: no cover - interactive shutdown

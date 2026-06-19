@@ -290,6 +290,7 @@ def _render_sample_pages() -> dict[str, str]:
     try:
         from tempfile import mkdtemp
 
+        from ledger import contribute
         from ledger.config import Config
         from ledger.ingest import Archive
         from ledger.models import AccessPolicy, DublinCore, Field, Record
@@ -300,7 +301,8 @@ def _render_sample_pages() -> dict[str, str]:
         )
 
         root = Path(mkdtemp(prefix="ledger-a11y-"))
-        archive = Archive.init(Config.default("a11y-sample", root))
+        config = Config.default("a11y-sample", root)
+        archive = Archive.init(config)
         record = Record(
             title="Sample record",
             default_policy=AccessPolicy.PUBLIC,
@@ -322,6 +324,9 @@ def _render_sample_pages() -> dict[str, str]:
             ),
             "rendered:/record/{id}": _page(
                 one.title, lang="en", main_html=_record_main_html(one, proceed=True)
+            ),
+            "rendered:/contribute": _page(
+                "Contribute", lang="en", main_html=contribute.render_contribute_main(config)
             ),
         }
     except Exception:
