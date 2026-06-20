@@ -700,7 +700,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
 
     @staticmethod
     def _facet_from(params: dict[str, list[str]]) -> tuple[str, str]:
-        for fld in ("subject", "type"):
+        for fld in ("subject", "type", "language"):
             if params.get(fld):
                 return fld, params[fld][0]
         return "", ""

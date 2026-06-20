@@ -82,27 +82,43 @@ def index_text(record: DisclosedRecord) -> str:
     return " ".join(parts).lower()
 
 
+def _relevance(record: DisclosedRecord, terms: Sequence[str]) -> int:
+    """Score how well ``record`` matches ``terms`` — higher is more relevant.
+
+    A hit in the *title* weighs most, then a Dublin Core *subject*, then anywhere
+    else in the indexed text, and a term that recurs scores each occurrence. This
+    moves search past a flat boolean "matches / doesn't" toward an ordering a reader
+    expects: the record whose title is the query leads (user research E2). Pure and
+    deterministic — only disclosed text is scored, so the score can never reflect a
+    withheld value (no-outing rule)."""
+    title = record.title.lower()
+    subjects = " ".join(record.dublin_core.get("subject", ())).lower()
+    rest = index_text(record)
+    return sum(3 * title.count(t) + 2 * subjects.count(t) + rest.count(t) for t in terms)
+
+
 def search(records: Sequence[DisclosedRecord], query: str) -> list[DisclosedRecord]:
-    """Return the records whose index text contains every term in ``query``.
+    """Return the records matching every query term, ordered by relevance.
 
     Matching is case-insensitive and is a logical AND over the whitespace-split
     query terms: a record matches only if *each* term is a substring of its
-    :func:`index_text`. An empty (or whitespace-only) query returns every record,
-    so a blank search box browses the whole collection rather than nothing.
+    :func:`index_text`. An empty (or whitespace-only) query returns every record in
+    the caller's order, so a blank search box browses the whole collection.
 
-    Input order is preserved (the caller controls ordering, e.g. by date or
-    relevance upstream); search is a filter, not a re-sorter, which keeps results
-    predictable.
+    Matches are ranked by :func:`_relevance` (descending), with the caller's input
+    order preserved as a stable tie-break, so the most relevant record leads while
+    equal-scoring records keep a predictable, reproducible order.
     """
     terms = query.lower().split()
     if not terms:
         return list(records)
-    matches: list[DisclosedRecord] = []
-    for record in records:
+    scored: list[tuple[int, int, DisclosedRecord]] = []
+    for index, record in enumerate(records):
         haystack = index_text(record)
         if all(term in haystack for term in terms):
-            matches.append(record)
-    return matches
+            scored.append((_relevance(record, terms), index, record))
+    scored.sort(key=lambda item: (-item[0], item[1]))
+    return [record for _score, _index, record in scored]
 
 
 def facets(records: Sequence[DisclosedRecord], field: str) -> list[Facet]:

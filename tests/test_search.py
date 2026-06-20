@@ -199,3 +199,34 @@ def test_looks_non_latin_false_for_ascii_query() -> None:
     assert looks_non_latin("mutual aid") is False
     assert looks_non_latin("1987!") is False
     assert looks_non_latin("") is False
+
+
+# --- E2: relevance ranking + language facet ---------------------------------
+
+
+def test_search_ranks_title_hits_above_body_hits() -> None:
+    """A query that matches a record's title ranks it above a description-only match."""
+    title_hit = _disclosed("r-title", "Mutual aid pantry", dublin_core={"description": ["x"]})
+    body_hit = _disclosed(
+        "r-body", "Thursday notes", dublin_core={"description": ["the mutual aid roster"]}
+    )
+    # Input order puts the body hit first; relevance must surface the title hit first.
+    results = search([body_hit, title_hit], "mutual aid")
+    assert [r.record_id for r in results] == ["r-title", "r-body"]
+
+
+def test_search_ties_keep_input_order() -> None:
+    """Equal-scoring matches preserve the caller's order (stable, reproducible)."""
+    a = _disclosed("a", "aid", dublin_core={})
+    b = _disclosed("b", "aid", dublin_core={})
+    assert [r.record_id for r in search([a, b], "aid")] == ["a", "b"]
+    assert [r.record_id for r in search([b, a], "aid")] == ["b", "a"]
+
+
+def test_language_is_a_facet() -> None:
+    """Language is now a browsable facet, filterable like subject/type."""
+    en = _disclosed("en", "One", dublin_core={"language": ["en"]})
+    es = _disclosed("es", "Dos", dublin_core={"language": ["es"]})
+    langs = {f.value: f.count for f in facets([en, es], "language")}
+    assert langs == {"en": 1, "es": 1}
+    assert [r.record_id for r in filter_by_facet([en, es], "language", "es")] == ["es"]
