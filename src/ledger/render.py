@@ -99,19 +99,20 @@ def _page(title: str, *, lang: str, main_html: str, nav_html: str = "") -> str:
     )
 
 
-def _search_form(query: str = "") -> str:
+def _search_form(query: str = "", *, lang: str = "en") -> str:
     """Render the search form with a programmatically associated label.
 
     The ``<label for>`` is tied to the input's ``id`` so assistive technology
     announces the field's purpose, and the current ``query`` is escaped back into
-    ``value`` so a search term cannot inject markup (accessibility, security).
-    """
+    ``value`` so a search term cannot inject markup (accessibility, security). The
+    label and button are localized so a switched-language reader sees them in their
+    own language (user research I2)."""
     return (
         '<form class="search" role="search" method="get" action="/search">\n'
-        '  <label for="q">Search titles and descriptions</label>\n'
+        f'  <label for="q">{_esc(i18n.t(lang, "search_label"))}</label>\n'
         f'  <input id="q" name="q" type="search" value="{_esc(query)}" '
         'autocomplete="off">\n'
-        '  <button type="submit">Search</button>\n'
+        f'  <button type="submit">{_esc(i18n.t(lang, "search_button"))}</button>\n'
         "</form>\n"
     )
 
@@ -146,7 +147,9 @@ def _result_detail(record: DisclosedRecord, query: str) -> str:
     return _esc(_summary_text(record))
 
 
-def _records_list_html(records: Iterable[DisclosedRecord], *, query: str = "") -> str:
+def _records_list_html(
+    records: Iterable[DisclosedRecord], *, query: str = "", lang: str = "en"
+) -> str:
     """Render the records as a semantic list — one accessible equivalent view.
 
     The list and the table (:func:`_records_table_html`) present the same data in
@@ -154,12 +157,14 @@ def _records_list_html(records: Iterable[DisclosedRecord], *, query: str = "") -
     screen gets the full content (accessibility — documented non-visual
     equivalent). Link text is the record title (descriptive links, never "click
     here"). When ``query`` is set, each item shows a highlighted match snippet
-    instead of the generic summary (user research E3). All text is escaped (security).
+    instead of the generic summary (user research E3). User-facing chrome (the
+    content-warning badge, the empty note) is localized. All text is escaped (security).
     """
+    badge = _esc(i18n.t(lang, "content_warning_heading"))
     items: list[str] = []
     for record in records:
         detail = _result_detail(record, query)
-        warn = ' <span class="badge">Content warning</span>' if record.content_warnings else ""
+        warn = f' <span class="badge">{badge}</span>' if record.content_warnings else ""
         summary_html = f'<p class="result-detail">{detail}</p>' if detail else ""
         items.append(
             "    <li>\n"
@@ -169,25 +174,29 @@ def _records_list_html(records: Iterable[DisclosedRecord], *, query: str = "") -
             "    </li>"
         )
     if not items:
-        return '<p class="empty">No records are available to you yet.</p>'
+        return f'<p class="empty">{_esc(i18n.t(lang, "no_records_available"))}</p>'
     body = "\n".join(items)
     return f'<ul class="record-list">\n{body}\n</ul>'
 
 
-def _records_table_html(records: Iterable[DisclosedRecord], *, query: str = "") -> str:
+def _records_table_html(
+    records: Iterable[DisclosedRecord], *, query: str = "", lang: str = "en"
+) -> str:
     """Render the records as a data table — the documented non-visual equivalent.
 
     The table carries a ``<caption>`` describing its purpose and ``<th scope>`` on
     every header so assistive technology can associate each cell with its column
-    (accessibility). The "Content warning" column uses the literal word, never a
+    (accessibility). The content-warning column uses the literal word, never a
     colour or icon alone, so the signal survives for colour-blind and
     text-only users (accessibility — colour is not the only signal). When ``query``
     is set the summary cell shows the same highlighted match snippet as the list, so
-    the two views stay equivalent (user research E3). All cells are escaped (security).
+    the two views stay equivalent (user research E3). Caption, headers, and the
+    yes/no signal are localized. All cells are escaped (security).
     """
+    yes, no = _esc(i18n.t(lang, "answer_yes")), _esc(i18n.t(lang, "answer_no"))
     rows: list[str] = []
     for record in records:
-        warn = "Yes" if record.content_warnings else "No"
+        warn = yes if record.content_warnings else no
         detail = _result_detail(record, query)
         rows.append(
             "      <tr>\n"
@@ -197,20 +206,16 @@ def _records_table_html(records: Iterable[DisclosedRecord], *, query: str = "") 
             f"        <td>{warn}</td>\n"
             "      </tr>"
         )
-    body = (
-        "\n".join(rows)
-        if rows
-        else ('      <tr><td colspan="3">No records are available to you yet.</td></tr>')
-    )
+    empty_cell = _esc(i18n.t(lang, "no_records_available"))
+    body = "\n".join(rows) if rows else (f'      <tr><td colspan="3">{empty_cell}</td></tr>')
     return (
         '<table class="record-table">\n'
-        "  <caption>All records you may view, with their titles, summaries, and "
-        "whether each carries a content warning.</caption>\n"
+        f"  <caption>{_esc(i18n.t(lang, 'table_caption'))}</caption>\n"
         "  <thead>\n"
         "    <tr>\n"
-        '      <th scope="col">Title</th>\n'
-        '      <th scope="col">Summary</th>\n'
-        '      <th scope="col">Content warning</th>\n'
+        f'      <th scope="col">{_esc(i18n.t(lang, "col_title"))}</th>\n'
+        f'      <th scope="col">{_esc(i18n.t(lang, "col_summary"))}</th>\n'
+        f'      <th scope="col">{_esc(i18n.t(lang, "content_warning_heading"))}</th>\n'
         "    </tr>\n"
         "  </thead>\n"
         "  <tbody>\n"
@@ -251,14 +256,17 @@ def _facets_html(records: list[DisclosedRecord]) -> str:
     return "\n".join(blocks)
 
 
-def _pager_html(page: pagination.Page[DisclosedRecord], current_path: str) -> str:
+def _pager_html(
+    page: pagination.Page[DisclosedRecord], current_path: str, *, lang: str = "en"
+) -> str:
     """An accessible Previous/Next pager that preserves the current query.
 
     Rendered as a labelled ``<nav>`` so assistive tech announces it as a distinct
     navigation landmark, with a plain "Page X of Y" so a reader always knows where
     they are. Each link reuses the current path and query (facet, search term,
-    language) with only ``page`` swapped, so paging never drops a filter. Returns an
-    empty string when everything fits on one page — no pager clutter when unneeded.
+    language) with only ``page`` swapped, so paging never drops a filter. The label
+    and link text are localized. Returns an empty string when everything fits on one
+    page — no pager clutter when unneeded.
     """
     if page.pages <= 1:
         return ""
@@ -268,16 +276,23 @@ def _pager_html(page: pagination.Page[DisclosedRecord], current_path: str) -> st
     def href(number: int) -> str:
         return (split.path or "/") + "?" + urlencode([*kept, ("page", str(number))])
 
+    prev_label = _esc(i18n.t(lang, "pager_prev"))
+    next_label = _esc(i18n.t(lang, "pager_next"))
+    position = _esc(i18n.t(lang, "pager_position", number=page.number, pages=page.pages))
     prev_html = (
-        f'<a rel="prev" href="{_esc(href(page.number - 1))}">Previous</a>' if page.has_prev else ""
+        f'<a rel="prev" href="{_esc(href(page.number - 1))}">{prev_label}</a>'
+        if page.has_prev
+        else ""
     )
     next_html = (
-        f'<a rel="next" href="{_esc(href(page.number + 1))}">Next</a>' if page.has_next else ""
+        f'<a rel="next" href="{_esc(href(page.number + 1))}">{next_label}</a>'
+        if page.has_next
+        else ""
     )
     return (
-        '    <nav class="pager" aria-label="Pagination">\n'
+        f'    <nav class="pager" aria-label="{_esc(i18n.t(lang, "pager_label"))}">\n'
         f"{'      ' + prev_html + chr(10) if prev_html else ''}"
-        f"      <span>Page {page.number} of {page.pages}</span>\n"
+        f"      <span>{position}</span>\n"
         f"{'      ' + next_html + chr(10) if next_html else ''}"
         "    </nav>\n"
     )
@@ -315,29 +330,35 @@ def _browse_main_html(
     if window.total == 0:
         status_line = f'    <p class="empty">{_esc(i18n.t(lang, "empty_no_matches"))}</p>\n'
     else:
-        status_line = (
-            f'      <p class="count">Showing {window.start_index}-{window.end_index} '
-            f"of {window.total} record(s).</p>\n"
+        showing = i18n.t(
+            lang,
+            "results_showing",
+            start=window.start_index,
+            end=window.end_index,
+            total=window.total,
         )
+        status_line = f'      <p class="count">{_esc(showing)}</p>\n'
     facets = _facets_html(all_records if all_records is not None else records)
-    pager = _pager_html(window, current_path)
+    pager = _pager_html(window, current_path, lang=lang)
+    list_heading = _esc(i18n.t(lang, "results_list_heading"))
+    table_heading = _esc(i18n.t(lang, "results_table_heading"))
     # The count/empty state lives in a polite status region so a screen reader
     # announces "Showing X-Y of N" after a search or page change without the user
     # hunting for it — the dynamic status message WCAG 4.1.3 asks for. The region is
     # present on every render so the announcement fires as the results load.
     return (
         f"    <h1>{_esc(heading)}</h1>\n"
-        f"    {_search_form(query)}"
+        f"    {_search_form(query, lang=lang)}"
         '    <div class="results-status" role="status" aria-live="polite">\n'
         f"{status_line}"
         "    </div>\n"
         '    <section aria-labelledby="list-heading">\n'
-        '      <h2 id="list-heading">Records (list view)</h2>\n'
-        f"      {_records_list_html(shown, query=query)}\n"
+        f'      <h2 id="list-heading">{list_heading}</h2>\n'
+        f"      {_records_list_html(shown, query=query, lang=lang)}\n"
         "    </section>\n"
         '    <section aria-labelledby="table-heading">\n'
-        '      <h2 id="table-heading">Records (table view)</h2>\n'
-        f"      {_records_table_html(shown, query=query)}\n"
+        f'      <h2 id="table-heading">{table_heading}</h2>\n'
+        f"      {_records_table_html(shown, query=query, lang=lang)}\n"
         "    </section>\n"
         f"{pager}"
         f"{facets}"

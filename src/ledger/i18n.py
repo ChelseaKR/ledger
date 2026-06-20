@@ -66,6 +66,22 @@ _CATALOG: dict[str, dict[str, str]] = {
         "empty_no_matches": "No records match your search.",
         "restricted_notice": "This record has access restrictions.",
         "content_warning_heading": "Content warning",
+        "results_list_heading": "Records (list view)",
+        "results_table_heading": "Records (table view)",
+        "results_showing": "Showing {start}-{end} of {total} record(s).",
+        "table_caption": (
+            "All records you may view, with their titles, summaries, and whether each "
+            "carries a content warning."
+        ),
+        "col_title": "Title",
+        "col_summary": "Summary",
+        "no_records_available": "No records are available to you yet.",
+        "answer_yes": "Yes",
+        "answer_no": "No",
+        "pager_label": "Pagination",
+        "pager_prev": "Previous",
+        "pager_next": "Next",
+        "pager_position": "Page {number} of {pages}",
         "footer_privacy": "Your identity is never shown. Contributors control what is public.",
         "language_label": "Language",
         "visibility_public": "Public — anyone may read it once a steward approves",
@@ -90,6 +106,22 @@ _CATALOG: dict[str, dict[str, str]] = {
         "empty_no_matches": "Ningún registro coincide con su búsqueda.",
         "restricted_notice": "Este registro tiene restricciones de acceso.",
         "content_warning_heading": "Advertencia de contenido",
+        "results_list_heading": "Registros (vista de lista)",
+        "results_table_heading": "Registros (vista de tabla)",
+        "results_showing": "Mostrando {start}-{end} de {total} registro(s).",
+        "table_caption": (
+            "Todos los registros que puede ver, con sus títulos, resúmenes y si cada uno "
+            "lleva una advertencia de contenido."
+        ),
+        "col_title": "Título",
+        "col_summary": "Resumen",
+        "no_records_available": "Aún no hay registros disponibles para usted.",
+        "answer_yes": "Sí",
+        "answer_no": "No",
+        "pager_label": "Paginación",
+        "pager_prev": "Anterior",
+        "pager_next": "Siguiente",
+        "pager_position": "Página {number} de {pages}",
         "footer_privacy": (
             "Su identidad nunca se muestra. Los colaboradores controlan qué es público."
         ),

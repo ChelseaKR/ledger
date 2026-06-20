@@ -136,3 +136,14 @@ def test_unknown_lang_falls_back_to_header_negotiation(base: str) -> None:
     assert "Explorar" in body  # negotiated from the header, not the bad query
     # A rejected value is not written back as a remembered choice.
     assert "lang=" not in headers.get("Set-Cookie", "")
+
+
+def test_switching_language_localizes_the_browse_chrome(base: str) -> None:
+    """Choosing Spanish translates the browse UI itself, not just the nav (I2)."""
+    _status, body, _headers = _request(f"{base}/?lang=es", accept_language="en")
+    # The read-path chrome a switched-language reader sees is now Spanish.
+    assert "Registros (vista de lista)" in body  # list-view heading
+    assert "Registros (vista de tabla)" in body  # table-view heading
+    assert "Buscar en el archivo" in body  # search label
+    # And the English equivalents are gone on the Spanish page.
+    assert "Records (list view)" not in body
