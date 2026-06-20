@@ -796,6 +796,35 @@ class Archive:
 
     # --- audit --------------------------------------------------------------
 
+    def audit_events(self, *, limit: int = 200) -> list[PremisEvent]:
+        """Aggregate the archive's PREMIS events, newest first, for a steward view.
+
+        Gathers every event from each bag's ``premis.json`` and the archive-level
+        logs (takedowns, key rotations), sorts newest-first, and caps at ``limit``.
+        PREMIS events are identity-free by construction — an event carries an agent,
+        an outcome, a detail, an opaque ``linked_object`` (a content address, record
+        id, or bag id), and a timestamp, never a contributor identity or a sealed
+        value (no-outing rule) — so this read-only audit view discloses nothing a
+        steward should not see. One unreadable log never aborts the sweep
+        (degradability)."""
+        events: list[PremisEvent] = []
+        if self.bags_dir.exists():
+            for bag in sorted(p for p in self.bags_dir.iterdir() if p.is_dir()):
+                premis_path = bag / _PREMIS_FILENAME
+                if premis_path.exists():
+                    try:
+                        events.extend(PremisLog.read(premis_path).events)
+                    except (LedgerError, ValueError, OSError):
+                        continue
+        if self.logs_dir.exists():
+            for log_path in sorted(self.logs_dir.glob("*.premis.json")):
+                try:
+                    events.extend(PremisLog.read(log_path).events)
+                except (LedgerError, ValueError, OSError):
+                    continue
+        events.sort(key=lambda e: e.event_datetime, reverse=True)
+        return events[:limit]
+
     def audit_fixity(self) -> list[tuple[str, AuditReport]]:
         """Validate every stored bag, returning ``(bag_name, report)`` per bag.
 

@@ -276,6 +276,8 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
                 self._handle_sitemap()
             elif path == "/steward":
                 self._handle_steward_console()
+            elif path == "/steward/audit":
+                self._handle_steward_audit()
             elif path == "/contribute":
                 self._handle_contribute_form()
             elif path.startswith("/record/") and "/file/" in path:
@@ -608,10 +610,70 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             "      <p>Action a request with the audited CLI: <code>ledger policy</code> "
             "(change access), <code>ledger takedown</code>, or <code>ledger cw</code> "
             "(add a content warning) — each records who acted and why.</p>\n"
+            '      <p><a href="/steward/audit">View the audit log</a> — every recorded '
+            "action across the archive.</p>\n"
             "    </section>"
         )
         self._send_html(
             200, _page("Steward console", lang=lang, main_html=main_html, nav_html=self._nav())
+        )
+
+    def _handle_steward_audit(self) -> None:
+        """``GET /steward/audit`` — a read-only, identity-free PREMIS audit log (gated).
+
+        A steward could verify *that* the vault never opened but could not, until now,
+        read the archive's own account of what happened (user research D3). This
+        renders the aggregated PREMIS events — ingestion, fixity checks, replication,
+        consent/policy changes, takedowns, key rotations — newest first, as an
+        accessible table. Every event is identity-free by construction
+        (:meth:`Archive.audit_events`), so the log carries no contributor identity or
+        sealed value. Steward-gated; a non-steward gets a neutral 404."""
+        grant = self._resolve_grant()
+        lang = self._lang()
+        if not grant.is_steward:
+            self._handle_not_found()
+            return
+        events = self._archive().audit_events()
+        if events:
+            rows = "\n".join(
+                "        <tr>\n"
+                f"          <td>{_esc(e.event_datetime)}</td>\n"
+                f"          <td>{_esc(e.event_type.value)}</td>\n"
+                f"          <td>{_esc(e.outcome)}</td>\n"
+                f"          <td>{_esc(e.agent)}</td>\n"
+                f"          <td>{_esc(e.linked_object or '')}</td>\n"
+                f"          <td>{_esc(e.detail)}</td>\n"
+                "        </tr>"
+                for e in events
+            )
+            table = (
+                "    <table>\n"
+                "      <caption>Recorded actions, newest first</caption>\n"
+                "      <thead>\n"
+                "        <tr>\n"
+                '          <th scope="col">When</th>\n'
+                '          <th scope="col">Event</th>\n'
+                '          <th scope="col">Outcome</th>\n'
+                '          <th scope="col">Agent</th>\n'
+                '          <th scope="col">Object</th>\n'
+                '          <th scope="col">Detail</th>\n'
+                "        </tr>\n"
+                "      </thead>\n"
+                f"      <tbody>\n{rows}\n      </tbody>\n"
+                "    </table>"
+            )
+        else:
+            table = "    <p>No recorded events yet.</p>"
+        main_html = (
+            "    <h1>Audit log</h1>\n"
+            "    <p>Every recorded action across the archive, newest first. This log "
+            "carries no contributor identity or sealed value — only what happened, who "
+            "acted, and the outcome.</p>\n"
+            f"{table}\n"
+            '    <p><a href="/steward">Back to the steward console</a></p>'
+        )
+        self._send_html(
+            200, _page("Audit log", lang=lang, main_html=main_html, nav_html=self._nav())
         )
 
     # --- HTML routes --------------------------------------------------------
