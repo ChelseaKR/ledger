@@ -105,18 +105,6 @@ _STATIC_CONTENT_TYPES: dict[str, str] = {
 # Friendly labels for consent/objection request kinds, shared by the steward console
 # and the contributor status page so a steward can tell a subject's objection from a
 # contributor's own request at a glance (user research B3).
-# English request-kind labels for the contributor-facing consent-status page (its
-# own surface). The steward console localizes the same kinds via the ``req_kind_*``
-# i18n keys; this dict stays for the not-yet-localized status page.
-_REQUEST_KIND_LABELS: dict[str, str] = {
-    "withdraw": "withdraw / take down",
-    "tighten": "tighten access",
-    "correct": "correct the record",
-    "contact": "ask a steward to make contact",
-    "object": "objection from a person named in the record",
-}
-
-
 # --- the request handler ----------------------------------------------------
 
 
@@ -1487,46 +1475,41 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         contributor's private message, and nothing identity-bearing (no-outing)."""
         lang = self._lang()
         ref = (params.get("ref", [""])[0] or "").strip()
-        status_labels = {
-            "open": "Received — a steward has not acted on it yet.",
-            "acknowledged": "Seen by a steward and under consideration.",
-            "resolved": "Resolved — a steward has acted on it.",
-        }
-        kind_labels = _REQUEST_KIND_LABELS
         if not ref:
             result_html = ""
         else:
             req = self._consent_store().get(ref)
             if req is None:
                 result_html = (
-                    '    <p class="error" role="status">We could not find a request with '
-                    "that reference. Check it and try again — it is the code shown when "
-                    "you filed the request.</p>\n"
+                    f'    <p class="error" role="status">{_esc(i18n.t(lang, "cs_not_found"))}</p>\n'
                 )
             else:
+                kind = i18n.t(lang, f"req_kind_{req.kind}")
+                status = i18n.t(lang, f"cs_status_{req.status}")
                 result_html = (
-                    '    <section class="status" role="status" aria-label="Request status">\n'
-                    f"      <p>Request: {_esc(kind_labels.get(req.kind, req.kind))}</p>\n"
-                    f"      <p>Filed: {_esc(req.created_at)}</p>\n"
-                    f"      <p><strong>Status: "
-                    f"{_esc(status_labels.get(req.status, req.status))}</strong></p>\n"
+                    '    <section class="status" role="status" '
+                    f'aria-label="{_esc(i18n.t(lang, "cs_status_aria"))}">\n'
+                    f"      <p>{_esc(i18n.t(lang, 'cs_request_label', kind=kind))}</p>\n"
+                    f"      <p>{_esc(i18n.t(lang, 'cs_filed_label', when=req.created_at))}</p>\n"
+                    f"      <p><strong>{_esc(i18n.t(lang, 'cs_status_label', status=status))}"
+                    "</strong></p>\n"
                     "    </section>\n"
                 )
         main_html = (
-            "    <h1>Check a request</h1>\n"
-            "    <p>Enter the reference code you were given when you filed a consent or "
-            "takedown request to see whether a steward has acted on it.</p>\n"
+            f"    <h1>{_esc(i18n.t(lang, 'cs_heading'))}</h1>\n"
+            f"    <p>{_esc(i18n.t(lang, 'cs_intro'))}</p>\n"
             f"{result_html}"
             '    <form method="get" action="/consent-status">\n'
             "      <p>\n"
-            '        <label for="ref">Your request reference</label>\n'
+            f'        <label for="ref">{_esc(i18n.t(lang, "cs_ref_label"))}</label>\n'
             f'        <input type="text" id="ref" name="ref" value="{_esc(ref)}">\n'
             "      </p>\n"
-            '      <p><button type="submit">Check status</button></p>\n'
+            f'      <p><button type="submit">{_esc(i18n.t(lang, "cs_button"))}</button></p>\n'
             "    </form>\n"
         )
         self._send_html(
-            200, _page("Check a request", lang=lang, main_html=main_html, nav_html=self._nav())
+            200,
+            _page(i18n.t(lang, "cs_heading"), lang=lang, main_html=main_html, nav_html=self._nav()),
         )
 
     # --- plain-language safety surface (user research P0-4) -----------------

@@ -117,6 +117,13 @@ def test_consent_status_reports_progress_without_echoing_the_message(
     assert "Resolved" in body
     assert _PRIVATE_MSG not in body
 
+    # The page is localized: a Spanish reader sees the status in Spanish (I2).
+    _status, es_body = _get(base, f"/consent-status?lang=es&ref={ref}")
+    assert "Consultar una solicitud" in es_body  # heading
+    assert "Resuelta" in es_body  # the resolved status, localized
+    assert "Resolved" not in es_body
+    assert _PRIVATE_MSG not in es_body
+
 
 @pytest.mark.disclosure
 def test_consent_status_unknown_reference_is_neutral(server: tuple[Archive, str, str]) -> None:

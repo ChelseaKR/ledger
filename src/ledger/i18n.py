@@ -139,6 +139,25 @@ _CATALOG: dict[str, dict[str, str]] = {
         "audit_col_detail": "Detail",
         "audit_no_events": "No recorded events yet.",
         "audit_back": "Back to the steward console",
+        # --- consent-status lookup (contributor checks a request) ---
+        "cs_heading": "Check a request",
+        "cs_intro": (
+            "Enter the reference code you were given when you filed a consent or "
+            "takedown request to see whether a steward has acted on it."
+        ),
+        "cs_not_found": (
+            "We could not find a request with that reference. Check it and try again — "
+            "it is the code shown when you filed the request."
+        ),
+        "cs_status_aria": "Request status",
+        "cs_request_label": "Request: {kind}",
+        "cs_filed_label": "Filed: {when}",
+        "cs_status_label": "Status: {status}",
+        "cs_status_open": "Received — a steward has not acted on it yet.",
+        "cs_status_acknowledged": "Seen by a steward and under consideration.",
+        "cs_status_resolved": "Resolved — a steward has acted on it.",
+        "cs_ref_label": "Your request reference",
+        "cs_button": "Check status",
         # --- contribution form (the contributor write path) ---
         "contribute_heading": "Contribute to the archive",
         "contribute_intro": (
@@ -362,6 +381,26 @@ _CATALOG: dict[str, dict[str, str]] = {
         "audit_col_detail": "Detalle",
         "audit_no_events": "Aún no hay eventos registrados.",
         "audit_back": "Volver a la consola de administración",
+        # --- consulta del estado de una solicitud ---
+        "cs_heading": "Consultar una solicitud",
+        "cs_intro": (
+            "Introduzca el código de referencia que recibió al presentar una solicitud "
+            "de consentimiento o de retirada para ver si una persona responsable ha "
+            "actuado sobre ella."
+        ),
+        "cs_not_found": (
+            "No se encontró una solicitud con esa referencia. Compruébela e inténtelo "
+            "de nuevo: es el código que se mostró cuando presentó la solicitud."
+        ),
+        "cs_status_aria": "Estado de la solicitud",
+        "cs_request_label": "Solicitud: {kind}",
+        "cs_filed_label": "Presentada: {when}",
+        "cs_status_label": "Estado: {status}",
+        "cs_status_open": "Recibida — una persona responsable aún no ha actuado sobre ella.",
+        "cs_status_acknowledged": "Vista por una persona responsable y en consideración.",
+        "cs_status_resolved": "Resuelta — una persona responsable ha actuado sobre ella.",
+        "cs_ref_label": "La referencia de su solicitud",
+        "cs_button": "Consultar el estado",
         # --- formulario de contribución ---
         "contribute_heading": "Contribuir al archivo",
         "contribute_intro": (
