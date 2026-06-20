@@ -249,6 +249,8 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
                 self._handle_healthz()
             elif path == "/status":
                 self._handle_status()
+            elif path == "/consent-status":
+                self._handle_consent_status(params)
             elif path == "/about":
                 self._handle_about()
             elif path == "/governance":
@@ -372,7 +374,9 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             "    <h1>Request received</h1>\n"
             f"    <p>Your request to {_esc(kind)} this record has been recorded{_esc(note)}. "
             f"A steward will review it. {_esc(rt)}</p>\n"
-            f"    <p>Your reference is <code>{_esc(req.request_id)}</code>.</p>\n"
+            f"    <p>Your reference is <code>{_esc(req.request_id)}</code>. "
+            f'Check its progress anytime at '
+            f'<a href="/consent-status?ref={quote(req.request_id)}">/consent-status</a>.</p>\n'
             '    <p><a href="/">Back to all records</a></p>'
         )
         self._send_html(
@@ -856,6 +860,64 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             '<a href="/healthz">/healthz</a>.</p>'
         )
         self._send_html(200, _page("Status", lang=lang, main_html=main_html, nav_html=self._nav()))
+
+    def _handle_consent_status(self, params: dict[str, list[str]]) -> None:
+        """``GET /consent-status`` — let a contributor check a request's progress.
+
+        A contributor who filed a withdraw/tighten/correct/contact request was given
+        a random reference token; entering it here shows whether a steward has acted
+        (user research T4/B2 — "revocable was true in the room, not on the website").
+        The token is the only key, so no one without it learns anything. The page
+        shows the *kind*, when it was filed, and a plain-language status — never the
+        contributor's private message, and nothing identity-bearing (no-outing)."""
+        lang = self._lang()
+        ref = (params.get("ref", [""])[0] or "").strip()
+        status_labels = {
+            "open": "Received — a steward has not acted on it yet.",
+            "acknowledged": "Seen by a steward and under consideration.",
+            "resolved": "Resolved — a steward has acted on it.",
+        }
+        kind_labels = {
+            "withdraw": "withdraw / take down",
+            "tighten": "tighten access",
+            "correct": "correct the record",
+            "contact": "ask a steward to make contact",
+        }
+        if not ref:
+            result_html = ""
+        else:
+            req = self._consent_store().get(ref)
+            if req is None:
+                result_html = (
+                    '    <p class="error" role="status">We could not find a request with '
+                    "that reference. Check it and try again — it is the code shown when "
+                    "you filed the request.</p>\n"
+                )
+            else:
+                result_html = (
+                    '    <section class="status" role="status" aria-label="Request status">\n'
+                    f"      <p>Request: {_esc(kind_labels.get(req.kind, req.kind))}</p>\n"
+                    f"      <p>Filed: {_esc(req.created_at)}</p>\n"
+                    f"      <p><strong>Status: "
+                    f"{_esc(status_labels.get(req.status, req.status))}</strong></p>\n"
+                    "    </section>\n"
+                )
+        main_html = (
+            "    <h1>Check a request</h1>\n"
+            "    <p>Enter the reference code you were given when you filed a consent or "
+            "takedown request to see whether a steward has acted on it.</p>\n"
+            f"{result_html}"
+            '    <form method="get" action="/consent-status">\n'
+            "      <p>\n"
+            '        <label for="ref">Your request reference</label>\n'
+            f'        <input type="text" id="ref" name="ref" value="{_esc(ref)}">\n'
+            "      </p>\n"
+            '      <p><button type="submit">Check status</button></p>\n'
+            "    </form>\n"
+        )
+        self._send_html(
+            200, _page("Check a request", lang=lang, main_html=main_html, nav_html=self._nav())
+        )
 
     # --- plain-language safety surface (user research P0-4) -----------------
 

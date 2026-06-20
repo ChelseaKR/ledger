@@ -164,6 +164,17 @@ class ConsentRequestStore:
         """The subset of requests still awaiting steward action (``status == open``)."""
         return [req for req in self._read() if req.status == _OPEN]
 
+    def get(self, request_id: str) -> ConsentRequest | None:
+        """The request with ``request_id``, or ``None`` if there is none.
+
+        Lets a contributor who holds their reference token check a request's
+        status. The token is the only key; lookup leaks nothing to anyone without
+        it (the id is a 64-bit random token, not enumerable)."""
+        for req in self._read():
+            if req.request_id == request_id:
+                return req
+        return None
+
     def add(self, req: ConsentRequest) -> None:
         """Append ``req`` to the queue and persist atomically (append-only).
 
