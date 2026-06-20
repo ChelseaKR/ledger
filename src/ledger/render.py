@@ -206,7 +206,11 @@ def _facets_html(records: list[DisclosedRecord]) -> str:
     a viewer may not see.
     """
     blocks: list[str] = []
-    for field_name, label in (("subject", "Subjects"), ("type", "Types"), ("language", "Languages")):
+    for field_name, label in (
+        ("subject", "Subjects"),
+        ("type", "Types"),
+        ("language", "Languages"),
+    ):
         items = search.facets(records, field_name)
         if not items:
             continue
