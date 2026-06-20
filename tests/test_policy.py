@@ -406,3 +406,46 @@ def test_sealed_until_compares_chronologically_not_lexically() -> None:
         )
         is True
     )
+
+
+# --- C2: temporal-embargo countdown -----------------------------------------
+
+
+def test_withheld_reason_shows_embargo_countdown() -> None:
+    """A dated temporal seal reads as a live promise ('opens in N days')."""
+    from ledger.access import withheld_reason
+    from ledger.models import AccessPolicy
+
+    reason = withheld_reason(AccessPolicy.SEALED_UNTIL, "2026-01-11", now="2026-01-01T00:00:00Z")
+    assert reason == "sealed until 2026-01-11 (opens in 10 days)"
+    # Tomorrow and today read naturally.
+    assert "opens tomorrow" in withheld_reason(
+        AccessPolicy.SEALED_UNTIL, "2026-01-02", now="2026-01-01T00:00:00Z"
+    )
+    # Without a clock, the bare date is unchanged (back-compatible).
+    assert withheld_reason(AccessPolicy.SEALED_UNTIL, "2026-01-11") == "sealed until 2026-01-11"
+    # An undated seal carries no countdown.
+    assert "opens" not in withheld_reason(
+        AccessPolicy.SEALED_UNTIL, None, now="2026-01-01T00:00:00Z"
+    )
+
+
+def test_disclose_embargoed_field_carries_countdown() -> None:
+    """A steward viewing an embargoed field sees the countdown in its withheld reason."""
+    from ledger.access import disclose
+    from ledger.access.grants import steward
+    from ledger.models import AccessPolicy, DublinCore, Field, Record
+
+    record = Record(
+        title="Embargoed",
+        default_policy=AccessPolicy.PUBLIC,
+        dublin_core=DublinCore(title=["Embargoed"]),
+        fields=[
+            Field(
+                name="names", value="x", policy=AccessPolicy.SEALED_UNTIL, unseal_at="2030-01-01"
+            ),
+        ],
+    )
+    disclosed = disclose(record, steward("s"), "2029-12-22T00:00:00Z")
+    reasons = [r.reason for r in disclosed.withheld]
+    assert any("opens in 10 days" in r for r in reasons), reasons
