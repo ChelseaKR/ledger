@@ -39,16 +39,28 @@ import hashlib
 import http.server
 import json
 import os
+import tempfile
 import time
+from email import policy as email_policy
+from email.parser import BytesParser
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlsplit
 
-from ledger import consent, contribute, i18n, oai, review, search
+from ledger import consent, contribute, i18n, oai, review, search, upload
 from ledger.access import anonymous, disclose, is_listable
 from ledger.access.grants import load_grants
 from ledger.errors import AccessDenied, LedgerError, ObjectNotFound
 from ledger.ingest import Archive
-from ledger.models import AccessPolicy, DisclosedRecord, Grant, now_iso
+from ledger.models import (
+    AccessPolicy,
+    ContentAddress,
+    DisclosedRecord,
+    Grant,
+    HashAlgo,
+    PayloadFile,
+    Record,
+    now_iso,
+)
 from ledger.moderate import change_consent
 from ledger.render import (
     _browse_main_html,
@@ -340,6 +352,72 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             return {}
         raw = self.rfile.read(length).decode("utf-8", "replace")
         return {k: v[0] for k, v in parse_qs(raw).items() if v}
+
+    def _read_contribution(self) -> tuple[dict[str, str], tuple[str, bytes] | None]:
+        """Read a contribution POST body as ``(fields, upload)``.
+
+        Dispatches on ``Content-Type`` so the contribution form works whether it
+        posts urlencoded (text-only, the long-standing path) or
+        ``multipart/form-data`` (when a file is attached, backlog A2). ``upload`` is
+        ``(filename, bytes)`` for the single attached file, or ``None`` when no file
+        was sent. Both forms are bounded before any bytes are read: urlencoded at the
+        64 KiB field cap, multipart at the upload size cap plus a small slack for the
+        field parts and MIME framing, so a contribution can never read unbounded input
+        (availability). The bytes are still untrusted here — :func:`upload.sniff_media_type`
+        decides whether they are an accepted type before anything is stored."""
+        ctype = self.headers.get("Content-Type", "")
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            return {}, None
+        if length <= 0:
+            return {}, None
+        if ctype.startswith("multipart/form-data"):
+            # Cap the whole body at the file limit plus 1 MiB of slack for the text
+            # fields and multipart boundaries/headers, so an attached file can be up to
+            # MAX_UPLOAD_BYTES while the body as a whole still cannot exhaust memory.
+            if length > upload.MAX_UPLOAD_BYTES + 1024 * 1024:
+                return {}, None
+            return self._parse_multipart(length, ctype)
+        if length > 64 * 1024:
+            return {}, None
+        raw = self.rfile.read(length).decode("utf-8", "replace")
+        return {k: v[0] for k, v in parse_qs(raw).items() if v}, None
+
+    def _parse_multipart(
+        self, length: int, content_type: str
+    ) -> tuple[dict[str, str], tuple[str, bytes] | None]:
+        """Parse a bounded ``multipart/form-data`` body into ``(fields, upload)``.
+
+        Reads exactly ``length`` bytes (already capped by the caller) and parses them
+        with the stdlib email parser by prepending the request's ``Content-Type`` as a
+        MIME header — no third-party multipart library. Each text part becomes a
+        ``fields`` entry; the first part carrying a filename becomes the single
+        ``upload``. The filename is kept only to suggest a stored name and is sanitised
+        elsewhere; the bytes are never trusted on type until sniffed."""
+        raw = self.rfile.read(length)
+        header = (
+            b"Content-Type: "
+            + content_type.encode("latin-1", "replace")
+            + b"\r\nMIME-Version: 1.0\r\n\r\n"
+        )
+        message = BytesParser(policy=email_policy.default).parsebytes(header + raw)
+        fields: dict[str, str] = {}
+        attached: tuple[str, bytes] | None = None
+        if message.is_multipart():
+            for part in message.iter_parts():
+                name = part.get_param("name", header="content-disposition")
+                if name is None:
+                    continue
+                decoded = part.get_payload(decode=True)
+                data = decoded if isinstance(decoded, bytes) else b""
+                filename = part.get_filename()
+                if filename:
+                    if attached is None and data:
+                        attached = (filename, data)
+                else:
+                    fields[str(name)] = data.decode("utf-8", "replace")
+        return fields, attached
 
     def _consent_store(self) -> consent.ConsentRequestStore:
         return consent.ConsentRequestStore(self._archive().logs_dir / "consent-requests.json")
@@ -865,7 +943,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         if not self._allow_contributions():
             self._handle_not_found()
             return
-        form = self._read_form()
+        form, attachment = self._read_contribution()
         action = form.get("action", "preview")
         try:
             submission = contribute.parse_submission(form, self._archive().config)
@@ -875,23 +953,38 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         if action != "submit":
             self._render_contribute_preview(submission, form)
             return
-        stamp = now_iso()
-        try:
-            self._archive().ingest(
-                {},
-                submission.record,
-                identity=submission.identity,
-                agent="contribution",
-                now=stamp,
-            )
-        except LedgerError:
-            # Name nothing the contributor submitted; just decline cleanly.
-            self._handle_contribute_form(
-                error="Your contribution could not be saved right now. Please try again.",
-                status=503,
-                values=form,
-            )
-            return
+        # Validate any attached file from its *bytes* before storing anything: an
+        # oversized or non-allowlisted upload is refused with a re-rendered form, and
+        # the contributor's text is kept. The stored media type is server-determined
+        # by sniffing, never the client's filename or Content-Type (backlog A2).
+        payload: dict[str, Path]
+        with tempfile.TemporaryDirectory(prefix="ledger-upload-") as tmpdir:
+            if attachment is not None:
+                error = self._stage_upload(attachment, submission.record, Path(tmpdir))
+                if error is not None:
+                    self._handle_contribute_form(error=error, status=400, values=form)
+                    return
+                stored_name = submission.record.payloads[0].filename
+                payload = {stored_name: Path(tmpdir) / stored_name}
+            else:
+                payload = {}
+            stamp = now_iso()
+            try:
+                self._archive().ingest(
+                    payload,
+                    submission.record,
+                    identity=submission.identity,
+                    agent="contribution",
+                    now=stamp,
+                )
+            except LedgerError:
+                # Name nothing the contributor submitted; just decline cleanly.
+                self._handle_contribute_form(
+                    error="Your contribution could not be saved right now. Please try again.",
+                    status=503,
+                    values=form,
+                )
+                return
         # Queue it for steward review. The entry is identity-free (id + timestamp);
         # the record stays sealed-pending until a steward acts (Hard Rule 2).
         self._submission_queue().add(submission.record.record_id, now=stamp)
@@ -905,6 +998,42 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
                 nav_html=self._nav(),
             ),
         )
+
+    def _stage_upload(
+        self, attachment: tuple[str, bytes], record: Record, tmpdir: Path
+    ) -> str | None:
+        """Validate and stage an attached file, or return a safe error to show.
+
+        The bytes are the only thing trusted: the file is refused if it is larger than
+        :data:`upload.MAX_UPLOAD_BYTES` or if :func:`upload.sniff_media_type` does not
+        recognise it as one of the allowlisted types. On success the bytes are written
+        under ``tmpdir`` with a sanitised filename and a :class:`PayloadFile` is
+        pre-declared on ``record`` so the one ingest path stores it with the
+        *server-sniffed* media type and the record's sealed-pending policy — never a
+        type taken from the client. The returned error names no submitted value
+        (no-outing rule). On success returns ``None``."""
+        filename, data = attachment
+        if len(data) > upload.MAX_UPLOAD_BYTES:
+            megabytes = upload.MAX_UPLOAD_BYTES // (1024 * 1024)
+            return f"That file is too large. The limit is {megabytes} MB."
+        media_type = upload.sniff_media_type(data)
+        if media_type is None:
+            allowed = ", ".join(upload.ALLOWED_TYPES)
+            return f"That file type isn't accepted. Allowed types are: {allowed}."
+        safe = _safe_filename(filename) or "upload"
+        (tmpdir / safe).write_bytes(data)
+        # The payload follows the record's sealed-pending default, so it is invisible
+        # until a steward reviews it — exactly like the rest of the submission. The
+        # address is a placeholder; the one ingest path recomputes it from the bytes.
+        record.payloads = [
+            PayloadFile(
+                filename=safe,
+                address=ContentAddress(algo=HashAlgo.SHA256, digest="0" * 64),
+                media_type=media_type,
+                policy=record.default_policy,
+            )
+        ]
+        return None
 
     def _render_contribute_preview(
         self, submission: contribute.Submission, form: dict[str, str]

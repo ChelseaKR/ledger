@@ -301,3 +301,166 @@ def test_preview_of_sealed_shows_a_stranger_sees_nothing(
     panel = _preview_panel(body)
     assert "A stranger sees nothing" in panel
     assert "Secret account." not in panel  # the account is not exposed to a stranger
+
+
+# --- file upload (backlog A2) ----------------------------------------------
+
+# A minimal payload carrying the PNG signature; sniffing reads only the prefix.
+_PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 64
+
+
+def _post_multipart(
+    base: str,
+    path: str,
+    fields: dict[str, str],
+    *,
+    file: tuple[str, str, bytes] | None = None,
+) -> tuple[int, str]:
+    """POST a ``multipart/form-data`` body, optionally with one ``(name, type, bytes)`` file."""
+    boundary = "----ledgerTestBoundary7e3"
+    chunks: list[bytes] = []
+    for key, value in fields.items():
+        chunks.append(
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="{key}"\r\n\r\n'
+            f"{value}\r\n".encode()
+        )
+    if file is not None:
+        filename, content_type, data = file
+        chunks.append(
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="upload"; filename="{filename}"\r\n'
+            f"Content-Type: {content_type}\r\n\r\n".encode()
+            + data
+            + b"\r\n"
+        )
+    chunks.append(f"--{boundary}--\r\n".encode())
+    body = b"".join(chunks)
+    req = urllib.request.Request(  # noqa: S310 - loopback
+        f"{base}{path}",
+        data=body,
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310
+            return int(resp.status), resp.read().decode("utf-8")
+    except urllib.error.HTTPError as exc:
+        return int(exc.code), exc.read().decode("utf-8")
+
+
+@pytest.mark.accessibility
+def test_form_offers_an_accessible_file_input(open_server: tuple[Archive, str]) -> None:
+    """The form is multipart and carries a labelled file input (backlog A2)."""
+    _archive, base = open_server
+    _status, body = _get(base, "/contribute")
+    assert 'enctype="multipart/form-data"' in body
+    assert 'type="file"' in body and 'id="upload"' in body
+    assert 'for="upload"' in body  # the input is labelled
+
+
+@pytest.mark.disclosure
+def test_valid_upload_is_ingested_sealed_pending(open_server: tuple[Archive, str]) -> None:
+    """A real image attaches as a sealed-pending payload with a server-sniffed type."""
+    archive, base = open_server
+    status, body = _post_multipart(
+        base,
+        "/contribute",
+        {
+            "action": "submit",
+            "title": "A photographed flyer",
+            "account": "A scan of a community flyer.",
+            "visibility": "public",
+        },
+        # The filename lies (".txt") and the declared type lies; the bytes are a PNG.
+        file=("flyer.txt", "text/plain", _PNG),
+    )
+    assert status == 200
+    assert "Thank you" in body
+
+    # Nothing is public by inaction, and exactly one record was stored.
+    assert archive.browse(anonymous()) == []
+    records = archive._all_records()
+    assert len(records) == 1
+    record = records[0]
+    assert record.default_policy is AccessPolicy.SEALED_UNTIL
+
+    # The payload is stored with the server-DETERMINED type, not the client's claim,
+    # and follows the record's sealed-pending policy until a steward reviews it.
+    assert len(record.payloads) == 1
+    payload = record.payloads[0]
+    assert payload.media_type == "image/png"
+    assert payload.policy is AccessPolicy.SEALED_UNTIL
+    assert payload.size_bytes == len(_PNG)
+
+
+@pytest.mark.disclosure
+def test_forged_file_type_is_rejected_and_stores_nothing(
+    open_server: tuple[Archive, str],
+) -> None:
+    """A file whose bytes are not an allowlisted type is refused; nothing is stored."""
+    archive, base = open_server
+    status, body = _post_multipart(
+        base,
+        "/contribute",
+        {
+            "action": "submit",
+            "title": "Not really an image",
+            "account": "An account.",
+            "visibility": "public",
+        },
+        # A .png name and an image content-type, but the bytes are not any known type.
+        file=("evil.png", "image/png", b"#!/bin/sh\nrm -rf /\n"),
+    )
+    assert status == 400
+    assert 'role="alert"' in body  # the form comes back with an error to fix
+    assert archive._all_records() == []  # the forged upload was never stored
+
+
+@pytest.mark.disclosure
+def test_oversized_upload_is_rejected(
+    open_server: tuple[Archive, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A file larger than the cap is refused before anything is stored."""
+    from ledger import upload
+
+    # Shrink the cap so the test stays small; the body stays under the read cap
+    # (cap + 1 MiB), so the friendly size error is what rejects it.
+    monkeypatch.setattr(upload, "MAX_UPLOAD_BYTES", 1024)
+    archive, base = open_server
+    status, body = _post_multipart(
+        base,
+        "/contribute",
+        {
+            "action": "submit",
+            "title": "Too big",
+            "account": "An account.",
+            "visibility": "public",
+        },
+        file=("big.png", "image/png", _PNG + b"\x00" * 4096),
+    )
+    assert status == 400
+    assert 'role="alert"' in body
+    assert archive._all_records() == []
+
+
+@pytest.mark.disclosure
+def test_multipart_text_only_submission_still_works(
+    open_server: tuple[Archive, str],
+) -> None:
+    """A multipart POST with no file behaves exactly like the text-only path."""
+    archive, base = open_server
+    status, body = _post_multipart(
+        base,
+        "/contribute",
+        {
+            "action": "submit",
+            "title": "Text only",
+            "account": "No file attached.",
+            "visibility": "community",
+        },
+    )
+    assert status == 200
+    assert "Thank you" in body
+    records = archive._all_records()
+    assert len(records) == 1
+    assert records[0].payloads == []

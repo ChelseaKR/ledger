@@ -12,15 +12,20 @@ Two of ledger's hard rules shape every line:
   when given, are sealed into the identity vault by the one ingest path. They are
   never echoed back on the confirmation page, in a log, or in an error.
 
-Text-only by design for now: a contribution carries a title, a descriptive account,
-content warnings drawn from the archive's controlled vocabulary, a requested
-visibility, and an optional sealed contact. Binary payload upload (audio, image,
-PDF) is a deliberate follow-on — it needs multipart parsing and stricter abuse
-controls than this first, safe slice, and the steward CLI already covers it.
+A contribution carries a title, a descriptive account, content warnings drawn from
+the archive's controlled vocabulary, a requested visibility, an optional sealed
+contact, and — since backlog A2 — an optional single binary file (image, audio, or
+PDF). The file is validated by its *bytes*, not its filename or declared type: the
+server sniffs the leading magic bytes against a small allowlist
+(:mod:`ledger.upload`) and refuses anything it does not recognise, so the form is a
+safe upload surface rather than an arbitrary-file sink.
 
-This module is HTTP-agnostic: it renders the form markup and parses a posted form
-into a :class:`~ledger.models.Record` (plus an optional identity). The server wires
-it to a request, and the *one* ingest path does the sealing and bagging.
+This module is HTTP-agnostic: it renders the form markup (including the file input)
+and parses the posted text fields into a :class:`~ledger.models.Record` (plus an
+optional identity). The server reads any attached file, validates it, and hands the
+bytes to the *one* ingest path, which does the sealing, hashing, and bagging. Like
+every other part of a submission, an attached file lands sealed-pending — invisible
+until a steward reviews it.
 """
 
 from __future__ import annotations
@@ -29,7 +34,7 @@ import html
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 
-from ledger import i18n
+from ledger import i18n, upload
 from ledger.config import Config
 from ledger.errors import LedgerError
 from ledger.identity import ContributorIdentity
@@ -200,6 +205,20 @@ def render_contribute_main(
         f"{_visibility_radio('sealed', checked=selected_vis == 'sealed', lang=lang)}"
         "      </fieldset>\n"
     )
+    accepted = ", ".join(t.split("/", 1)[1].upper() for t in upload.ALLOWED_TYPES)
+    max_mb = upload.MAX_UPLOAD_BYTES // (1024 * 1024)
+    file_fieldset = (
+        "      <fieldset>\n"
+        "        <legend>Attach a file (optional)</legend>\n"
+        '        <p class="hint">You can attach one image, audio file, or PDF '
+        f"(up to {max_mb} MB). Accepted: {_esc(accepted)}. The file is reviewed with "
+        "the rest of your submission and is not public until a steward publishes it.</p>\n"
+        "        <p>\n"
+        '          <label for="upload">File</label>\n'
+        '          <input type="file" id="upload" name="upload">\n'
+        "        </p>\n"
+        "      </fieldset>\n"
+    )
     error_html = f'    <p class="error" role="alert">{_esc(error)}</p>\n' if error else ""
     preview_panel = preview_html or ""
     return (
@@ -210,7 +229,8 @@ def render_contribute_main(
         "stranger would see before you submit.</p>\n"
         f"{error_html}"
         f"{preview_panel}"
-        '    <form class="contribute" method="post" action="/contribute">\n'
+        '    <form class="contribute" method="post" action="/contribute" '
+        'enctype="multipart/form-data">\n'
         "      <p>\n"
         '        <label for="title">Title</label>\n'
         f'        <input type="text" id="title" name="title" required maxlength="200" '
@@ -221,6 +241,7 @@ def render_contribute_main(
         '        <textarea id="account" name="account" rows="10" required '
         f'maxlength="20000">{_esc(vals.get("account", ""))}</textarea>\n'
         "      </p>\n"
+        f"{file_fieldset}"
         f"{vis_fieldset}"
         f"{cw_fieldset}"
         "      <fieldset>\n"
