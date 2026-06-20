@@ -105,21 +105,15 @@ _STATIC_CONTENT_TYPES: dict[str, str] = {
 # Friendly labels for consent/objection request kinds, shared by the steward console
 # and the contributor status page so a steward can tell a subject's objection from a
 # contributor's own request at a glance (user research B3).
+# English request-kind labels for the contributor-facing consent-status page (its
+# own surface). The steward console localizes the same kinds via the ``req_kind_*``
+# i18n keys; this dict stays for the not-yet-localized status page.
 _REQUEST_KIND_LABELS: dict[str, str] = {
     "withdraw": "withdraw / take down",
     "tighten": "tighten access",
     "correct": "correct the record",
     "contact": "ask a steward to make contact",
     "object": "objection from a person named in the record",
-}
-
-# Short, steward-facing labels for a submission's requested visibility, shown in the
-# review queue so "Publish (as requested)" is never a blind action. The steward
-# console is operator-facing and English throughout; these match that register.
-_VISIBILITY_DISPLAY: dict[str, str] = {
-    "public": "Public — anyone may read it",
-    "community": "Community only — vetted members",
-    "sealed": "Sealed — kept private for now",
 }
 
 
@@ -708,9 +702,9 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
                     # never opens a record wider than the contributor asked without
                     # seeing it first (safety — no accidental over-exposure).
                     visibility = contribute.current_visibility(record)
-                    target = _VISIBILITY_DISPLAY.get(visibility, visibility)
+                    target = i18n.t(lang, f"sw_vis_{visibility}")
                     cw = (
-                        ' <span class="badge">Content warning</span>'
+                        f' <span class="badge">{_esc(i18n.t(lang, "content_warning_heading"))}</span>'
                         if record.content_warnings
                         else ""
                     )
@@ -721,78 +715,91 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
                         for event in archive.record_events(item.record_id)
                         if event.event_type is PremisEventType.CORRECTION
                     )
-                    if corrections:
-                        plural = "s" if corrections > 1 else ""
-                        edited = f' <span class="badge">Edited ({corrections} time{plural})</span>'
+                    if corrections == 1:
+                        edited = (
+                            f' <span class="badge">{_esc(i18n.t(lang, "badge_edited_one"))}</span>'
+                        )
+                    elif corrections > 1:
+                        label = i18n.t(lang, "badge_edited_many", count=corrections)
+                        edited = f' <span class="badge">{_esc(label)}</span>'
                 except ObjectNotFound:
                     title = "(record unavailable)"
-                    target = "unknown"
+                    target = ""
                     cw = ""
+                submitted = i18n.t(lang, "sw_submitted", when=item.submitted_at)
                 sub_rows.append(
                     "      <li>\n"
                     f"        <strong>{_esc(title)}</strong>{cw}{edited} "
                     f'<a href="/record/{quote(item.record_id)}">{_esc(item.record_id)}</a> '
-                    f'<span class="muted">(submitted {_esc(item.submitted_at)})</span>\n'
-                    f"        <p>Would publish as: <strong>{_esc(target)}</strong>. "
-                    "Open the record to read it before deciding.</p>\n"
+                    f'<span class="muted">({_esc(submitted)})</span>\n'
+                    f"        <p>{_esc(i18n.t(lang, 'sw_would_publish_as'))} "
+                    f"<strong>{_esc(target)}</strong>. "
+                    f"{_esc(i18n.t(lang, 'sw_open_to_read'))}</p>\n"
                     '        <form method="post" '
                     f'action="/steward/submissions/{quote(item.record_id)}/review">\n'
                     '          <button type="submit" name="action" value="publish">'
-                    "Publish (as requested)</button>\n"
+                    f"{_esc(i18n.t(lang, 'sw_publish_button'))}</button>\n"
                     '          <button type="submit" name="action" value="withhold">'
-                    "Withhold</button>\n"
+                    f"{_esc(i18n.t(lang, 'sw_withhold_button'))}</button>\n"
                     "        </form>\n"
                     "      </li>"
                 )
             submissions_html = f'    <ul class="submissions">\n{chr(10).join(sub_rows)}\n    </ul>'
         else:
-            submissions_html = "    <p>No submissions awaiting review.</p>"
+            submissions_html = f"    <p>{_esc(i18n.t(lang, 'sw_no_submissions'))}</p>"
         open_reqs = self._consent_store().open_requests()
         if open_reqs:
             rows = "\n".join(
                 "      <li>\n"
-                f"        <strong>{_esc(_REQUEST_KIND_LABELS.get(r.kind, r.kind))}</strong> "
-                "on record "
+                f"        <strong>{_esc(i18n.t(lang, f'req_kind_{r.kind}'))}</strong> "
+                f"{_esc(i18n.t(lang, 'sw_on_record'))} "
                 f'<a href="/record/{quote(r.record_id)}">{_esc(r.record_id)}</a> '
-                f'<span class="muted">({_esc(r.created_at)}, ref {_esc(r.request_id)})</span>\n'
+                f'<span class="muted">'
+                f"({_esc(i18n.t(lang, 'sw_request_meta', when=r.created_at, ref=r.request_id))})"
+                "</span>\n"
                 f'        <form method="post" action="/steward/requests/{quote(r.request_id)}/resolve">\n'
                 '          <input type="hidden" name="status" value="resolved">\n'
-                '          <button type="submit">Mark resolved</button>\n'
+                f'          <button type="submit">{_esc(i18n.t(lang, "sw_mark_resolved"))}</button>\n'
                 "        </form>\n"
                 "      </li>"
                 for r in open_reqs
             )
             requests_html = f'    <ul class="requests">\n{rows}\n    </ul>'
         else:
-            requests_html = "    <p>No open requests.</p>"
+            requests_html = f"    <p>{_esc(i18n.t(lang, 'sw_no_requests'))}</p>"
+        # The CLI command names are literal (never translated); the prose around them is.
+        cli_line = (
+            f"      <p>{_esc(i18n.t(lang, 'sw_cli_intro'))} <code>ledger policy</code> "
+            f"{_esc(i18n.t(lang, 'sw_cli_policy_note'))} <code>ledger takedown</code>, "
+            f"{_esc(i18n.t(lang, 'sw_cli_cw_note'))}</p>\n"
+        )
         main_html = (
-            "    <h1>Steward console</h1>\n"
+            f"    <h1>{_esc(i18n.t(lang, 'sw_console_heading'))}</h1>\n"
             '    <section aria-labelledby="sub-heading">\n'
-            '      <h2 id="sub-heading">Submissions awaiting review</h2>\n'
-            "      <p>Contributions arrive sealed — nothing is visible until you publish "
-            "it. Publishing opens a record to the visibility the contributor asked for; "
-            "withholding holds it for revision. Every choice is recorded.</p>\n"
+            f'      <h2 id="sub-heading">{_esc(i18n.t(lang, "sw_submissions_heading"))}</h2>\n'
+            f"      <p>{_esc(i18n.t(lang, 'sw_submissions_intro'))}</p>\n"
             f"{submissions_html}\n"
             "    </section>\n"
             '    <section aria-labelledby="req-heading">\n'
-            '      <h2 id="req-heading">Open consent &amp; takedown requests</h2>\n'
+            f'      <h2 id="req-heading">{_esc(i18n.t(lang, "sw_requests_heading"))}</h2>\n'
             f"{requests_html}\n"
             "    </section>\n"
             '    <section aria-labelledby="note-heading">\n'
-            '      <h2 id="note-heading">Before you act</h2>\n'
-            "      <p>You can read access-restricted content to do your work, but content "
-            "sealed with the 'sealed' policy — and every contributor's identity — is "
-            "restricted even from you. Some records may be sealed above your access; their "
-            "absence here does not mean they do not exist.</p>\n"
-            "      <p>Action a request with the audited CLI: <code>ledger policy</code> "
-            "(change access), <code>ledger takedown</code>, or <code>ledger cw</code> "
-            "(add a content warning) — each records who acted and why.</p>\n"
-            '      <p><a href="/steward/audit">View the audit log</a> — every recorded '
-            "action across the archive.</p>\n"
+            f'      <h2 id="note-heading">{_esc(i18n.t(lang, "sw_before_heading"))}</h2>\n'
+            f"      <p>{_esc(i18n.t(lang, 'sw_before_access'))}</p>\n"
+            f"{cli_line}"
+            f'      <p><a href="/steward/audit">{_esc(i18n.t(lang, "sw_view_audit"))}</a> '
+            f"{_esc(i18n.t(lang, 'sw_view_audit_note'))}</p>\n"
             "    </section>"
         )
         self._send_html(
-            200, _page("Steward console", lang=lang, main_html=main_html, nav_html=self._nav())
+            200,
+            _page(
+                i18n.t(lang, "sw_console_heading"),
+                lang=lang,
+                main_html=main_html,
+                nav_html=self._nav(),
+            ),
         )
 
     def _handle_steward_audit(self) -> None:
@@ -825,32 +832,33 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             )
             table = (
                 "    <table>\n"
-                "      <caption>Recorded actions, newest first</caption>\n"
+                f"      <caption>{_esc(i18n.t(lang, 'audit_caption'))}</caption>\n"
                 "      <thead>\n"
                 "        <tr>\n"
-                '          <th scope="col">When</th>\n'
-                '          <th scope="col">Event</th>\n'
-                '          <th scope="col">Outcome</th>\n'
-                '          <th scope="col">Agent</th>\n'
-                '          <th scope="col">Object</th>\n'
-                '          <th scope="col">Detail</th>\n'
+                f'          <th scope="col">{_esc(i18n.t(lang, "audit_col_when"))}</th>\n'
+                f'          <th scope="col">{_esc(i18n.t(lang, "audit_col_event"))}</th>\n'
+                f'          <th scope="col">{_esc(i18n.t(lang, "audit_col_outcome"))}</th>\n'
+                f'          <th scope="col">{_esc(i18n.t(lang, "audit_col_agent"))}</th>\n'
+                f'          <th scope="col">{_esc(i18n.t(lang, "audit_col_object"))}</th>\n'
+                f'          <th scope="col">{_esc(i18n.t(lang, "audit_col_detail"))}</th>\n'
                 "        </tr>\n"
                 "      </thead>\n"
                 f"      <tbody>\n{rows}\n      </tbody>\n"
                 "    </table>"
             )
         else:
-            table = "    <p>No recorded events yet.</p>"
+            table = f"    <p>{_esc(i18n.t(lang, 'audit_no_events'))}</p>"
         main_html = (
-            "    <h1>Audit log</h1>\n"
-            "    <p>Every recorded action across the archive, newest first. This log "
-            "carries no contributor identity or sealed value — only what happened, who "
-            "acted, and the outcome.</p>\n"
+            f"    <h1>{_esc(i18n.t(lang, 'audit_heading'))}</h1>\n"
+            f"    <p>{_esc(i18n.t(lang, 'audit_intro'))}</p>\n"
             f"{table}\n"
-            '    <p><a href="/steward">Back to the steward console</a></p>'
+            f'    <p><a href="/steward">{_esc(i18n.t(lang, "audit_back"))}</a></p>'
         )
         self._send_html(
-            200, _page("Audit log", lang=lang, main_html=main_html, nav_html=self._nav())
+            200,
+            _page(
+                i18n.t(lang, "audit_heading"), lang=lang, main_html=main_html, nav_html=self._nav()
+            ),
         )
 
     # --- HTML routes --------------------------------------------------------

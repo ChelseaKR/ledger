@@ -83,6 +83,62 @@ _CATALOG: dict[str, dict[str, str]] = {
         "pager_next": "Next",
         "pager_position": "Page {number} of {pages}",
         "back_to_archive": "Back to the archive",
+        # --- steward console + audit log ---
+        "sw_console_heading": "Steward console",
+        "sw_submissions_heading": "Submissions awaiting review",
+        "sw_submissions_intro": (
+            "Contributions arrive sealed — nothing is visible until you publish it. "
+            "Publishing opens a record to the visibility the contributor asked for; "
+            "withholding holds it for revision. Every choice is recorded."
+        ),
+        "sw_no_submissions": "No submissions awaiting review.",
+        "sw_would_publish_as": "Would publish as:",
+        "sw_open_to_read": "Open the record to read it before deciding.",
+        "sw_submitted": "submitted {when}",
+        "sw_publish_button": "Publish (as requested)",
+        "sw_withhold_button": "Withhold",
+        "badge_edited_one": "Edited (1 time)",
+        "badge_edited_many": "Edited ({count} times)",
+        "sw_vis_public": "Public — anyone may read it",
+        "sw_vis_community": "Community only — vetted members",
+        "sw_vis_sealed": "Sealed — kept private for now",
+        "sw_requests_heading": "Open consent & takedown requests",
+        "sw_on_record": "on record",
+        "sw_request_meta": "{when}, ref {ref}",
+        "sw_mark_resolved": "Mark resolved",
+        "sw_no_requests": "No open requests.",
+        "sw_before_heading": "Before you act",
+        "sw_before_access": (
+            "You can read access-restricted content to do your work, but content sealed "
+            "with the 'sealed' policy — and every contributor's identity — is restricted "
+            "even from you. Some records may be sealed above your access; their absence "
+            "here does not mean they do not exist."
+        ),
+        "sw_cli_intro": "Action a request with the audited CLI:",
+        "sw_cli_policy_note": "(change access),",
+        "sw_cli_cw_note": "(add a content warning) — each records who acted and why.",
+        "sw_view_audit": "View the audit log",
+        "sw_view_audit_note": "— every recorded action across the archive.",
+        "req_kind_withdraw": "withdraw / take down",
+        "req_kind_tighten": "tighten access",
+        "req_kind_correct": "correct the record",
+        "req_kind_contact": "ask a steward to make contact",
+        "req_kind_object": "objection from a person named in the record",
+        "audit_heading": "Audit log",
+        "audit_intro": (
+            "Every recorded action across the archive, newest first. This log carries "
+            "no contributor identity or sealed value — only what happened, who acted, "
+            "and the outcome."
+        ),
+        "audit_caption": "Recorded actions, newest first",
+        "audit_col_when": "When",
+        "audit_col_event": "Event",
+        "audit_col_outcome": "Outcome",
+        "audit_col_agent": "Agent",
+        "audit_col_object": "Object",
+        "audit_col_detail": "Detail",
+        "audit_no_events": "No recorded events yet.",
+        "audit_back": "Back to the steward console",
         # --- contribution form (the contributor write path) ---
         "contribute_heading": "Contribute to the archive",
         "contribute_intro": (
@@ -247,6 +303,65 @@ _CATALOG: dict[str, dict[str, str]] = {
         "pager_next": "Siguiente",
         "pager_position": "Página {number} de {pages}",
         "back_to_archive": "Volver al archivo",
+        # --- consola de administración + registro de auditoría ---
+        "sw_console_heading": "Consola de administración",
+        "sw_submissions_heading": "Envíos a la espera de revisión",
+        "sw_submissions_intro": (
+            "Las contribuciones llegan selladas: nada es visible hasta que usted lo "
+            "publique. Publicar abre un registro a la visibilidad que pidió el "
+            "colaborador; retenerlo lo guarda para revisión. Cada decisión se registra."
+        ),
+        "sw_no_submissions": "No hay envíos a la espera de revisión.",
+        "sw_would_publish_as": "Se publicaría como:",
+        "sw_open_to_read": "Abra el registro para leerlo antes de decidir.",
+        "sw_submitted": "enviado {when}",
+        "sw_publish_button": "Publicar (como se solicitó)",
+        "sw_withhold_button": "Retener",
+        "badge_edited_one": "Editado (1 vez)",
+        "badge_edited_many": "Editado ({count} veces)",
+        "sw_vis_public": "Público — cualquiera puede leerlo",
+        "sw_vis_community": "Solo la comunidad — miembros verificados",
+        "sw_vis_sealed": "Sellado — reservado por ahora",
+        "sw_requests_heading": "Solicitudes abiertas de consentimiento y retirada",
+        "sw_on_record": "en el registro",
+        "sw_request_meta": "{when}, ref {ref}",
+        "sw_mark_resolved": "Marcar como resuelta",
+        "sw_no_requests": "No hay solicitudes abiertas.",
+        "sw_before_heading": "Antes de actuar",
+        "sw_before_access": (
+            "Puede leer contenido de acceso restringido para hacer su trabajo, pero el "
+            "contenido sellado con la política «sealed» —y la identidad de cada "
+            "colaborador— está restringido incluso para usted. Algunos registros pueden "
+            "estar sellados por encima de su acceso; su ausencia aquí no significa que "
+            "no existan."
+        ),
+        "sw_cli_intro": "Gestione una solicitud con la CLI auditada:",
+        "sw_cli_policy_note": "(cambiar acceso),",
+        "sw_cli_cw_note": (
+            "(añadir una advertencia de contenido); cada uno registra quién actuó y por qué."
+        ),
+        "sw_view_audit": "Ver el registro de auditoría",
+        "sw_view_audit_note": "— cada acción registrada en todo el archivo.",
+        "req_kind_withdraw": "retirar / dar de baja",
+        "req_kind_tighten": "restringir el acceso",
+        "req_kind_correct": "corregir el registro",
+        "req_kind_contact": "pedir a una persona responsable que se ponga en contacto",
+        "req_kind_object": "objeción de una persona nombrada en el registro",
+        "audit_heading": "Registro de auditoría",
+        "audit_intro": (
+            "Cada acción registrada en todo el archivo, las más recientes primero. Este "
+            "registro no contiene ninguna identidad de colaborador ni valor sellado: "
+            "solo qué ocurrió, quién actuó y el resultado."
+        ),
+        "audit_caption": "Acciones registradas, las más recientes primero",
+        "audit_col_when": "Cuándo",
+        "audit_col_event": "Evento",
+        "audit_col_outcome": "Resultado",
+        "audit_col_agent": "Agente",
+        "audit_col_object": "Objeto",
+        "audit_col_detail": "Detalle",
+        "audit_no_events": "Aún no hay eventos registrados.",
+        "audit_back": "Volver a la consola de administración",
         # --- formulario de contribución ---
         "contribute_heading": "Contribuir al archivo",
         "contribute_intro": (

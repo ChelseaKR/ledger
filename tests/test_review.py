@@ -173,6 +173,20 @@ def test_console_shows_the_requested_visibility_in_the_queue(
     assert "anyone may read it" not in body  # not the public phrasing
 
 
+def test_steward_console_and_audit_are_localized(server: tuple[Archive, str]) -> None:
+    """The steward console and audit log render in the steward's language (I2)."""
+    _archive, base = server
+    _submit(base, visibility="public")
+    _status, console = _req(base, "/steward?lang=es", steward=True)
+    assert "Consola de administración" in console
+    assert "Envíos a la espera de revisión" in console
+    assert "Se publicaría como:" in console
+    assert "Publicar (como se solicitó)" in console
+    assert "Steward console" not in console  # the English heading is gone
+    _status, audit = _req(base, "/steward/audit?lang=es", steward=True)
+    assert "Registro de auditoría" in audit
+
+
 def test_console_flags_a_submission_edited_under_review(server: tuple[Archive, str]) -> None:
     """A correction recorded after submission shows an 'Edited' marker in the queue."""
     from ledger.models import PremisEvent, PremisEventType, now_iso
