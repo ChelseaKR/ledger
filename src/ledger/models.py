@@ -141,6 +141,7 @@ class PremisEventType(StrEnum):
     REDACTION = "redaction"
     POLICY_CHANGE = "access-policy change"
     CONSENT_CHANGE = "consent change"
+    CORRECTION = "correction"
     TAKEDOWN = "deletion"
     QUARANTINE = "quarantine"
     VALIDATION = "validation"

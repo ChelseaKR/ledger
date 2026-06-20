@@ -58,6 +58,8 @@ from ledger.models import (
     Grant,
     HashAlgo,
     PayloadFile,
+    PremisEvent,
+    PremisEventType,
     Record,
     now_iso,
 )
@@ -346,6 +348,8 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
                 self._handle_contribute_form()
             elif path == "/withdraw":
                 self._handle_withdraw_form()
+            elif path == "/edit":
+                self._handle_edit_form()
             elif path.startswith("/record/") and "/file/" in path:
                 rid, _, name = path[len("/record/") :].partition("/file/")
                 self._handle_file(rid, name)
@@ -380,6 +384,8 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
                 self._post_contribute()
             elif path == "/withdraw":
                 self._post_withdraw()
+            elif path == "/edit":
+                self._post_edit()
             elif path.startswith("/record/") and path.endswith("/consent"):
                 self._post_consent(path[len("/record/") : -len("/consent")])
             elif path.startswith("/record/") and path.endswith("/object"):
@@ -1240,6 +1246,99 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
                 nav_html=self._nav(),
             ),
         )
+
+    def _handle_edit_form(
+        self, *, error: str | None = None, values: dict[str, str] | None = None
+    ) -> None:
+        """``GET /edit`` — the form to load and correct a still-pending submission.
+
+        Gated identically to withdrawal (contributions on and a claim secret set);
+        a neutral 404 otherwise so a deployment without it never advertises the path."""
+        if not self._withdrawal_enabled():
+            self._handle_not_found()
+            return
+        lang = self._lang()
+        main_html = contribute.render_edit_main(
+            self._archive().config, lang=lang, values=values, error=error
+        )
+        self._send_html(200, _page("Edit", lang=lang, main_html=main_html, nav_html=self._nav()))
+
+    def _post_edit(self) -> None:
+        """``POST /edit`` — load or save an edit to a pending submission.
+
+        Authorship is proven by the claim token on every POST, and editing is allowed
+        only while the submission is *still pending* (in the review queue) — once a
+        steward has published a record it follows the normal governance path, not this
+        self-service form. ``action=load`` pulls the current values into the form so
+        the contributor can see what they are changing; ``action=save`` validates and
+        persists the correction through the one update path, recording a PREMIS
+        CORRECTION event. A bad reference/code returns the same neutral error as
+        withdrawal, so the endpoint is no existence oracle (no-outing rule). The sealed
+        contact is never loaded back or editable here."""
+        if not self._withdrawal_enabled():
+            self._handle_not_found()
+            return
+        form = self._read_form()
+        reference = (form.get("ref") or "").strip()
+        claim = (form.get("claim") or "").strip()
+        secret = self._claim_secret()
+        queue = self._submission_queue()
+        authorized = (
+            bool(reference)
+            and consent.verify_claim_token(reference, claim, secret)
+            and queue.contains(reference)
+        )
+        archive = self._archive()
+        record = None
+        if authorized:
+            try:
+                record = archive.get(reference)
+            except LedgerError:
+                record = None
+        if record is None:
+            self._handle_edit_form(error=i18n.t(self._lang(), "err_edit_failed"), values=form)
+            return
+
+        if form.get("action") == "save":
+            try:
+                updated = contribute.apply_edit(record, form, archive.config)
+            except ValidationError as exc:
+                message = i18n.t(self._lang(), exc.code, **exc.fields)
+                self._handle_edit_form(error=message, values=form)
+                return
+            event = PremisEvent(
+                event_type=PremisEventType.CORRECTION,
+                agent="contributor",
+                outcome="success",
+                detail="contributor edited a pending submission",
+                linked_object=reference,
+                event_datetime=now_iso(),
+            )
+            archive.apply_update(updated, event)
+            lang = self._lang()
+            self._send_html(
+                200,
+                _page(
+                    "Edited",
+                    lang=lang,
+                    main_html=contribute.render_edit_done_main(lang=lang),
+                    nav_html=self._nav(),
+                ),
+            )
+            return
+
+        # action=load (default): prefill the form from the current record.
+        account = record.field_named("account")
+        values = {
+            "ref": reference,
+            "claim": claim,
+            "title": record.title,
+            "account": account.value if account is not None else "",
+            "visibility": contribute.current_visibility(record),
+        }
+        for warning in record.content_warnings:
+            values[f"cw_{warning}"] = "1"
+        self._handle_edit_form(values=values)
 
     # --- health -------------------------------------------------------------
 

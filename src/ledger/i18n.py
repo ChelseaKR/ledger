@@ -152,6 +152,8 @@ _CATALOG: dict[str, dict[str, str]] = {
         "thanks_withdraw_before": "To withdraw it, go to",
         "withdrawal_page_link_text": "the withdrawal page",
         "thanks_withdraw_after": "and enter both.",
+        "thanks_edit_before": "You can also correct it on",
+        "edit_page_link_text": "the edit page",
         "withdraw_heading": "Withdraw a submission",
         "withdraw_intro": (
             "If you contributed something and it is still waiting for review, you can "
@@ -172,6 +174,27 @@ _CATALOG: dict[str, dict[str, str]] = {
         "err_withdraw_failed": (
             "We could not withdraw a pending submission with that reference and code. "
             "Check both and try again."
+        ),
+        "err_edit_failed": (
+            "We could not find a pending submission with that reference and code. "
+            "Check both and try again."
+        ),
+        # --- edit a pending submission ---
+        "edit_heading": "Edit a pending submission",
+        "edit_intro": (
+            "If your submission is still waiting for review, you can correct it here. "
+            "Enter the reference and code from your confirmation, choose “Load my "
+            "submission”, make your changes, then save. Once a steward has "
+            "published a record, this no longer applies — request a change from its "
+            "page instead."
+        ),
+        "label_code": "Your code",
+        "edit_load_button": "Load my submission",
+        "edit_save_button": "Save changes",
+        "edit_done_heading": "Your changes were saved",
+        "edit_done_status": (
+            "Your pending submission has been updated. It is still sealed and waiting "
+            "for a steward to review it."
         ),
         "withdraw_done_heading": "Your submission was withdrawn",
         "withdraw_done_status": (
@@ -292,6 +315,8 @@ _CATALOG: dict[str, dict[str, str]] = {
         "thanks_withdraw_before": "Para retirarlo, vaya a",
         "withdrawal_page_link_text": "la página de retirada",
         "thanks_withdraw_after": "e introduzca ambos.",
+        "thanks_edit_before": "También puede corregirlo en",
+        "edit_page_link_text": "la página de edición",
         "withdraw_heading": "Retirar un envío",
         "withdraw_intro": (
             "Si aportó algo y todavía está a la espera de revisión, puede retirarlo "
@@ -314,6 +339,27 @@ _CATALOG: dict[str, dict[str, str]] = {
         "err_withdraw_failed": (
             "No se pudo retirar un envío pendiente con esa referencia y ese código. "
             "Compruebe ambos e inténtelo de nuevo."
+        ),
+        "err_edit_failed": (
+            "No se encontró un envío pendiente con esa referencia y ese código. "
+            "Compruebe ambos e inténtelo de nuevo."
+        ),
+        # --- editar un envío pendiente ---
+        "edit_heading": "Editar un envío pendiente",
+        "edit_intro": (
+            "Si su envío todavía está a la espera de revisión, puede corregirlo aquí. "
+            "Introduzca la referencia y el código de su confirmación, elija «Cargar mi "
+            "envío», haga sus cambios y luego guárdelos. Una vez que una persona "
+            "responsable haya publicado un registro, esto ya no se aplica: solicite un "
+            "cambio desde su página."
+        ),
+        "label_code": "Su código",
+        "edit_load_button": "Cargar mi envío",
+        "edit_save_button": "Guardar cambios",
+        "edit_done_heading": "Se guardaron sus cambios",
+        "edit_done_status": (
+            "Su envío pendiente se ha actualizado. Sigue sellado y a la espera de que "
+            "una persona responsable lo revise."
         ),
         "withdraw_done_heading": "Su envío fue retirado",
         "withdraw_done_status": (

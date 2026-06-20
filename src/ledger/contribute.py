@@ -114,6 +114,46 @@ def parse_submission(form: dict[str, str], config: Config) -> Submission:
     return Submission(record=record, identity=identity)
 
 
+_POLICY_TO_VISIBILITY: dict[AccessPolicy, str] = {
+    policy: visibility for visibility, policy in _VISIBILITY_TO_POLICY.items()
+}
+
+
+def current_visibility(record: Record) -> str:
+    """The requested-visibility keyword (public/community/sealed) a record carries.
+
+    Read back from the account field's policy so an edit form can pre-select the
+    contributor's existing choice. Falls back to the default if absent."""
+    field = record.field_named("account")
+    if field is None:
+        return _DEFAULT_VISIBILITY
+    return _POLICY_TO_VISIBILITY.get(field.policy, _DEFAULT_VISIBILITY)
+
+
+def apply_edit(existing: Record, form: dict[str, str], config: Config) -> Record:
+    """Return ``existing`` updated from an edit ``form``, preserving its identity.
+
+    A contributor correcting a *still-pending* submission may change the title, the
+    account, the requested visibility, and the content warnings — exactly the fields
+    :func:`parse_submission` validates — so this reuses that validation and then
+    transplants the validated values onto the existing record, keeping its
+    ``record_id``, its sealed ``identity_ref``, any payloads, its creation time, and
+    its sealed-pending ``default_policy`` unchanged. The contributor's sealed contact
+    is deliberately *not* editable here (changing it would mean re-keying the vault);
+    a contributor who needs to change contact withdraws and resubmits. Raises
+    :class:`~ledger.errors.ValidationError` on invalid input, naming no value.
+    """
+    validated = parse_submission(form, config).record
+    updated_dc = replace(existing.dublin_core, title=[validated.title])
+    return replace(
+        existing,
+        title=validated.title,
+        dublin_core=updated_dc,
+        fields=validated.fields,
+        content_warnings=validated.content_warnings,
+    )
+
+
 def _checkbox(warning: str, *, checked: bool = False) -> str:
     """One labelled content-warning checkbox (id + matching ``<label for>``)."""
     cid = f"cw-{warning}"
@@ -341,6 +381,7 @@ def render_thanks_main(
     private, since together they authorise withdrawal."""
     if reference and claim_token:
         link = f'<a href="/withdraw">{_esc(i18n.t(lang, "withdrawal_page_link_text"))}</a>'
+        edit_link = f'<a href="/edit">{_esc(i18n.t(lang, "edit_page_link_text"))}</a>'
         withdraw_block = (
             '    <section class="claim" aria-labelledby="claim-heading">\n'
             f'      <h2 id="claim-heading">{_esc(i18n.t(lang, "thanks_claim_heading"))}</h2>\n'
@@ -353,6 +394,7 @@ def render_thanks_main(
             "      </dl>\n"
             f"      <p>{_esc(i18n.t(lang, 'thanks_withdraw_before'))} {link} "
             f"{_esc(i18n.t(lang, 'thanks_withdraw_after'))}</p>\n"
+            f"      <p>{_esc(i18n.t(lang, 'thanks_edit_before'))} {edit_link}.</p>\n"
             "    </section>\n"
         )
     else:
@@ -408,5 +450,93 @@ def render_withdraw_done_main(*, lang: str = i18n.DEFAULT_LANG) -> str:
     return (
         f"    <h1>{_esc(i18n.t(lang, 'withdraw_done_heading'))}</h1>\n"
         f'    <p role="status">{_esc(i18n.t(lang, "withdraw_done_status"))}</p>\n'
+        f'    <p><a href="/">{_esc(i18n.t(lang, "back_to_archive"))}</a></p>\n'
+    )
+
+
+def render_edit_main(
+    config: Config,
+    *,
+    lang: str = i18n.DEFAULT_LANG,
+    values: Mapping[str, str] | None = None,
+    error: str | None = None,
+) -> str:
+    """Render the ``<main>`` for editing a *pending* submission.
+
+    One form gates and edits in two steps: the contributor enters their reference and
+    code, chooses **Load my submission** to pull the current values in, edits, then
+    chooses **Save changes**. The reference and code ride along as form fields so each
+    POST re-proves authorship; they are the contributor's own capability, shown back
+    only to them after they supplied them. The contact section and file upload are
+    intentionally absent — only the title, account, visibility, and content warnings
+    are editable (changing the sealed contact would mean re-keying the vault). All
+    chrome is localized; every value is escaped (security).
+    """
+    vals = values or {}
+    selected_vis = vals.get("visibility") or _DEFAULT_VISIBILITY
+    cw_options = "".join(
+        _checkbox(w, checked=bool(vals.get(f"cw_{w}"))) for w in config.content_warnings
+    )
+    cw_fieldset = (
+        "      <fieldset>\n"
+        f"        <legend>{_esc(i18n.t(lang, 'cw_legend'))}</legend>\n"
+        f'        <p class="hint">{_esc(i18n.t(lang, "cw_hint"))}</p>\n'
+        f"{cw_options}"
+        "      </fieldset>\n"
+        if config.content_warnings
+        else ""
+    )
+    vis_fieldset = (
+        "      <fieldset>\n"
+        f"        <legend>{_esc(i18n.t(lang, 'share_legend'))}</legend>\n"
+        f'        <p class="hint">{_esc(i18n.t(lang, "share_hint"))}</p>\n'
+        f"{_visibility_radio('public', checked=selected_vis == 'public', lang=lang)}"
+        f"{_visibility_radio('community', checked=selected_vis == 'community', lang=lang)}"
+        f"{_visibility_radio('sealed', checked=selected_vis == 'sealed', lang=lang)}"
+        "      </fieldset>\n"
+    )
+    error_html = f'    <p class="error" role="alert">{_esc(error)}</p>\n' if error else ""
+    return (
+        f"    <h1>{_esc(i18n.t(lang, 'edit_heading'))}</h1>\n"
+        f"    <p>{_esc(i18n.t(lang, 'edit_intro'))}</p>\n"
+        f"{error_html}"
+        '    <form class="edit" method="post" action="/edit">\n'
+        "      <p>\n"
+        f'        <label for="ref">{_esc(i18n.t(lang, "label_reference"))}</label>\n'
+        f'        <input type="text" id="ref" name="ref" required value="{_esc(vals.get("ref", ""))}">\n'
+        "      </p>\n"
+        "      <p>\n"
+        f'        <label for="claim">{_esc(i18n.t(lang, "label_code"))}</label>\n'
+        f'        <input type="text" id="claim" name="claim" required '
+        f'value="{_esc(vals.get("claim", ""))}">\n'
+        "      </p>\n"
+        "      <p>\n"
+        f'        <label for="title">{_esc(i18n.t(lang, "label_title"))}</label>\n'
+        f'        <input type="text" id="title" name="title" maxlength="200" '
+        f'value="{_esc(vals.get("title", ""))}">\n'
+        "      </p>\n"
+        "      <p>\n"
+        f'        <label for="account">{_esc(i18n.t(lang, "label_account"))}</label>\n'
+        '        <textarea id="account" name="account" rows="10" '
+        f'maxlength="20000">{_esc(vals.get("account", ""))}</textarea>\n'
+        "      </p>\n"
+        f"{vis_fieldset}"
+        f"{cw_fieldset}"
+        '      <p><button type="submit" name="action" value="load">'
+        f"{_esc(i18n.t(lang, 'edit_load_button'))}</button>\n"
+        '      <button type="submit" name="action" value="save">'
+        f"{_esc(i18n.t(lang, 'edit_save_button'))}</button></p>\n"
+        "    </form>\n"
+    )
+
+
+def render_edit_done_main(*, lang: str = i18n.DEFAULT_LANG) -> str:
+    """Render the ``<main>`` shown after a pending submission is successfully edited.
+
+    Confirms the update without echoing the new title or account back, so the
+    confirmation reflects nothing (no-outing rule)."""
+    return (
+        f"    <h1>{_esc(i18n.t(lang, 'edit_done_heading'))}</h1>\n"
+        f'    <p role="status">{_esc(i18n.t(lang, "edit_done_status"))}</p>\n'
         f'    <p><a href="/">{_esc(i18n.t(lang, "back_to_archive"))}</a></p>\n'
     )
