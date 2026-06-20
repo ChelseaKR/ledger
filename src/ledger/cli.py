@@ -320,6 +320,43 @@ def _cmd_cw(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_verify_backup(args: argparse.Namespace) -> int:
+    """``verify-backup`` — prove a backed-up archive restores intact (cron-friendly).
+
+    An untested backup is a hope, not a backup (user research K1). Point this at a
+    restored copy of the archive root (a directory holding ``store/`` and
+    ``identity.vault``) and it re-validates the backup *in place*: it re-points the
+    config at the backup location (the stored paths are the original box's), confirms
+    the store and — when ``LEDGER_VAULT_KEY`` is set — the vault are readable without
+    unsealing anything, then runs full RFC 8493 fixity over every bag. Exit ``0`` when
+    every bag passes, non-zero otherwise, so a cron job can alarm on a bad backup.
+    Only bag names and counts are printed (no-outing rule).
+    """
+    backup = Path(args.backup)
+    config = Config.load(backup / "store" / _CONFIG_FILENAME)
+    # The config records the ORIGINAL box's absolute paths; re-point it at the backup
+    # so we verify the copy on disk, not wherever it was first written.
+    config.store_root = str(backup / "store")
+    config.vault_path = str(backup / "identity.vault")
+    archive = Archive(config)
+
+    ready, reason = archive.check_readiness()
+    if not ready:
+        print(f"FAIL: backup is not readable ({reason})", file=sys.stderr)
+        return 1
+
+    reports = archive.audit_fixity()
+    failures = 0
+    for name, report in reports:
+        ok = report.ok
+        if not ok:
+            failures += 1
+        print(f"{'PASS' if ok else 'FAIL'}\t{name}\t({report.checked} file(s) checked)")
+    summary = "PASS" if failures == 0 else "FAIL"
+    print(f"{summary}: backup at {backup} — {len(reports)} bag(s) verified, {failures} failed")
+    return 0 if failures == 0 else 1
+
+
 def _proposal_store(archive: Archive) -> dualcontrol.ProposalStore:
     """The dual-control proposal store for ``archive`` (under ``logs/``)."""
     return dualcontrol.ProposalStore(archive.logs_dir / "proposals.json")
@@ -636,6 +673,14 @@ def _build_parser() -> argparse.ArgumentParser:
     p_audit = sub.add_parser("audit", help="validate every bag's fixity")
     p_audit.add_argument("--root", required=True)
     p_audit.set_defaults(func=_cmd_audit)
+
+    p_verify_backup = sub.add_parser(
+        "verify-backup", help="prove a restored backup is intact (cron-friendly)"
+    )
+    p_verify_backup.add_argument(
+        "--backup", required=True, help="path to a restored archive root (holds store/ + vault)"
+    )
+    p_verify_backup.set_defaults(func=_cmd_verify_backup)
 
     p_policy = sub.add_parser("policy", help="record an accountable consent/policy change")
     p_policy.add_argument("--root", required=True)

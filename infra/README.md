@@ -194,7 +194,16 @@ docker run --rm \
 ```
 
 Move that tarball off the box. Store the vault key separately. Test a restore at
-least once — an untested backup is a hope, not a backup.
+least once — an untested backup is a hope, not a backup. To test it automatically,
+extract a backup to a scratch directory and run `ledger verify-backup` against it
+(cron-friendly: it exits non-zero if any bag fails fixity, so your scheduler can
+alarm):
+
+```sh
+# Extract the latest backup somewhere, then verify it restores intact.
+mkdir -p /tmp/restore-check && tar xzf <your-backup>.tar.gz -C /tmp/restore-check
+ledger verify-backup --backup /tmp/restore-check
+```
 
 ### Restore
 
