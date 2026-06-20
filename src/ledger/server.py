@@ -113,6 +113,15 @@ _REQUEST_KIND_LABELS: dict[str, str] = {
     "object": "objection from a person named in the record",
 }
 
+# Short, steward-facing labels for a submission's requested visibility, shown in the
+# review queue so "Publish (as requested)" is never a blind action. The steward
+# console is operator-facing and English throughout; these match that register.
+_VISIBILITY_DISPLAY: dict[str, str] = {
+    "public": "Public — anyone may read it",
+    "community": "Community only — vetted members",
+    "sealed": "Sealed — kept private for now",
+}
+
 
 # --- the request handler ----------------------------------------------------
 
@@ -690,14 +699,29 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             sub_rows = []
             for item in pending:
                 try:
-                    title = archive.get(item.record_id).title
+                    record = archive.get(item.record_id)
+                    title = record.title
+                    # Show what "Publish (as requested)" will actually do, so a steward
+                    # never opens a record wider than the contributor asked without
+                    # seeing it first (safety — no accidental over-exposure).
+                    visibility = contribute.current_visibility(record)
+                    target = _VISIBILITY_DISPLAY.get(visibility, visibility)
+                    cw = (
+                        ' <span class="badge">Content warning</span>'
+                        if record.content_warnings
+                        else ""
+                    )
                 except ObjectNotFound:
                     title = "(record unavailable)"
+                    target = "unknown"
+                    cw = ""
                 sub_rows.append(
                     "      <li>\n"
-                    f"        <strong>{_esc(title)}</strong> "
+                    f"        <strong>{_esc(title)}</strong>{cw} "
                     f'<a href="/record/{quote(item.record_id)}">{_esc(item.record_id)}</a> '
                     f'<span class="muted">(submitted {_esc(item.submitted_at)})</span>\n'
+                    f"        <p>Would publish as: <strong>{_esc(target)}</strong>. "
+                    "Open the record to read it before deciding.</p>\n"
                     '        <form method="post" '
                     f'action="/steward/submissions/{quote(item.record_id)}/review">\n'
                     '          <button type="submit" name="action" value="publish">'

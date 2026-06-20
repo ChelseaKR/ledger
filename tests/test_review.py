@@ -160,6 +160,19 @@ def test_console_shows_pending_submission_to_steward_only(server: tuple[Archive,
     assert _req(base, "/steward")[0] == 404
 
 
+def test_console_shows_the_requested_visibility_in_the_queue(
+    server: tuple[Archive, str],
+) -> None:
+    """The queue states what publishing would do, so a steward never opens it blind."""
+    _archive, base = server
+    _submit(base, visibility="community")
+    _status, body = _req(base, "/steward", steward=True)
+    # The steward sees the target visibility for "Publish (as requested)" inline.
+    assert "Would publish as:" in body
+    assert "Community only" in body
+    assert "anyone may read it" not in body  # not the public phrasing
+
+
 @pytest.mark.disclosure
 def test_publish_opens_record_to_requested_visibility(server: tuple[Archive, str]) -> None:
     """Publishing a sealed-pending submission makes it listable and clears the queue."""
