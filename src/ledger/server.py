@@ -88,6 +88,17 @@ _STATIC_CONTENT_TYPES: dict[str, str] = {
     ".txt": "text/plain; charset=utf-8",
 }
 
+# Friendly labels for consent/objection request kinds, shared by the steward console
+# and the contributor status page so a steward can tell a subject's objection from a
+# contributor's own request at a glance (user research B3).
+_REQUEST_KIND_LABELS: dict[str, str] = {
+    "withdraw": "withdraw / take down",
+    "tighten": "tighten access",
+    "correct": "correct the record",
+    "contact": "ask a steward to make contact",
+    "object": "objection from a person named in the record",
+}
+
 
 # --- the request handler ----------------------------------------------------
 
@@ -272,6 +283,8 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
                 self._handle_file(rid, name)
             elif path.startswith("/record/") and path.endswith("/consent"):
                 self._handle_consent_form(path[len("/record/") : -len("/consent")])
+            elif path.startswith("/record/") and path.endswith("/object"):
+                self._handle_object_form(path[len("/record/") : -len("/object")])
             elif path.startswith("/record/"):
                 self._handle_record(path[len("/record/") :], params)
             elif path == "/api/records":
@@ -299,6 +312,8 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
                 self._post_contribute()
             elif path.startswith("/record/") and path.endswith("/consent"):
                 self._post_consent(path[len("/record/") : -len("/consent")])
+            elif path.startswith("/record/") and path.endswith("/object"):
+                self._post_object(path[len("/record/") : -len("/object")])
             elif path.startswith("/steward/requests/") and path.endswith("/resolve"):
                 rid = path[len("/steward/requests/") : -len("/resolve")]
                 self._post_resolve_request(rid)
@@ -441,6 +456,79 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("Location", "/steward")
         self.end_headers()
 
+    def _handle_object_form(
+        self, raw_id: str, *, error: str | None = None, status: int = 200
+    ) -> None:
+        """``GET /record/{id}/object`` — a *subject's* objection form (no claim token).
+
+        A person named or described in a record they did not contribute can ask a
+        steward to review it — to redact a name or take it down (user research B3:
+        subjects have agency, not only the contributor). Unlike the contributor
+        consent form, it needs no claim token; the record must be listable to the
+        viewer or this is a neutral 404 (it never confirms a sealed record exists).
+        The objection is queued for a steward, who weighs it — nothing is automatic.
+        """
+        record_id = _decode_id(raw_id)
+        grant = self._resolve_grant()
+        lang = self._lang()
+        try:
+            self._archive().disclose(record_id, grant)
+        except (AccessDenied, ObjectNotFound):
+            self._handle_not_found()
+            return
+        error_html = f'    <p class="error" role="alert">{_esc(error)}</p>\n' if error else ""
+        main_html = (
+            "    <h1>Object to this record</h1>\n"
+            "    <p>If you are named or described in this record and did not contribute "
+            "it, you can ask a steward to review it — for example, to redact your name "
+            "or take it down. A steward weighs every objection; nothing happens "
+            "automatically.</p>\n"
+            f"{error_html}"
+            f'    <form method="post" action="/record/{quote(record_id)}/object">\n'
+            '      <p><label for="message">What is your concern?</label></p>\n'
+            '      <p><textarea id="message" name="message" rows="5" required></textarea></p>\n'
+            '      <p><button type="submit">Send to a steward</button></p>\n'
+            "    </form>"
+        )
+        self._send_html(
+            status, _page("Object", lang=lang, main_html=main_html, nav_html=self._nav())
+        )
+
+    def _post_object(self, raw_id: str) -> None:
+        """``POST /record/{id}/object`` — file a subject's objection for steward review.
+
+        Queues a ``kind="object"`` request (B3). The objector's message is stored for
+        the steward but never logged or echoed in an error (no-outing rule); they get
+        a reference token to check progress at ``/consent-status`` (B2)."""
+        record_id = _decode_id(raw_id)
+        grant = self._resolve_grant()
+        lang = self._lang()
+        try:
+            self._archive().disclose(record_id, grant)
+        except (AccessDenied, ObjectNotFound):
+            self._handle_not_found()
+            return
+        message = self._read_form().get("message", "").strip()
+        if not message:
+            self._handle_object_form(
+                raw_id, error="Please describe your concern so a steward can act on it.", status=400
+            )
+            return
+        req = consent.ConsentRequest(record_id=record_id, kind="object", message=message)
+        self._consent_store().add(req)
+        rt = self._archive().config.consent_response_time or "A steward will review your request."
+        main_html = (
+            "    <h1>Your objection was received</h1>\n"
+            f"    <p>It has been recorded for a steward to review. {_esc(rt)}</p>\n"
+            f"    <p>Your reference is <code>{_esc(req.request_id)}</code>. "
+            f"Check its progress at "
+            f'<a href="/consent-status?ref={quote(req.request_id)}">/consent-status</a>.</p>\n'
+            '    <p><a href="/">Back to all records</a></p>'
+        )
+        self._send_html(
+            200, _page("Objection received", lang=lang, main_html=main_html, nav_html=self._nav())
+        )
+
     def _handle_steward_console(self) -> None:
         """``GET /steward`` — a steward's accountable console (gated).
 
@@ -484,7 +572,8 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         if open_reqs:
             rows = "\n".join(
                 "      <li>\n"
-                f"        <strong>{_esc(r.kind)}</strong> on record "
+                f"        <strong>{_esc(_REQUEST_KIND_LABELS.get(r.kind, r.kind))}</strong> "
+                "on record "
                 f'<a href="/record/{quote(r.record_id)}">{_esc(r.record_id)}</a> '
                 f'<span class="muted">({_esc(r.created_at)}, ref {_esc(r.request_id)})</span>\n'
                 f'        <form method="post" action="/steward/requests/{quote(r.request_id)}/resolve">\n'
@@ -881,12 +970,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             "acknowledged": "Seen by a steward and under consideration.",
             "resolved": "Resolved — a steward has acted on it.",
         }
-        kind_labels = {
-            "withdraw": "withdraw / take down",
-            "tighten": "tighten access",
-            "correct": "correct the record",
-            "contact": "ask a steward to make contact",
-        }
+        kind_labels = _REQUEST_KIND_LABELS
         if not ref:
             result_html = ""
         else:

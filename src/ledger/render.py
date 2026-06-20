@@ -407,6 +407,12 @@ def _record_main_html(
         f'    <p class="consent-link"><a href="/record/{quote(rid)}/consent">'
         "Are you the contributor? Manage or withdraw your consent</a></p>"
     )
+    # A person *named* in a record they did not contribute can object (user research
+    # B3 — subjects have agency too, not only the contributor).
+    parts.append(
+        f'    <p class="object-link"><a href="/record/{quote(rid)}/object">'
+        "Are you named in this record and object to it? Tell a steward</a></p>"
+    )
     parts.append(f'    <p><a href="/">{_esc(i18n.t(lang, "back_to_records"))}</a></p>')
     return "\n".join(parts)
 
