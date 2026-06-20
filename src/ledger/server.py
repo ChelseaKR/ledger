@@ -1648,9 +1648,14 @@ def _safe_filename(name: str) -> str:
     """A filename safe to place in a ``Content-Disposition`` header.
 
     Strips path separators, quotes, and control characters so a crafted payload
-    filename cannot inject a header or escape the field (securability)."""
+    filename cannot inject a header or escape the field (securability). A name that
+    survives as empty or as only dots (``.``/``..``) is replaced with a safe default:
+    as a path component such a name points at a directory, so writing the upload to
+    ``tmpdir / name`` would raise instead of storing a file (robustness)."""
     cleaned = "".join(c for c in name if c.isprintable() and c not in '"\\/\r\n')
-    return cleaned or "file"
+    if not cleaned.strip("."):
+        return "file"
+    return cleaned
 
 
 def _decode_id(raw: str) -> str:

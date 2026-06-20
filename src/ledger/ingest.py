@@ -650,7 +650,20 @@ class Archive:
         report counts without naming anything (no-outing rule). It records *no* audit
         decision itself — the caller owns the accountable "why", recording it before
         calling this so the reason outlives the data (separation of concerns).
+
+        Because this builds the paths it ``rmtree``s from ``record_id``, the id is
+        first validated to be a single safe path component (no separators, not ``.``
+        or ``..``, no NUL). A real record id is an opaque hex string, so this only ever
+        rejects a crafted id — but it guarantees a malicious or buggy caller can never
+        turn a removal into a directory traversal that deletes outside the archive
+        (defense in depth on a destructive primitive).
         """
+        if (
+            not record_id
+            or record_id in {".", ".."}
+            or any(sep in record_id for sep in ("/", "\\", "\x00"))
+        ):
+            raise LedgerError("invalid record id")
         identity_ref: str | None = None
         try:
             identity_ref = self.get(record_id).identity_ref

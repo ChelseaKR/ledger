@@ -394,6 +394,33 @@ def test_valid_upload_is_ingested_sealed_pending(open_server: tuple[Archive, str
 
 
 @pytest.mark.disclosure
+def test_dot_dot_filename_is_sanitised_not_crashing(open_server: tuple[Archive, str]) -> None:
+    """A '..' upload filename is stored under a safe name, never crashing the handler.
+
+    Security review: '..' once survived filename sanitisation and the handler wrote
+    to ``tmpdir / '..'`` (a directory) — an unhandled error. It must now ingest under
+    a safe filename instead."""
+    archive, base = open_server
+    status, body = _post_multipart(
+        base,
+        "/contribute",
+        {
+            "action": "submit",
+            "title": "Tricky name",
+            "account": "An account.",
+            "visibility": "public",
+        },
+        file=("..", "image/png", _PNG),
+    )
+    assert status == 200
+    assert "Thank you" in body
+    record = archive._all_records()[0]
+    assert len(record.payloads) == 1
+    # The stored payload carries a safe, non-traversing filename.
+    assert record.payloads[0].filename == "file"
+
+
+@pytest.mark.disclosure
 def test_forged_file_type_is_rejected_and_stores_nothing(
     open_server: tuple[Archive, str],
 ) -> None:

@@ -64,3 +64,23 @@ def test_allowed_types_is_sorted_and_covers_the_signatures() -> None:
     assert tuple(sorted(upload.ALLOWED_TYPES)) == upload.ALLOWED_TYPES
     assert "image/png" in upload.ALLOWED_TYPES
     assert "application/pdf" in upload.ALLOWED_TYPES
+
+
+# --- filename sanitisation (security review hardening) ----------------------
+
+
+def test_safe_filename_neutralises_traversal_and_dot_names() -> None:
+    """A crafted upload filename never yields a path component that escapes or is a dir."""
+    from ledger.server import _safe_filename
+
+    # Separators are stripped, so a traversal collapses to a plain name.
+    assert "/" not in _safe_filename("../../etc/passwd")
+    assert "\\" not in _safe_filename("..\\..\\secret")
+    # Dot-only names (which point at a directory) fall back to a real filename.
+    assert _safe_filename(".") == "file"
+    assert _safe_filename("..") == "file"
+    assert _safe_filename("...") == "file"
+    assert _safe_filename("") == "file"
+    # A legitimate name (including a leading-dot hidden file) is preserved.
+    assert _safe_filename("photo.png") == "photo.png"
+    assert _safe_filename(".hidden") == ".hidden"
