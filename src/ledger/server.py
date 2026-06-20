@@ -386,6 +386,8 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             elif path.startswith("/steward/requests/") and path.endswith("/resolve"):
                 rid = path[len("/steward/requests/") : -len("/resolve")]
                 self._post_resolve_request(rid)
+            elif path == "/steward/submissions/withhold":
+                self._post_bulk_withhold()
             elif path.startswith("/steward/submissions/") and path.endswith("/review"):
                 rid = path[len("/steward/submissions/") : -len("/review")]
                 self._post_review_submission(rid)
@@ -399,6 +401,13 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
 
         Bounded by Content-Length; a missing/oversized length yields an empty form
         rather than reading unbounded input (robustness)."""
+        return {k: v[0] for k, v in self._read_form_multi().items() if v}
+
+    def _read_form_multi(self) -> dict[str, list[str]]:
+        """Read a urlencoded POST body keeping *all* values per key.
+
+        Same bounds as :meth:`_read_form`; used where a field repeats (e.g. a set of
+        checkboxes posting the same name), which the flat reader would collapse."""
         try:
             length = int(self.headers.get("Content-Length", "0"))
         except ValueError:
@@ -406,7 +415,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         if length <= 0 or length > 64 * 1024:
             return {}
         raw = self.rfile.read(length).decode("utf-8", "replace")
-        return {k: v[0] for k, v in parse_qs(raw).items() if v}
+        return parse_qs(raw)
 
     def _read_contribution(self) -> tuple[dict[str, str], tuple[str, bytes] | None]:
         """Read a contribution POST body as ``(fields, upload)``.
@@ -566,27 +575,58 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         if action not in {"publish", "withhold"}:
             self._handle_not_found()
             return
+        self._apply_review(record_id, action, grant.subject)
+        self.send_response(303)
+        self.send_header("Location", "/steward")
+        self.end_headers()
+
+    def _apply_review(self, record_id: str, action: str, actor: str) -> None:
+        """Publish or withhold one pending submission, recording an audited decision.
+
+        The shared effect behind the per-record review form and the bulk-withhold
+        action: ``publish`` opens the record to the visibility the contributor
+        requested (carried on the ``account`` field); ``withhold`` restricts it to
+        stewards, held for revision. Either way the decision is an accountable,
+        audited :func:`ledger.moderate.change_consent` event and the record leaves
+        the queue. A record that has since vanished only has its stale queue entry
+        cleared. No identity or submitted content is logged (no-outing rule)."""
         archive = self._archive()
         try:
             record = archive.get(record_id)
         except ObjectNotFound:
-            # The record is gone; just clear the stale queue entry and return.
             self._submission_queue().remove(record_id)
-        else:
-            if action == "publish":
-                target = next(
-                    (f.policy for f in record.fields if f.name == "account"),
-                    AccessPolicy.COMMUNITY,
-                )
-                reason = "approved from the steward review queue"
-            else:
-                target = AccessPolicy.STEWARDS
-                reason = "withheld at steward review, pending revision"
-            updated, event, _action = change_consent(
-                record, target, actor=grant.subject, reason=reason, now=now_iso()
+            return
+        if action == "publish":
+            target = next(
+                (f.policy for f in record.fields if f.name == "account"),
+                AccessPolicy.COMMUNITY,
             )
-            archive.apply_update(updated, event)
-            self._submission_queue().remove(record_id)
+            reason = "approved from the steward review queue"
+        else:
+            target = AccessPolicy.STEWARDS
+            reason = "withheld at steward review, pending revision"
+        updated, event, _action = change_consent(
+            record, target, actor=actor, reason=reason, now=now_iso()
+        )
+        archive.apply_update(updated, event)
+        self._submission_queue().remove(record_id)
+
+    def _post_bulk_withhold(self) -> None:
+        """``POST /steward/submissions/withhold`` — withhold several submissions at once.
+
+        Steward-gated. Withholding is the *conservative* bulk action: it only ever
+        restricts records to stewards (held for revision), never opens them, so a
+        bulk click can never over-expose a record — publishing stays a deliberate,
+        per-record act behind "open and read it first". Each selected id is withheld
+        through the one audited review path; unknown ids are harmless (a missing
+        record just clears its queue entry)."""
+        grant = self._resolve_grant()
+        if not grant.is_steward:
+            self._handle_not_found()
+            return
+        selected = self._read_form_multi().get("select", [])
+        for record_id in selected:
+            self._apply_review(record_id, "withhold", grant.subject)
         self.send_response(303)
         self.send_header("Location", "/steward")
         self.end_headers()
@@ -715,8 +755,15 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
                     target = ""
                     cw = ""
                 submitted = i18n.t(lang, "sw_submitted", when=item.submitted_at)
+                # The select checkbox associates with the separate bulk-withhold form
+                # via the HTML ``form`` attribute, so it can live inside this <li> (and
+                # its per-item form) without illegally nesting forms.
+                cid = f"sel-{quote(item.record_id)}"
                 sub_rows.append(
                     "      <li>\n"
+                    f'        <input type="checkbox" id="{cid}" name="select" '
+                    f'value="{_esc(item.record_id)}" form="bulk-withhold">\n'
+                    f'        <label for="{cid}">{_esc(i18n.t(lang, "sw_select_label"))}</label>\n'
                     f"        <strong>{_esc(title)}</strong>{cw}{edited} "
                     f'<a href="/record/{quote(item.record_id)}">{_esc(item.record_id)}</a> '
                     f'<span class="muted">({_esc(submitted)})</span>\n'
@@ -732,7 +779,19 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
                     "        </form>\n"
                     "      </li>"
                 )
-            submissions_html = f'    <ul class="submissions">\n{chr(10).join(sub_rows)}\n    </ul>'
+            # The bulk form holds only the submit button; the checkboxes above join it
+            # by ``form="bulk-withhold"``. Withhold-only — the safe, conservative bulk
+            # action that can never over-expose a record.
+            bulk_form = (
+                '    <form id="bulk-withhold" method="post" '
+                'action="/steward/submissions/withhold">\n'
+                f'      <p><button type="submit">{_esc(i18n.t(lang, "sw_bulk_withhold"))}'
+                "</button></p>\n"
+                "    </form>"
+            )
+            submissions_html = (
+                f'    <ul class="submissions">\n{chr(10).join(sub_rows)}\n    </ul>\n{bulk_form}'
+            )
         else:
             submissions_html = f"    <p>{_esc(i18n.t(lang, 'sw_no_submissions'))}</p>"
         open_reqs = self._consent_store().open_requests()

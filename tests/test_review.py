@@ -236,6 +236,55 @@ def test_publish_opens_record_to_requested_visibility(server: tuple[Archive, str
 
 
 @pytest.mark.disclosure
+def test_bulk_withhold_holds_every_selected_submission(server: tuple[Archive, str]) -> None:
+    """One bulk action withholds all checked submissions and clears them from the queue."""
+    archive, base = server
+    _submit(base, visibility="public")
+    _submit(base, visibility="public")
+    ids = [r.record_id for r in archive._all_records()]
+    assert len(ids) == 2
+
+    # The console offers the bulk form and a select checkbox per submission.
+    console = _req(base, "/steward", steward=True)[1]
+    assert 'id="bulk-withhold"' in console
+    assert console.count('name="select"') == 2
+
+    # POST both ids as repeated `select` values to the bulk endpoint.
+    body = urllib.parse.urlencode([("select", ids[0]), ("select", ids[1])]).encode("utf-8")
+    req = urllib.request.Request(  # noqa: S310 - loopback
+        f"{base}/steward/submissions/withhold",
+        data=body,
+        headers={
+            "X-Ledger-Grant": "steward-1",
+            "Content-Type": "application/x-www-form-urlencoded",
+        },
+    )
+    try:
+        with _OPENER.open(req, timeout=10) as resp:
+            code = int(resp.status)
+    except urllib.error.HTTPError as exc:  # _NoRedirect surfaces the 303 here
+        code = int(exc.code)
+    assert code == 303
+
+    # Both are now withheld (stewards-only) and the queue is empty.
+    assert archive.browse(anonymous()) == []
+    assert archive.browse(community_member("member")) == []
+    assert SubmissionQueue(archive.logs_dir / "submission-queue.json").pending() == []
+    for rid in ids:
+        assert archive.get(rid).default_policy is AccessPolicy.STEWARDS
+
+
+def test_bulk_withhold_is_steward_only(server: tuple[Archive, str]) -> None:
+    """A non-steward bulk-withhold POST 404s and leaves the queue untouched."""
+    archive, base = server
+    _submit(base, visibility="public")
+    rid = archive._all_records()[0].record_id
+    status, _ = _req(base, "/steward/submissions/withhold", data={"select": rid})
+    assert status == 404
+    assert SubmissionQueue(archive.logs_dir / "submission-queue.json").contains(rid)
+
+
+@pytest.mark.disclosure
 def test_withhold_holds_record_for_stewards(server: tuple[Archive, str]) -> None:
     """Withholding restricts the record to stewards and clears the queue."""
     archive, base = server
