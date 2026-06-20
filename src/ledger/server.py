@@ -336,6 +336,8 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
                 self._handle_oai(params)
             elif path == "/sitemap.xml":
                 self._handle_sitemap()
+            elif path == "/feed.atom":
+                self._handle_feed()
             elif path == "/steward":
                 self._handle_steward_console()
             elif path == "/steward/audit":
@@ -1459,6 +1461,23 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         ids = [r.record_id for r in self._public_records()]
         xml = oai.sitemap_xml(ids, self._base_url())
         self._send(200, xml.encode("utf-8"), "application/xml; charset=utf-8")
+
+    def _handle_feed(self) -> None:
+        """``GET /feed.atom`` — an Atom feed of the most recent public records.
+
+        Always the *anonymous public* view, regardless of the viewer, so this
+        cacheable, aggregator-fetched surface can never carry community-only or
+        sealed content (least privilege). It re-serializes only already-disclosed
+        public records, so no identity or sealed value can appear (no-outing rule).
+        """
+        cfg = self._archive().config
+        xml = oai.atom_feed_xml(
+            self._public_records(),
+            archive_name=cfg.archive_name,
+            base_url=self._base_url(),
+            now=now_iso(),
+        )
+        self._send(200, xml.encode("utf-8"), "application/atom+xml; charset=utf-8")
 
     # --- static files (path-traversal safe) --------------------------------
 

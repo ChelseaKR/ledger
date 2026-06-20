@@ -7,7 +7,9 @@ the archive's own browse UI. This module answers that with two standard surfaces
 * an OAI-PMH 2.0 provider (:func:`oai_response`) supporting the ``oai_dc`` metadata
   format and the verbs ``Identify``, ``ListMetadataFormats``, ``ListIdentifiers``,
   ``ListRecords``, and ``GetRecord``; and
-* an XML sitemap (:func:`sitemap_xml`) of public record URLs.
+* an XML sitemap (:func:`sitemap_xml`) of public record URLs; and
+* an Atom 1.0 feed (:func:`atom_feed_xml`) of the most recent public records, so a
+  reader or aggregator can *follow* the collection as it grows.
 
 The single most important property here is the *no-outing rule*. This module never
 opens the vault, never resolves an ``identity_ref``, and never selects records. The
@@ -28,6 +30,7 @@ harvesters can compare ``responseDate``-free bodies and tests can assert on outp
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 
 from ledger.metadata.dublincore import escape, to_oai_dc_xml
@@ -35,6 +38,7 @@ from ledger.models import DisclosedRecord, DublinCore
 
 __all__ = [
     "OAI_DC_PREFIX",
+    "atom_feed_xml",
     "oai_response",
     "sitemap_xml",
 ]
@@ -128,6 +132,84 @@ def sitemap_xml(record_ids: Sequence[str], base_url: str) -> str:
         loc = escape(f"{root}/record/{record_id}")
         lines.append(f"  <url><loc>{loc}</loc></url>")
     lines.append("</urlset>")
+    return "\n".join(lines)
+
+
+_ATOM_NS = "http://www.w3.org/2005/Atom"
+
+
+def _atom_timestamp(value: str, fallback: str) -> str:
+    """Coerce a Dublin Core date into an RFC 3339 instant Atom's ``<updated>`` needs.
+
+    A record's ``dc:date`` may be a full timestamp, a ``YYYY-MM-DD``/``YYYY-MM``/
+    ``YYYY`` (the minimum-metadata backfill yields a bare year), or free text. Atom
+    requires a complete date-time, so a date-only value is widened to midnight UTC
+    and anything unparseable falls back to ``fallback`` (the feed's generation time,
+    already RFC 3339) rather than emitting an invalid feed."""
+    text = value.strip()
+    if "T" in text:
+        return text
+    if re.fullmatch(r"\d{4}", text):
+        return f"{text}-01-01T00:00:00Z"
+    if re.fullmatch(r"\d{4}-\d{2}", text):
+        return f"{text}-01T00:00:00Z"
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
+        return f"{text}T00:00:00Z"
+    return fallback
+
+
+def atom_feed_xml(
+    records: Sequence[DisclosedRecord],
+    *,
+    archive_name: str,
+    base_url: str,
+    now: str,
+    limit: int = 50,
+) -> str:
+    """Render an Atom 1.0 feed of the most recent public records.
+
+    A feed lets a researcher or partner organisation *follow* a collection as it
+    grows, instead of re-checking the browse page. Like the OAI provider and the
+    sitemap, it re-serializes only the ``DisclosedRecord`` set the caller already
+    disclosed to the anonymous public, so it can never surface sealed material or a
+    contributor identity (no-outing rule). The only ``<author>`` is the *archive*
+    itself (a collection, never a person), satisfying Atom without naming anyone.
+
+    Entries are ordered newest first by their Dublin Core date (``record_id`` breaks
+    ties for a deterministic feed) and capped at ``limit``. Every value is XML-escaped
+    through the shared :func:`escape` boundary. ``now`` is the feed's generation time
+    and the fallback timestamp, so output is deterministic for a given input."""
+    root = base_url.rstrip("/")
+    ordered = sorted(
+        records,
+        key=lambda r: (_datestamp(r, now), r.record_id),
+        reverse=True,
+    )[: max(0, limit)]
+
+    lines = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        f'<feed xmlns="{_ATOM_NS}">',
+        f"  <title>{escape(archive_name)}</title>",
+        "  <subtitle>Recently published records</subtitle>",
+        f"  <id>{escape(root + '/')}</id>",
+        f'  <link rel="self" href="{escape(root + "/feed.atom")}"/>',
+        f'  <link rel="alternate" type="text/html" href="{escape(root + "/")}"/>',
+        f"  <updated>{escape(_atom_timestamp(now, now))}</updated>",
+        f"  <author><name>{escape(archive_name)}</name></author>",
+    ]
+    for record in ordered:
+        url = f"{root}/record/{record.record_id}"
+        updated = escape(_atom_timestamp(_datestamp(record, now), now))
+        lines.append("  <entry>")
+        lines.append(f"    <title>{escape(record.title)}</title>")
+        lines.append(f"    <id>{escape(url)}</id>")
+        lines.append(f'    <link rel="alternate" type="text/html" href="{escape(url)}"/>')
+        lines.append(f"    <updated>{updated}</updated>")
+        descriptions = record.dublin_core.get("description") or []
+        if descriptions and descriptions[0]:
+            lines.append(f'    <summary type="text">{escape(descriptions[0])}</summary>')
+        lines.append("  </entry>")
+    lines.append("</feed>")
     return "\n".join(lines)
 
 

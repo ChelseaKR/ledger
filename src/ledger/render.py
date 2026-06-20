@@ -74,6 +74,8 @@ def _page(title: str, *, lang: str, main_html: str, nav_html: str = "") -> str:
         '  <meta name="viewport" content="width=device-width, initial-scale=1">\n'
         f"  <title>{_esc(title)} — ledger</title>\n"
         f'  <link rel="stylesheet" href="{_STYLESHEET_HREF}">\n'
+        '  <link rel="alternate" type="application/atom+xml" title="Recently published '
+        'records" href="/feed.atom">\n'
         "</head>\n"
         "<body>\n"
         f'  <a class="skip-link" href="#main">{_esc(i18n.t(lang, "skip_link"))}</a>\n'
