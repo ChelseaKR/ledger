@@ -822,7 +822,12 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         else:
             heading = "Browse the archive"
         main_html = _browse_main_html(
-            records, heading=heading, lang=lang, all_records=self._all_for_facets(grant)
+            records,
+            heading=heading,
+            lang=lang,
+            all_records=self._all_for_facets(grant),
+            page=self._page_from(params),
+            current_path=self.path,
         )
         self._send_html(200, _page("Browse", lang=lang, main_html=main_html, nav_html=self._nav()))
 
@@ -832,6 +837,18 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             if params.get(fld):
                 return fld, params[fld][0]
         return "", ""
+
+    @staticmethod
+    def _page_from(params: dict[str, list[str]]) -> int:
+        """The requested 1-based page from ``?page=``, defaulting to 1.
+
+        A missing or non-numeric value is treated as page 1; an out-of-range number
+        is clamped later by :func:`ledger.pagination.paginate`, so this never raises."""
+        raw = (params.get("page", ["1"])[0]).strip()
+        try:
+            return int(raw)
+        except ValueError:
+            return 1
 
     def _all_for_facets(self, grant: Grant) -> list[DisclosedRecord]:
         return self._archive().browse(grant)
@@ -857,7 +874,13 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             else ""
         )
         main_html = hint + _browse_main_html(
-            matched, heading=heading, query=query, lang=lang, all_records=disclosed
+            matched,
+            heading=heading,
+            query=query,
+            lang=lang,
+            all_records=disclosed,
+            page=self._page_from(params),
+            current_path=self.path,
         )
         self._send_html(
             200,

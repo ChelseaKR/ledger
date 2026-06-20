@@ -16,7 +16,7 @@ import html
 from collections.abc import Iterable
 from urllib.parse import parse_qsl, quote, urlencode, urlsplit
 
-from ledger import i18n, search
+from ledger import i18n, pagination, search
 from ledger.models import AccessPolicy, DisclosedRecord, Grant, PayloadFile
 
 # The site's one stylesheet, linked from every page.
@@ -249,6 +249,38 @@ def _facets_html(records: list[DisclosedRecord]) -> str:
     return "\n".join(blocks)
 
 
+def _pager_html(page: pagination.Page[DisclosedRecord], current_path: str) -> str:
+    """An accessible Previous/Next pager that preserves the current query.
+
+    Rendered as a labelled ``<nav>`` so assistive tech announces it as a distinct
+    navigation landmark, with a plain "Page X of Y" so a reader always knows where
+    they are. Each link reuses the current path and query (facet, search term,
+    language) with only ``page`` swapped, so paging never drops a filter. Returns an
+    empty string when everything fits on one page — no pager clutter when unneeded.
+    """
+    if page.pages <= 1:
+        return ""
+    split = urlsplit(current_path)
+    kept = [(k, v) for k, v in parse_qsl(split.query) if k != "page"]
+
+    def href(number: int) -> str:
+        return (split.path or "/") + "?" + urlencode([*kept, ("page", str(number))])
+
+    prev_html = (
+        f'<a rel="prev" href="{_esc(href(page.number - 1))}">Previous</a>' if page.has_prev else ""
+    )
+    next_html = (
+        f'<a rel="next" href="{_esc(href(page.number + 1))}">Next</a>' if page.has_next else ""
+    )
+    return (
+        '    <nav class="pager" aria-label="Pagination">\n'
+        f"{'      ' + prev_html + chr(10) if prev_html else ''}"
+        f"      <span>Page {page.number} of {page.pages}</span>\n"
+        f"{'      ' + next_html + chr(10) if next_html else ''}"
+        "    </nav>\n"
+    )
+
+
 def _browse_main_html(
     records: list[DisclosedRecord],
     *,
@@ -256,6 +288,9 @@ def _browse_main_html(
     query: str = "",
     lang: str = "en",
     all_records: list[DisclosedRecord] | None = None,
+    page: int = 1,
+    per_page: int = pagination.DEFAULT_PER_PAGE,
+    current_path: str = "/",
 ) -> str:
     """Compose the browse/search ``<main>``: one ``<h1>``, the form, then both views.
 
@@ -263,35 +298,46 @@ def _browse_main_html(
     the same records (accessibility — equivalent list and table views), plus
     browsable subject/type facets. Heading order is ``h1`` (page) then ``h2`` (each
     view) then ``h3`` (list items), with no levels skipped (accessibility).
+
+    The result set is paginated (:mod:`ledger.pagination`): only the current page's
+    records are rendered into each view, with a pager below, so a large collection
+    stays a light, navigable page rather than one unbounded wall of items. Facet
+    counts are still computed over the *whole* set (``all_records``), so the sidebar
+    describes the full collection, not just this page.
     """
-    count = len(records)
+    window = pagination.paginate(records, page, per_page)
+    shown = list(window.items)
     # The empty state distinguishes "no matches" from a permission problem, in
     # plain language (user research T5/P1-3) — without revealing that anything is
     # hidden (the public list simply omits non-listable records).
-    if count == 0:
-        empty = f'    <p class="empty">{_esc(i18n.t(lang, "empty_no_matches"))}</p>\n'
+    if window.total == 0:
+        status_line = f'    <p class="empty">{_esc(i18n.t(lang, "empty_no_matches"))}</p>\n'
     else:
-        empty = ""
+        status_line = (
+            f'      <p class="count">Showing {window.start_index}-{window.end_index} '
+            f"of {window.total} record(s).</p>\n"
+        )
     facets = _facets_html(all_records if all_records is not None else records)
-    # The result count and empty state live in a polite status region so a screen
-    # reader announces "N record(s) shown" after a search without the user hunting
-    # for it — the dynamic status message WCAG 4.1.3 asks for. The region is present
-    # on every render so the announcement fires on the results page as it loads.
+    pager = _pager_html(window, current_path)
+    # The count/empty state lives in a polite status region so a screen reader
+    # announces "Showing X-Y of N" after a search or page change without the user
+    # hunting for it — the dynamic status message WCAG 4.1.3 asks for. The region is
+    # present on every render so the announcement fires as the results load.
     return (
         f"    <h1>{_esc(heading)}</h1>\n"
         f"    {_search_form(query)}"
         '    <div class="results-status" role="status" aria-live="polite">\n'
-        f'      <p class="count">{count} record(s) shown.</p>\n'
-        f"{empty}"
+        f"{status_line}"
         "    </div>\n"
         '    <section aria-labelledby="list-heading">\n'
         '      <h2 id="list-heading">Records (list view)</h2>\n'
-        f"      {_records_list_html(records, query=query)}\n"
+        f"      {_records_list_html(shown, query=query)}\n"
         "    </section>\n"
         '    <section aria-labelledby="table-heading">\n'
         '      <h2 id="table-heading">Records (table view)</h2>\n'
-        f"      {_records_table_html(records, query=query)}\n"
+        f"      {_records_table_html(shown, query=query)}\n"
         "    </section>\n"
+        f"{pager}"
         f"{facets}"
     )
 

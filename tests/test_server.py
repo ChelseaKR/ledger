@@ -214,8 +214,9 @@ def test_search_results_count_is_in_a_live_region(
         _status, body, _headers = _get(base, path)
         assert 'role="status"' in body
         assert 'aria-live="polite"' in body
-        # The count text is what the region announces.
-        assert "record(s) shown." in body
+        # The count text is what the region announces (now a paginated window).
+        assert "record(s)." in body
+        assert "Showing 1-" in body
 
 
 def test_search_highlights_the_matched_term(server: tuple[HTTPServer, str, str]) -> None:
