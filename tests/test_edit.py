@@ -191,6 +191,35 @@ def test_edit_updates_the_summary(server: tuple[Archive, str]) -> None:
     assert archive.get(rid).dublin_core.description == ["Now with a teaser."]
 
 
+def test_edit_updates_structured_dublin_core(server: tuple[Archive, str]) -> None:
+    """Editing the subject/type/date/language rewrites the record's Dublin Core."""
+    archive, base = server
+    _submit(base)
+    rid, token = _id_and_token(archive)
+    status, _body = _post(
+        base,
+        "/edit",
+        {
+            "action": "save",
+            "ref": rid,
+            "claim": token,
+            "title": "Original title",
+            "account": "Original account.",
+            "visibility": "community",
+            "subject": "protest, solidarity",
+            "type": "flyer",
+            "date": "2008-09",
+            "language": "es",
+        },
+    )
+    assert status == 200
+    dc = archive.get(rid).dublin_core
+    assert dc.subject == ["protest", "solidarity"]
+    assert dc.type == ["flyer"]
+    assert dc.date == ["2008-09"]
+    assert dc.language == ["es"]
+
+
 def test_bad_code_is_a_neutral_error_and_changes_nothing(server: tuple[Archive, str]) -> None:
     archive, base = server
     _submit(base)

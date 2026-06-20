@@ -1362,12 +1362,16 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
 
         # action=load (default): prefill the form from the current record.
         account = record.field_named("account")
-        description = record.dublin_core.description
+        dc = record.dublin_core
         values = {
             "ref": reference,
             "claim": claim,
             "title": record.title,
-            "summary": description[0] if description else "",
+            "summary": dc.description[0] if dc.description else "",
+            "subject": ", ".join(dc.subject),
+            "type": dc.type[0] if dc.type else "",
+            "date": dc.date[0] if dc.date else "",
+            "language": dc.language[0] if dc.language else "",
             "account": account.value if account is not None else "",
             "visibility": contribute.current_visibility(record),
         }

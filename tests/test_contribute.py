@@ -210,6 +210,33 @@ def test_summary_becomes_dublin_core_description(open_server: tuple[Archive, str
     assert record.field_named("account").value == "The full account goes here."
 
 
+def test_structured_dublin_core_fields_are_captured(open_server: tuple[Archive, str]) -> None:
+    """Optional subject/type/date/language populate Dublin Core for facets and search."""
+    archive, base = open_server
+    _status, form = _get(base, "/contribute")
+    assert 'id="subject"' in form and 'id="language"' in form  # the fields are offered
+    _post(
+        base,
+        "/contribute",
+        {
+            "action": "submit",
+            "title": "A march",
+            "account": "The account.",
+            "visibility": "public",
+            "subject": "mutual aid, housing , , mutual aid",
+            "type": "photograph",
+            "date": "1994",
+            "language": "en",
+        },
+    )
+    dc = archive._all_records()[0].dublin_core
+    # Subjects are comma-split, trimmed, and empties dropped (duplicates kept as given).
+    assert dc.subject == ["mutual aid", "housing", "mutual aid"]
+    assert dc.type == ["photograph"]
+    assert dc.date == ["1994"]
+    assert dc.language == ["en"]
+
+
 def test_validation_errors_are_localized(open_server: tuple[Archive, str]) -> None:
     """A declined submission explains why in the contributor's language (error i18n)."""
     _archive, base = open_server

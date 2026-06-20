@@ -58,6 +58,8 @@ _MAX_TITLE = 200
 _MAX_ACCOUNT = 20_000
 _MAX_CONTACT = 1_000
 _MAX_SUMMARY = 500
+_MAX_DC_VALUE = 200  # one subject/type/date/language value
+_MAX_SUBJECTS = 12  # distinct subjects per record
 
 
 @dataclass(frozen=True)
@@ -100,6 +102,25 @@ def parse_submission(form: dict[str, str], config: Config) -> Submission:
     # order, so the set is deterministic and a crafted key cannot inject a tag.
     warnings = [w for w in config.content_warnings if form.get(f"cw_{w}")]
 
+    # Optional descriptive Dublin Core, so a contributed record is findable by topic,
+    # browsable by facet (subject/type/language), datable for scholarship, and richer
+    # in the feed/OAI — not just a bare title (user research P1-4/P2-3). Subjects are
+    # comma-separated into a list; the rest are single values. Like the summary, these
+    # are record-level descriptive metadata disclosed to whoever may list the record,
+    # so they carry no contributor identity and follow the record's own visibility.
+    subjects = [s.strip() for s in (form.get("subject") or "").split(",") if s.strip()]
+    dc_type = (form.get("type") or "").strip()
+    dc_date = (form.get("date") or "").strip()
+    dc_language = (form.get("language") or "").strip()
+    if (
+        len(subjects) > _MAX_SUBJECTS
+        or any(len(s) > _MAX_DC_VALUE for s in subjects)
+        or len(dc_type) > _MAX_DC_VALUE
+        or len(dc_date) > _MAX_DC_VALUE
+        or len(dc_language) > _MAX_DC_VALUE
+    ):
+        raise ValidationError("the submission is too long", code="err_submission_too_long")
+
     # An optional one-line summary becomes the Dublin Core ``description`` — the
     # listing/feed/OAI teaser. It is record-level descriptive metadata, disclosed to
     # whoever may list the record (i.e. the same audience the requested visibility
@@ -109,6 +130,14 @@ def parse_submission(form: dict[str, str], config: Config) -> Submission:
     dublin_core = DublinCore(title=[title], publisher=[config.archive_name])
     if summary:
         dublin_core.description = [summary]
+    if subjects:
+        dublin_core.subject = subjects
+    if dc_type:
+        dublin_core.type = [dc_type]
+    if dc_date:
+        dublin_core.date = [dc_date]
+    if dc_language:
+        dublin_core.language = [dc_language]
 
     record = Record(
         title=title,
@@ -156,10 +185,15 @@ def apply_edit(existing: Record, form: dict[str, str], config: Config) -> Record
     :class:`~ledger.errors.ValidationError` on invalid input, naming no value.
     """
     validated = parse_submission(form, config).record
+    v = validated.dublin_core
     updated_dc = replace(
         existing.dublin_core,
         title=[validated.title],
-        description=list(validated.dublin_core.description),
+        description=list(v.description),
+        subject=list(v.subject),
+        type=list(v.type),
+        date=list(v.date),
+        language=list(v.language),
     )
     return replace(
         existing,
@@ -180,6 +214,37 @@ def _checkbox(warning: str, *, checked: bool = False) -> str:
         f'value="1"{mark}>\n'
         f'          <label for="{_esc(cid)}">{_esc(warning)}</label>\n'
         f"        </div>\n"
+    )
+
+
+def _details_fieldset(lang: str, vals: Mapping[str, str]) -> str:
+    """The optional descriptive-metadata fieldset shared by the contribute/edit forms.
+
+    Renders labelled, hinted single-line inputs for the Dublin Core ``subject`` (comma
+    separated), ``type``, ``date``, and ``language`` so a contributor can make their
+    record findable by topic and browsable by facet. Each input is associated with its
+    hint via ``aria-describedby`` (accessibility); every value is escaped (security)."""
+
+    def field(name: str, label_key: str, hint_key: str, *, maxlength: int) -> str:
+        hint_id = f"{name}-hint"
+        return (
+            "        <p>\n"
+            f'          <label for="{name}">{_esc(i18n.t(lang, label_key))}</label>\n'
+            f'          <span class="hint" id="{hint_id}">{_esc(i18n.t(lang, hint_key))}</span>\n'
+            f'          <input type="text" id="{name}" name="{name}" maxlength="{maxlength}" '
+            f'aria-describedby="{hint_id}" value="{_esc(vals.get(name, ""))}">\n'
+            "        </p>\n"
+        )
+
+    return (
+        "      <fieldset>\n"
+        f"        <legend>{_esc(i18n.t(lang, 'details_legend'))}</legend>\n"
+        f'        <p class="hint">{_esc(i18n.t(lang, "details_hint"))}</p>\n'
+        f"{field('subject', 'label_subject', 'subject_hint', maxlength=1000)}"
+        f"{field('type', 'label_type', 'type_hint', maxlength=200)}"
+        f"{field('date', 'label_date', 'date_hint', maxlength=200)}"
+        f"{field('language', 'label_language', 'language_hint', maxlength=200)}"
+        "      </fieldset>\n"
     )
 
 
@@ -297,6 +362,7 @@ def render_contribute_main(
         '        <textarea id="account" name="account" rows="10" required '
         f'maxlength="20000">{_esc(vals.get("account", ""))}</textarea>\n'
         "      </p>\n"
+        f"{_details_fieldset(lang, vals)}"
         f"{file_fieldset}"
         f"{vis_fieldset}"
         f"{cw_fieldset}"
@@ -547,6 +613,7 @@ def render_edit_main(
         '        <textarea id="account" name="account" rows="10" '
         f'maxlength="20000">{_esc(vals.get("account", ""))}</textarea>\n'
         "      </p>\n"
+        f"{_details_fieldset(lang, vals)}"
         f"{vis_fieldset}"
         f"{cw_fieldset}"
         '      <p><button type="submit" name="action" value="load">'

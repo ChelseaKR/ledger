@@ -172,6 +172,19 @@ _CATALOG: dict[str, dict[str, str]] = {
             "One line shown in listings, search results, and the feed. Anyone who can "
             "see this record will see this summary."
         ),
+        "details_legend": "Details (optional)",
+        "details_hint": (
+            "Descriptive details make this record findable by topic and browsable by "
+            "facet. Like the summary, they are shown to anyone who can see the record."
+        ),
+        "label_subject": "Subjects",
+        "subject_hint": "Comma-separated topics, e.g. mutual aid, housing.",
+        "label_type": "Type",
+        "type_hint": "What kind of material this is, e.g. photograph, oral history, flyer.",
+        "label_date": "Date",
+        "date_hint": "When the material is from, e.g. 1994 or 2021-05-01.",
+        "label_language": "Language",
+        "language_hint": "The language of the material, e.g. English or Spanish.",
         "label_account": "Your account",
         "cw_legend": "Content warnings (optional)",
         "cw_hint": "Tick anything a reader should be warned about before this is shown.",
@@ -415,6 +428,20 @@ _CATALOG: dict[str, dict[str, str]] = {
             "Una línea que se muestra en los listados, los resultados de búsqueda y el "
             "canal. Cualquiera que pueda ver este registro verá este resumen."
         ),
+        "details_legend": "Detalles (opcional)",
+        "details_hint": (
+            "Los detalles descriptivos hacen que este registro se pueda encontrar por "
+            "tema y explorar por faceta. Como el resumen, se muestran a cualquiera que "
+            "pueda ver el registro."
+        ),
+        "label_subject": "Temas",
+        "subject_hint": "Temas separados por comas, p. ej. ayuda mutua, vivienda.",
+        "label_type": "Tipo",
+        "type_hint": "Qué clase de material es, p. ej. fotografía, historia oral, folleto.",
+        "label_date": "Fecha",
+        "date_hint": "De cuándo es el material, p. ej. 1994 o 2021-05-01.",
+        "label_language": "Idioma",
+        "language_hint": "El idioma del material, p. ej. inglés o español.",
         "label_account": "Su relato",
         "cw_legend": "Advertencias de contenido (opcional)",
         "cw_hint": (
