@@ -188,6 +188,28 @@ def test_contribution_flow_is_localized(open_server: tuple[Archive, str]) -> Non
     assert "Gracias" in thanks
 
 
+def test_summary_becomes_dublin_core_description(open_server: tuple[Archive, str]) -> None:
+    """An optional summary lands in dc:description, giving listings/feed a real teaser."""
+    archive, base = open_server
+    _status, form = _get(base, "/contribute")
+    assert 'id="summary"' in form and 'for="summary"' in form  # the field is offered
+    _status, _body = _post(
+        base,
+        "/contribute",
+        {
+            "action": "submit",
+            "title": "A march",
+            "summary": "A first-hand account of the May march.",
+            "account": "The full account goes here.",
+            "visibility": "public",
+        },
+    )
+    record = archive._all_records()[0]
+    assert record.dublin_core.description == ["A first-hand account of the May march."]
+    # The account body stays in its own policy-gated field, not the public teaser.
+    assert record.field_named("account").value == "The full account goes here."
+
+
 def test_validation_errors_are_localized(open_server: tuple[Archive, str]) -> None:
     """A declined submission explains why in the contributor's language (error i18n)."""
     _archive, base = open_server

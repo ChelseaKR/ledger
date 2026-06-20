@@ -92,6 +92,11 @@ _CATALOG: dict[str, dict[str, str]] = {
             "before you submit."
         ),
         "label_title": "Title",
+        "label_summary": "Summary (optional)",
+        "summary_hint": (
+            "One line shown in listings, search results, and the feed. Anyone who can "
+            "see this record will see this summary."
+        ),
         "label_account": "Your account",
         "cw_legend": "Content warnings (optional)",
         "cw_hint": "Tick anything a reader should be warned about before this is shown.",
@@ -251,6 +256,11 @@ _CATALOG: dict[str, dict[str, str]] = {
             'previa" para ver exactamente lo que vería un desconocido antes de enviar.'
         ),
         "label_title": "Título",
+        "label_summary": "Resumen (opcional)",
+        "summary_hint": (
+            "Una línea que se muestra en los listados, los resultados de búsqueda y el "
+            "canal. Cualquiera que pueda ver este registro verá este resumen."
+        ),
         "label_account": "Su relato",
         "cw_legend": "Advertencias de contenido (opcional)",
         "cw_hint": (

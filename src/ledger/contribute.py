@@ -57,6 +57,7 @@ _DEFAULT_VISIBILITY = "community"
 _MAX_TITLE = 200
 _MAX_ACCOUNT = 20_000
 _MAX_CONTACT = 1_000
+_MAX_SUMMARY = 500
 
 
 @dataclass(frozen=True)
@@ -88,7 +89,8 @@ def parse_submission(form: dict[str, str], config: Config) -> Submission:
         raise ValidationError("a title is required", code="err_title_required")
     if not account:
         raise ValidationError("an account is required", code="err_account_required")
-    if len(title) > _MAX_TITLE or len(account) > _MAX_ACCOUNT:
+    summary = (form.get("summary") or "").strip()
+    if len(title) > _MAX_TITLE or len(account) > _MAX_ACCOUNT or len(summary) > _MAX_SUMMARY:
         raise ValidationError("the submission is too long", code="err_submission_too_long")
 
     visibility = (form.get("visibility") or _DEFAULT_VISIBILITY).strip()
@@ -98,10 +100,20 @@ def parse_submission(form: dict[str, str], config: Config) -> Submission:
     # order, so the set is deterministic and a crafted key cannot inject a tag.
     warnings = [w for w in config.content_warnings if form.get(f"cw_{w}")]
 
+    # An optional one-line summary becomes the Dublin Core ``description`` — the
+    # listing/feed/OAI teaser. It is record-level descriptive metadata, disclosed to
+    # whoever may list the record (i.e. the same audience the requested visibility
+    # opens it to once published), so a contributor's account stays in its own
+    # policy-gated field while listings get a real summary instead of a bare title
+    # (user research P2-3, minimum metadata).
+    dublin_core = DublinCore(title=[title], publisher=[config.archive_name])
+    if summary:
+        dublin_core.description = [summary]
+
     record = Record(
         title=title,
         default_policy=AccessPolicy.SEALED_UNTIL,  # sealed-pending steward review
-        dublin_core=DublinCore(title=[title], publisher=[config.archive_name]),
+        dublin_core=dublin_core,
         fields=[Field(name="account", value=account, policy=field_policy)],
         content_warnings=warnings,
     )
@@ -144,7 +156,11 @@ def apply_edit(existing: Record, form: dict[str, str], config: Config) -> Record
     :class:`~ledger.errors.ValidationError` on invalid input, naming no value.
     """
     validated = parse_submission(form, config).record
-    updated_dc = replace(existing.dublin_core, title=[validated.title])
+    updated_dc = replace(
+        existing.dublin_core,
+        title=[validated.title],
+        description=list(validated.dublin_core.description),
+    )
     return replace(
         existing,
         title=validated.title,
@@ -269,6 +285,12 @@ def render_contribute_main(
         f'        <label for="title">{_esc(i18n.t(lang, "label_title"))}</label>\n'
         f'        <input type="text" id="title" name="title" required maxlength="200" '
         f'value="{_esc(vals.get("title", ""))}">\n'
+        "      </p>\n"
+        "      <p>\n"
+        f'        <label for="summary">{_esc(i18n.t(lang, "label_summary"))}</label>\n'
+        f'        <span class="hint" id="summary-hint">{_esc(i18n.t(lang, "summary_hint"))}</span>\n'
+        '        <input type="text" id="summary" name="summary" maxlength="500" '
+        f'aria-describedby="summary-hint" value="{_esc(vals.get("summary", ""))}">\n'
         "      </p>\n"
         "      <p>\n"
         f'        <label for="account">{_esc(i18n.t(lang, "label_account"))}</label>\n'
@@ -514,6 +536,11 @@ def render_edit_main(
         f'        <label for="title">{_esc(i18n.t(lang, "label_title"))}</label>\n'
         f'        <input type="text" id="title" name="title" maxlength="200" '
         f'value="{_esc(vals.get("title", ""))}">\n'
+        "      </p>\n"
+        "      <p>\n"
+        f'        <label for="summary">{_esc(i18n.t(lang, "label_summary"))}</label>\n'
+        '        <input type="text" id="summary" name="summary" maxlength="500" '
+        f'value="{_esc(vals.get("summary", ""))}">\n'
         "      </p>\n"
         "      <p>\n"
         f'        <label for="account">{_esc(i18n.t(lang, "label_account"))}</label>\n'

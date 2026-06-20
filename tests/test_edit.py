@@ -165,6 +165,32 @@ def test_save_updates_the_record_and_keeps_identity(server: tuple[Archive, str])
     assert archive.resolve_identity(rid, unseal).name == _SENTINEL
 
 
+def test_edit_updates_the_summary(server: tuple[Archive, str]) -> None:
+    """Editing the summary rewrites the record's dc:description (the listing teaser)."""
+    archive, base = server
+    _submit(base)
+    rid, token = _id_and_token(archive)
+    # Load first to confirm the form prefills (initially no summary was given).
+    status, loaded = _post(base, "/edit", {"action": "load", "ref": rid, "claim": token})
+    assert status == 200 and 'id="summary"' in loaded
+
+    status, body = _post(
+        base,
+        "/edit",
+        {
+            "action": "save",
+            "ref": rid,
+            "claim": token,
+            "title": "Original title",
+            "summary": "Now with a teaser.",
+            "account": "Original account.",
+            "visibility": "community",
+        },
+    )
+    assert status == 200 and "saved" in body.lower()
+    assert archive.get(rid).dublin_core.description == ["Now with a teaser."]
+
+
 def test_bad_code_is_a_neutral_error_and_changes_nothing(server: tuple[Archive, str]) -> None:
     archive, base = server
     _submit(base)
