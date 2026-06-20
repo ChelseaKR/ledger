@@ -700,6 +700,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         if pending:
             sub_rows = []
             for item in pending:
+                edited = ""
                 try:
                     record = archive.get(item.record_id)
                     title = record.title
@@ -713,13 +714,23 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
                         if record.content_warnings
                         else ""
                     )
+                    # Flag a submission the contributor corrected after submitting, so a
+                    # steward part-way through review knows it changed and re-reads it.
+                    corrections = sum(
+                        1
+                        for event in archive.record_events(item.record_id)
+                        if event.event_type is PremisEventType.CORRECTION
+                    )
+                    if corrections:
+                        plural = "s" if corrections > 1 else ""
+                        edited = f' <span class="badge">Edited ({corrections} time{plural})</span>'
                 except ObjectNotFound:
                     title = "(record unavailable)"
                     target = "unknown"
                     cw = ""
                 sub_rows.append(
                     "      <li>\n"
-                    f"        <strong>{_esc(title)}</strong>{cw} "
+                    f"        <strong>{_esc(title)}</strong>{cw}{edited} "
                     f'<a href="/record/{quote(item.record_id)}">{_esc(item.record_id)}</a> '
                     f'<span class="muted">(submitted {_esc(item.submitted_at)})</span>\n'
                     f"        <p>Would publish as: <strong>{_esc(target)}</strong>. "

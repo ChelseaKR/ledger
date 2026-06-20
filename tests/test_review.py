@@ -173,6 +173,33 @@ def test_console_shows_the_requested_visibility_in_the_queue(
     assert "anyone may read it" not in body  # not the public phrasing
 
 
+def test_console_flags_a_submission_edited_under_review(server: tuple[Archive, str]) -> None:
+    """A correction recorded after submission shows an 'Edited' marker in the queue."""
+    from ledger.models import PremisEvent, PremisEventType, now_iso
+
+    archive, base = server
+    _submit(base)
+    rid = archive._all_records()[0].record_id
+    # Before any correction the queue carries no edited marker.
+    assert "Edited" not in _req(base, "/steward", steward=True)[1]
+
+    # Record a CORRECTION event the way a contributor edit does.
+    record = archive.get(rid)
+    archive.apply_update(
+        record,
+        PremisEvent(
+            event_type=PremisEventType.CORRECTION,
+            agent="contributor",
+            outcome="success",
+            detail="contributor edited a pending submission",
+            linked_object=rid,
+            event_datetime=now_iso(),
+        ),
+    )
+    body = _req(base, "/steward", steward=True)[1]
+    assert "Edited (1 time)" in body
+
+
 @pytest.mark.disclosure
 def test_publish_opens_record_to_requested_visibility(server: tuple[Archive, str]) -> None:
     """Publishing a sealed-pending submission makes it listable and clears the queue."""

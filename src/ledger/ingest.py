@@ -867,6 +867,21 @@ class Archive:
 
     # --- audit --------------------------------------------------------------
 
+    def record_events(self, record_id: str) -> list[PremisEvent]:
+        """Return one record's own PREMIS events, in log order (oldest first).
+
+        Reads only that record's bag ``premis.json``; returns an empty list if the bag
+        or its log is missing or unreadable rather than raising, so a caller can ask
+        about any record id safely. PREMIS events are identity-free by construction, so
+        this discloses nothing protected (no-outing rule)."""
+        premis_path = self.bags_dir / record_id / _PREMIS_FILENAME
+        if not premis_path.exists():
+            return []
+        try:
+            return list(PremisLog.read(premis_path).events)
+        except (LedgerError, ValueError, OSError):
+            return []
+
     def audit_events(self, *, limit: int = 200) -> list[PremisEvent]:
         """Aggregate the archive's PREMIS events, newest first, for a steward view.
 
