@@ -123,6 +123,34 @@ A moderation decision **without a stated reason is rejected at the boundary.** E
 when appended to the log (`_require_reason`, `src/ledger/moderate.py`). A decision nobody
 will explain is not a decision the system will record.
 
+### Whose consent governs a record that names several people
+
+A record often describes or names people who are not its contributor. ledger resolves
+the multi-party question deliberately, and **without an automatic veto**:
+
+- **The contributor retains control** of their own record's policy and fields. Consent
+  to *keep, tighten, or withdraw* the record is the contributor's, exercised with their
+  claim token (`/record/{id}/consent`).
+- **A named subject has a voice, not a switch.** Anyone named or described in a record
+  they did not contribute may **object** (`/record/{id}/object`, no claim token needed).
+  An objection is a first-class, recorded request (`kind="object"`) that a steward must
+  weigh — it does **not** automatically restrict or remove the record. This deliberately
+  avoids two failure modes: a heckler silently censoring a record by objecting, and a
+  contributor's account of harm being erased by the person it names.
+- **A steward adjudicates** each objection on the record, balancing the contributor's
+  account, the subject's safety, and the community's interest, and records the decision
+  with a reason like any moderation action. Where two stewards exist, a contested
+  objection warrants a second steward's review (as for a steward-initiated takedown).
+- **Safety still wins by construction.** None of this can out a contributor: a subject's
+  objection, and a steward's handling of it, run through the same surfaces that carry no
+  contributor identity (no-outing rule). And the narrowest-disclosure default means a
+  record that names someone is sealed-pending until a steward publishes it, so the first
+  review already considers who is named before anything is public.
+
+This is a governance rule, enforced by the objection mechanism (`kind="object"`) plus a
+recorded, contestable steward decision — not by code that lets one party silently
+override another.
+
 ### How decisions are recorded — the `ModerationLog`
 
 The moderation log (`ModerationLog`, `src/ledger/moderate.py`) is **append-only**:
