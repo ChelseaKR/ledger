@@ -17,7 +17,7 @@ from collections.abc import Iterable
 from urllib.parse import quote
 
 from ledger import i18n, search
-from ledger.models import AccessPolicy, DisclosedRecord, Grant
+from ledger.models import AccessPolicy, DisclosedRecord, Grant, PayloadFile
 
 # The site's one stylesheet, linked from every page.
 _STYLESHEET_HREF: str = "/static/app.css"
@@ -271,6 +271,30 @@ def _browse_main_html(
     )
 
 
+def _payload_li(rid: str, p: PayloadFile) -> str:
+    """One payload list item: the download link plus its transcript, if any.
+
+    A transcript/caption is surfaced in a ``<details>`` so audio or video content is
+    available to a Deaf or hard-of-hearing reader and to anyone on a silent or slow
+    connection (user research H3). An audio/video payload with *no* transcript is
+    marked as such, so a missing transcript is visible rather than silent."""
+    base = (
+        f'      <li><a href="/record/{quote(rid)}/file/{quote(p.filename)}">'
+        f"{_esc(p.filename)}</a> "
+        f'<span class="muted">({_esc(p.media_type)}, {p.size_bytes} bytes)</span>'
+    )
+    if p.transcript:
+        base += (
+            '\n        <details class="transcript">\n'
+            "          <summary>Transcript</summary>\n"
+            f"          <p>{_esc(p.transcript)}</p>\n"
+            "        </details>"
+        )
+    elif p.media_type.startswith(("audio/", "video/")):
+        base += '\n        <p class="muted">No transcript provided for this audio/video.</p>'
+    return base + "</li>"
+
+
 def _record_main_html(
     record: DisclosedRecord, *, proceed: bool, insider: bool = False, lang: str = "en"
 ) -> str:
@@ -358,12 +382,7 @@ def _record_main_html(
     # Payload files the viewer may see — each is a real, fixity-verified download
     # link (user research C4: the filename was previously an inert false affordance).
     if record.payloads:
-        files = "\n".join(
-            f'      <li><a href="/record/{quote(rid)}/file/{quote(p.filename)}">'
-            f"{_esc(p.filename)}</a> "
-            f'<span class="muted">({_esc(p.media_type)}, {p.size_bytes} bytes)</span></li>'
-            for p in record.payloads
-        )
+        files = "\n".join(_payload_li(rid, p) for p in record.payloads)
         parts.append(
             '    <section aria-labelledby="files-heading">\n'
             '      <h2 id="files-heading">Files</h2>\n'

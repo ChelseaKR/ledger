@@ -37,9 +37,12 @@ from ledger.ingest import Archive
 from ledger.metadata.premis import PremisLog
 from ledger.models import (
     AccessPolicy,
+    ContentAddress,
     DublinCore,
     Field,
     Grant,
+    HashAlgo,
+    PayloadFile,
     PremisEvent,
     Record,
     now_iso,
@@ -144,6 +147,27 @@ def _cmd_ingest(args: argparse.Namespace) -> int:
         source = Path(file_arg)
         payload[source.name] = source
 
+    # A transcript/caption makes audio or video accessible to a Deaf or hard-of-
+    # hearing reader (user research H3). Pre-declare the payload carrying it so the
+    # one ingest path preserves the transcript (it recomputes the address/size). The
+    # media type is guessed so an audio/video file is recognised as such.
+    import mimetypes
+
+    predeclared: list[PayloadFile] = []
+    for fname, text in _parse_pairs(args.transcript or []):
+        guessed, _ = mimetypes.guess_type(fname)
+        predeclared.append(
+            PayloadFile(
+                filename=fname,
+                address=ContentAddress(algo=HashAlgo.SHA256, digest="0" * 64),
+                media_type=guessed or "application/octet-stream",
+                policy=record.default_policy,
+                transcript=text,
+            )
+        )
+    if predeclared:
+        record.payloads = predeclared
+
     identity: ContributorIdentity | None = None
     # Seal whenever ANY contributor material is supplied, so a contact given without
     # a name is never silently dropped (data loss of sensitive input -> safety).
@@ -161,6 +185,15 @@ def _cmd_ingest(args: argparse.Namespace) -> int:
     if record.identity_ref is not None:
         # Print ONLY the opaque token; never the contributor's name or contact.
         print(f"identity_ref: {record.identity_ref}")
+    # Accessibility advisory: audio/video without a transcript is unusable to a Deaf
+    # or hard-of-hearing reader. Nudge, do not block (user research H3 / WCAG 1.2).
+    for p in record.payloads:
+        if p.media_type.startswith(("audio/", "video/")) and not p.transcript:
+            print(
+                f"note: {p.filename} is audio/video with no transcript; add one with "
+                f"--transcript '{p.filename}=...' so it is accessible (WCAG 1.2)",
+                file=sys.stderr,
+            )
     return 0
 
 
@@ -563,6 +596,12 @@ def _build_parser() -> argparse.ArgumentParser:
         "--sealed-field", action="append", metavar="name=value", help="a SEALED field"
     )
     p_ingest.add_argument("--cw", action="append", metavar="WARNING", help="content warning")
+    p_ingest.add_argument(
+        "--transcript",
+        action="append",
+        metavar="filename=text",
+        help="a transcript/caption for an audio or video payload (accessibility)",
+    )
     p_ingest.add_argument("--contributor-name", help="sealed into the vault; never printed back")
     p_ingest.add_argument("--contributor-contact", help="sealed into the vault")
     p_ingest.add_argument("--actor", default="ledger", help="ingest agent id")

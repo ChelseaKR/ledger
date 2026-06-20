@@ -114,6 +114,7 @@ def serialize_record(record: Record) -> str:
                 "media_type": p.media_type,
                 "size_bytes": p.size_bytes,
                 "policy": p.policy.value,
+                "transcript": p.transcript,
             }
             for p in record.payloads
         ],
@@ -182,6 +183,7 @@ def _payload_from_dict(item: dict[str, object]) -> PayloadFile:
         media_type=str(item.get("media_type", "application/octet-stream")),
         size_bytes=size if isinstance(size, int) else 0,
         policy=AccessPolicy(str(item.get("policy", AccessPolicy.SEALED_UNTIL.value))),
+        transcript=str(item.get("transcript", "")),
     )
 
 
@@ -283,6 +285,7 @@ def ingest_sip(
     for filename in sorted(sip.payload):
         source = sip.payload[filename]
         existing = declared.get(filename)
+        transcript = existing.transcript if existing is not None else ""
         if existing is not None:
             media_type = existing.media_type
         else:
@@ -318,6 +321,7 @@ def ingest_sip(
                 media_type=media_type,
                 size_bytes=size,
                 policy=policy,
+                transcript=transcript,
             )
         )
         # A fixity check per payload: the stored address re-derived from the bytes,
