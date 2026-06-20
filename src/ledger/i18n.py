@@ -161,6 +161,18 @@ _CATALOG: dict[str, dict[str, str]] = {
             "published a record, request a change from its page instead."
         ),
         "withdraw_button": "Withdraw this submission",
+        # --- decline / validation messages (shown to the contributor) ---
+        "err_title_required": "A title is required.",
+        "err_account_required": "An account is required.",
+        "err_submission_too_long": "That submission is too long.",
+        "err_contact_too_long": "Those contact details are too long.",
+        "err_save_failed": "Your contribution could not be saved right now. Please try again.",
+        "err_file_too_large": "That file is too large. The limit is {max} MB.",
+        "err_file_type": "That file type isn't accepted. Allowed types are: {types}.",
+        "err_withdraw_failed": (
+            "We could not withdraw a pending submission with that reference and code. "
+            "Check both and try again."
+        ),
         "withdraw_done_heading": "Your submission was withdrawn",
         "withdraw_done_status": (
             "It has been permanently removed, along with any contact details you had "
@@ -289,6 +301,20 @@ _CATALOG: dict[str, dict[str, str]] = {
             "responsable haya publicado un registro, solicite un cambio desde su página."
         ),
         "withdraw_button": "Retirar este envío",
+        # --- mensajes de rechazo / validación ---
+        "err_title_required": "Se requiere un título.",
+        "err_account_required": "Se requiere un relato.",
+        "err_submission_too_long": "Ese envío es demasiado largo.",
+        "err_contact_too_long": "Esos datos de contacto son demasiado largos.",
+        "err_save_failed": (
+            "No se pudo guardar su contribución en este momento. Inténtelo de nuevo."
+        ),
+        "err_file_too_large": "Ese archivo es demasiado grande. El límite es {max} MB.",
+        "err_file_type": "Ese tipo de archivo no se acepta. Tipos permitidos: {types}.",
+        "err_withdraw_failed": (
+            "No se pudo retirar un envío pendiente con esa referencia y ese código. "
+            "Compruebe ambos e inténtelo de nuevo."
+        ),
         "withdraw_done_heading": "Su envío fue retirado",
         "withdraw_done_status": (
             "Se ha eliminado permanentemente, junto con cualquier dato de contacto que "

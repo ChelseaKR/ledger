@@ -49,7 +49,7 @@ from urllib.parse import parse_qs, quote, unquote, urlsplit
 from ledger import consent, contribute, i18n, oai, review, search, upload
 from ledger.access import anonymous, disclose, is_listable
 from ledger.access.grants import load_grants
-from ledger.errors import AccessDenied, LedgerError, ObjectNotFound
+from ledger.errors import AccessDenied, LedgerError, ObjectNotFound, ValidationError
 from ledger.ingest import Archive
 from ledger.models import (
     AccessPolicy,
@@ -1026,8 +1026,9 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         action = form.get("action", "preview")
         try:
             submission = contribute.parse_submission(form, self._archive().config)
-        except LedgerError as exc:
-            self._handle_contribute_form(error=str(exc), status=400, values=form)
+        except ValidationError as exc:
+            message = i18n.t(self._lang(), exc.code, **exc.fields)
+            self._handle_contribute_form(error=message, status=400, values=form)
             return
         if action != "submit":
             self._render_contribute_preview(submission, form)
@@ -1059,7 +1060,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             except LedgerError:
                 # Name nothing the contributor submitted; just decline cleanly.
                 self._handle_contribute_form(
-                    error="Your contribution could not be saved right now. Please try again.",
+                    error=i18n.t(self._lang(), "err_save_failed"),
                     status=503,
                     values=form,
                 )
@@ -1102,13 +1103,13 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         type taken from the client. The returned error names no submitted value
         (no-outing rule). On success returns ``None``."""
         filename, data = attachment
+        lang = self._lang()
         if len(data) > upload.MAX_UPLOAD_BYTES:
             megabytes = upload.MAX_UPLOAD_BYTES // (1024 * 1024)
-            return f"That file is too large. The limit is {megabytes} MB."
+            return i18n.t(lang, "err_file_too_large", max=megabytes)
         media_type = upload.sniff_media_type(data)
         if media_type is None:
-            allowed = ", ".join(upload.ALLOWED_TYPES)
-            return f"That file type isn't accepted. Allowed types are: {allowed}."
+            return i18n.t(lang, "err_file_type", types=", ".join(upload.ALLOWED_TYPES))
         safe = _safe_filename(filename) or "upload"
         (tmpdir / safe).write_bytes(data)
         # The payload follows the record's sealed-pending default, so it is invisible
@@ -1211,8 +1212,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         if not authorized:
             # One neutral message for every failure: never confirm a record exists.
             self._handle_withdraw_form(
-                error="We could not withdraw a pending submission with that reference "
-                "and code. Check both and try again.",
+                error=i18n.t(self._lang(), "err_withdraw_failed"),
                 reference=reference,
             )
             return

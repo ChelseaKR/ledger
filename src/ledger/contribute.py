@@ -36,7 +36,7 @@ from dataclasses import dataclass, replace
 
 from ledger import i18n, upload
 from ledger.config import Config
-from ledger.errors import LedgerError
+from ledger.errors import ValidationError
 from ledger.identity import ContributorIdentity
 from ledger.models import AccessPolicy, DisclosedRecord, DublinCore, Field, Record
 
@@ -78,18 +78,18 @@ def parse_submission(form: dict[str, str], config: Config) -> Submission:
     Validates and bounds the inputs and constructs a record that is *sealed-pending*
     by default — invisible to the public until a steward reviews it. Content
     warnings are filtered against the archive's controlled vocabulary, so a crafted
-    form cannot inject an arbitrary tag. Raises :class:`~ledger.errors.LedgerError`
-    with a generic, content-free message on invalid input — it never echoes a
+    form cannot inject an arbitrary tag. Raises :class:`~ledger.errors.ValidationError`
+    with a content-free, *localizable* reason code on invalid input — it never echoes a
     submitted value (no-outing rule).
     """
     title = (form.get("title") or "").strip()
     account = (form.get("account") or "").strip()
     if not title:
-        raise LedgerError("a title is required")
+        raise ValidationError("a title is required", code="err_title_required")
     if not account:
-        raise LedgerError("an account is required")
+        raise ValidationError("an account is required", code="err_account_required")
     if len(title) > _MAX_TITLE or len(account) > _MAX_ACCOUNT:
-        raise LedgerError("the submission is too long")
+        raise ValidationError("the submission is too long", code="err_submission_too_long")
 
     visibility = (form.get("visibility") or _DEFAULT_VISIBILITY).strip()
     field_policy = _VISIBILITY_TO_POLICY.get(visibility, AccessPolicy.SEALED_UNTIL)
@@ -109,7 +109,7 @@ def parse_submission(form: dict[str, str], config: Config) -> Submission:
     name = (form.get("contributor_name") or "").strip()
     contact = (form.get("contributor_contact") or "").strip()
     if len(name) > _MAX_CONTACT or len(contact) > _MAX_CONTACT:
-        raise LedgerError("the contact details are too long")
+        raise ValidationError("the contact details are too long", code="err_contact_too_long")
     identity = ContributorIdentity(name=name, contact=contact) if (name or contact) else None
     return Submission(record=record, identity=identity)
 

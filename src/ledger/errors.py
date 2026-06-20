@@ -23,6 +23,25 @@ class ConfigError(LedgerError):
     """The configuration is missing, malformed, or internally inconsistent."""
 
 
+class ValidationError(LedgerError):
+    """User input was rejected, carrying a *localizable* reason code.
+
+    The contributor write path shows a contributor *why* a submission was declined,
+    and that reason must be in their language. So this error carries a language-neutral
+    ``code`` (an i18n catalog key) plus any ``fields`` to interpolate, and a UI renders
+    ``i18n.t(lang, code, **fields)`` rather than the raw English ``str(exc)``. The
+    English ``message`` is still set for logs and non-UI callers. Like every ledger
+    error, neither the code, the fields, nor the message names a submitted value or an
+    identity (no-outing rule): codes describe the *condition* ("a title is required"),
+    never the content.
+    """
+
+    def __init__(self, message: str, *, code: str, **fields: object) -> None:
+        super().__init__(message)
+        self.code = code
+        self.fields = fields
+
+
 # --- preservation -----------------------------------------------------------
 
 

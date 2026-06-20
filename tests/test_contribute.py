@@ -188,6 +188,20 @@ def test_contribution_flow_is_localized(open_server: tuple[Archive, str]) -> Non
     assert "Gracias" in thanks
 
 
+def test_validation_errors_are_localized(open_server: tuple[Archive, str]) -> None:
+    """A declined submission explains why in the contributor's language (error i18n)."""
+    _archive, base = open_server
+    status, body = _post(
+        base,
+        "/contribute?lang=es",
+        {"action": "submit", "title": "", "account": ""},
+    )
+    assert status == 400
+    assert 'role="alert"' in body
+    assert "Se requiere un título." in body  # the Spanish reason
+    assert "A title is required." not in body
+
+
 @pytest.mark.disclosure
 def test_contribute_is_404_when_disabled(closed_server: tuple[Archive, str]) -> None:
     """The write path is off by default: both GET and POST 404 when not enabled."""
