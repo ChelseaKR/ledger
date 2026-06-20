@@ -28,7 +28,7 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from ledger import acr_gen, demo
+from ledger import acr_gen, demo, dualcontrol
 from ledger.access.grants import anonymous, community_member, steward
 from ledger.config import Config, StorageLocation
 from ledger.errors import LedgerError
@@ -287,40 +287,38 @@ def _cmd_cw(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_takedown(args: argparse.Namespace) -> int:
-    """``takedown`` — record an accountable takedown and remove stored copies.
+def _proposal_store(archive: Archive) -> dualcontrol.ProposalStore:
+    """The dual-control proposal store for ``archive`` (under ``logs/``)."""
+    return dualcontrol.ProposalStore(archive.logs_dir / "proposals.json")
 
-    Order matters and is now honoured: (1) the accountable decision is recorded and
-    durably persisted FIRST, so the audit trail of *why* survives even if removal is
-    interrupted or retried; (2) the contributor identity is revoked from the vault
-    (right to be forgotten); (3) every stored copy is deleted from the bag, the
-    fast-lookup manifest, and each configured location. Only the record id and
-    counts are printed (no-outing rule).
+
+def _perform_takedown(
+    archive: Archive, record_id: str, *, actor: str, reason: str, now: str
+) -> str:
+    """Record and execute a takedown; return a no-outing-safe summary line.
+
+    The accountable decision is recorded and durably persisted FIRST (its audit
+    trail of *why* must outlive the data), then the contributor identity is revoked
+    from the vault, then every stored copy is removed from the bag, the fast-lookup
+    manifest, and each configured location. Only the record id and counts appear in
+    the summary (no-outing rule). Factored so both the direct path and an approved
+    dual-control proposal execute the identical effect.
     """
     import shutil
 
-    archive = _open_archive(Path(args.root))
-    now = args.now if args.now else now_iso()
-    event, action = takedown(args.id, actor=args.actor, reason=args.reason, now=now)
-
-    # Capture the sealed identity ref BEFORE any deletion, so step 2 can revoke it.
+    event, action = takedown(record_id, actor=actor, reason=reason, now=now)
     identity_ref: str | None = None
     try:
-        identity_ref = archive.get(args.id).identity_ref
+        identity_ref = archive.get(record_id).identity_ref
     except LedgerError:
         identity_ref = None
 
-    # 1. Record and DURABLY persist the decision first (accountability — the record
-    #    of why a takedown happened must outlive the data it concerns).
     log_path = archive.logs_dir / "takedowns.premis.json"
     archive.logs_dir.mkdir(parents=True, exist_ok=True)
     log = PremisLog.read(log_path) if log_path.exists() else PremisLog()
     log.record(event)
     log.write(log_path)
 
-    # 2. Revoke the contributor identity from the vault. A vault that cannot be
-    #    opened is NOT skipped silently — warn so a steward can revoke by hand
-    #    (consent / right to be forgotten, failure transparency).
     revoked = False
     if identity_ref is not None:
         try:
@@ -333,24 +331,135 @@ def _cmd_takedown(args: argparse.Namespace) -> int:
                 file=sys.stderr,
             )
 
-    # 3. Remove every stored copy.
     removed = 0
-    bag_dir = archive.bags_dir / args.id
+    bag_dir = archive.bags_dir / record_id
     if bag_dir.exists():
         shutil.rmtree(bag_dir)
         removed += 1
-    fast = archive.records_dir / f"{args.id}.json"
+    fast = archive.records_dir / f"{record_id}.json"
     if fast.exists():
         fast.unlink()
-
     for location in archive.config.locations:
-        replica = Path(location.path) / args.id
+        replica = Path(location.path) / record_id
         if replica.exists() and replica != bag_dir:
             shutil.rmtree(replica)
             removed += 1
 
     suffix = "; identity revoked" if revoked else ""
-    print(f"record {args.id} taken down by {action.actor}; {removed} copy(ies) removed{suffix}")
+    return f"record {record_id} taken down by {action.actor}; {removed} copy(ies) removed{suffix}"
+
+
+def _execute_proposal(
+    archive: Archive, proposal: dualcontrol.ActionProposal, *, actor: str, now: str
+) -> str:
+    """Perform an approved proposal's action; return a no-outing-safe summary.
+
+    ``takedown`` and ``publish`` execute their concrete effect. ``unseal`` records
+    the *authorization* only: dual-control gates the decision, but the CLI never
+    prints a contributor identity — retrieval stays the audited ``identity_unseal``
+    grant path (no-outing rule)."""
+    if proposal.action == "takedown":
+        return _perform_takedown(
+            archive, proposal.target, actor=actor, reason=proposal.reason, now=now
+        )
+    if proposal.action == "publish":
+        record = archive.get(proposal.target)
+        updated, event, _action = change_consent(
+            record, AccessPolicy.PUBLIC, actor=actor, reason=proposal.reason, now=now
+        )
+        archive.apply_update(updated, event)
+        return f"record {proposal.target} published by {actor}"
+    if proposal.action == "unseal":
+        return (
+            f"identity-unseal for {proposal.target} authorized by "
+            f"{proposal.approved_count()} steward(s) — retrieve via an identity_unseal "
+            "grant; the CLI never prints an identity"
+        )
+    raise LedgerError(f"unknown proposal action: {proposal.action}")
+
+
+def _cmd_takedown(args: argparse.Namespace) -> int:
+    """``takedown`` — record an accountable takedown and remove stored copies.
+
+    Under dual-control (``config.dual_control_threshold`` > 1) this *proposes* the
+    takedown instead of executing it, so no single steward can erase a record alone;
+    it runs only once enough distinct stewards approve (``ledger approve``). At the
+    default threshold of 1 it executes immediately, exactly as before."""
+    archive = _open_archive(Path(args.root))
+    now = args.now if args.now else now_iso()
+    threshold = archive.config.dual_control_threshold
+    if threshold > 1:
+        prop = _proposal_store(archive).add(
+            dualcontrol.ActionProposal(
+                action="takedown",
+                target=args.id,
+                reason=args.reason,
+                proposer=args.actor,
+                created_at=now,
+            )
+        )
+        print(
+            f"takedown PROPOSED for {args.id} (proposal {prop.proposal_id}); "
+            f"needs {threshold} steward approvals ({prop.approved_count()}/{threshold}). "
+            f"Another steward runs: ledger approve --root {args.root} "
+            f"--id {prop.proposal_id} --actor <steward-id>"
+        )
+        return 0
+    print(_perform_takedown(archive, args.id, actor=args.actor, reason=args.reason, now=now))
+    return 0
+
+
+def _cmd_propose(args: argparse.Namespace) -> int:
+    """``propose`` — propose a high-stakes action for dual-control approval."""
+    if args.action not in dualcontrol.ACTIONS:
+        raise LedgerError(
+            f"unknown action {args.action!r}; expected one of {sorted(dualcontrol.ACTIONS)}"
+        )
+    archive = _open_archive(Path(args.root))
+    now = args.now if args.now else now_iso()
+    store = _proposal_store(archive)
+    prop = store.add(
+        dualcontrol.ActionProposal(
+            action=args.action,
+            target=args.id,
+            reason=args.reason,
+            proposer=args.actor,
+            created_at=now,
+        )
+    )
+    threshold = archive.config.dual_control_threshold
+    print(
+        f"proposed {args.action} for {args.id} (proposal {prop.proposal_id}); "
+        f"{prop.approved_count()}/{threshold} approval(s)"
+    )
+    if prop.is_ready(threshold):
+        print(_execute_proposal(archive, prop, actor=args.actor, now=now))
+        store.mark(prop.proposal_id, "executed")
+    return 0
+
+
+def _cmd_approve(args: argparse.Namespace) -> int:
+    """``approve`` — approve a pending proposal; execute it once the threshold is met."""
+    archive = _open_archive(Path(args.root))
+    now = args.now if args.now else now_iso()
+    store = _proposal_store(archive)
+    prop = store.approve(args.id, args.actor)
+    threshold = archive.config.dual_control_threshold
+    print(f"approved proposal {prop.proposal_id} ({prop.approved_count()}/{threshold})")
+    if prop.is_ready(threshold):
+        print(_execute_proposal(archive, prop, actor=args.actor, now=now))
+        store.mark(prop.proposal_id, "executed")
+    return 0
+
+
+def _cmd_proposals(args: argparse.Namespace) -> int:
+    """``proposals`` — list open dual-control proposals awaiting approval."""
+    archive = _open_archive(Path(args.root))
+    threshold = archive.config.dual_control_threshold
+    open_props = _proposal_store(archive).open_proposals()
+    for p in open_props:
+        print(f"{p.proposal_id}\t{p.action}\t{p.target}\t{p.approved_count()}/{threshold}")
+    print(f"({len(open_props)} open proposal(s); threshold {threshold})")
     return 0
 
 
@@ -514,6 +623,30 @@ def _build_parser() -> argparse.ArgumentParser:
     p_takedown.add_argument("--reason", required=True, help="rationale (required, auditable)")
     p_takedown.add_argument("--now", help="ISO-8601 timestamp")
     p_takedown.set_defaults(func=_cmd_takedown)
+
+    p_propose = sub.add_parser("propose", help="propose a high-stakes action (dual-control)")
+    p_propose.add_argument("--root", required=True)
+    p_propose.add_argument(
+        "--action", required=True, choices=sorted(dualcontrol.ACTIONS), help="action to propose"
+    )
+    p_propose.add_argument(
+        "--id", required=True, help="target record id (or identity ref for unseal)"
+    )
+    p_propose.add_argument("--actor", required=True, help="proposing steward id")
+    p_propose.add_argument("--reason", required=True, help="rationale (required, auditable)")
+    p_propose.add_argument("--now", help="ISO-8601 timestamp")
+    p_propose.set_defaults(func=_cmd_propose)
+
+    p_approve = sub.add_parser("approve", help="approve a pending dual-control proposal")
+    p_approve.add_argument("--root", required=True)
+    p_approve.add_argument("--id", required=True, help="proposal id")
+    p_approve.add_argument("--actor", required=True, help="approving steward id")
+    p_approve.add_argument("--now", help="ISO-8601 timestamp")
+    p_approve.set_defaults(func=_cmd_approve)
+
+    p_proposals = sub.add_parser("proposals", help="list open dual-control proposals")
+    p_proposals.add_argument("--root", required=True)
+    p_proposals.set_defaults(func=_cmd_proposals)
 
     p_replicas = sub.add_parser("replicas", help="report a bag's replica health")
     p_replicas.add_argument("--root", required=True)

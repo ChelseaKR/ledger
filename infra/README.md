@@ -402,7 +402,17 @@ ledger takedown --root /data --id <id> --actor <s> --reason <why>
 ledger policy   --root /data --id <id> --level <lvl> --actor <s> --reason <why>
 ledger add-location --root /data --name <n> --path <p> --kind mirror
 ledger vault rekey --root /data --actor <s>                   # rotate the vault key (keys via env)
+
+# Dual-control (when config dual_control_threshold > 1): no one steward acts alone
+ledger propose  --root /data --action <takedown|unseal|publish> --id <id> --actor <s> --reason <why>
+ledger approve  --root /data --id <proposal-id> --actor <other-steward>   # executes when threshold met
+ledger proposals --root /data                                # list open proposals
 ```
+
+To require two stewards for every takedown, identity-unseal, and publish-to-public,
+set `"dual_control_threshold": 2` in the archive config. A first steward's `takedown`
+(or `propose`) then only *proposes* the action; it runs once a second, distinct
+steward `approve`s it. The default of `1` keeps single-steward behaviour.
 
 `docker compose down -v` would delete the volume and the entire archive with it.
 There is no `-v` in any command above on purpose.

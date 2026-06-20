@@ -113,6 +113,15 @@ contestable**. This is not a matter of steward etiquette; it is enforced by
   steward-initiated takedown, review by a second steward where two exist. A takedown is a
   *decision record* plus an *effect*: `takedown(...)` records the accountable decision,
   and the caller then removes copies and propagates the takedown to replicas (see §5).
+  **Dual-control (enforced).** Setting `dual_control_threshold` in the config above 1
+  makes the "second steward" rule a *control*, not just etiquette: a takedown — and an
+  identity-unseal or a publish-to-public — is then *proposed* (`ledger takedown` /
+  `ledger propose`) and runs only once that many **distinct** stewards approve it
+  (`ledger approve`), so no single compromised or coerced steward can erase a record,
+  out a contributor, or expose a sealed-pending submission alone. At the default
+  threshold of 1 the behaviour is unchanged. An approved *unseal* records the
+  authorization but the CLI never prints an identity — retrieval stays the audited
+  `identity_unseal` grant path.
 - **Consent changes** tighten or alter a record's default policy. A contributor's own
   consent change is honored on request; a steward recording a consent change on a
   contributor's behalf must state the reason and, where possible, the contributor's
