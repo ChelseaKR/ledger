@@ -120,14 +120,16 @@ def oai_response(
 def sitemap_xml(record_ids: Sequence[str], base_url: str) -> str:
     """Render a sitemap ``<urlset>`` of public record pages.
 
-    Discoverability: one ``<url><loc>`` per public record, each
-    ``base_url + "/record/" + id``, so a general-purpose crawler can find every
-    publicly disclosed record. ``record_ids`` is the caller's public set; this
-    function adds nothing of its own. All locations are XML-escaped.
+    Discoverability: the browse root (where the Atom feed is auto-discovered) plus
+    one ``<url><loc>`` per public record, each ``base_url + "/record/" + id``, so a
+    general-purpose crawler can find the collection and every publicly disclosed
+    record. ``record_ids`` is the caller's public set; this function adds nothing of
+    its own beyond the root. All locations are XML-escaped.
     """
     root = base_url.rstrip("/")
     lines = ['<?xml version="1.0" encoding="UTF-8"?>']
     lines.append(f'<urlset xmlns="{_SITEMAP_NS}">')
+    lines.append(f"  <url><loc>{escape(root + '/')}</loc></url>")
     for record_id in record_ids:
         loc = escape(f"{root}/record/{record_id}")
         lines.append(f"  <url><loc>{loc}</loc></url>")

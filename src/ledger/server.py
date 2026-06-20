@@ -347,6 +347,8 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
                 self._handle_oai(params)
             elif path == "/sitemap.xml":
                 self._handle_sitemap()
+            elif path == "/robots.txt":
+                self._handle_robots()
             elif path == "/feed.atom":
                 self._handle_feed()
             elif path == "/steward":
@@ -1696,6 +1698,30 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         ids = [r.record_id for r in self._public_records()]
         xml = oai.sitemap_xml(ids, self._base_url())
         self._send(200, xml.encode("utf-8"), "application/xml; charset=utf-8")
+
+    def _handle_robots(self) -> None:
+        """``GET /robots.txt`` — guide crawlers to public content, away from the rest.
+
+        Points crawlers at the sitemap so the *public* records are discoverable (the
+        harvestability user research P2-3 asks for), while disallowing the write and
+        operator surfaces — the contribution, withdrawal, edit, and steward paths, the
+        JSON API, and the consent-status lookup — so a search engine never indexes a
+        form or a steward console. It is advisory, not access control (those paths are
+        already gated or carry no listable content); it keeps non-content pages out of
+        public indexes (privacy hygiene). No request value enters the response."""
+        root = self._base_url()
+        lines = [
+            "User-agent: *",
+            "Disallow: /steward",
+            "Disallow: /contribute",
+            "Disallow: /withdraw",
+            "Disallow: /edit",
+            "Disallow: /api/",
+            "Disallow: /consent-status",
+            f"Sitemap: {root}/sitemap.xml",
+            "",
+        ]
+        self._send(200, "\n".join(lines).encode("utf-8"), "text/plain; charset=utf-8")
 
     def _handle_feed(self) -> None:
         """``GET /feed.atom`` — an Atom feed of the most recent public records.

@@ -172,3 +172,20 @@ def test_html_pages_advertise_the_feed(server_base: str) -> None:
     body, _ct = _get(server_base, "/")
     assert 'rel="alternate" type="application/atom+xml"' in body
     assert 'href="/feed.atom"' in body
+
+
+def test_robots_points_at_the_sitemap_and_hides_non_content(server_base: str) -> None:
+    """``/robots.txt`` guides crawlers to the sitemap and away from write/admin paths."""
+    body, content_type = _get(server_base, "/robots.txt")
+    assert "text/plain" in content_type
+    assert "Sitemap: http://127.0.0.1" in body and "/sitemap.xml" in body
+    # The write and operator surfaces are kept out of public indexes.
+    for path in ("/steward", "/contribute", "/withdraw", "/edit", "/api/"):
+        assert f"Disallow: {path}" in body
+
+
+def test_sitemap_includes_the_browse_root(server_base: str) -> None:
+    """The served sitemap leads with the browse root so crawlers reach the feed link."""
+    body, _ct = _get(server_base, "/sitemap.xml")
+    ET.fromstring(body)  # noqa: S314 - our own trusted output
+    assert "<loc>http://127.0.0.1" in body and "/</loc>" in body
