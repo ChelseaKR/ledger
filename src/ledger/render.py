@@ -389,6 +389,27 @@ def _payload_li(rid: str, p: PayloadFile) -> str:
     return base + "</li>"
 
 
+# The Dublin Core elements the browse facets can filter on, whose values are rendered
+# as links into the faceted browse on a record page (kept in sync with the server's
+# facet routing and ``search.facets``).
+_FACET_FIELDS: tuple[str, ...] = ("subject", "type", "language")
+
+
+def _dc_value_html(element: str, values: list[str]) -> str:
+    """Render a Dublin Core element's values, linking facetable ones to browse.
+
+    A ``subject``/``type``/``language`` value becomes ``<a href="/?<field>=<value>">``
+    so a reader can pivot to every other record carrying it; any other element's
+    values are joined as plain escaped text. Every value passes through :func:`_esc`,
+    and the query value is URL-quoted, so a crafted metadata value cannot break out of
+    the attribute or inject markup (security)."""
+    if element in _FACET_FIELDS:
+        return ", ".join(
+            f'<a href="/?{element}={quote(value)}">{_esc(value)}</a>' for value in values
+        )
+    return _esc("; ".join(values))
+
+
 def _record_main_html(
     record: DisclosedRecord, *, proceed: bool, insider: bool = False, lang: str = "en"
 ) -> str:
@@ -459,9 +480,13 @@ def _record_main_html(
             "    </section>"
         )
 
-    # Dublin Core descriptive metadata (collection-level; never identity).
+    # Dublin Core descriptive metadata (collection-level; never identity). For the
+    # facetable elements (subject/type/language) each value is a link into the faceted
+    # browse, so a reader on one record can discover related records by topic, kind, or
+    # language — connecting a contributor's descriptive metadata to discovery (P1-4).
     dc_rows = [
-        f'      <div class="field"><dt>{_esc(element)}</dt><dd>{_esc("; ".join(values))}</dd></div>'
+        f'      <div class="field"><dt>{_esc(element)}</dt>'
+        f"<dd>{_dc_value_html(element, values)}</dd></div>"
         for element, values in record.dublin_core.items()
         if values
     ]
