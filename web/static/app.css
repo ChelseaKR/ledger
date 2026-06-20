@@ -112,6 +112,20 @@ nav {
   gap: 1rem;
 }
 
+/* Language picker: pushed to the end of the nav, its active language shown as
+   plain (muted) text so only the alternatives read as links. */
+.lang-switch {
+  margin-left: auto;
+  display: inline-flex;
+  gap: 0.5rem;
+  align-items: baseline;
+}
+
+.lang-switch [aria-current="true"] {
+  color: var(--muted);
+  font-weight: 600;
+}
+
 footer {
   border-top: 2px solid var(--border);
   margin-top: 2rem;

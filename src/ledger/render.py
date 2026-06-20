@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import html
 from collections.abc import Iterable
-from urllib.parse import quote
+from urllib.parse import parse_qsl, quote, urlencode, urlsplit
 
 from ledger import i18n, search
 from ledger.models import AccessPolicy, DisclosedRecord, Grant, PayloadFile
@@ -453,7 +453,39 @@ def _error_main_html(heading: str, message: str) -> str:
     )
 
 
-def _nav_html(lang: str = "en", *, contribute: bool = False) -> str:
+def _language_switch_html(lang: str, current_path: str) -> str:
+    """A localized language picker that keeps the reader on the current page.
+
+    Language was previously chosen *only* from the browser's ``Accept-Language``
+    header, which a reader on a shared or mislocalized machine cannot change (user
+    research P2-1, I2). This renders one link per supported language, each pointing
+    at the *current* path with ``?lang=<code>`` appended (any existing ``lang`` query
+    is dropped first so the choices do not stack). The active language is plain text
+    marked ``aria-current`` rather than a link, so a screen reader announces which
+    language is in effect. Each alternative carries ``hreflang`` and its autonym
+    (e.g. "Español"), so it reads naturally to a native speaker. The choice carries
+    no identity or record reference — only a UI language (no-outing rule).
+    """
+    if len(i18n.SUPPORTED) < 2:
+        return ""
+    split = urlsplit(current_path)
+    kept = [(k, v) for k, v in parse_qsl(split.query) if k != "lang"]
+    items: list[str] = []
+    for code in i18n.SUPPORTED:
+        name = i18n.language_name(code)
+        if code == lang:
+            items.append(f'<span aria-current="true">{_esc(name)}</span>')
+        else:
+            href = (split.path or "/") + "?" + urlencode([*kept, ("lang", code)])
+            items.append(f'<a href="{_esc(href)}" hreflang="{_esc(code)}">{_esc(name)}</a>')
+    label = i18n.t(lang, "language_label")
+    return (
+        f'      <span class="lang-switch" role="group" aria-label="{_esc(label)}">'
+        f"{' '.join(items)}</span>\n"
+    )
+
+
+def _nav_html(lang: str = "en", *, contribute: bool = False, current_path: str = "/") -> str:
     """The site navigation: descriptive links only, no positive tabindex.
 
     Labels are localized (i18n), and the "Status" link points at the human-readable
@@ -461,12 +493,15 @@ def _nav_html(lang: str = "en", *, contribute: bool = False) -> str:
     non-technical users and was unreadable to a screen reader (user research P1-1).
     The Contribute link appears only when the submission surface is enabled on the
     server, so a read-only deployment never advertises a write path it does not have.
+    A language picker (:func:`_language_switch_html`) lets a reader switch language
+    explicitly and stay on ``current_path`` (user research P2-1, I2).
     """
     contribute_link = '      <a href="/contribute">Contribute</a>\n' if contribute else ""
+    switch = _language_switch_html(lang, current_path)
     return (
         f'\n      <a href="/">{_esc(i18n.t(lang, "nav_browse"))}</a>\n'
         f'      <a href="/search">{_esc(i18n.t(lang, "nav_search"))}</a>\n'
         f'      <a href="/about">{_esc(i18n.t(lang, "nav_about"))}</a>\n'
         f'      <a href="/status">{_esc(i18n.t(lang, "nav_status"))}</a>\n'
-        f"{contribute_link}    "
+        f"{contribute_link}{switch}    "
     )

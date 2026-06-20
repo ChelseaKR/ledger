@@ -201,7 +201,11 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
 
     def _nav(self) -> str:
         """Site navigation for the current request, including Contribute when enabled."""
-        return _nav_html(self._lang(), contribute=self._allow_contributions())
+        return _nav_html(
+            self._lang(),
+            contribute=self._allow_contributions(),
+            current_path=self.path,
+        )
 
     # --- response helpers ---------------------------------------------------
 
@@ -223,6 +227,17 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             "base-uri 'none'; form-action 'self'",
         )
         self.send_header("Referrer-Policy", "no-referrer")
+        # Persist an explicit ?lang= pick so the reader's choice survives navigation.
+        # The cookie holds only the UI language code — no identity, no record id
+        # (no-outing rule). Lax + HttpOnly: it is sent on top-level navigations and is
+        # never exposed to script. No Secure flag, so it still works for a community
+        # running ledger over plain HTTP on an inexpensive box (availability).
+        chosen_lang = getattr(self, "_set_lang_cookie", None)
+        if chosen_lang is not None:
+            self.send_header(
+                "Set-Cookie",
+                f"lang={chosen_lang}; Path=/; Max-Age=31536000; SameSite=Lax; HttpOnly",
+            )
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(body)
@@ -237,13 +252,48 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         self._send(status, body, "application/json; charset=utf-8")
 
     def _lang(self) -> str:
-        """Negotiate the response language from the viewer's ``Accept-Language``.
+        """Resolve the response language: explicit choice, remembered choice, then header.
 
         A non-native reader gets localized UI strings and content-warning glosses
-        where available, falling back to English (user research P2-1). Negotiation
-        is against the languages ledger actually has strings for (``i18n.SUPPORTED``).
-        """
-        return i18n.negotiate(self.headers.get("Accept-Language"))
+        where available, falling back to English (user research P2-1). The order is:
+
+        1. an explicit ``?lang=`` query — the language picker — which also sets a
+           ``lang`` cookie so the choice persists as the reader navigates;
+        2. a previously chosen language remembered in that cookie;
+        3. otherwise the browser's ``Accept-Language`` header.
+
+        Negotiation is always against the languages ledger actually ships strings for
+        (``i18n.SUPPORTED``); an unknown or unsupported value falls through to the
+        next step, never to a blank page. The cookie holds only a UI language code,
+        never an identity or a record reference (no-outing rule). The result is cached
+        for the request so the several render calls agree."""
+        cached = getattr(self, "_lang_cache", None)
+        if cached is not None:
+            return str(cached)
+        query = parse_qs(urlsplit(self.path).query)
+        choice = (query.get("lang", [""])[0] or "").strip().lower()
+        if choice in i18n.SUPPORTED:
+            self._set_lang_cookie = choice  # persist the explicit pick
+            self._lang_cache = choice
+            return choice
+        remembered = self._cookie_value("lang").strip().lower()
+        if remembered in i18n.SUPPORTED:
+            self._lang_cache = remembered
+            return remembered
+        negotiated = i18n.negotiate(self.headers.get("Accept-Language"))
+        self._lang_cache = negotiated
+        return negotiated
+
+    def _cookie_value(self, name: str) -> str:
+        """Return the value of cookie ``name`` from the request, or ``""``.
+
+        A small, dependency-free parse of the ``Cookie`` header; only the language
+        preference cookie is read here, and it carries no identity (no-outing rule)."""
+        for part in self.headers.get("Cookie", "").split(";"):
+            key, _, value = part.strip().partition("=")
+            if key == name:
+                return value.strip()
+        return ""
 
     # --- routing ------------------------------------------------------------
 
