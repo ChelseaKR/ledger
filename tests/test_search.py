@@ -18,6 +18,7 @@ from ledger.search import (
     index_text,
     looks_non_latin,
     search,
+    snippet,
 )
 
 
@@ -230,3 +231,62 @@ def test_language_is_a_facet() -> None:
     langs = {f.value: f.count for f in facets([en, es], "language")}
     assert langs == {"en": 1, "es": 1}
     assert [r.record_id for r in filter_by_facet([en, es], "language", "es")] == ["es"]
+
+
+# --- snippets (backlog E3) -------------------------------------------------
+
+
+def _text(snip: object) -> str:
+    """The plain concatenated text of a snippet's runs."""
+    assert snip is not None
+    return "".join(text for text, _matched in snip.runs)  # type: ignore[attr-defined]
+
+
+def test_snippet_marks_the_matched_term_with_original_casing() -> None:
+    """A snippet flags the matched span and preserves the source's casing."""
+    record = _disclosed(
+        "rec",
+        title="A Flyer",
+        dublin_core={"description": ["Notes about Mutual Aid networks in winter."]},
+    )
+    snip = snippet(record, "mutual")
+    assert snip is not None
+    # Exactly the matched span is flagged, with the document's own capitalization.
+    marked = [text for text, matched in snip.runs if matched]
+    assert marked == ["Mutual"]
+    assert "Mutual Aid networks" in _text(snip)
+
+
+def test_snippet_returns_none_without_a_query_or_match() -> None:
+    """No query, or a term absent from the disclosed text, yields no snippet."""
+    record = _disclosed("rec", title="Title", dublin_core={"description": ["Some body text."]})
+    assert snippet(record, "") is None
+    assert snippet(record, "   ") is None
+    assert snippet(record, "absent") is None
+
+
+def test_snippet_windows_long_text_around_the_match_with_ellipses() -> None:
+    """A match deep in long text yields a bounded window bracketed by ellipses."""
+    body = ("lorem ipsum " * 40) + "needle here " + ("dolor sit " * 40)
+    record = _disclosed("rec", title="Doc", dublin_core={"description": [body]})
+    snip = snippet(record, "needle", width=80)
+    assert snip is not None
+    whole = _text(snip)
+    assert "needle" in whole
+    assert whole.startswith("… ") and whole.endswith(" …")
+    # The window is bounded, not the whole document.
+    assert len(whole) < len(body)
+    assert [t for t, m in snip.runs if m] == ["needle"]
+
+
+def test_snippet_highlights_multiple_terms() -> None:
+    """Every query term present in the window is flagged, not just the first."""
+    record = _disclosed(
+        "rec",
+        title="winter mutual aid drive",
+        dublin_core={"description": ["A winter mutual aid drive for the neighbourhood."]},
+    )
+    snip = snippet(record, "winter aid")
+    assert snip is not None
+    marked = {text.lower() for text, matched in snip.runs if matched}
+    assert {"winter", "aid"} <= marked

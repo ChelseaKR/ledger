@@ -218,6 +218,18 @@ def test_search_results_count_is_in_a_live_region(
         assert "record(s) shown." in body
 
 
+def test_search_highlights_the_matched_term(server: tuple[HTTPServer, str, str]) -> None:
+    """A search result shows *why* it matched, marking the term with <mark> (E3)."""
+    _httpd, base, _rid = server
+    # "history" appears only in the record's description, so a match there proves the
+    # snippet is drawn from the body, not just the title.
+    _status, body, _headers = _get(base, "/search?q=history")
+    assert "<mark>history</mark>" in body
+    # Plain browse (no query) shows no highlight — the snippet is search-only.
+    _status, browse_body, _headers = _get(base, "/")
+    assert "<mark>" not in browse_body
+
+
 # --- the no-outing rule, across every response -----------------------------
 
 

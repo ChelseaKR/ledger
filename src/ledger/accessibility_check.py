@@ -49,6 +49,7 @@ _CONTRAST_PAIRS: tuple[tuple[str, str, float, str], ...] = (
     ("bg", "accent", 4.5, "button text (white on accent)"),
     ("warn-ink", "warn-bg", 4.5, "content-warning text"),
     ("warn-ink", "bg", 4.5, "content-warning text on the page"),
+    ("mark-ink", "mark-bg", 4.5, "search match highlight"),
     ("border", "bg", 3.0, "UI border (component contrast)"),
 )
 

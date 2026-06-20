@@ -39,11 +39,13 @@ from ledger.models import DisclosedRecord
 
 __all__ = [
     "Facet",
+    "Snippet",
     "facets",
     "filter_by_facet",
     "index_text",
     "looks_non_latin",
     "search",
+    "snippet",
 ]
 
 
@@ -155,6 +157,114 @@ def filter_by_facet(
     preserved so the narrowed list keeps the caller's ordering.
     """
     return [record for record in records if value in record.dublin_core.get(field, ())]
+
+
+@dataclass(frozen=True)
+class Snippet:
+    """A short excerpt of a record's text showing *why* a search matched it.
+
+    ``runs`` is an ordered sequence of ``(text, matched)`` pairs that, concatenated,
+    form the excerpt: a ``matched`` run is a span a query term hit (a UI marks it,
+    e.g. with ``<mark>``), a non-matched run is surrounding context. Splitting the
+    excerpt this way keeps the *matching* logic here while leaving HTML escaping to
+    the single render boundary — each run's text is escaped at the point it becomes
+    markup. The excerpt is drawn only from a :class:`DisclosedRecord`, so it can never
+    reveal a withheld value or an identity (no-outing rule).
+    """
+
+    runs: tuple[tuple[str, bool], ...]
+
+
+def _display_text(record: DisclosedRecord) -> str:
+    """The record's searchable text with original casing kept, for excerpting.
+
+    Mirrors :func:`index_text` (title, then every Dublin Core value, then every
+    visible field value) but does *not* lowercase, so a snippet reads naturally.
+    Only disclosed content is included, so it carries nothing withheld."""
+    parts: list[str] = [record.title]
+    for values in record.dublin_core.values():
+        parts.extend(values)
+    parts.extend(record.fields.values())
+    return "  ".join(part for part in parts if part)
+
+
+def _highlight_runs(text: str, terms: Sequence[str]) -> list[tuple[str, bool]]:
+    """Split ``text`` into ``(piece, matched)`` runs marking every term occurrence.
+
+    Matching is case-insensitive; overlapping or adjacent hits are merged so a run
+    is never split mid-highlight. Pure and deterministic."""
+    low = text.lower()
+    spans: list[tuple[int, int]] = []
+    for term in terms:
+        start = 0
+        while term:
+            index = low.find(term, start)
+            if index == -1:
+                break
+            spans.append((index, index + len(term)))
+            start = index + len(term)
+    if not spans:
+        return [(text, False)]
+    spans.sort()
+    merged: list[tuple[int, int]] = [spans[0]]
+    for begin, end in spans[1:]:
+        last_begin, last_end = merged[-1]
+        if begin <= last_end:
+            merged[-1] = (last_begin, max(last_end, end))
+        else:
+            merged.append((begin, end))
+    runs: list[tuple[str, bool]] = []
+    position = 0
+    for begin, end in merged:
+        if begin > position:
+            runs.append((text[position:begin], False))
+        runs.append((text[begin:end], True))
+        position = end
+    if position < len(text):
+        runs.append((text[position:], False))
+    return runs
+
+
+def snippet(record: DisclosedRecord, query: str, *, width: int = 160) -> Snippet | None:
+    """Return an excerpt of ``record`` around the first query match, or ``None``.
+
+    The excerpt is a window of about ``width`` characters centred a little after the
+    earliest matching term, trimmed back to whole words and bracketed with an
+    ellipsis when text is dropped at either end. Every occurrence of any term within
+    the window is flagged as a matched run (see :class:`Snippet`) so a UI can show a
+    reader *why* the record matched (user research E2/E3). Returns ``None`` for an
+    empty query or when no term is present in the disclosed text. Pure and
+    deterministic — only disclosed content is consulted (no-outing rule)."""
+    terms = [term for term in query.lower().split() if term]
+    if not terms:
+        return None
+    text = _display_text(record)
+    low = text.lower()
+    first: int | None = None
+    for term in terms:
+        index = low.find(term)
+        if index != -1 and (first is None or index < first):
+            first = index
+    if first is None:
+        return None
+
+    start = max(0, first - width // 3)
+    end = min(len(text), start + width)
+    # Trim the cut ends back/forward to a word boundary so no word is sliced.
+    if start > 0:
+        space = text.rfind(" ", 0, start)
+        start = space + 1 if space != -1 else start
+    if end < len(text):
+        space = text.find(" ", end)
+        end = space if space != -1 else end
+    excerpt = text[start:end].strip()
+
+    runs = _highlight_runs(excerpt, terms)
+    if start > 0:
+        runs.insert(0, ("… ", False))
+    if end < len(text):
+        runs.append((" …", False))
+    return Snippet(runs=tuple(runs))
 
 
 def looks_non_latin(query: str) -> bool:

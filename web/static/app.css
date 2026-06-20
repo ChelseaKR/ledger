@@ -32,6 +32,8 @@
   --warn-bg: #fff4f4;
   --warn-ink: #7a1d1d;
   --warn-border: #7a1d1d;
+  --mark-bg: #fce8b2; /* search-match highlight; --mark-ink on it = 12.9:1 */
+  --mark-ink: #1a1a1a;
   --radius: 6px;
   --space: 1rem;
 }
@@ -177,6 +179,20 @@ a:visited {
 
 a:hover {
   text-decoration-thickness: 2px;
+}
+
+/* --- search match highlight --------------------------------------------- */
+/* The matched term in a result snippet, marked with <mark>. Colour is not the
+ * only signal: <mark> is a semantic element a screen reader can expose, and the
+ * highlight keeps a high contrast (verified by the contrast audit). */
+mark {
+  background: var(--mark-bg);
+  color: var(--mark-ink);
+  padding: 0 0.1em;
+}
+
+.result-detail {
+  color: var(--ink);
 }
 
 /* --- focus-visible: a strong, consistent keyboard indicator ------------- */

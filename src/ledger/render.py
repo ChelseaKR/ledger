@@ -125,20 +125,40 @@ def _summary_text(record: DisclosedRecord) -> str:
     return descriptions[0] if descriptions else ""
 
 
-def _records_list_html(records: Iterable[DisclosedRecord]) -> str:
+def _result_detail(record: DisclosedRecord, query: str) -> str:
+    """The per-record detail line, escaped and ready to interpolate.
+
+    When the viewer is searching and a query term appears in the record's disclosed
+    text, this is a highlighted match snippet (``<mark>`` around each hit) showing
+    *why* the record matched (user research E3); otherwise it is the plain Dublin
+    Core summary. Every text piece passes through :func:`_esc`, so escaping is never
+    skipped even though the snippet interleaves literal ``<mark>`` tags.
+    """
+    if query.strip():
+        snip = search.snippet(record, query)
+        if snip is not None:
+            return "".join(
+                f"<mark>{_esc(text)}</mark>" if matched else _esc(text)
+                for text, matched in snip.runs
+            )
+    return _esc(_summary_text(record))
+
+
+def _records_list_html(records: Iterable[DisclosedRecord], *, query: str = "") -> str:
     """Render the records as a semantic list — one accessible equivalent view.
 
     The list and the table (:func:`_records_table_html`) present the same data in
     two equally complete forms, so a user of either a screen reader or a small
     screen gets the full content (accessibility — documented non-visual
     equivalent). Link text is the record title (descriptive links, never "click
-    here"). All text is escaped (security).
+    here"). When ``query`` is set, each item shows a highlighted match snippet
+    instead of the generic summary (user research E3). All text is escaped (security).
     """
     items: list[str] = []
     for record in records:
-        summary = _summary_text(record)
+        detail = _result_detail(record, query)
         warn = ' <span class="badge">Content warning</span>' if record.content_warnings else ""
-        summary_html = f"<p>{_esc(summary)}</p>" if summary else ""
+        summary_html = f'<p class="result-detail">{detail}</p>' if detail else ""
         items.append(
             "    <li>\n"
             f'      <h3><a href="/record/{quote(record.record_id)}">'
@@ -152,25 +172,26 @@ def _records_list_html(records: Iterable[DisclosedRecord]) -> str:
     return f'<ul class="record-list">\n{body}\n</ul>'
 
 
-def _records_table_html(records: Iterable[DisclosedRecord]) -> str:
+def _records_table_html(records: Iterable[DisclosedRecord], *, query: str = "") -> str:
     """Render the records as a data table — the documented non-visual equivalent.
 
     The table carries a ``<caption>`` describing its purpose and ``<th scope>`` on
     every header so assistive technology can associate each cell with its column
     (accessibility). The "Content warning" column uses the literal word, never a
     colour or icon alone, so the signal survives for colour-blind and
-    text-only users (accessibility — colour is not the only signal). All cells are
-    escaped (security).
+    text-only users (accessibility — colour is not the only signal). When ``query``
+    is set the summary cell shows the same highlighted match snippet as the list, so
+    the two views stay equivalent (user research E3). All cells are escaped (security).
     """
     rows: list[str] = []
     for record in records:
         warn = "Yes" if record.content_warnings else "No"
-        summary = _summary_text(record)
+        detail = _result_detail(record, query)
         rows.append(
             "      <tr>\n"
             f'        <td><a href="/record/{quote(record.record_id)}">'
             f"{_esc(record.title)}</a></td>\n"
-            f"        <td>{_esc(summary)}</td>\n"
+            f"        <td>{detail}</td>\n"
             f"        <td>{warn}</td>\n"
             "      </tr>"
         )
@@ -265,11 +286,11 @@ def _browse_main_html(
         "    </div>\n"
         '    <section aria-labelledby="list-heading">\n'
         '      <h2 id="list-heading">Records (list view)</h2>\n'
-        f"      {_records_list_html(records)}\n"
+        f"      {_records_list_html(records, query=query)}\n"
         "    </section>\n"
         '    <section aria-labelledby="table-heading">\n'
         '      <h2 id="table-heading">Records (table view)</h2>\n'
-        f"      {_records_table_html(records)}\n"
+        f"      {_records_table_html(records, query=query)}\n"
         "    </section>\n"
         f"{facets}"
     )
