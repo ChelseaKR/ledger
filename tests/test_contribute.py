@@ -188,6 +188,7 @@ def test_submission_lands_sealed_pending_and_outs_no_one(
         base,
         "/contribute",
         {
+            "action": "submit",
             "title": "Thursday gathering",
             "account": "A public account of the night.",
             "visibility": "public",
@@ -224,7 +225,9 @@ def test_submission_without_contact_needs_no_identity(
     """A contribution with no contact stores a record with no identity ref."""
     archive, base = open_server
     status, _body = _post(
-        base, "/contribute", {"title": "Anon note", "account": "No contact given."}
+        base,
+        "/contribute",
+        {"action": "submit", "title": "Anon note", "account": "No contact given."},
     )
     assert status == 200
     record = archive._all_records()[0]
@@ -237,7 +240,64 @@ def test_invalid_submission_re_renders_form_with_error(
 ) -> None:
     """A submission missing required fields gets a 400 and a re-rendered form."""
     _archive, base = open_server
-    status, body = _post(base, "/contribute", {"title": "", "account": ""})
+    status, body = _post(base, "/contribute", {"action": "submit", "title": "", "account": ""})
     assert status == 400
     assert 'role="alert"' in body
     assert 'action="/contribute"' in body  # the form is shown again to fix it
+
+
+@pytest.mark.disclosure
+def test_preview_shows_stranger_view_without_storing(
+    open_server: tuple[Archive, str],
+) -> None:
+    """The default action previews what a stranger sees and stores nothing."""
+    archive, base = open_server
+    status, body = _post(
+        base,
+        "/contribute",
+        {
+            "action": "preview",
+            "title": "Thursday gathering",
+            "account": "A public account of the night.",
+            "visibility": "public",
+            "contributor_name": _SENTINEL,
+        },
+    )
+    assert status == 200
+    panel = _preview_panel(body)
+    # A public submission's account text appears in the stranger panel...
+    assert "A public account of the night." in panel
+    # ...but the sealed contact never appears in the panel, and nothing was stored.
+    assert _SENTINEL not in panel
+    assert archive._all_records() == []
+    # The form below is re-filled so the contributor never loses what they typed.
+    assert 'value="submit"' in body
+    assert f'value="{_SENTINEL}"' in body  # prefilled in their own contact field
+
+
+def _preview_panel(body: str) -> str:
+    """Extract just the stranger-view preview panel from the rendered page."""
+    start = body.index('<section class="preview"')
+    return body[start : body.index("</section>", start)]
+
+
+@pytest.mark.disclosure
+def test_preview_of_sealed_shows_a_stranger_sees_nothing(
+    open_server: tuple[Archive, str],
+) -> None:
+    """Previewing a community/sealed submission says a stranger sees nothing."""
+    _archive, base = open_server
+    status, body = _post(
+        base,
+        "/contribute",
+        {
+            "action": "preview",
+            "title": "Held back",
+            "account": "Secret account.",
+            "visibility": "community",
+        },
+    )
+    assert status == 200
+    panel = _preview_panel(body)
+    assert "A stranger sees nothing" in panel
+    assert "Secret account." not in panel  # the account is not exposed to a stranger

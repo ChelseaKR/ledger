@@ -44,7 +44,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlsplit
 
 from ledger import consent, contribute, i18n, oai, review, search
-from ledger.access import anonymous
+from ledger.access import anonymous, disclose, is_listable
 from ledger.access.grants import load_grants
 from ledger.errors import AccessDenied, LedgerError, ObjectNotFound
 from ledger.ingest import Archive
@@ -667,38 +667,54 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
 
     # --- contributor submission (opt-in write path) -------------------------
 
-    def _handle_contribute_form(self, *, error: str | None = None, status: int = 200) -> None:
+    def _handle_contribute_form(
+        self,
+        *,
+        error: str | None = None,
+        status: int = 200,
+        values: dict[str, str] | None = None,
+        preview_html: str | None = None,
+    ) -> None:
         """``GET /contribute`` — the accessible contribution form, when enabled.
 
         Returns a neutral 404 when the submission surface is off, so a read-only
         deployment never advertises a write path (least privilege). The form itself
-        is plain about review-before-publish and sealed contact (no-outing rule)."""
+        is plain about review-before-publish and sealed contact (no-outing rule);
+        ``values`` re-fills it after a preview or a validation error, and
+        ``preview_html`` shows the stranger-view panel above the form on a preview."""
         if not self._allow_contributions():
             self._handle_not_found()
             return
         lang = self._lang()
-        main_html = contribute.render_contribute_main(self._archive().config, error=error)
+        main_html = contribute.render_contribute_main(
+            self._archive().config, error=error, values=values, preview_html=preview_html
+        )
         self._send_html(
             status, _page("Contribute", lang=lang, main_html=main_html, nav_html=self._nav())
         )
 
     def _post_contribute(self) -> None:
-        """``POST /contribute`` — accept a submission through the one ingest path.
+        """``POST /contribute`` — preview, edit, or submit a contribution.
 
-        The submission is built into a *sealed-pending* record (nothing is published
-        by inaction) and any contributor contact is sealed into the identity vault by
-        :meth:`Archive.ingest`; the confirmation page echoes back none of it (the
-        no-outing rule, by construction). Invalid input re-renders the form with a
-        generic message and a 400; a sealing failure (e.g. a missing vault key)
-        renders a safe error that names no submitted value."""
+        The form's primary action is **preview**: the contributor first sees exactly
+        what a stranger would see if it were published at the requested visibility,
+        with nothing stored. **edit** returns to the form with their entries intact.
+        Only **submit** stores it — sealed-pending, through the one ingest path, with
+        any contact sealed into the vault and never echoed (the no-outing rule). A
+        validation error re-renders the form (with the entries kept); a sealing
+        failure declines without naming anything submitted."""
         if not self._allow_contributions():
             self._handle_not_found()
             return
         form = self._read_form()
+        action = form.get("action", "preview")
         try:
             submission = contribute.parse_submission(form, self._archive().config)
         except LedgerError as exc:
-            self._handle_contribute_form(error=str(exc), status=400)
+            self._handle_contribute_form(error=str(exc), status=400, values=form)
+            return
+        if action != "submit":
+            self._render_contribute_preview(submission, form)
             return
         stamp = now_iso()
         try:
@@ -714,6 +730,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             self._handle_contribute_form(
                 error="Your contribution could not be saved right now. Please try again.",
                 status=503,
+                values=form,
             )
             return
         # Queue it for steward review. The entry is identity-free (id + timestamp);
@@ -729,6 +746,27 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
                 nav_html=self._nav(),
             ),
         )
+
+    def _render_contribute_preview(
+        self, submission: contribute.Submission, form: dict[str, str]
+    ) -> None:
+        """Re-render the form with a "what a stranger sees" panel, storing nothing.
+
+        Simulates the published state (default policy opened to the requested
+        visibility) and discloses it to the anonymous public through the single
+        disclosure chokepoint, so the preview cannot show a stranger more than a real
+        read path would. When the record would not be listable to a stranger, the
+        panel honestly says a stranger sees nothing. The contributor's entries are
+        re-filled into the form below the panel — their sealed contact is never in
+        the panel itself."""
+        preview = contribute.preview_record(submission)
+        now = now_iso()
+        stranger_view = (
+            disclose(preview, anonymous(), now) if is_listable(preview, anonymous(), now) else None
+        )
+        visibility = form.get("visibility") or "community"
+        panel = contribute.render_preview_panel(stranger_view, visibility=visibility)
+        self._handle_contribute_form(values=form, preview_html=panel)
 
     # --- health -------------------------------------------------------------
 

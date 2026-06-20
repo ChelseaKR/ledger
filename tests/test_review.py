@@ -131,6 +131,7 @@ def _submit(base: str, visibility: str = "public") -> None:
         base,
         "/contribute",
         data={
+            "action": "submit",
             "title": "Thursday gathering",
             "account": "A public account.",
             "visibility": visibility,

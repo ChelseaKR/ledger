@@ -417,3 +417,15 @@ p.error {
   border-radius: var(--radius);
   padding: 0.5rem 0.75rem;
 }
+
+/* --- contribution preview panel ---------------------------------------- */
+.preview {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--space);
+  margin: var(--space) 0;
+}
+.preview h2 {
+  margin-top: 0;
+}
