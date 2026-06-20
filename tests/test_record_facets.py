@@ -8,7 +8,7 @@ escaped and query-quoted, so a crafted metadata value cannot inject markup.
 
 from __future__ import annotations
 
-from ledger.models import DisclosedRecord
+from ledger.models import DisclosedRecord, Redaction
 from ledger.render import _record_main_html
 
 
@@ -48,3 +48,24 @@ def test_facet_value_is_escaped_and_quoted() -> None:
     html = _record_main_html(record, proceed=True)
     assert "<script>" not in html  # never rendered as live markup
     assert "&lt;script&gt;" in html  # shown as escaped text
+
+
+def test_record_page_is_localized() -> None:
+    """The record page chrome (headings, links, withheld note) renders in Spanish."""
+    record = DisclosedRecord(
+        record_id="rec-1",
+        title="Un registro",
+        dublin_core={"subject": ["vivienda"]},
+        fields={"account": "El relato."},
+        payloads=(),
+        content_warnings=(),
+        withheld=(Redaction(name="contact", reason="sealed", category="sealed"),),
+    )
+    html = _record_main_html(record, proceed=True, lang="es")
+    assert "Metadatos de catálogo" in html  # the Dublin Core section heading
+    assert "Detalles" in html  # the fields section heading
+    assert "Retenido" in html  # the withheld section heading
+    assert "consentimiento" in html  # the contributor consent link
+    # The English equivalents are gone.
+    assert "Catalogue metadata" not in html
+    assert "Withheld" not in html

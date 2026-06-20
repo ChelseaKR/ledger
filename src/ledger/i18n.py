@@ -158,6 +158,31 @@ _CATALOG: dict[str, dict[str, str]] = {
         "cs_status_resolved": "Resolved — a steward has acted on it.",
         "cs_ref_label": "Your request reference",
         "cs_button": "Check status",
+        # --- single record page ---
+        "rec_cw_review": (
+            "This record carries the following content warnings. Review them before continuing."
+        ),
+        "rec_cw_note": "Content warnings:",
+        "rec_content_sr": "Record content.",
+        "rec_fields_heading": "Details",
+        "rec_catalogue_heading": "Catalogue metadata",
+        "rec_files_heading": "Files",
+        "rec_withheld_heading": "Withheld",
+        "rec_withheld_insider": (
+            "Some parts of this record are not available under your current access:"
+        ),
+        "rec_withheld_outsider_one": (
+            "{count} detail is restricted under your current access. If you are a "
+            "community member or steward, sign in to see what is withheld and why."
+        ),
+        "rec_withheld_outsider_many": (
+            "{count} details are restricted under your current access. If you are a "
+            "community member or steward, sign in to see what is withheld and why."
+        ),
+        "rec_consent_link": "Are you the contributor? Manage or withdraw your consent",
+        "rec_object_link": "Are you named in this record and object to it? Tell a steward",
+        "payload_transcript": "Transcript",
+        "payload_no_transcript": "No transcript provided for this audio/video.",
         # --- contribution form (the contributor write path) ---
         "contribute_heading": "Contribute to the archive",
         "contribute_intro": (
@@ -414,6 +439,36 @@ _CATALOG: dict[str, dict[str, str]] = {
         "cs_status_resolved": "Resuelta — una persona responsable ha actuado sobre ella.",
         "cs_ref_label": "La referencia de su solicitud",
         "cs_button": "Consultar el estado",
+        # --- página de un registro ---
+        "rec_cw_review": (
+            "Este registro lleva las siguientes advertencias de contenido. Revíselas "
+            "antes de continuar."
+        ),
+        "rec_cw_note": "Advertencias de contenido:",
+        "rec_content_sr": "Contenido del registro.",
+        "rec_fields_heading": "Detalles",
+        "rec_catalogue_heading": "Metadatos de catálogo",
+        "rec_files_heading": "Archivos",
+        "rec_withheld_heading": "Retenido",
+        "rec_withheld_insider": (
+            "Algunas partes de este registro no están disponibles con su acceso actual:"
+        ),
+        "rec_withheld_outsider_one": (
+            "{count} detalle está restringido con su acceso actual. Si es miembro de la "
+            "comunidad o persona responsable, inicie sesión para ver qué se retiene y "
+            "por qué."
+        ),
+        "rec_withheld_outsider_many": (
+            "{count} detalles están restringidos con su acceso actual. Si es miembro de "
+            "la comunidad o persona responsable, inicie sesión para ver qué se retiene y "
+            "por qué."
+        ),
+        "rec_consent_link": "¿Es usted el colaborador? Gestione o retire su consentimiento",
+        "rec_object_link": (
+            "¿Está nombrado en este registro y se opone a él? Avise a una persona responsable"
+        ),
+        "payload_transcript": "Transcripción",
+        "payload_no_transcript": "No se proporcionó transcripción para este audio/vídeo.",
         # --- formulario de contribución ---
         "contribute_heading": "Contribuir al archivo",
         "contribute_intro": (

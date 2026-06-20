@@ -365,7 +365,7 @@ def _browse_main_html(
     )
 
 
-def _payload_li(rid: str, p: PayloadFile) -> str:
+def _payload_li(rid: str, p: PayloadFile, *, lang: str = "en") -> str:
     """One payload list item: the download link plus its transcript, if any.
 
     A transcript/caption is surfaced in a ``<details>`` so audio or video content is
@@ -380,12 +380,12 @@ def _payload_li(rid: str, p: PayloadFile) -> str:
     if p.transcript:
         base += (
             '\n        <details class="transcript">\n'
-            "          <summary>Transcript</summary>\n"
+            f"          <summary>{_esc(i18n.t(lang, 'payload_transcript'))}</summary>\n"
             f"          <p>{_esc(p.transcript)}</p>\n"
             "        </details>"
         )
     elif p.media_type.startswith(("audio/", "video/")):
-        base += '\n        <p class="muted">No transcript provided for this audio/video.</p>'
+        base += f'\n        <p class="muted">{_esc(i18n.t(lang, "payload_no_transcript"))}</p>'
     return base + "</li>"
 
 
@@ -443,8 +443,7 @@ def _record_main_html(
             '    <section class="interstitial" role="alert" aria-labelledby="cw-heading">\n'
             f'      <h1 id="cw-heading" tabindex="-1">{_esc(i18n.t(lang, "content_warning_heading"))}'
             f": {_esc(record.title)}</h1>\n"
-            "      <p>This record carries the following content warnings. Review them "
-            "before continuing.</p>\n"
+            f"      <p>{_esc(i18n.t(lang, 'rec_cw_review'))}</p>\n"
             "      <ul>\n"
             f"{warnings}\n"
             "      </ul>\n"
@@ -459,11 +458,14 @@ def _record_main_html(
         # Even after proceeding, restate the warnings as text above the content so
         # the signal is never lost (safety, accessibility).
         warnings = ", ".join(_esc(w) for w in record.content_warnings)
+        note_label = _esc(i18n.t(lang, "rec_cw_note"))
         parts.append(
-            f'    <p class="cw-note" id="content"><strong>Content warnings:</strong> {warnings}</p>'
+            f'    <p class="cw-note" id="content"><strong>{note_label}</strong> {warnings}</p>'
         )
     else:
-        parts.append('    <p id="content" class="visually-hidden">Record content.</p>')
+        parts.append(
+            f'    <p id="content" class="visually-hidden">{_esc(i18n.t(lang, "rec_content_sr"))}</p>'
+        )
 
     # Disclosed descriptive fields.
     if record.fields:
@@ -473,7 +475,7 @@ def _record_main_html(
         )
         parts.append(
             '    <section aria-labelledby="fields-heading">\n'
-            '      <h2 id="fields-heading">Details</h2>\n'
+            f'      <h2 id="fields-heading">{_esc(i18n.t(lang, "rec_fields_heading"))}</h2>\n'
             "      <dl>\n"
             f"{rows}\n"
             "      </dl>\n"
@@ -493,7 +495,7 @@ def _record_main_html(
     if dc_rows:
         parts.append(
             '    <section aria-labelledby="meta-heading">\n'
-            '      <h2 id="meta-heading">Catalogue metadata</h2>\n'
+            f'      <h2 id="meta-heading">{_esc(i18n.t(lang, "rec_catalogue_heading"))}</h2>\n'
             "      <dl>\n" + "\n".join(dc_rows) + "\n      </dl>\n"
             "    </section>"
         )
@@ -501,10 +503,10 @@ def _record_main_html(
     # Payload files the viewer may see — each is a real, fixity-verified download
     # link (user research C4: the filename was previously an inert false affordance).
     if record.payloads:
-        files = "\n".join(_payload_li(rid, p) for p in record.payloads)
+        files = "\n".join(_payload_li(rid, p, lang=lang) for p in record.payloads)
         parts.append(
             '    <section aria-labelledby="files-heading">\n'
-            '      <h2 id="files-heading">Files</h2>\n'
+            f'      <h2 id="files-heading">{_esc(i18n.t(lang, "rec_files_heading"))}</h2>\n'
             "      <ul>\n"
             f"{files}\n"
             "      </ul>\n"
@@ -520,20 +522,16 @@ def _record_main_html(
                 f"      <li>{_esc(r.name)} — {_esc(r.reason)}</li>" for r in record.withheld
             )
             body = (
-                "      <p>Some parts of this record are not available under your current "
-                "access:</p>\n"
+                f"      <p>{_esc(i18n.t(lang, 'rec_withheld_insider'))}</p>\n"
                 f'      <ul class="withheld-list">\n{rows}\n      </ul>'
             )
         else:
             n = len(record.withheld)
-            noun = "detail is" if n == 1 else "details are"
-            body = (
-                f"      <p>{n} {noun} restricted under your current access. If you are "
-                "a community member or steward, sign in to see what is withheld and why.</p>"
-            )
+            key = "rec_withheld_outsider_one" if n == 1 else "rec_withheld_outsider_many"
+            body = f"      <p>{_esc(i18n.t(lang, key, count=n))}</p>"
         parts.append(
             '    <section aria-labelledby="redactions-heading">\n'
-            '      <h2 id="redactions-heading">Withheld</h2>\n'
+            f'      <h2 id="redactions-heading">{_esc(i18n.t(lang, "rec_withheld_heading"))}</h2>\n'
             f"{body}\n"
             "    </section>"
         )
@@ -543,13 +541,13 @@ def _record_main_html(
     # ingest) lets the actual contributor file a request.
     parts.append(
         f'    <p class="consent-link"><a href="/record/{quote(rid)}/consent">'
-        "Are you the contributor? Manage or withdraw your consent</a></p>"
+        f"{_esc(i18n.t(lang, 'rec_consent_link'))}</a></p>"
     )
     # A person *named* in a record they did not contribute can object (user research
     # B3 — subjects have agency too, not only the contributor).
     parts.append(
         f'    <p class="object-link"><a href="/record/{quote(rid)}/object">'
-        "Are you named in this record and object to it? Tell a steward</a></p>"
+        f"{_esc(i18n.t(lang, 'rec_object_link'))}</a></p>"
     )
     parts.append(f'    <p><a href="/">{_esc(i18n.t(lang, "back_to_records"))}</a></p>')
     return "\n".join(parts)
