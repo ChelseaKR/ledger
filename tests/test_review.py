@@ -1,0 +1,211 @@
+"""Tests for the steward submission-review loop (`ledger.review` + the console).
+
+A contribution lands sealed-pending; a steward must make the deliberate act that
+opens it. These tests pin that loop: the queue is identity-free, the console shows
+pending submissions to a steward only, **publish** opens a record to the requested
+visibility, **withhold** holds it for stewards, and neither the queue nor the
+console ever leaks a contributor identity.
+"""
+
+from __future__ import annotations
+
+import json
+import threading
+import urllib.error
+import urllib.parse
+import urllib.request
+from collections.abc import Iterator
+from contextlib import redirect_stderr, redirect_stdout
+from io import StringIO
+from pathlib import Path
+
+import pytest
+
+from ledger.access.grants import anonymous, community_member
+from ledger.config import Config
+from ledger.ingest import Archive
+from ledger.models import AccessPolicy
+from ledger.review import SubmissionQueue
+from ledger.server import make_server
+
+_SENTINEL = "SENTINEL-REVIEW-DO-NOT-LEAK-5R1T"
+_VAULT_KEY = "0123456789abcdef0123456789abcdef0123456789a="
+_NOW = "2026-06-17T00:00:00Z"
+
+
+# --- unit: the queue --------------------------------------------------------
+
+
+@pytest.mark.disclosure
+def test_submission_queue_add_pending_remove(tmp_path: Path) -> None:
+    """The queue holds opaque ids in order, is idempotent, and removes cleanly."""
+    q = SubmissionQueue(tmp_path / "queue.json")
+    assert q.pending() == []
+    q.add("rec-a", now=_NOW)
+    q.add("rec-b", now=_NOW)
+    q.add("rec-a", now=_NOW)  # idempotent
+    assert [p.record_id for p in q.pending()] == ["rec-a", "rec-b"]
+    assert q.contains("rec-a")
+    q.remove("rec-a")
+    assert [p.record_id for p in q.pending()] == ["rec-b"]
+    q.remove("rec-a")  # idempotent
+    assert [p.record_id for p in q.pending()] == ["rec-b"]
+
+
+@pytest.mark.disclosure
+def test_submission_queue_entries_are_identity_free(tmp_path: Path) -> None:
+    """A queue entry serializes only a record id and a timestamp — never content."""
+    q = SubmissionQueue(tmp_path / "queue.json")
+    q.add("rec-x", now=_NOW)
+    on_disk = (tmp_path / "queue.json").read_text(encoding="utf-8")
+    assert "rec-x" in on_disk
+    assert set(json.loads(on_disk)[0].keys()) == {"record_id", "submitted_at"}
+
+
+# --- integration: the live console + review ---------------------------------
+
+
+def _grants_file(tmp_path: Path) -> Path:
+    path = tmp_path / "grants.json"
+    path.write_text(
+        json.dumps(
+            {"steward-1": {"levels": ["public", "community", "stewards"], "is_steward": True}}
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+@pytest.fixture
+def server(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[Archive, str]]:
+    """A running server with contributions enabled, a vault key, and a steward grant."""
+    monkeypatch.setenv("LEDGER_VAULT_KEY", _VAULT_KEY)
+    archive = Archive.init(Config.default("Review Archive", tmp_path / "arc"))
+    httpd = make_server(
+        archive,
+        host="127.0.0.1",
+        port=0,
+        grants_path=_grants_file(tmp_path),
+        allow_contributions=True,
+    )
+    base = f"http://127.0.0.1:{int(httpd.server_address[1])}"
+    sink = StringIO()
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    with redirect_stderr(sink), redirect_stdout(sink):
+        thread.start()
+        try:
+            yield archive, base
+        finally:
+            httpd.shutdown()
+            thread.join(timeout=5)
+            httpd.server_close()
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Do not follow 3xx, so a test can assert the real redirect status (e.g. 303)."""
+
+    def redirect_request(self, *args: object, **kwargs: object) -> None:
+        return None
+
+
+_OPENER = urllib.request.build_opener(_NoRedirect)
+
+
+def _req(
+    base: str, path: str, *, data: dict[str, str] | None = None, steward: bool = False
+) -> tuple[int, str]:
+    body = urllib.parse.urlencode(data).encode("utf-8") if data is not None else None
+    headers = {"X-Ledger-Grant": "steward-1"} if steward else {}
+    if body is not None:
+        headers["Content-Type"] = "application/x-www-form-urlencoded"
+    req = urllib.request.Request(f"{base}{path}", data=body, headers=headers)  # noqa: S310
+    try:
+        with _OPENER.open(req, timeout=10) as resp:
+            return int(resp.status), resp.read().decode("utf-8")
+    except urllib.error.HTTPError as exc:
+        return int(exc.code), exc.read().decode("utf-8")
+
+
+def _submit(base: str, visibility: str = "public") -> None:
+    status, _ = _req(
+        base,
+        "/contribute",
+        data={
+            "title": "Thursday gathering",
+            "account": "A public account.",
+            "visibility": visibility,
+            "contributor_name": _SENTINEL,
+        },
+    )
+    assert status == 200
+
+
+@pytest.mark.disclosure
+def test_console_shows_pending_submission_to_steward_only(server: tuple[Archive, str]) -> None:
+    """A submitted record appears in the steward console — and never to a non-steward."""
+    archive, base = server
+    _submit(base)
+    rid = archive._all_records()[0].record_id
+
+    # Steward sees it, with action buttons, and no identity sentinel.
+    status, body = _req(base, "/steward", steward=True)
+    assert status == 200
+    assert "Submissions awaiting review" in body
+    assert rid in body
+    assert 'value="publish"' in body and 'value="withhold"' in body
+    assert _SENTINEL not in body
+
+    # A non-steward gets a neutral 404 for the whole console.
+    assert _req(base, "/steward")[0] == 404
+
+
+@pytest.mark.disclosure
+def test_publish_opens_record_to_requested_visibility(server: tuple[Archive, str]) -> None:
+    """Publishing a sealed-pending submission makes it listable and clears the queue."""
+    archive, base = server
+    _submit(base, visibility="public")
+    rid = archive._all_records()[0].record_id
+    assert archive.browse(anonymous()) == []  # sealed-pending: invisible
+
+    status, _ = _req(
+        base, f"/steward/submissions/{rid}/review", data={"action": "publish"}, steward=True
+    )
+    assert status == 303
+
+    # Now anonymous can list it, and it left the queue.
+    listed = archive.browse(anonymous())
+    assert [r.record_id for r in listed] == [rid]
+    assert SubmissionQueue(archive.logs_dir / "submission-queue.json").pending() == []
+    # Re-loading the record confirms the default policy was opened to PUBLIC.
+    assert archive.get(rid).default_policy is AccessPolicy.PUBLIC
+
+
+@pytest.mark.disclosure
+def test_withhold_holds_record_for_stewards(server: tuple[Archive, str]) -> None:
+    """Withholding restricts the record to stewards and clears the queue."""
+    archive, base = server
+    _submit(base, visibility="public")
+    rid = archive._all_records()[0].record_id
+
+    status, _ = _req(
+        base, f"/steward/submissions/{rid}/review", data={"action": "withhold"}, steward=True
+    )
+    assert status == 303
+
+    assert archive.browse(anonymous()) == []
+    assert archive.browse(community_member("member")) == []
+    assert archive.get(rid).default_policy is AccessPolicy.STEWARDS
+    assert SubmissionQueue(archive.logs_dir / "submission-queue.json").pending() == []
+
+
+@pytest.mark.disclosure
+def test_non_steward_cannot_review(server: tuple[Archive, str]) -> None:
+    """A non-steward review POST 404s and leaves the submission untouched."""
+    archive, base = server
+    _submit(base)
+    rid = archive._all_records()[0].record_id
+
+    assert _req(base, f"/steward/submissions/{rid}/review", data={"action": "publish"})[0] == 404
+    # Still pending, still sealed.
+    assert SubmissionQueue(archive.logs_dir / "submission-queue.json").contains(rid)
+    assert archive.browse(anonymous()) == []

@@ -134,9 +134,12 @@ ledger serve --root /data --allow-contributions
 
 Safety properties of the contribution path, by construction:
 
-- **Nothing is published by submitting.** Every submission lands *sealed-pending*; a
-  steward must review it (`ledger browse --as steward`, then `ledger policy …`)
-  before it becomes visible. Nothing goes public by inaction.
+- **Nothing is published by submitting.** Every submission lands *sealed-pending* and
+  is queued for review. A steward opens the **`/steward` console** (with a steward
+  grant) and **Publishes** it (opening it to the visibility the contributor asked for)
+  or **Withholds** it (held for revision) — each choice recorded as an audited event.
+  Nothing goes public by inaction. (The CLI `ledger policy` / `takedown` / `cw` still
+  work for any out-of-band change.)
 - **No-outing.** A contributor's name/contact is optional, sealed into the vault on
   submit, and never echoed on the confirmation page, in a log, or in an error.
 - **Off by default.** A read-only deployment never grows a write path unless you opt

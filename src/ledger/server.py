@@ -43,12 +43,13 @@ import time
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlsplit
 
-from ledger import consent, contribute, i18n, oai, search
+from ledger import consent, contribute, i18n, oai, review, search
 from ledger.access import anonymous
 from ledger.access.grants import load_grants
 from ledger.errors import AccessDenied, LedgerError, ObjectNotFound
 from ledger.ingest import Archive
-from ledger.models import DisclosedRecord, Grant, now_iso
+from ledger.models import AccessPolicy, DisclosedRecord, Grant, now_iso
+from ledger.moderate import change_consent
 from ledger.render import (
     _browse_main_html,
     _error_main_html,
@@ -299,6 +300,9 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             elif path.startswith("/steward/requests/") and path.endswith("/resolve"):
                 rid = path[len("/steward/requests/") : -len("/resolve")]
                 self._post_resolve_request(rid)
+            elif path.startswith("/steward/submissions/") and path.endswith("/review"):
+                rid = path[len("/steward/submissions/") : -len("/review")]
+                self._post_review_submission(rid)
             else:
                 self._handle_not_found()
         except BrokenPipeError:  # pragma: no cover - client disconnected
@@ -320,6 +324,9 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
 
     def _consent_store(self) -> consent.ConsentRequestStore:
         return consent.ConsentRequestStore(self._archive().logs_dir / "consent-requests.json")
+
+    def _submission_queue(self) -> review.SubmissionQueue:
+        return review.SubmissionQueue(self._archive().logs_dir / "submission-queue.json")
 
     def _post_consent(self, raw_id: str) -> None:
         """``POST /record/{id}/consent`` — file a contributor consent request.
@@ -386,6 +393,50 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("Location", "/steward")
         self.end_headers()
 
+    def _post_review_submission(self, raw_id: str) -> None:
+        """``POST /steward/submissions/{id}/review`` — approve or withhold a submission.
+
+        Steward-gated. A submission lands sealed-pending; this is where a steward
+        makes the deliberate act that opens it (Hard Rule 2 — nothing publishes by
+        inaction). ``publish`` opens the record to the visibility the contributor
+        requested (carried on the ``account`` field); ``withhold`` restricts it to
+        stewards, held for revision. Either way the decision is recorded as an
+        accountable, audited :func:`ledger.moderate.change_consent` event and the
+        record leaves the queue. No identity or submitted content is logged."""
+        grant = self._resolve_grant()
+        if not grant.is_steward:
+            self._handle_not_found()
+            return
+        record_id = _decode_id(raw_id)
+        action = self._read_form().get("action", "")
+        if action not in {"publish", "withhold"}:
+            self._handle_not_found()
+            return
+        archive = self._archive()
+        try:
+            record = archive.get(record_id)
+        except ObjectNotFound:
+            # The record is gone; just clear the stale queue entry and return.
+            self._submission_queue().remove(record_id)
+        else:
+            if action == "publish":
+                target = next(
+                    (f.policy for f in record.fields if f.name == "account"),
+                    AccessPolicy.COMMUNITY,
+                )
+                reason = "approved from the steward review queue"
+            else:
+                target = AccessPolicy.STEWARDS
+                reason = "withheld at steward review, pending revision"
+            updated, event, _action = change_consent(
+                record, target, actor=grant.subject, reason=reason, now=now_iso()
+            )
+            archive.apply_update(updated, event)
+            self._submission_queue().remove(record_id)
+        self.send_response(303)
+        self.send_header("Location", "/steward")
+        self.end_headers()
+
     def _handle_steward_console(self) -> None:
         """``GET /steward`` — a steward's accountable console (gated).
 
@@ -399,6 +450,32 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         if not grant.is_steward:
             self._handle_not_found()
             return
+        archive = self._archive()
+        pending = self._submission_queue().pending()
+        if pending:
+            sub_rows = []
+            for item in pending:
+                try:
+                    title = archive.get(item.record_id).title
+                except ObjectNotFound:
+                    title = "(record unavailable)"
+                sub_rows.append(
+                    "      <li>\n"
+                    f"        <strong>{_esc(title)}</strong> "
+                    f'<a href="/record/{quote(item.record_id)}">{_esc(item.record_id)}</a> '
+                    f'<span class="muted">(submitted {_esc(item.submitted_at)})</span>\n'
+                    '        <form method="post" '
+                    f'action="/steward/submissions/{quote(item.record_id)}/review">\n'
+                    '          <button type="submit" name="action" value="publish">'
+                    "Publish (as requested)</button>\n"
+                    '          <button type="submit" name="action" value="withhold">'
+                    "Withhold</button>\n"
+                    "        </form>\n"
+                    "      </li>"
+                )
+            submissions_html = f'    <ul class="submissions">\n{chr(10).join(sub_rows)}\n    </ul>'
+        else:
+            submissions_html = "    <p>No submissions awaiting review.</p>"
         open_reqs = self._consent_store().open_requests()
         if open_reqs:
             rows = "\n".join(
@@ -418,6 +495,13 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             requests_html = "    <p>No open requests.</p>"
         main_html = (
             "    <h1>Steward console</h1>\n"
+            '    <section aria-labelledby="sub-heading">\n'
+            '      <h2 id="sub-heading">Submissions awaiting review</h2>\n'
+            "      <p>Contributions arrive sealed — nothing is visible until you publish "
+            "it. Publishing opens a record to the visibility the contributor asked for; "
+            "withholding holds it for revision. Every choice is recorded.</p>\n"
+            f"{submissions_html}\n"
+            "    </section>\n"
             '    <section aria-labelledby="req-heading">\n'
             '      <h2 id="req-heading">Open consent &amp; takedown requests</h2>\n'
             f"{requests_html}\n"
@@ -616,13 +700,14 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         except LedgerError as exc:
             self._handle_contribute_form(error=str(exc), status=400)
             return
+        stamp = now_iso()
         try:
             self._archive().ingest(
                 {},
                 submission.record,
                 identity=submission.identity,
                 agent="contribution",
-                now=now_iso(),
+                now=stamp,
             )
         except LedgerError:
             # Name nothing the contributor submitted; just decline cleanly.
@@ -631,6 +716,9 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
                 status=503,
             )
             return
+        # Queue it for steward review. The entry is identity-free (id + timestamp);
+        # the record stays sealed-pending until a steward acts (Hard Rule 2).
+        self._submission_queue().add(submission.record.record_id, now=stamp)
         lang = self._lang()
         self._send_html(
             200,

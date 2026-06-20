@@ -33,7 +33,7 @@ from ledger.access.grants import anonymous, community_member, steward
 from ledger.config import Config, StorageLocation
 from ledger.errors import LedgerError
 from ledger.identity import ContributorIdentity
-from ledger.ingest import Archive, serialize_record
+from ledger.ingest import Archive
 from ledger.metadata.premis import PremisLog
 from ledger.models import (
     AccessPolicy,
@@ -237,27 +237,13 @@ def _cmd_audit(args: argparse.Namespace) -> int:
 
 
 def _persist_record(archive: Archive, record: Record, event: PremisEvent) -> None:
-    """Write an updated record manifest and append a PREMIS event to its bag.
+    """Persist an updated record manifest and PREMIS event via the archive.
 
-    Persists the change to the fast-lookup ``records/`` copy and to the in-bag
-    manifest so the next disclosure reflects it, and appends ``event`` to the
-    bag's PREMIS log so the action is auditable (accountability, traceability).
-    All writes go through the identity-refusing :func:`serialize_record`, so a
-    persisted manifest can never carry an in-memory identity (no-outing rule).
+    Thin wrapper over :meth:`Archive.apply_update` (the shared write path) so the
+    CLI and the server persist post-ingest changes identically (no-outing rule is
+    enforced once, in one place).
     """
-    manifest = serialize_record(record)
-    fast = archive.records_dir / f"{record.record_id}.json"
-    fast.write_text(manifest, encoding="utf-8", newline="\n")
-
-    bag_dir = archive.bags_dir / record.record_id
-    in_bag = bag_dir / "record.json"
-    if in_bag.exists():
-        in_bag.write_text(manifest, encoding="utf-8", newline="\n")
-    premis_path = bag_dir / _PREMIS_FILENAME
-    if premis_path.exists():
-        log = PremisLog.read(premis_path)
-        log.record(event)
-        log.write(premis_path)
+    archive.apply_update(record, event)
 
 
 def _cmd_policy(args: argparse.Namespace) -> int:

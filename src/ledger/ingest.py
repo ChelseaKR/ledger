@@ -597,6 +597,31 @@ class Archive:
             return deserialize_record(in_bag.read_text(encoding="utf-8"))
         raise ObjectNotFound(record_id)
 
+    def apply_update(self, record: Record, event: PremisEvent) -> None:
+        """Persist an updated record manifest and append a PREMIS event to its bag.
+
+        The shared write path behind every post-ingest change (a consent/policy
+        change, a content warning, a review decision): it rewrites the fast-lookup
+        ``records/`` copy and the in-bag manifest so the next disclosure reflects the
+        change, and appends ``event`` to the bag's PREMIS log so the action is
+        auditable (accountability, traceability). All writes go through the
+        identity-refusing :func:`serialize_record`, so a persisted manifest can never
+        carry an in-memory identity (no-outing rule).
+        """
+        manifest = serialize_record(record)
+        fast = self.records_dir / f"{record.record_id}.json"
+        fast.write_text(manifest, encoding="utf-8", newline="\n")
+
+        bag_dir = self.bags_dir / record.record_id
+        in_bag = bag_dir / _RECORD_FILENAME
+        if in_bag.exists():
+            in_bag.write_text(manifest, encoding="utf-8", newline="\n")
+        premis_path = bag_dir / _PREMIS_FILENAME
+        if premis_path.exists():
+            log = PremisLog.read(premis_path)
+            log.record(event)
+            log.write(premis_path)
+
     def disclose(
         self,
         record_id: str,
