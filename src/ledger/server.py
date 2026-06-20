@@ -61,7 +61,7 @@ from ledger.models import (
     Record,
     now_iso,
 )
-from ledger.moderate import change_consent
+from ledger.moderate import change_consent, takedown
 from ledger.render import (
     _browse_main_html,
     _error_main_html,
@@ -344,6 +344,8 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
                 self._handle_steward_audit()
             elif path == "/contribute":
                 self._handle_contribute_form()
+            elif path == "/withdraw":
+                self._handle_withdraw_form()
             elif path.startswith("/record/") and "/file/" in path:
                 rid, _, name = path[len("/record/") :].partition("/file/")
                 self._handle_file(rid, name)
@@ -376,6 +378,8 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         try:
             if path == "/contribute":
                 self._post_contribute()
+            elif path == "/withdraw":
+                self._post_withdraw()
             elif path.startswith("/record/") and path.endswith("/consent"):
                 self._post_consent(path[len("/record/") : -len("/consent")])
             elif path.startswith("/record/") and path.endswith("/object"):
@@ -1062,14 +1066,23 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
                 return
         # Queue it for steward review. The entry is identity-free (id + timestamp);
         # the record stays sealed-pending until a steward acts (Hard Rule 2).
-        self._submission_queue().add(submission.record.record_id, now=stamp)
+        record_id = submission.record.record_id
+        self._submission_queue().add(record_id, now=stamp)
+        # Hand the contributor a reference + a claim token (a capability, not an
+        # identity) so they can withdraw the submission themselves while it is still
+        # pending. Only when a claim secret is configured; otherwise the thanks page
+        # stays generic and self-withdrawal is unavailable.
+        claim_token = self._claim_token(record_id)
         lang = self._lang()
         self._send_html(
             200,
             _page(
                 "Thank you",
                 lang=lang,
-                main_html=contribute.render_thanks_main(),
+                main_html=contribute.render_thanks_main(
+                    reference=record_id if claim_token else None,
+                    claim_token=claim_token,
+                ),
                 nav_html=self._nav(),
             ),
         )
@@ -1130,6 +1143,100 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         visibility = form.get("visibility") or "community"
         panel = contribute.render_preview_panel(stranger_view, visibility=visibility)
         self._handle_contribute_form(values=form, preview_html=panel)
+
+    # --- contributor self-service withdrawal --------------------------------
+
+    def _claim_secret(self) -> bytes:
+        """The configured claim secret as bytes, or empty when none is set."""
+        return os.environ.get("LEDGER_CLAIM_SECRET", "").encode("utf-8")
+
+    def _claim_token(self, record_id: str) -> str | None:
+        """A claim token for ``record_id``, or ``None`` when no claim secret is set."""
+        secret = self._claim_secret()
+        return consent.issue_claim_token(record_id, secret) if secret else None
+
+    def _withdrawal_enabled(self) -> bool:
+        """Self-withdrawal needs both the contribution surface and a claim secret.
+
+        Without contributions there is nothing to withdraw; without a claim secret no
+        token was ever issued, so authorship cannot be proven and the surface stays
+        closed (least privilege)."""
+        return self._allow_contributions() and bool(self._claim_secret())
+
+    def _handle_withdraw_form(self, *, error: str | None = None, reference: str = "") -> None:
+        """``GET /withdraw`` — the form to withdraw a still-pending submission.
+
+        A neutral 404 when self-withdrawal is off, so a deployment without it never
+        advertises the path (least privilege)."""
+        if not self._withdrawal_enabled():
+            self._handle_not_found()
+            return
+        lang = self._lang()
+        main_html = contribute.render_withdraw_main(error=error, reference=reference)
+        self._send_html(
+            200, _page("Withdraw", lang=lang, main_html=main_html, nav_html=self._nav())
+        )
+
+    def _post_withdraw(self) -> None:
+        """``POST /withdraw`` — withdraw a pending submission given a valid claim token.
+
+        Permitted only while the submission is *still pending* (in the review queue,
+        never published): a contributor may freely undo their own not-yet-public
+        submission, but once a steward has published a record it is governed by the
+        normal consent/takedown path, not a self-service form. A valid claim token
+        proves authorship.
+
+        Every failure — unknown reference, bad token, or a record that is no longer
+        pending — returns the *same* neutral error, so the endpoint cannot be used as
+        an oracle to test whether a record exists or what state it is in (no-outing
+        rule). On success the one shared removal effect erases every copy and revokes
+        any sealed identity, the decision is recorded in the takedowns log, and the
+        confirmation names nothing that was withdrawn."""
+        if not self._withdrawal_enabled():
+            self._handle_not_found()
+            return
+        form = self._read_form()
+        reference = (form.get("ref") or "").strip()
+        claim = (form.get("claim") or "").strip()
+        secret = self._claim_secret()
+        queue = self._submission_queue()
+        authorized = (
+            bool(reference)
+            and consent.verify_claim_token(reference, claim, secret)
+            and queue.contains(reference)
+        )
+        if not authorized:
+            # One neutral message for every failure: never confirm a record exists.
+            self._handle_withdraw_form(
+                error="We could not withdraw a pending submission with that reference "
+                "and code. Check both and try again.",
+                reference=reference,
+            )
+            return
+        now = now_iso()
+        archive = self._archive()
+        # Record the accountable decision first (its "why" must outlive the data),
+        # then erase every copy through the one shared removal effect. The actor is
+        # the contributor themselves; the reason names no one.
+        event, _action = takedown(
+            reference,
+            actor="contributor",
+            reason="contributor withdrawal before publication",
+            now=now,
+        )
+        archive.log_takedown(event)
+        archive.remove_all_copies(reference)
+        queue.remove(reference)
+        lang = self._lang()
+        self._send_html(
+            200,
+            _page(
+                "Withdrawn",
+                lang=lang,
+                main_html=contribute.render_withdraw_done_main(),
+                nav_html=self._nav(),
+            ),
+        )
 
     # --- health -------------------------------------------------------------
 

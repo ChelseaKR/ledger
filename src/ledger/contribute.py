@@ -311,17 +311,93 @@ def render_preview_panel(stranger_view: DisclosedRecord | None, *, visibility: s
     )
 
 
-def render_thanks_main() -> str:
+def render_thanks_main(*, reference: str | None = None, claim_token: str | None = None) -> str:
     """Render the ``<main>`` confirmation shown after a submission.
 
-    Deliberately generic: it confirms receipt and review without echoing the title,
-    the account, or any contact detail back, so nothing a contributor typed — least
-    of all their identity — is reflected onto a page or into a log (no-outing rule).
-    """
+    Deliberately generic about *content*: it confirms receipt and review without
+    echoing the title, the account, or any contact detail back, so nothing a
+    contributor typed — least of all their identity — is reflected onto a page or
+    into a log (no-outing rule).
+
+    When the server can issue one, it also shows a ``reference`` (the record id) and a
+    ``claim_token`` (a *capability*, never an identity) the contributor can keep to
+    **withdraw** the submission themselves before a steward publishes it. Showing
+    these does not breach no-outing: neither says who contributed — they only prove
+    authorship of this one record. The page tells the contributor to keep them
+    private, since together they authorise withdrawal."""
+    if reference and claim_token:
+        withdraw_block = (
+            '    <section class="claim" aria-labelledby="claim-heading">\n'
+            '      <h2 id="claim-heading">Keep this if you might change your mind</h2>\n'
+            "      <p>While your submission is still waiting for review you can withdraw "
+            "it yourself. To do that you will need both of these — keep them private, "
+            "as together they let someone withdraw this submission:</p>\n"
+            "      <dl>\n"
+            "        <dt>Reference</dt>\n"
+            f"        <dd><code>{_esc(reference)}</code></dd>\n"
+            "        <dt>Withdrawal code</dt>\n"
+            f"        <dd><code>{_esc(claim_token)}</code></dd>\n"
+            "      </dl>\n"
+            '      <p>To withdraw it, go to <a href="/withdraw">the withdrawal page</a> '
+            "and enter both.</p>\n"
+            "    </section>\n"
+        )
+    else:
+        withdraw_block = ""
     return (
         "    <h1>Thank you — your contribution was received</h1>\n"
         '    <p role="status">It is sealed and waiting for a steward to review it. '
         "Nothing you submitted is public yet, and any contact details you gave are "
         "encrypted and will never be shown.</p>\n"
+        f"{withdraw_block}"
+        '    <p><a href="/">Back to the archive</a></p>\n'
+    )
+
+
+def render_withdraw_main(*, error: str | None = None, reference: str = "") -> str:
+    """Render the ``<main>`` for the self-service withdrawal form.
+
+    A contributor who kept the reference and withdrawal code from their confirmation
+    can withdraw a submission that *is still pending review* — honouring "I changed my
+    mind before it went live" without a steward in the loop, because nothing is public
+    yet and it is their own content (consent is revocable). The form is accessible
+    (labelled inputs) and plain about what withdrawal does. The reference is re-filled
+    on error so a mistyped code does not lose it; the code itself is never echoed back.
+    """
+    error_html = f'    <p class="error" role="alert">{_esc(error)}</p>\n' if error else ""
+    return (
+        "    <h1>Withdraw a submission</h1>\n"
+        "    <p>If you contributed something and it is <em>still waiting for review</em>, "
+        "you can withdraw it here using the reference and withdrawal code from your "
+        "confirmation page. Withdrawing permanently removes the submission and erases "
+        "any contact details you sealed with it. Once a steward has published a record, "
+        'use the <a href="/">archive</a> to request a change instead.</p>\n'
+        f"{error_html}"
+        '    <form class="withdraw" method="post" action="/withdraw">\n'
+        "      <p>\n"
+        '        <label for="ref">Reference</label>\n'
+        f'        <input type="text" id="ref" name="ref" required '
+        f'value="{_esc(reference)}">\n'
+        "      </p>\n"
+        "      <p>\n"
+        '        <label for="claim">Withdrawal code</label>\n'
+        '        <input type="text" id="claim" name="claim" required '
+        'autocomplete="off">\n'
+        "      </p>\n"
+        '      <p><button type="submit">Withdraw this submission</button></p>\n'
+        "    </form>\n"
+    )
+
+
+def render_withdraw_done_main() -> str:
+    """Render the ``<main>`` shown after a successful withdrawal.
+
+    Generic by design: it confirms removal without naming the record's title or any
+    detail of what was withdrawn, so the confirmation reflects nothing back
+    (no-outing rule)."""
+    return (
+        "    <h1>Your submission was withdrawn</h1>\n"
+        '    <p role="status">It has been permanently removed, along with any contact '
+        "details you had sealed with it. Nothing from it remains in the archive.</p>\n"
         '    <p><a href="/">Back to the archive</a></p>\n'
     )

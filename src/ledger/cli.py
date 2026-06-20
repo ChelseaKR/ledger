@@ -34,7 +34,6 @@ from ledger.config import Config, StorageLocation
 from ledger.errors import LedgerError
 from ledger.identity import ContributorIdentity
 from ledger.ingest import Archive
-from ledger.metadata.premis import PremisLog
 from ledger.models import (
     AccessPolicy,
     ContentAddress,
@@ -368,52 +367,30 @@ def _perform_takedown(
     """Record and execute a takedown; return a no-outing-safe summary line.
 
     The accountable decision is recorded and durably persisted FIRST (its audit
-    trail of *why* must outlive the data), then the contributor identity is revoked
-    from the vault, then every stored copy is removed from the bag, the fast-lookup
-    manifest, and each configured location. Only the record id and counts appear in
-    the summary (no-outing rule). Factored so both the direct path and an approved
+    trail of *why* must outlive the data), then every stored copy is removed and the
+    contributor identity revoked through the one shared removal effect
+    (:meth:`Archive.remove_all_copies`). Only the record id and counts appear in the
+    summary (no-outing rule). Factored so both the direct path and an approved
     dual-control proposal execute the identical effect.
     """
-    import shutil
-
     event, action = takedown(record_id, actor=actor, reason=reason, now=now)
-    identity_ref: str | None = None
+
+    # Whether there is a sealed identity to revoke, checked BEFORE removal so a failed
+    # revoke can still be reported once the bag (and the ref) are gone.
     try:
-        identity_ref = archive.get(record_id).identity_ref
+        had_identity = archive.get(record_id).identity_ref is not None
     except LedgerError:
-        identity_ref = None
+        had_identity = False
 
-    log_path = archive.logs_dir / "takedowns.premis.json"
-    archive.logs_dir.mkdir(parents=True, exist_ok=True)
-    log = PremisLog.read(log_path) if log_path.exists() else PremisLog()
-    log.record(event)
-    log.write(log_path)
+    archive.log_takedown(event)
 
-    revoked = False
-    if identity_ref is not None:
-        try:
-            archive._open_vault(None).revoke(identity_ref)
-            revoked = True
-        except LedgerError as exc:
-            print(
-                f"warning: could not revoke identity from the vault ({exc}); "
-                "revoke it manually to complete the takedown",
-                file=sys.stderr,
-            )
-
-    removed = 0
-    bag_dir = archive.bags_dir / record_id
-    if bag_dir.exists():
-        shutil.rmtree(bag_dir)
-        removed += 1
-    fast = archive.records_dir / f"{record_id}.json"
-    if fast.exists():
-        fast.unlink()
-    for location in archive.config.locations:
-        replica = Path(location.path) / record_id
-        if replica.exists() and replica != bag_dir:
-            shutil.rmtree(replica)
-            removed += 1
+    removed, revoked = archive.remove_all_copies(record_id)
+    if had_identity and not revoked:  # pragma: no cover - vault failure is rare
+        print(
+            "warning: could not revoke identity from the vault; "
+            "revoke it manually to complete the takedown",
+            file=sys.stderr,
+        )
 
     suffix = "; identity revoked" if revoked else ""
     return f"record {record_id} taken down by {action.actor}; {removed} copy(ies) removed{suffix}"

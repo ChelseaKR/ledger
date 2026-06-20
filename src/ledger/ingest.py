@@ -626,6 +626,60 @@ class Archive:
             log.record(event)
             log.write(premis_path)
 
+    def log_takedown(self, event: PremisEvent) -> None:
+        """Append a takedown/withdrawal decision to the archive-level takedowns log.
+
+        The accountable record of *why* a record was removed, kept in
+        ``logs/takedowns.premis.json`` so it outlives the data it documents. The one
+        place a removal decision is persisted, shared by a steward takedown and a
+        contributor's pre-publication withdrawal (accountability, separation of
+        concerns)."""
+        log_path = self.logs_dir / "takedowns.premis.json"
+        self.logs_dir.mkdir(parents=True, exist_ok=True)
+        log = PremisLog.read(log_path) if log_path.exists() else PremisLog()
+        log.record(event)
+        log.write(log_path)
+
+    def remove_all_copies(self, record_id: str) -> tuple[int, bool]:
+        """Physically remove every stored copy of ``record_id`` and revoke its identity.
+
+        The shared *effect* behind a steward takedown and a contributor's withdrawal
+        of a pending submission: it revokes any sealed identity from the vault, then
+        deletes the record's bag, its fast-lookup manifest, and every configured
+        replica. Returns ``(copies_removed, identity_revoked)`` so the caller can
+        report counts without naming anything (no-outing rule). It records *no* audit
+        decision itself — the caller owns the accountable "why", recording it before
+        calling this so the reason outlives the data (separation of concerns).
+        """
+        identity_ref: str | None = None
+        try:
+            identity_ref = self.get(record_id).identity_ref
+        except LedgerError:
+            identity_ref = None
+
+        revoked = False
+        if identity_ref is not None:
+            try:
+                self._open_vault(None).revoke(identity_ref)
+                revoked = True
+            except LedgerError:
+                revoked = False
+
+        removed = 0
+        bag_dir = self.bags_dir / record_id
+        if bag_dir.exists():
+            shutil.rmtree(bag_dir)
+            removed += 1
+        fast = self.records_dir / f"{record_id}.json"
+        if fast.exists():
+            fast.unlink()
+        for location in self.config.locations:
+            replica = Path(location.path) / record_id
+            if replica.exists() and replica != bag_dir:
+                shutil.rmtree(replica)
+                removed += 1
+        return removed, revoked
+
     def disclose(
         self,
         record_id: str,
