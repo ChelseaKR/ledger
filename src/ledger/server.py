@@ -1082,6 +1082,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
                 main_html=contribute.render_thanks_main(
                     reference=record_id if claim_token else None,
                     claim_token=claim_token,
+                    lang=lang,
                 ),
                 nav_html=self._nav(),
             ),
@@ -1141,7 +1142,9 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             disclose(preview, anonymous(), now) if is_listable(preview, anonymous(), now) else None
         )
         visibility = form.get("visibility") or "community"
-        panel = contribute.render_preview_panel(stranger_view, visibility=visibility)
+        panel = contribute.render_preview_panel(
+            stranger_view, visibility=visibility, lang=self._lang()
+        )
         self._handle_contribute_form(values=form, preview_html=panel)
 
     # --- contributor self-service withdrawal --------------------------------
@@ -1172,7 +1175,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             self._handle_not_found()
             return
         lang = self._lang()
-        main_html = contribute.render_withdraw_main(error=error, reference=reference)
+        main_html = contribute.render_withdraw_main(error=error, reference=reference, lang=lang)
         self._send_html(
             200, _page("Withdraw", lang=lang, main_html=main_html, nav_html=self._nav())
         )
@@ -1233,7 +1236,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             _page(
                 "Withdrawn",
                 lang=lang,
-                main_html=contribute.render_withdraw_done_main(),
+                main_html=contribute.render_withdraw_done_main(lang=lang),
                 nav_html=self._nav(),
             ),
         )

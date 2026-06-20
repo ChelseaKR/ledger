@@ -82,6 +82,90 @@ _CATALOG: dict[str, dict[str, str]] = {
         "pager_prev": "Previous",
         "pager_next": "Next",
         "pager_position": "Page {number} of {pages}",
+        "back_to_archive": "Back to the archive",
+        # --- contribution form (the contributor write path) ---
+        "contribute_heading": "Contribute to the archive",
+        "contribute_intro": (
+            "Share a story, an account, or knowledge worth keeping. A steward reviews "
+            "every submission before anything is published — your contribution is kept "
+            'sealed until then. Use "Preview" to see exactly what a stranger would see '
+            "before you submit."
+        ),
+        "label_title": "Title",
+        "label_account": "Your account",
+        "cw_legend": "Content warnings (optional)",
+        "cw_hint": "Tick anything a reader should be warned about before this is shown.",
+        "share_legend": "How should this be shared?",
+        "share_hint": (
+            "A steward reviews every submission before anything becomes visible — "
+            "nothing is published automatically."
+        ),
+        "file_legend": "Attach a file (optional)",
+        "file_hint": (
+            "You can attach one image, audio file, or PDF (up to {max} MB). Accepted: "
+            "{accepted}. The file is reviewed with the rest of your submission and is "
+            "not public until a steward publishes it."
+        ),
+        "label_file": "File",
+        "contact_legend": "Contact (optional, sealed)",
+        "contact_hint": (
+            "Only a steward with explicit permission can ever see this. It is "
+            "encrypted, never shown publicly, and never reveals who contributed a record."
+        ),
+        "label_name": "Name",
+        "label_reach": "How to reach you",
+        "button_preview": "Preview what a stranger sees",
+        "button_submit": "Submit for review",
+        # --- "what a stranger sees" preview panel ---
+        "preview_heading": "Preview — what a stranger would see",
+        "preview_aria_label": "What a stranger sees",
+        "preview_if_published": (
+            "If a steward publishes this, a stranger who is not signed in would see:"
+        ),
+        "preview_content_warnings": "Content warnings: {list}",
+        "preview_stranger_nothing_lead": "A stranger sees nothing.",
+        "preview_stranger_nothing_detail": (
+            " Published as {visibility}, this record would be visible to {audience} — "
+            "it would not appear in public browse or search."
+        ),
+        "preview_audience_community": "community members only",
+        "preview_audience_none": "no one yet",
+        "preview_sealed_hint": (
+            "Your name and contact are never shown to any reader — they are sealed. "
+            "They are not in this preview."
+        ),
+        # --- submission confirmation + self-withdrawal ---
+        "thanks_heading": "Thank you — your contribution was received",
+        "thanks_status": (
+            "It is sealed and waiting for a steward to review it. Nothing you submitted "
+            "is public yet, and any contact details you gave are encrypted and will "
+            "never be shown."
+        ),
+        "thanks_claim_heading": "Keep this if you might change your mind",
+        "thanks_claim_intro": (
+            "While your submission is still waiting for review you can withdraw it "
+            "yourself. To do that you will need both of these — keep them private, as "
+            "together they let someone withdraw this submission:"
+        ),
+        "label_reference": "Reference",
+        "label_withdrawal_code": "Withdrawal code",
+        "thanks_withdraw_before": "To withdraw it, go to",
+        "withdrawal_page_link_text": "the withdrawal page",
+        "thanks_withdraw_after": "and enter both.",
+        "withdraw_heading": "Withdraw a submission",
+        "withdraw_intro": (
+            "If you contributed something and it is still waiting for review, you can "
+            "withdraw it here using the reference and withdrawal code from your "
+            "confirmation page. Withdrawing permanently removes the submission and "
+            "erases any contact details you sealed with it. Once a steward has "
+            "published a record, request a change from its page instead."
+        ),
+        "withdraw_button": "Withdraw this submission",
+        "withdraw_done_heading": "Your submission was withdrawn",
+        "withdraw_done_status": (
+            "It has been permanently removed, along with any contact details you had "
+            "sealed with it. Nothing from it remains in the archive."
+        ),
         "footer_privacy": "Your identity is never shown. Contributors control what is public.",
         "language_label": "Language",
         "visibility_public": "Public — anyone may read it once a steward approves",
@@ -122,6 +206,94 @@ _CATALOG: dict[str, dict[str, str]] = {
         "pager_prev": "Anterior",
         "pager_next": "Siguiente",
         "pager_position": "Página {number} de {pages}",
+        "back_to_archive": "Volver al archivo",
+        # --- formulario de contribución ---
+        "contribute_heading": "Contribuir al archivo",
+        "contribute_intro": (
+            "Comparta una historia, un relato o conocimiento que valga la pena "
+            "conservar. Una persona responsable revisa cada envío antes de publicar "
+            'nada: su contribución se mantiene sellada hasta entonces. Use "Vista '
+            'previa" para ver exactamente lo que vería un desconocido antes de enviar.'
+        ),
+        "label_title": "Título",
+        "label_account": "Su relato",
+        "cw_legend": "Advertencias de contenido (opcional)",
+        "cw_hint": (
+            "Marque todo aquello sobre lo que se deba advertir a quien lo lea antes de mostrarlo."
+        ),
+        "share_legend": "¿Cómo debería compartirse esto?",
+        "share_hint": (
+            "Una persona responsable revisa cada envío antes de que algo se haga "
+            "visible; nada se publica automáticamente."
+        ),
+        "file_legend": "Adjuntar un archivo (opcional)",
+        "file_hint": (
+            "Puede adjuntar una imagen, un archivo de audio o un PDF (hasta {max} MB). "
+            "Aceptados: {accepted}. El archivo se revisa junto con el resto de su envío "
+            "y no es público hasta que una persona responsable lo publique."
+        ),
+        "label_file": "Archivo",
+        "contact_legend": "Contacto (opcional, sellado)",
+        "contact_hint": (
+            "Solo una persona responsable con permiso explícito puede verlo. Está "
+            "cifrado, nunca se muestra públicamente y nunca revela quién aportó un "
+            "registro."
+        ),
+        "label_name": "Nombre",
+        "label_reach": "Cómo localizarle",
+        "button_preview": "Previsualizar lo que ve un desconocido",
+        "button_submit": "Enviar para revisión",
+        # --- panel de vista previa ---
+        "preview_heading": "Vista previa: lo que vería un desconocido",
+        "preview_aria_label": "Lo que ve un desconocido",
+        "preview_if_published": (
+            "Si una persona responsable publica esto, un desconocido que no haya "
+            "iniciado sesión vería:"
+        ),
+        "preview_content_warnings": "Advertencias de contenido: {list}",
+        "preview_stranger_nothing_lead": "Un desconocido no ve nada.",
+        "preview_stranger_nothing_detail": (
+            " Publicado como {visibility}, este registro sería visible para {audience}: "
+            "no aparecería en la exploración ni la búsqueda públicas."
+        ),
+        "preview_audience_community": "solo los miembros de la comunidad",
+        "preview_audience_none": "nadie todavía",
+        "preview_sealed_hint": (
+            "Su nombre y su contacto nunca se muestran a ningún lector: están sellados. "
+            "No están en esta vista previa."
+        ),
+        # --- confirmación de envío y retirada ---
+        "thanks_heading": "Gracias: se recibió su contribución",
+        "thanks_status": (
+            "Está sellada y a la espera de que una persona responsable la revise. Nada "
+            "de lo que envió es público todavía, y cualquier dato de contacto que haya "
+            "proporcionado está cifrado y nunca se mostrará."
+        ),
+        "thanks_claim_heading": "Guarde esto por si cambia de opinión",
+        "thanks_claim_intro": (
+            "Mientras su envío siga a la espera de revisión, puede retirarlo usted "
+            "mismo. Para ello necesitará ambos datos; manténgalos en privado, ya que "
+            "juntos permiten retirar este envío:"
+        ),
+        "label_reference": "Referencia",
+        "label_withdrawal_code": "Código de retirada",
+        "thanks_withdraw_before": "Para retirarlo, vaya a",
+        "withdrawal_page_link_text": "la página de retirada",
+        "thanks_withdraw_after": "e introduzca ambos.",
+        "withdraw_heading": "Retirar un envío",
+        "withdraw_intro": (
+            "Si aportó algo y todavía está a la espera de revisión, puede retirarlo "
+            "aquí con la referencia y el código de retirada de su página de "
+            "confirmación. Retirarlo elimina permanentemente el envío y borra cualquier "
+            "dato de contacto que haya sellado con él. Una vez que una persona "
+            "responsable haya publicado un registro, solicite un cambio desde su página."
+        ),
+        "withdraw_button": "Retirar este envío",
+        "withdraw_done_heading": "Su envío fue retirado",
+        "withdraw_done_status": (
+            "Se ha eliminado permanentemente, junto con cualquier dato de contacto que "
+            "hubiera sellado con él. No queda nada de él en el archivo."
+        ),
         "footer_privacy": (
             "Su identidad nunca se muestra. Los colaboradores controlan qué es público."
         ),

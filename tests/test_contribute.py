@@ -170,6 +170,24 @@ def test_contribute_form_is_served_and_accessible_when_enabled(
     assert 'for="account"' in body and 'id="account"' in body
 
 
+def test_contribution_flow_is_localized(open_server: tuple[Archive, str]) -> None:
+    """A Spanish reader gets the form chrome and the confirmation in Spanish (I2)."""
+    _archive, base = open_server
+    _status, form = _get(base, "/contribute?lang=es")
+    # The write path a non-English contributor most needs is now in their language.
+    assert "Contribuir al archivo" in form  # heading
+    assert "Su relato" in form  # the account label
+    assert "Enviar para revisión" in form  # submit button
+    assert "Contribute to the archive" not in form  # English equivalents gone
+    # The confirmation page is localized too (cookie from the form carries the choice).
+    _status, thanks = _post(
+        base,
+        "/contribute?lang=es",
+        {"action": "submit", "title": "Hola", "account": "Un relato.", "visibility": "public"},
+    )
+    assert "Gracias" in thanks
+
+
 @pytest.mark.disclosure
 def test_contribute_is_404_when_disabled(closed_server: tuple[Archive, str]) -> None:
     """The write path is off by default: both GET and POST 404 when not enabled."""

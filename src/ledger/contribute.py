@@ -187,9 +187,8 @@ def render_contribute_main(
     )
     cw_fieldset = (
         "      <fieldset>\n"
-        "        <legend>Content warnings (optional)</legend>\n"
-        '        <p class="hint">Tick anything a reader should be warned about before '
-        "this is shown.</p>\n"
+        f"        <legend>{_esc(i18n.t(lang, 'cw_legend'))}</legend>\n"
+        f'        <p class="hint">{_esc(i18n.t(lang, "cw_hint"))}</p>\n'
         f"{cw_options}"
         "      </fieldset>\n"
         if config.content_warnings
@@ -197,9 +196,8 @@ def render_contribute_main(
     )
     vis_fieldset = (
         "      <fieldset>\n"
-        "        <legend>How should this be shared?</legend>\n"
-        '        <p class="hint">A steward reviews every submission before anything '
-        "becomes visible — nothing is published automatically.</p>\n"
+        f"        <legend>{_esc(i18n.t(lang, 'share_legend'))}</legend>\n"
+        f'        <p class="hint">{_esc(i18n.t(lang, "share_hint"))}</p>\n'
         f"{_visibility_radio('public', checked=selected_vis == 'public', lang=lang)}"
         f"{_visibility_radio('community', checked=selected_vis == 'community', lang=lang)}"
         f"{_visibility_radio('sealed', checked=selected_vis == 'sealed', lang=lang)}"
@@ -209,12 +207,11 @@ def render_contribute_main(
     max_mb = upload.MAX_UPLOAD_BYTES // (1024 * 1024)
     file_fieldset = (
         "      <fieldset>\n"
-        "        <legend>Attach a file (optional)</legend>\n"
-        '        <p class="hint">You can attach one image, audio file, or PDF '
-        f"(up to {max_mb} MB). Accepted: {_esc(accepted)}. The file is reviewed with "
-        "the rest of your submission and is not public until a steward publishes it.</p>\n"
+        f"        <legend>{_esc(i18n.t(lang, 'file_legend'))}</legend>\n"
+        f'        <p class="hint">{_esc(i18n.t(lang, "file_hint", max=max_mb, accepted=accepted))}'
+        "</p>\n"
         "        <p>\n"
-        '          <label for="upload">File</label>\n'
+        f'          <label for="upload">{_esc(i18n.t(lang, "label_file"))}</label>\n'
         '          <input type="file" id="upload" name="upload">\n'
         "        </p>\n"
         "      </fieldset>\n"
@@ -222,22 +219,19 @@ def render_contribute_main(
     error_html = f'    <p class="error" role="alert">{_esc(error)}</p>\n' if error else ""
     preview_panel = preview_html or ""
     return (
-        "    <h1>Contribute to the archive</h1>\n"
-        "    <p>Share a story, an account, or knowledge worth keeping. A steward "
-        "reviews every submission before anything is published — your contribution "
-        'is kept sealed until then. Use <em>"Preview"</em> to see exactly what a '
-        "stranger would see before you submit.</p>\n"
+        f"    <h1>{_esc(i18n.t(lang, 'contribute_heading'))}</h1>\n"
+        f"    <p>{_esc(i18n.t(lang, 'contribute_intro'))}</p>\n"
         f"{error_html}"
         f"{preview_panel}"
         '    <form class="contribute" method="post" action="/contribute" '
         'enctype="multipart/form-data">\n'
         "      <p>\n"
-        '        <label for="title">Title</label>\n'
+        f'        <label for="title">{_esc(i18n.t(lang, "label_title"))}</label>\n'
         f'        <input type="text" id="title" name="title" required maxlength="200" '
         f'value="{_esc(vals.get("title", ""))}">\n'
         "      </p>\n"
         "      <p>\n"
-        '        <label for="account">Your account</label>\n'
+        f'        <label for="account">{_esc(i18n.t(lang, "label_account"))}</label>\n'
         '        <textarea id="account" name="account" rows="10" required '
         f'maxlength="20000">{_esc(vals.get("account", ""))}</textarea>\n'
         "      </p>\n"
@@ -245,31 +239,35 @@ def render_contribute_main(
         f"{vis_fieldset}"
         f"{cw_fieldset}"
         "      <fieldset>\n"
-        "        <legend>Contact (optional, sealed)</legend>\n"
-        '        <p class="hint">Only a steward with explicit permission can ever see '
-        "this. It is encrypted, never shown publicly, and never reveals who "
-        "contributed a record.</p>\n"
+        f"        <legend>{_esc(i18n.t(lang, 'contact_legend'))}</legend>\n"
+        f'        <p class="hint">{_esc(i18n.t(lang, "contact_hint"))}</p>\n'
         "        <p>\n"
-        '          <label for="contributor_name">Name</label>\n'
+        f'          <label for="contributor_name">{_esc(i18n.t(lang, "label_name"))}</label>\n'
         '          <input type="text" id="contributor_name" name="contributor_name" '
         f'maxlength="1000" value="{_esc(vals.get("contributor_name", ""))}">\n'
         "        </p>\n"
         "        <p>\n"
-        '          <label for="contributor_contact">How to reach you</label>\n'
+        '          <label for="contributor_contact">'
+        f"{_esc(i18n.t(lang, 'label_reach'))}</label>\n"
         '          <input type="text" id="contributor_contact" '
         f'name="contributor_contact" maxlength="1000" '
         f'value="{_esc(vals.get("contributor_contact", ""))}">\n'
         "        </p>\n"
         "      </fieldset>\n"
         '      <p><button type="submit" name="action" value="preview">'
-        "Preview what a stranger sees</button>\n"
+        f"{_esc(i18n.t(lang, 'button_preview'))}</button>\n"
         '      <button type="submit" name="action" value="submit">'
-        "Submit for review</button></p>\n"
+        f"{_esc(i18n.t(lang, 'button_submit'))}</button></p>\n"
         "    </form>\n"
     )
 
 
-def render_preview_panel(stranger_view: DisclosedRecord | None, *, visibility: str) -> str:
+def render_preview_panel(
+    stranger_view: DisclosedRecord | None,
+    *,
+    visibility: str,
+    lang: str = i18n.DEFAULT_LANG,
+) -> str:
     """Render the "what a stranger would see" panel shown above the form on Preview.
 
     ``stranger_view`` is the record disclosed to the anonymous public *if it were
@@ -277,41 +275,57 @@ def render_preview_panel(stranger_view: DisclosedRecord | None, *, visibility: s
     it at all (community/sealed). The panel is honest about exactly what is and is
     not exposed; it contains only the stranger's view, so the contributor's sealed
     contact never appears in it. The contributor's own entries live in the form
-    below (prefilled), exactly as they typed them — not reflected to anyone else."""
+    below (prefilled), exactly as they typed them — not reflected to anyone else. All
+    chrome is localized so a non-English contributor can trust what it tells them."""
     if stranger_view is not None:
         cw = (
-            "      <p>Content warnings: "
-            + _esc(", ".join(stranger_view.content_warnings))
+            "      <p>"
+            + _esc(
+                i18n.t(
+                    lang,
+                    "preview_content_warnings",
+                    list=", ".join(stranger_view.content_warnings),
+                )
+            )
             + "</p>\n"
             if stranger_view.content_warnings
             else ""
         )
         account = stranger_view.fields.get("account", "")
         inner = (
-            "      <p>If a steward publishes this, a stranger who is not signed in "
-            "would see:</p>\n"
+            f"      <p>{_esc(i18n.t(lang, 'preview_if_published'))}</p>\n"
             f"      <h3>{_esc(stranger_view.title)}</h3>\n"
             f"{cw}"
             f"      <p>{_esc(account)}</p>\n"
         )
     else:
-        audience = "community members only" if visibility == "community" else "no one yet"
+        audience = i18n.t(
+            lang,
+            "preview_audience_community" if visibility == "community" else "preview_audience_none",
+        )
+        detail = i18n.t(
+            lang, "preview_stranger_nothing_detail", visibility=visibility, audience=audience
+        )
         inner = (
-            "      <p><strong>A stranger sees nothing.</strong> Published as "
-            f"{_esc(visibility)}, this record would be visible to {_esc(audience)} — "
-            "it would not appear in public browse or search.</p>\n"
+            f"      <p><strong>{_esc(i18n.t(lang, 'preview_stranger_nothing_lead'))}</strong>"
+            f"{_esc(detail)}</p>\n"
         )
     return (
-        '    <section class="preview" role="status" aria-label="What a stranger sees">\n'
-        "      <h2>Preview — what a stranger would see</h2>\n"
+        '    <section class="preview" role="status" '
+        f'aria-label="{_esc(i18n.t(lang, "preview_aria_label"))}">\n'
+        f"      <h2>{_esc(i18n.t(lang, 'preview_heading'))}</h2>\n"
         f"{inner}"
-        '      <p class="hint">Your name and contact are never shown to any reader — '
-        "they are sealed. They are not in this preview.</p>\n"
+        f'      <p class="hint">{_esc(i18n.t(lang, "preview_sealed_hint"))}</p>\n'
         "    </section>\n"
     )
 
 
-def render_thanks_main(*, reference: str | None = None, claim_token: str | None = None) -> str:
+def render_thanks_main(
+    *,
+    reference: str | None = None,
+    claim_token: str | None = None,
+    lang: str = i18n.DEFAULT_LANG,
+) -> str:
     """Render the ``<main>`` confirmation shown after a submission.
 
     Deliberately generic about *content*: it confirms receipt and review without
@@ -326,78 +340,73 @@ def render_thanks_main(*, reference: str | None = None, claim_token: str | None 
     authorship of this one record. The page tells the contributor to keep them
     private, since together they authorise withdrawal."""
     if reference and claim_token:
+        link = f'<a href="/withdraw">{_esc(i18n.t(lang, "withdrawal_page_link_text"))}</a>'
         withdraw_block = (
             '    <section class="claim" aria-labelledby="claim-heading">\n'
-            '      <h2 id="claim-heading">Keep this if you might change your mind</h2>\n'
-            "      <p>While your submission is still waiting for review you can withdraw "
-            "it yourself. To do that you will need both of these — keep them private, "
-            "as together they let someone withdraw this submission:</p>\n"
+            f'      <h2 id="claim-heading">{_esc(i18n.t(lang, "thanks_claim_heading"))}</h2>\n'
+            f"      <p>{_esc(i18n.t(lang, 'thanks_claim_intro'))}</p>\n"
             "      <dl>\n"
-            "        <dt>Reference</dt>\n"
+            f"        <dt>{_esc(i18n.t(lang, 'label_reference'))}</dt>\n"
             f"        <dd><code>{_esc(reference)}</code></dd>\n"
-            "        <dt>Withdrawal code</dt>\n"
+            f"        <dt>{_esc(i18n.t(lang, 'label_withdrawal_code'))}</dt>\n"
             f"        <dd><code>{_esc(claim_token)}</code></dd>\n"
             "      </dl>\n"
-            '      <p>To withdraw it, go to <a href="/withdraw">the withdrawal page</a> '
-            "and enter both.</p>\n"
+            f"      <p>{_esc(i18n.t(lang, 'thanks_withdraw_before'))} {link} "
+            f"{_esc(i18n.t(lang, 'thanks_withdraw_after'))}</p>\n"
             "    </section>\n"
         )
     else:
         withdraw_block = ""
     return (
-        "    <h1>Thank you — your contribution was received</h1>\n"
-        '    <p role="status">It is sealed and waiting for a steward to review it. '
-        "Nothing you submitted is public yet, and any contact details you gave are "
-        "encrypted and will never be shown.</p>\n"
+        f"    <h1>{_esc(i18n.t(lang, 'thanks_heading'))}</h1>\n"
+        f'    <p role="status">{_esc(i18n.t(lang, "thanks_status"))}</p>\n'
         f"{withdraw_block}"
-        '    <p><a href="/">Back to the archive</a></p>\n'
+        f'    <p><a href="/">{_esc(i18n.t(lang, "back_to_archive"))}</a></p>\n'
     )
 
 
-def render_withdraw_main(*, error: str | None = None, reference: str = "") -> str:
+def render_withdraw_main(
+    *, error: str | None = None, reference: str = "", lang: str = i18n.DEFAULT_LANG
+) -> str:
     """Render the ``<main>`` for the self-service withdrawal form.
 
     A contributor who kept the reference and withdrawal code from their confirmation
     can withdraw a submission that *is still pending review* — honouring "I changed my
     mind before it went live" without a steward in the loop, because nothing is public
     yet and it is their own content (consent is revocable). The form is accessible
-    (labelled inputs) and plain about what withdrawal does. The reference is re-filled
-    on error so a mistyped code does not lose it; the code itself is never echoed back.
+    (labelled inputs) and plain about what withdrawal does, in the reader's language.
+    The reference is re-filled on error so a mistyped code does not lose it; the code
+    itself is never echoed back.
     """
     error_html = f'    <p class="error" role="alert">{_esc(error)}</p>\n' if error else ""
     return (
-        "    <h1>Withdraw a submission</h1>\n"
-        "    <p>If you contributed something and it is <em>still waiting for review</em>, "
-        "you can withdraw it here using the reference and withdrawal code from your "
-        "confirmation page. Withdrawing permanently removes the submission and erases "
-        "any contact details you sealed with it. Once a steward has published a record, "
-        'use the <a href="/">archive</a> to request a change instead.</p>\n'
+        f"    <h1>{_esc(i18n.t(lang, 'withdraw_heading'))}</h1>\n"
+        f"    <p>{_esc(i18n.t(lang, 'withdraw_intro'))}</p>\n"
         f"{error_html}"
         '    <form class="withdraw" method="post" action="/withdraw">\n'
         "      <p>\n"
-        '        <label for="ref">Reference</label>\n'
+        f'        <label for="ref">{_esc(i18n.t(lang, "label_reference"))}</label>\n'
         f'        <input type="text" id="ref" name="ref" required '
         f'value="{_esc(reference)}">\n'
         "      </p>\n"
         "      <p>\n"
-        '        <label for="claim">Withdrawal code</label>\n'
+        f'        <label for="claim">{_esc(i18n.t(lang, "label_withdrawal_code"))}</label>\n'
         '        <input type="text" id="claim" name="claim" required '
         'autocomplete="off">\n'
         "      </p>\n"
-        '      <p><button type="submit">Withdraw this submission</button></p>\n'
+        f'      <p><button type="submit">{_esc(i18n.t(lang, "withdraw_button"))}</button></p>\n'
         "    </form>\n"
     )
 
 
-def render_withdraw_done_main() -> str:
+def render_withdraw_done_main(*, lang: str = i18n.DEFAULT_LANG) -> str:
     """Render the ``<main>`` shown after a successful withdrawal.
 
     Generic by design: it confirms removal without naming the record's title or any
     detail of what was withdrawn, so the confirmation reflects nothing back
     (no-outing rule)."""
     return (
-        "    <h1>Your submission was withdrawn</h1>\n"
-        '    <p role="status">It has been permanently removed, along with any contact '
-        "details you had sealed with it. Nothing from it remains in the archive.</p>\n"
-        '    <p><a href="/">Back to the archive</a></p>\n'
+        f"    <h1>{_esc(i18n.t(lang, 'withdraw_done_heading'))}</h1>\n"
+        f'    <p role="status">{_esc(i18n.t(lang, "withdraw_done_status"))}</p>\n'
+        f'    <p><a href="/">{_esc(i18n.t(lang, "back_to_archive"))}</a></p>\n'
     )
