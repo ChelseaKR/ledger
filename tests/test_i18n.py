@@ -225,3 +225,29 @@ def test_language_name_unknown_is_humanized() -> None:
 def test_catalog_view_is_read_only_copy_of_supported() -> None:
     view = i18n._catalog_view()
     assert set(view) == set(SUPPORTED)
+
+
+# --- I1: safety-critical strings are localized -----------------------------
+
+
+def test_visibility_labels_exist_in_every_language() -> None:
+    """The sealed/community/public labels — the words that matter most — are localized."""
+    for lang in i18n.SUPPORTED:
+        for value in ("public", "community", "sealed"):
+            label = i18n.t(lang, f"visibility_{value}")
+            assert label and not label.startswith("visibility_"), (lang, value)
+    # Spanish is genuinely translated, not the English fallback.
+    assert i18n.t("es", "visibility_sealed") != i18n.t("en", "visibility_sealed")
+
+
+def test_cw_glosses_cover_the_starter_vocabulary() -> None:
+    """Every content warning a fresh archive ships with has a gloss in each language."""
+    from ledger.config import _STARTER_CONTENT_WARNINGS
+
+    for lang in i18n.SUPPORTED:
+        for tag in _STARTER_CONTENT_WARNINGS:
+            gloss = i18n.gloss_cw(lang, tag)
+            # A real gloss explains the tag (has the em-dash), not just the humanized tag.
+            assert "—" in gloss, (lang, tag, gloss)
+    # Spanish glosses are translated, not the English ones.
+    assert i18n.gloss_cw("es", "outing") != i18n.gloss_cw("en", "outing")

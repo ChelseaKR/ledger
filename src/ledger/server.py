@@ -375,7 +375,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             f"    <p>Your request to {_esc(kind)} this record has been recorded{_esc(note)}. "
             f"A steward will review it. {_esc(rt)}</p>\n"
             f"    <p>Your reference is <code>{_esc(req.request_id)}</code>. "
-            f'Check its progress anytime at '
+            f"Check its progress anytime at "
             f'<a href="/consent-status?ref={quote(req.request_id)}">/consent-status</a>.</p>\n'
             '    <p><a href="/">Back to all records</a></p>'
         )
@@ -691,7 +691,11 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             return
         lang = self._lang()
         main_html = contribute.render_contribute_main(
-            self._archive().config, error=error, values=values, preview_html=preview_html
+            self._archive().config,
+            lang=lang,
+            error=error,
+            values=values,
+            preview_html=preview_html,
         )
         self._send_html(
             status, _page("Contribute", lang=lang, main_html=main_html, nav_html=self._nav())

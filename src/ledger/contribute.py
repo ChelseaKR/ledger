@@ -29,6 +29,7 @@ import html
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 
+from ledger import i18n
 from ledger.config import Config
 from ledger.errors import LedgerError
 from ledger.identity import ContributorIdentity
@@ -36,16 +37,13 @@ from ledger.models import AccessPolicy, DisclosedRecord, DublinCore, Field, Reco
 
 # Requested visibility -> the policy of the contributor's account field. The record
 # itself always defaults to sealed-pending regardless, so this choice only matters
-# once a steward reviews the record and opens it up.
+# once a steward reviews the record and opens it up. The human label for each is
+# localized (i18n key ``visibility_<value>``), since "sealed / community / public"
+# are the safety-critical words a contributor most needs in their own language.
 _VISIBILITY_TO_POLICY: dict[str, AccessPolicy] = {
     "public": AccessPolicy.PUBLIC,
     "community": AccessPolicy.COMMUNITY,
     "sealed": AccessPolicy.SEALED_UNTIL,
-}
-_VISIBILITY_LABELS: dict[str, str] = {
-    "public": "Public — anyone may read it once a steward approves",
-    "community": "Community only — vetted members of this community",
-    "sealed": "Sealed — keep it withheld for now",
 }
 _DEFAULT_VISIBILITY = "community"
 
@@ -139,15 +137,16 @@ def preview_record(submission: Submission) -> Record:
     return replace(submission.record, default_policy=requested)
 
 
-def _visibility_radio(value: str, *, checked: bool) -> str:
-    """One labelled visibility radio (id + matching ``<label for>``)."""
+def _visibility_radio(value: str, *, checked: bool, lang: str) -> str:
+    """One labelled visibility radio (id + matching ``<label for>``), label localized."""
     rid = f"vis-{value}"
     mark = " checked" if checked else ""
+    label = i18n.t(lang, f"visibility_{value}")
     return (
         f'        <div class="vis-option">\n'
         f'          <input type="radio" id="{_esc(rid)}" name="visibility" '
         f'value="{_esc(value)}"{mark}>\n'
-        f'          <label for="{_esc(rid)}">{_esc(_VISIBILITY_LABELS[value])}</label>\n'
+        f'          <label for="{_esc(rid)}">{_esc(label)}</label>\n'
         f"        </div>\n"
     )
 
@@ -155,6 +154,7 @@ def _visibility_radio(value: str, *, checked: bool) -> str:
 def render_contribute_main(
     config: Config,
     *,
+    lang: str = i18n.DEFAULT_LANG,
     error: str | None = None,
     values: Mapping[str, str] | None = None,
     preview_html: str | None = None,
@@ -195,9 +195,9 @@ def render_contribute_main(
         "        <legend>How should this be shared?</legend>\n"
         '        <p class="hint">A steward reviews every submission before anything '
         "becomes visible — nothing is published automatically.</p>\n"
-        f"{_visibility_radio('public', checked=selected_vis == 'public')}"
-        f"{_visibility_radio('community', checked=selected_vis == 'community')}"
-        f"{_visibility_radio('sealed', checked=selected_vis == 'sealed')}"
+        f"{_visibility_radio('public', checked=selected_vis == 'public', lang=lang)}"
+        f"{_visibility_radio('community', checked=selected_vis == 'community', lang=lang)}"
+        f"{_visibility_radio('sealed', checked=selected_vis == 'sealed', lang=lang)}"
         "      </fieldset>\n"
     )
     error_html = f'    <p class="error" role="alert">{_esc(error)}</p>\n' if error else ""

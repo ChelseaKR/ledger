@@ -68,6 +68,9 @@ _CATALOG: dict[str, dict[str, str]] = {
         "content_warning_heading": "Content warning",
         "footer_privacy": "Your identity is never shown. Contributors control what is public.",
         "language_label": "Language",
+        "visibility_public": "Public — anyone may read it once a steward approves",
+        "visibility_community": "Community only — vetted members of this community",
+        "visibility_sealed": "Sealed — keep it withheld for now",
     },
     "es": {
         "nav_browse": "Explorar",
@@ -91,6 +94,9 @@ _CATALOG: dict[str, dict[str, str]] = {
             "Su identidad nunca se muestra. Los colaboradores controlan qué es público."
         ),
         "language_label": "Idioma",
+        "visibility_public": "Público — cualquiera podrá leerlo cuando una persona responsable lo apruebe",
+        "visibility_community": "Solo para la comunidad — miembros verificados de esta comunidad",
+        "visibility_sealed": "Sellado — manténgalo reservado por ahora",
     },
 }
 
@@ -101,18 +107,39 @@ _CATALOG: dict[str, dict[str, str]] = {
 # than looked up, so the catalog need not be exhaustive to stay safe.
 _CW_GLOSSES: dict[str, dict[str, str]] = {
     "en": {
+        # The default starter vocabulary (config._STARTER_CONTENT_WARNINGS), so every
+        # tag a fresh archive ships with has a plain, native gloss at the decision point.
+        "violence": "Violence — describes physical harm or attack",
+        "sexual-violence": "Sexual violence — describes sexual assault or coercion",
+        "abuse": "Abuse — describes ongoing harm or mistreatment",
+        "self-harm": "Self-harm — describes a person hurting themselves",
+        "suicide": "Suicide — describes suicide or suicidal thoughts",
         "medical": "Medical — describes injury, illness, or clinical procedures",
-        "police-violence": "Police violence — describes harm or force by police",
         "death": "Death — describes the death of a person",
-        "deadnaming": "Deadnaming — refers to a name a person no longer uses",
         "incarceration": "Incarceration — describes jail, prison, or detention",
+        "deportation": "Deportation — describes removal from a country or its threat",
+        "outing": "Outing — reveals someone's identity without their consent",
+        "hate-speech": "Hate speech — contains slurs or attacks on a group",
+        "substance-use": "Substance use — describes drug or alcohol use",
+        # Additional tags a steward may add to the vocabulary.
+        "police-violence": "Police violence — describes harm or force by police",
+        "deadnaming": "Deadnaming — refers to a name a person no longer uses",
     },
     "es": {
+        "violence": "Violencia — describe daño físico o un ataque",
+        "sexual-violence": "Violencia sexual — describe agresión o coerción sexual",
+        "abuse": "Abuso — describe daño o maltrato continuo",
+        "self-harm": "Autolesión — describe que una persona se hace daño a sí misma",
+        "suicide": "Suicidio — describe el suicidio o pensamientos suicidas",
         "medical": "Médico — describe lesiones, enfermedades o procedimientos clínicos",
-        "police-violence": "Violencia policial — describe daño o fuerza por parte de la policía",
         "death": "Muerte — describe la muerte de una persona",
-        "deadnaming": "Nombre muerto — se refiere a un nombre que una persona ya no usa",
         "incarceration": "Encarcelamiento — describe cárcel, prisión o detención",
+        "deportation": "Deportación — describe la expulsión de un país o su amenaza",
+        "outing": "Exposición — revela la identidad de alguien sin su consentimiento",
+        "hate-speech": "Discurso de odio — contiene insultos o ataques a un grupo",
+        "substance-use": "Uso de sustancias — describe el uso de drogas o alcohol",
+        "police-violence": "Violencia policial — describe daño o fuerza por parte de la policía",
+        "deadnaming": "Nombre muerto — se refiere a un nombre que una persona ya no usa",
     },
 }
 
