@@ -176,3 +176,21 @@ def test_sort_newest_and_oldest_order_the_results(dated_base: str) -> None:
     assert newest.index("New one") < newest.index("Middle one") < newest.index("Old one")
     oldest = _get(dated_base, "/?sort=oldest")
     assert oldest.index("Old one") < oldest.index("Middle one") < oldest.index("New one")
+
+
+def test_date_range_filters_to_the_era(dated_base: str) -> None:
+    """?from/?to keep only records whose date falls in the range; undated drop out."""
+    body = _get(dated_base, "/?from=2000&to=2010")
+    assert "Middle one" in body  # 2005 is in range
+    assert "Old one" not in body  # 1990 is before
+    assert "New one" not in body  # 2024 is after
+    assert "Showing 1-1 of 1 record(s)." in body
+
+
+def test_date_range_form_is_present_and_composes(dated_base: str) -> None:
+    """The date form is offered and carries the search query as a hidden input."""
+    body = _get(dated_base, "/search?q=one&from=2000")
+    assert 'class="date-range"' in body
+    assert 'id="from"' in body and 'id="to"' in body
+    assert 'value="2000"' in body  # the active 'from' is prefilled
+    assert '<input type="hidden" name="q" value="one">' in body  # query preserved

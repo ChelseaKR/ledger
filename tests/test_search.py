@@ -14,6 +14,7 @@ from ledger.models import DisclosedRecord
 from ledger.search import (
     Facet,
     facets,
+    filter_by_date_range,
     filter_by_facet,
     index_text,
     looks_non_latin,
@@ -335,3 +336,24 @@ def test_related_by_subject_respects_the_limit() -> None:
     base = _disclosed("base", "Base", dublin_core={"subject": ["x"]})
     candidates = [_disclosed(f"r{i}", f"R{i}", dublin_core={"subject": ["x"]}) for i in range(10)]
     assert len(related_by_subject(base, candidates, limit=3)) == 3
+
+
+# --- date range ------------------------------------------------------------
+
+
+def test_filter_by_date_range_bounds_and_undated() -> None:
+    a = _disclosed("a", "A", dublin_core={"date": ["1990"]})
+    b = _disclosed("b", "B", dublin_core={"date": ["2000-05-01"]})
+    c = _disclosed("c", "C", dublin_core={"date": ["2010"]})
+    d = _disclosed("d", "D")  # undated, excluded when a range is in force
+    recs = [a, b, c, d]
+    assert [r.record_id for r in filter_by_date_range(recs, start="2000")] == ["b", "c"]
+    # end is inclusive of the whole year: 2000-05-01 starts with "2000".
+    assert [r.record_id for r in filter_by_date_range(recs, end="2000")] == ["a", "b"]
+    assert [r.record_id for r in filter_by_date_range(recs, start="1995", end="2005")] == ["b"]
+
+
+def test_filter_by_date_range_no_bounds_returns_all() -> None:
+    a = _disclosed("a", "A")
+    b = _disclosed("b", "B", dublin_core={"date": ["1999"]})
+    assert filter_by_date_range([a, b]) == [a, b]

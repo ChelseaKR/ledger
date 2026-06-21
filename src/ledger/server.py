@@ -958,11 +958,16 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         query = (params.get("q", [""])[0]).strip()
         active = self._active_facets(params)
 
+        date_from = (params.get("from", [""])[0]).strip()[:20]
+        date_to = (params.get("to", [""])[0]).strip()[:20]
+
         records = self._archive().browse(grant)
         if query:
             records = search.search(records, query)
         for field, value in active:
             records = search.filter_by_facet(records, field, value)
+        if date_from or date_to:
+            records = search.filter_by_date_range(records, start=date_from, end=date_to)
         # An explicit sort overrides the default order (search relevance, else browse
         # order) so a reader can read a topic chronologically (uses the dc:date a
         # contributor can now supply). An unknown value leaves the default untouched.
@@ -993,6 +998,8 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             lang=lang,
             active_facets=active,
             sort=sort,
+            date_from=date_from,
+            date_to=date_to,
             page=self._page_from(params),
             current_path=self.path,
         )

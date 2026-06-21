@@ -41,6 +41,7 @@ __all__ = [
     "Facet",
     "Snippet",
     "facets",
+    "filter_by_date_range",
     "filter_by_facet",
     "index_text",
     "looks_non_latin",
@@ -331,3 +332,32 @@ def related_by_subject(
             scored.append((len(shared), index, candidate))
     scored.sort(key=lambda item: (-item[0], item[1]))
     return [candidate for _shared, _index, candidate in scored[:limit]]
+
+
+def filter_by_date_range(
+    records: Sequence[DisclosedRecord], *, start: str = "", end: str = ""
+) -> list[DisclosedRecord]:
+    """Keep records whose first Dublin Core ``date`` falls within ``[start, end]``.
+
+    Lets a reader narrow a collection to an era (user research P2-3). Bounds are the
+    ISO-ish forms ledger stores (``YYYY``, ``YYYY-MM``, ``YYYY-MM-DD``); an empty bound
+    is open on that side. Comparison is lexical, which orders those forms correctly,
+    and ``end`` is *inclusive of the whole period* — a record dated ``1994-05-01`` is
+    kept by ``end=1994`` (its date begins with the bound), so "through 1994" means all
+    of 1994. A record with no date is excluded whenever a range is in force, since an
+    absent date cannot be placed in time. Input order is preserved; only disclosed
+    dates are read (no-outing rule)."""
+    if not start and not end:
+        return list(records)
+    kept: list[DisclosedRecord] = []
+    for record in records:
+        values = record.dublin_core.get("date") or []
+        date = values[0] if values and values[0] else ""
+        if not date:
+            continue
+        if start and date < start:
+            continue
+        if end and not (date <= end or date.startswith(end)):
+            continue
+        kept.append(record)
+    return kept

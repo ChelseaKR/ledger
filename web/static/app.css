@@ -198,6 +198,19 @@ a:hover {
   margin: 0.5rem 0;
 }
 
+/* --- date range: a compact from/to filter ------------------------------ */
+.date-range {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: baseline;
+  margin: 0.5rem 0;
+}
+
+.date-range input[type="text"] {
+  width: 7rem;
+}
+
 /* --- citation: a quotable, easy-to-select reference block --------------- */
 .citation {
   background: var(--surface);

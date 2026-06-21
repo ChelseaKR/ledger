@@ -423,6 +423,44 @@ def _sort_html(current_path: str, *, query: str, sort: str, lang: str) -> str:
     )
 
 
+def _date_range_form(
+    current_path: str,
+    *,
+    query: str,
+    active: list[tuple[str, str]],
+    sort: str,
+    date_from: str,
+    date_to: str,
+    lang: str,
+) -> str:
+    """A from/to date-range filter that composes with search, facets, and sort.
+
+    Posts (GET) to the current path with ``from``/``to``, carrying the query, active
+    facets, and sort as hidden inputs so applying a range never drops another filter.
+    Both inputs are labelled (accessibility) and prefilled with the active range; every
+    value is escaped (security)."""
+    split = urlsplit(current_path)
+    hidden_parts = [("q", query)] if query else []
+    hidden_parts += list(active)
+    if sort:
+        hidden_parts.append(("sort", sort))
+    hidden = "".join(
+        f'      <input type="hidden" name="{_esc(k)}" value="{_esc(v)}">\n' for k, v in hidden_parts
+    )
+    return (
+        f'    <form class="date-range" method="get" action="{_esc(split.path or "/")}">\n'
+        f'      <label for="from">{_esc(i18n.t(lang, "date_from_label"))}</label>\n'
+        f'      <input type="text" id="from" name="from" maxlength="20" '
+        f'value="{_esc(date_from)}" placeholder="YYYY">\n'
+        f'      <label for="to">{_esc(i18n.t(lang, "date_to_label"))}</label>\n'
+        f'      <input type="text" id="to" name="to" maxlength="20" '
+        f'value="{_esc(date_to)}" placeholder="YYYY">\n'
+        f"{hidden}"
+        f'      <button type="submit">{_esc(i18n.t(lang, "date_apply"))}</button>\n'
+        "    </form>\n"
+    )
+
+
 def _browse_main_html(
     records: list[DisclosedRecord],
     *,
@@ -431,6 +469,8 @@ def _browse_main_html(
     lang: str = "en",
     active_facets: list[tuple[str, str]] | None = None,
     sort: str = "",
+    date_from: str = "",
+    date_to: str = "",
     page: int = 1,
     per_page: int = pagination.DEFAULT_PER_PAGE,
     current_path: str = "/",
@@ -467,9 +507,9 @@ def _browse_main_html(
             total=window.total,
         )
         status_line = f'      <p class="count">{_esc(showing)}</p>\n'
-    # A "clear filters" link when any query or facet is active, so a reader is never
-    # stuck inside a narrowed view (escapability).
-    if query or active:
+    # A "clear filters" link when any filter is active, so a reader is never stuck
+    # inside a narrowed view (escapability).
+    if query or active or date_from or date_to:
         split = urlsplit(current_path)
         clear = (
             f'    <p class="clear-filters"><a href="{_esc(split.path or "/")}">'
@@ -477,6 +517,15 @@ def _browse_main_html(
         )
     else:
         clear = ""
+    date_form = _date_range_form(
+        current_path,
+        query=query,
+        active=active,
+        sort=sort,
+        date_from=date_from,
+        date_to=date_to,
+        lang=lang,
+    )
     # Offer a sort control only when there is more than one record to reorder.
     sort_control = (
         _sort_html(current_path, query=query, sort=sort, lang=lang) if window.total > 1 else ""
@@ -492,6 +541,7 @@ def _browse_main_html(
     return (
         f"    <h1>{_esc(heading)}</h1>\n"
         f"    {_search_form(query, lang=lang, active_facets=active)}"
+        f"{date_form}"
         '    <div class="results-status" role="status" aria-live="polite">\n'
         f"{status_line}"
         "    </div>\n"
