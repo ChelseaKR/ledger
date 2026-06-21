@@ -46,6 +46,7 @@ __all__ = [
     "looks_non_latin",
     "search",
     "snippet",
+    "sort_by_date",
 ]
 
 
@@ -280,3 +281,24 @@ def looks_non_latin(query: str) -> bool:
     an all-ASCII query with stray symbols is not flagged.
     """
     return any(char.isalpha() and not char.isascii() for char in query)
+
+
+def sort_by_date(records: Sequence[DisclosedRecord], *, newest: bool) -> list[DisclosedRecord]:
+    """Return ``records`` ordered by their Dublin Core ``date``, undated ones last.
+
+    ``newest=True`` sorts most-recent first, ``False`` oldest first; a record with no
+    date always sorts to the end either way, since an absent date should not masquerade
+    as the earliest or latest. The first ``date`` value is compared as a plain string,
+    which orders the ISO-ish forms ledger stores (``YYYY``, ``YYYY-MM``, ``YYYY-MM-DD``)
+    correctly. The sort is stable, so records sharing a date keep the caller's order
+    (a search's relevance ranking, or browse order) as a deterministic tie-break. Only
+    disclosed dates are read, so this can never reflect a withheld value (no-outing)."""
+
+    def date_of(record: DisclosedRecord) -> str:
+        values = record.dublin_core.get("date") or []
+        return values[0] if values and values[0] else ""
+
+    dated = [r for r in records if date_of(r)]
+    undated = [r for r in records if not date_of(r)]
+    dated.sort(key=date_of, reverse=newest)
+    return dated + undated

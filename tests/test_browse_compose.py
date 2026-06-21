@@ -63,6 +63,25 @@ def test_facet_link_replaces_a_prior_value_of_the_same_field() -> None:
     assert "subject=protest&amp;subject=housing" not in html
 
 
+def test_sort_links_preserve_query_and_facets() -> None:
+    records = [_disclosed("a", subject=["protest"], date=["2000"]), _disclosed("b", date=["2001"])]
+    html = _browse_main_html(
+        records,
+        heading="x",
+        query="march",
+        active_facets=[("subject", "protest")],
+        sort="newest",
+        current_path="/search?q=march&subject=protest&sort=newest",
+    )
+    # The sort control is present; the active order is aria-current, not a link.
+    assert 'class="sort"' in html
+    assert 'aria-current="true">Newest</span>' in html
+    # The "Oldest" link keeps the query and facet, swapping only sort.
+    assert 'href="/search?q=march&amp;subject=protest&amp;sort=oldest"' in html
+    # "Relevance" (clear sort) is offered because there is a query.
+    assert 'href="/search?q=march&amp;subject=protest">Relevance</a>' in html
+
+
 def test_browse_main_shows_clear_link_and_carries_facets_in_search_form() -> None:
     records = [_disclosed("a", subject=["protest"])]
     html = _browse_main_html(
@@ -125,3 +144,35 @@ def test_search_within_a_facet_returns_the_intersection(server_base: str) -> Non
     assert "A quiet vigil" not in body  # subject matches but not the query
     assert "Another march" not in body  # query matches but not the subject
     assert "Showing 1-1 of 1 record(s)." in body
+
+
+@pytest.fixture
+def dated_base(tmp_path: Path) -> Iterator[str]:
+    config = Config.default("Dated Archive", tmp_path / "arc")
+    archive = Archive.init(config)
+    for title, date in [("Old one", "1990"), ("New one", "2024"), ("Middle one", "2005")]:
+        record = Record(
+            title=title,
+            default_policy=AccessPolicy.PUBLIC,
+            dublin_core=DublinCore(title=[title], date=[date], publisher=[config.archive_name]),
+        )
+        archive.ingest({}, record, agent="t", now="2026-06-20T00:00:00Z")
+    httpd = make_server(archive, host="127.0.0.1", port=0)
+    base = f"http://127.0.0.1:{int(httpd.server_address[1])}"
+    sink = StringIO()
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    with redirect_stderr(sink), redirect_stdout(sink):
+        thread.start()
+        try:
+            yield base
+        finally:
+            httpd.shutdown()
+            thread.join(timeout=5)
+            httpd.server_close()
+
+
+def test_sort_newest_and_oldest_order_the_results(dated_base: str) -> None:
+    newest = _get(dated_base, "/?sort=newest")
+    assert newest.index("New one") < newest.index("Middle one") < newest.index("Old one")
+    oldest = _get(dated_base, "/?sort=oldest")
+    assert oldest.index("Old one") < oldest.index("Middle one") < oldest.index("New one")

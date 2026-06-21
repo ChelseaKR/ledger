@@ -19,6 +19,7 @@ from ledger.search import (
     looks_non_latin,
     search,
     snippet,
+    sort_by_date,
 )
 
 
@@ -290,3 +291,21 @@ def test_snippet_highlights_multiple_terms() -> None:
     assert snip is not None
     marked = {text.lower() for text, matched in snip.runs if matched}
     assert {"winter", "aid"} <= marked
+
+
+# --- sort by date ----------------------------------------------------------
+
+
+def test_sort_by_date_orders_and_puts_undated_last() -> None:
+    a = _disclosed("a", "A", dublin_core={"date": ["1990"]})
+    b = _disclosed("b", "B", dublin_core={"date": ["2020-05-01"]})
+    c = _disclosed("c", "C")  # no date
+    assert [r.record_id for r in sort_by_date([a, b, c], newest=True)] == ["b", "a", "c"]
+    assert [r.record_id for r in sort_by_date([a, b, c], newest=False)] == ["a", "b", "c"]
+
+
+def test_sort_by_date_is_stable_on_ties() -> None:
+    a = _disclosed("a", "A", dublin_core={"date": ["2000"]})
+    b = _disclosed("b", "B", dublin_core={"date": ["2000"]})
+    assert [r.record_id for r in sort_by_date([a, b], newest=True)] == ["a", "b"]
+    assert [r.record_id for r in sort_by_date([b, a], newest=True)] == ["b", "a"]

@@ -339,6 +339,41 @@ def _pager_html(
     )
 
 
+def _sort_html(current_path: str, *, query: str, sort: str, lang: str) -> str:
+    """A small sort control: order results by relevance (search only), newest, oldest.
+
+    Rendered as a labelled group of links built from the current path (preserving the
+    query and facets, dropping ``page``), so changing the order never drops a filter —
+    sort composes with search and facets like every other control. The active order is
+    plain ``aria-current`` text, not a link. "Relevance" appears only with a query (it
+    is the natural default order of a search); choosing it clears ``sort``."""
+
+    def href(value: str) -> str:
+        split = urlsplit(current_path)
+        kept = [(k, v) for k, v in parse_qsl(split.query) if k not in {"sort", "page"}]
+        if value:
+            kept.append(("sort", value))
+        return (split.path or "/") + ("?" + urlencode(kept) if kept else "")
+
+    options: list[tuple[str, str]] = []
+    if query:
+        options.append(("", "sort_relevance"))  # relevance == no explicit sort
+    options.append(("newest", "sort_newest"))
+    options.append(("oldest", "sort_oldest"))
+    items: list[str] = []
+    for value, key in options:
+        label = _esc(i18n.t(lang, key))
+        if value == sort:
+            items.append(f'<span aria-current="true">{label}</span>')
+        else:
+            items.append(f'<a href="{_esc(href(value))}">{label}</a>')
+    return (
+        f'    <p class="sort"><span>{_esc(i18n.t(lang, "sort_label"))}</span> '
+        + " ".join(items)
+        + "</p>\n"
+    )
+
+
 def _browse_main_html(
     records: list[DisclosedRecord],
     *,
@@ -346,6 +381,7 @@ def _browse_main_html(
     query: str = "",
     lang: str = "en",
     active_facets: list[tuple[str, str]] | None = None,
+    sort: str = "",
     page: int = 1,
     per_page: int = pagination.DEFAULT_PER_PAGE,
     current_path: str = "/",
@@ -392,6 +428,10 @@ def _browse_main_html(
         )
     else:
         clear = ""
+    # Offer a sort control only when there is more than one record to reorder.
+    sort_control = (
+        _sort_html(current_path, query=query, sort=sort, lang=lang) if window.total > 1 else ""
+    )
     facets = _facets_html(records, current_path=current_path, active=active, lang=lang)
     pager = _pager_html(window, current_path, lang=lang)
     list_heading = _esc(i18n.t(lang, "results_list_heading"))
@@ -407,6 +447,7 @@ def _browse_main_html(
         f"{status_line}"
         "    </div>\n"
         f"{clear}"
+        f"{sort_control}"
         '    <section aria-labelledby="list-heading">\n'
         f'      <h2 id="list-heading">{list_heading}</h2>\n'
         f"      {_records_list_html(shown, query=query, lang=lang)}\n"

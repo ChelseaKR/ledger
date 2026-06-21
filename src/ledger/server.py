@@ -960,6 +960,14 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             records = search.search(records, query)
         for field, value in active:
             records = search.filter_by_facet(records, field, value)
+        # An explicit sort overrides the default order (search relevance, else browse
+        # order) so a reader can read a topic chronologically (uses the dc:date a
+        # contributor can now supply). An unknown value leaves the default untouched.
+        sort = (params.get("sort", [""])[0]).strip()
+        if sort == "newest":
+            records = search.sort_by_date(records, newest=True)
+        elif sort == "oldest":
+            records = search.sort_by_date(records, newest=False)
 
         if query:
             heading = f"Search results for “{query}”"
@@ -981,6 +989,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             query=query,
             lang=lang,
             active_facets=active,
+            sort=sort,
             page=self._page_from(params),
             current_path=self.path,
         )
