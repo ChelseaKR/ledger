@@ -51,8 +51,18 @@ _CATALOG: dict[str, dict[str, str]] = {
     "en": {
         "nav_browse": "Browse",
         "nav_search": "Search",
+        "nav_overview": "Overview",
         "nav_status": "Status",
         "nav_about": "About",
+        "overview_heading": "Collection overview",
+        "overview_intro": (
+            "An at-a-glance summary of the public records in this archive — the topics, "
+            "kinds, and languages they cover. Every number counts only what is publicly "
+            "visible."
+        ),
+        "overview_total": "{count} public record(s).",
+        "overview_date_range": "Spanning {earliest} to {latest}.",
+        "overview_empty": "There are no public records yet.",
         "skip_link": "Skip to main content",
         "search_label": "Search the archive",
         "search_button": "Search",
@@ -342,8 +352,18 @@ _CATALOG: dict[str, dict[str, str]] = {
     "es": {
         "nav_browse": "Explorar",
         "nav_search": "Buscar",
+        "nav_overview": "Resumen",
         "nav_status": "Estado",
         "nav_about": "Acerca de",
+        "overview_heading": "Resumen de la colección",
+        "overview_intro": (
+            "Un resumen general de los registros públicos de este archivo: los temas, "
+            "los tipos y los idiomas que abarcan. Cada cifra cuenta únicamente lo que es "
+            "públicamente visible."
+        ),
+        "overview_total": "{count} registro(s) público(s).",
+        "overview_date_range": "Desde {earliest} hasta {latest}.",
+        "overview_empty": "Aún no hay registros públicos.",
         "skip_link": "Saltar al contenido principal",
         "search_label": "Buscar en el archivo",
         "search_button": "Buscar",

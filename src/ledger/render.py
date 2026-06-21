@@ -297,6 +297,55 @@ def _facets_html(
     return "\n".join(blocks)
 
 
+def _overview_main_html(records: list[DisclosedRecord], *, lang: str = "en") -> str:
+    """An at-a-glance overview of a collection: total, top facets, and date span.
+
+    A finding-aid landing page (user research P2-3): it summarises *only* the records
+    passed in — the caller hands the anonymous-public set, so the totals and the date
+    span describe what is publicly visible and never leak the existence or count of
+    sealed records (P2-2). Each facet value links into the faceted browse, every value
+    is escaped, and the counts come from disclosed Dublin Core, so nothing here can
+    carry an identity or a withheld value.
+    """
+    total = len(records)
+    parts = [
+        f"    <h1>{_esc(i18n.t(lang, 'overview_heading'))}</h1>",
+        f"    <p>{_esc(i18n.t(lang, 'overview_intro'))}</p>",
+    ]
+    if total == 0:
+        parts.append(f'    <p class="empty">{_esc(i18n.t(lang, "overview_empty"))}</p>')
+        return "\n".join(parts)
+
+    parts.append(
+        '    <p class="count">' + _esc(i18n.t(lang, "overview_total", count=total)) + "</p>"
+    )
+    dates = sorted(d[0] for r in records if (d := r.dublin_core.get("date")) and d[0])
+    if dates:
+        span = i18n.t(lang, "overview_date_range", earliest=dates[0], latest=dates[-1])
+        parts.append(f"    <p>{_esc(span)}</p>")
+
+    for field_name, label_key in (
+        ("subject", "facet_subjects"),
+        ("type", "facet_types"),
+        ("language", "facet_languages"),
+    ):
+        items = search.facets(records, field_name)
+        if not items:
+            continue
+        rows = "\n".join(
+            f'        <li><a href="/?{field_name}={quote(f.value)}">{_esc(f.value)}</a> '
+            f'<span class="muted">({f.count})</span></li>'
+            for f in items
+        )
+        parts.append(
+            f'    <section aria-labelledby="ov-{field_name}">\n'
+            f'      <h2 id="ov-{field_name}">{_esc(i18n.t(lang, label_key))}</h2>\n'
+            f'      <ul class="facets">\n{rows}\n      </ul>\n'
+            "    </section>"
+        )
+    return "\n".join(parts)
+
+
 def _pager_html(
     page: pagination.Page[DisclosedRecord], current_path: str, *, lang: str = "en"
 ) -> str:
@@ -752,6 +801,7 @@ def _nav_html(lang: str = "en", *, contribute: bool = False, current_path: str =
     return (
         f'\n      <a href="/">{_esc(i18n.t(lang, "nav_browse"))}</a>\n'
         f'      <a href="/search">{_esc(i18n.t(lang, "nav_search"))}</a>\n'
+        f'      <a href="/overview">{_esc(i18n.t(lang, "nav_overview"))}</a>\n'
         f'      <a href="/about">{_esc(i18n.t(lang, "nav_about"))}</a>\n'
         f'      <a href="/status">{_esc(i18n.t(lang, "nav_status"))}</a>\n'
         f"{contribute_link}{switch}    "

@@ -70,6 +70,7 @@ from ledger.render import (
     _esc,
     _is_insider,
     _nav_html,
+    _overview_main_html,
     _page,
     _record_main_html,
 )
@@ -319,6 +320,8 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
                 self._handle_consent_status(params)
             elif path == "/about":
                 self._handle_about()
+            elif path == "/overview":
+                self._handle_overview()
             elif path == "/governance":
                 self._handle_governance()
             elif path == "/how-it-works":
@@ -1759,6 +1762,25 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
     def _base_url(self) -> str:
         host = self.headers.get("Host", "localhost")
         return f"http://{host}"
+
+    def _handle_overview(self) -> None:
+        """``GET /overview`` — an at-a-glance summary of the public collection.
+
+        Summarises only the anonymous-public set, so the totals, top facets, and date
+        span describe what is publicly visible and never reveal the existence or count
+        of sealed records (no-outing rule / P2-2). Each facet links into the faceted
+        browse, turning the overview into a finding aid (P2-3)."""
+        lang = self._lang()
+        main_html = _overview_main_html(self._public_records(), lang=lang)
+        self._send_html(
+            200,
+            _page(
+                i18n.t(lang, "overview_heading"),
+                lang=lang,
+                main_html=main_html,
+                nav_html=self._nav(),
+            ),
+        )
 
     def _handle_oai(self, params: dict[str, list[str]]) -> None:
         """``GET /oai`` — a minimal OAI-PMH provider over public records only."""
