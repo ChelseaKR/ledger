@@ -1,0 +1,15 @@
+# gitleaks configuration for ledger.
+# Extends the default ruleset and allowlists the obvious placeholder key
+# fixtures used by the test suite (fed to tests via monkeypatch.setenv).
+# These are NOT real secrets; the allowlist is scoped to their exact literal
+# values so it cannot mask a genuine credential committed anywhere.
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Placeholder vault/claim key fixtures in the test suite (not real secrets)"
+regexes = [
+  '''0123456789abcdef0123456789abcdef0123456789a=''',
+  '''test-[a-z]+-(key|secret)-please-change''',
+]
