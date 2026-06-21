@@ -146,6 +146,27 @@ def test_search_within_a_facet_returns_the_intersection(server_base: str) -> Non
     assert "Showing 1-1 of 1 record(s)." in body
 
 
+def test_csv_export_applies_filters_and_is_a_download(server_base: str) -> None:
+    """/api/search.csv returns the filtered set as a CSV attachment over the safe shape."""
+    req = urllib.request.Request(f"{server_base}/api/search.csv?subject=protest")  # noqa: S310
+    with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310 - loopback
+        body = resp.read().decode("utf-8")
+        ctype = resp.headers.get("Content-Type", "")
+        disp = resp.headers.get("Content-Disposition", "")
+    assert "text/csv" in ctype
+    assert "attachment" in disp and "search-results.csv" in disp
+    assert body.splitlines()[0] == "record_id,title,date,subjects,types,languages,url"
+    # Only the two protest records, never the housing one.
+    assert "The big march" in body and "A quiet vigil" in body
+    assert "Another march" not in body
+    assert "identity_ref" not in body
+
+
+def test_browse_page_offers_a_csv_download(server_base: str) -> None:
+    body = _get(server_base, "/")
+    assert 'href="/api/search.csv"' in body
+
+
 def test_api_search_applies_the_same_filters(server_base: str) -> None:
     """/api/search returns JSON narrowed by the same composable filters as the page."""
     import json

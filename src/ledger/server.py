@@ -46,7 +46,7 @@ from email.parser import BytesParser
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlsplit
 
-from ledger import consent, contribute, i18n, oai, pagination, review, search, upload
+from ledger import consent, contribute, export, i18n, oai, pagination, review, search, upload
 from ledger.access import anonymous, disclose, is_listable
 from ledger.access.grants import load_grants
 from ledger.errors import AccessDenied, LedgerError, ObjectNotFound, ValidationError
@@ -359,6 +359,8 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
                 self._handle_api_records()
             elif path == "/api/search":
                 self._handle_api_search(params)
+            elif path == "/api/search.csv":
+                self._handle_api_search_csv(params)
             elif path.startswith("/api/record/"):
                 self._handle_api_record(path[len("/api/record/") :])
             elif path.startswith("/static/"):
@@ -1149,6 +1151,38 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
                 "records": [r.to_dict(withheld_reasons=reasons) for r in window.items],
             },
         )
+
+    #: Cap an export so a single request cannot stream an unbounded body.
+    _CSV_EXPORT_CAP = 5000
+
+    def _handle_api_search_csv(self, params: dict[str, list[str]]) -> None:
+        """``GET /api/search.csv`` — the filtered result set as a CSV download.
+
+        Same composable filters as the page and the JSON API, run through the one
+        shared pipeline, but rendered as CSV for spreadsheet analysis (the whole result
+        set, not one page, capped so a request stays bounded). Only the disclosed safe
+        shape is written — no identity, no withheld value (no-outing rule) — and each
+        cell is guarded against spreadsheet formula injection (:mod:`ledger.export`)."""
+        grant = self._resolve_grant()
+        records = self._apply_filters(
+            self._archive().browse(grant),
+            query=(params.get("q", [""])[0]).strip(),
+            active=self._active_facets(params),
+            date_from=(params.get("from", [""])[0]).strip()[:20],
+            date_to=(params.get("to", [""])[0]).strip()[:20],
+            sort=(params.get("sort", [""])[0]).strip(),
+        )
+        csv_text = export.records_csv(records[: self._CSV_EXPORT_CAP], base_url=self._base_url())
+        body = csv_text.encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/csv; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Content-Disposition", 'attachment; filename="search-results.csv"')
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(body)
 
     def _handle_api_record(self, raw_id: str) -> None:
         """``GET /api/record/{id}`` — JSON of one record's disclosed shape."""

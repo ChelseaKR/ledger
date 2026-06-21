@@ -526,6 +526,17 @@ def _browse_main_html(
         date_to=date_to,
         lang=lang,
     )
+    # A CSV export of the *current* result set (same filters), for spreadsheet
+    # analysis — built from the current query so it exports exactly what is shown.
+    if window.total > 0:
+        split = urlsplit(current_path)
+        csv_href = "/api/search.csv" + (f"?{split.query}" if split.query else "")
+        export_link = (
+            f'    <p class="export"><a href="{_esc(csv_href)}">'
+            f"{_esc(i18n.t(lang, 'download_csv'))}</a></p>\n"
+        )
+    else:
+        export_link = ""
     # Offer a sort control only when there is more than one record to reorder.
     sort_control = (
         _sort_html(current_path, query=query, sort=sort, lang=lang) if window.total > 1 else ""
@@ -546,6 +557,7 @@ def _browse_main_html(
         f"{status_line}"
         "    </div>\n"
         f"{clear}"
+        f"{export_link}"
         f"{sort_control}"
         '    <section aria-labelledby="list-heading">\n'
         f'      <h2 id="list-heading">{list_heading}</h2>\n'
