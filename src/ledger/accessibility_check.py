@@ -74,27 +74,42 @@ def contrast_ratio(fg: str, bg: str) -> float:
     return (hi + 0.05) / (lo + 0.05)
 
 
+def _root_tokens(block_text: str) -> dict[str, str]:
+    """The ``--token: #hex`` colour map declared in one ``:root { … }`` block."""
+    return dict(re.findall(r"--([a-z0-9-]+):\s*(#[0-9a-fA-F]{3,6})\b", block_text))
+
+
 def audit_css_contrast(css_text: str, *, label: str) -> list[str]:
     """Check the ``--token: #hex`` colour pairs in ``css_text`` against WCAG AA.
 
     Returns a problem for any declared pair below its threshold (4.5:1 for text,
-    3:1 for UI components). A token referenced by a pair but missing from the CSS
-    is itself a problem, so renaming a token cannot silently drop a check."""
-    tokens = {
-        name: value
-        for name, value in re.findall(r"--([a-z0-9-]+):\s*(#[0-9a-fA-F]{3,6})\b", css_text)
-    }
+    3:1 for UI components). A token referenced by a pair but missing from the base
+    palette is itself a problem, so renaming a token cannot silently drop a check.
+
+    Multiple ``:root`` blocks are each a *theme*: the first is the base palette and
+    every later one (e.g. a ``@media (prefers-color-scheme: dark)`` override) is the
+    base updated with its overrides. Every theme is audited, so a dark mode cannot
+    ship a colour pair that fails AA — the gate covers what a reader can actually see,
+    not just the default theme."""
+    roots = re.findall(r":root\s*\{([^}]*)\}", css_text)
+    base = _root_tokens(roots[0]) if roots else {}
+    themes: list[tuple[str, dict[str, str]]] = [("default", base)]
+    for index, block in enumerate(roots[1:], start=1):
+        themes.append((f"theme {index}", {**base, **_root_tokens(block)}))
+
     problems: list[str] = []
     for fg, bg, threshold, desc in _CONTRAST_PAIRS:
-        if fg not in tokens or bg not in tokens:
+        if fg not in base or bg not in base:
             problems.append(f"{label}: contrast pair {desc!r} references a missing colour token")
             continue
-        ratio = contrast_ratio(tokens[fg], tokens[bg])
-        if ratio + 1e-9 < threshold:
-            problems.append(
-                f"{label}: {desc} contrast {ratio:.2f}:1 is below WCAG AA {threshold:.1f}:1 "
-                f"(--{fg} on --{bg})"
-            )
+        for theme_name, tokens in themes:
+            ratio = contrast_ratio(tokens[fg], tokens[bg])
+            if ratio + 1e-9 < threshold:
+                suffix = "" if theme_name == "default" else f" [{theme_name}]"
+                problems.append(
+                    f"{label}: {desc} contrast {ratio:.2f}:1 is below WCAG AA {threshold:.1f}:1 "
+                    f"(--{fg} on --{bg}){suffix}"
+                )
     return problems
 
 

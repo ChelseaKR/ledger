@@ -38,6 +38,27 @@
   --space: 1rem;
 }
 
+/* Dark theme: honour the reader's OS preference. Every colour pair below is held
+ * to the same WCAG AA contrast as the light theme, verified for BOTH themes by the
+ * contrast audit (accessibility — the gate covers what a reader actually sees). */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #121212;
+    --ink: #e6e6e6;
+    --muted: #b3b3b3;
+    --link: #6fb3ff;
+    --link-visited: #c9a3ff;
+    --accent: #c792ea;
+    --border: #8a8a8a;
+    --surface: #1e1e1e;
+    --warn-bg: #2a1414;
+    --warn-ink: #ff9b9b;
+    --warn-border: #ff9b9b;
+    --mark-bg: #5c4a00;
+    --mark-ink: #ffe9a8;
+  }
+}
+
 /* Mobile-first base: comfortable line length, generous tap targets. */
 * {
   box-sizing: border-box;
