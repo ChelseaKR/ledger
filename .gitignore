@@ -42,3 +42,6 @@ secrets/
 
 # Claude Code session tooling (not part of the project)
 .claude/
+
+# runtime-fetched portfolio-standards (never commit)
+.standards/
