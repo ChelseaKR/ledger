@@ -100,7 +100,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install pip-audit
       - name: Vulnerable dependency scan (pip-audit)
-        run: pip-audit -r <(pip freeze) || true
+        run: pip-audit -r <(pip freeze)
       - name: Secret scan (gitleaks)
         uses: gitleaks/gitleaks-action@v2
         env:
