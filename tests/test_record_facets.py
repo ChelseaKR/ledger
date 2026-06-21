@@ -91,6 +91,30 @@ def test_citation_escapes_a_crafted_title() -> None:
     assert "&lt;script&gt;" in html
 
 
+def test_record_page_lists_related_records() -> None:
+    """Records passed as related render as links under a Related heading."""
+    record = _disclosed(subject=["protest"])
+    related = [
+        DisclosedRecord(
+            record_id="rel-1",
+            title="A related march",
+            dublin_core={"subject": ["protest"]},
+            fields={},
+            payloads=(),
+            content_warnings=(),
+            withheld=(),
+        )
+    ]
+    html = _record_main_html(record, proceed=True, related=related)
+    assert "Related records" in html
+    assert 'href="/record/rel-1">A related march</a>' in html
+
+
+def test_record_page_omits_related_section_when_none() -> None:
+    html = _record_main_html(_disclosed(subject=["protest"]), proceed=True, related=[])
+    assert "Related records" not in html
+
+
 def test_record_page_is_localized() -> None:
     """The record page chrome (headings, links, withheld note) renders in Spanish."""
     record = DisclosedRecord(

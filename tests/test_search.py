@@ -17,6 +17,7 @@ from ledger.search import (
     filter_by_facet,
     index_text,
     looks_non_latin,
+    related_by_subject,
     search,
     snippet,
     sort_by_date,
@@ -309,3 +310,28 @@ def test_sort_by_date_is_stable_on_ties() -> None:
     b = _disclosed("b", "B", dublin_core={"date": ["2000"]})
     assert [r.record_id for r in sort_by_date([a, b], newest=True)] == ["a", "b"]
     assert [r.record_id for r in sort_by_date([b, a], newest=True)] == ["b", "a"]
+
+
+# --- related records -------------------------------------------------------
+
+
+def test_related_by_subject_ranks_by_shared_count_and_excludes_self() -> None:
+    base = _disclosed("base", "Base", dublin_core={"subject": ["protest", "housing"]})
+    two = _disclosed("two", "Two", dublin_core={"subject": ["protest", "housing"]})
+    one = _disclosed("one", "One", dublin_core={"subject": ["protest"]})
+    none = _disclosed("none", "None", dublin_core={"subject": ["mutual aid"]})
+    related = related_by_subject(base, [base, none, one, two])
+    # 'two' (2 shared) before 'one' (1 shared); 'none' and the record itself excluded.
+    assert [r.record_id for r in related] == ["two", "one"]
+
+
+def test_related_by_subject_is_empty_without_subjects() -> None:
+    base = _disclosed("base", "Base")  # no subjects
+    other = _disclosed("other", "Other", dublin_core={"subject": ["x"]})
+    assert related_by_subject(base, [other]) == []
+
+
+def test_related_by_subject_respects_the_limit() -> None:
+    base = _disclosed("base", "Base", dublin_core={"subject": ["x"]})
+    candidates = [_disclosed(f"r{i}", f"R{i}", dublin_core={"subject": ["x"]}) for i in range(10)]
+    assert len(related_by_subject(base, candidates, limit=3)) == 3

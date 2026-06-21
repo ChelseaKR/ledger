@@ -1024,6 +1024,9 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             # (confidentiality — the absence of a record leaks nothing).
             self._handle_not_found()
             return
+        # Other records on the same subjects the *viewer* may list, so the related
+        # links never point at anything the viewer could not already see (no-outing).
+        related = search.related_by_subject(record, self._archive().browse(grant))
         main_html = _record_main_html(
             record,
             proceed=proceed,
@@ -1031,6 +1034,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             lang=self._lang(),
             base_url=self._base_url(),
             archive_name=self._archive().config.archive_name,
+            related=related,
         )
         self._send_html(
             200,

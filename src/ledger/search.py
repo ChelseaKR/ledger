@@ -44,6 +44,7 @@ __all__ = [
     "filter_by_facet",
     "index_text",
     "looks_non_latin",
+    "related_by_subject",
     "search",
     "snippet",
     "sort_by_date",
@@ -302,3 +303,31 @@ def sort_by_date(records: Sequence[DisclosedRecord], *, newest: bool) -> list[Di
     undated = [r for r in records if not date_of(r)]
     dated.sort(key=date_of, reverse=newest)
     return dated + undated
+
+
+def related_by_subject(
+    record: DisclosedRecord, candidates: Sequence[DisclosedRecord], *, limit: int = 5
+) -> list[DisclosedRecord]:
+    """Return the records most related to ``record`` by shared Dublin Core subject.
+
+    A reader on one record can then follow it to others on the same topics — the
+    record-level counterpart to the subject facet (user research P1-4). A candidate is
+    related if it shares at least one subject; results are ordered by the number of
+    shared subjects (most first), with the candidates' input order as a stable
+    tie-break, and capped at ``limit``. The record itself is excluded by id.
+
+    ``candidates`` is whatever the *viewer* may already list, and every record here is
+    a :class:`DisclosedRecord`, so a related record can never be one the viewer may not
+    see, and the link reveals nothing the subject facet would not (no-outing rule)."""
+    subjects = set(record.dublin_core.get("subject") or ())
+    if not subjects:
+        return []
+    scored: list[tuple[int, int, DisclosedRecord]] = []
+    for index, candidate in enumerate(candidates):
+        if candidate.record_id == record.record_id:
+            continue
+        shared = subjects & set(candidate.dublin_core.get("subject") or ())
+        if shared:
+            scored.append((len(shared), index, candidate))
+    scored.sort(key=lambda item: (-item[0], item[1]))
+    return [candidate for _shared, _index, candidate in scored[:limit]]

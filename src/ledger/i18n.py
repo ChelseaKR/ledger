@@ -199,6 +199,7 @@ _CATALOG: dict[str, dict[str, str]] = {
             "{count} details are restricted under your current access. If you are a "
             "community member or steward, sign in to see what is withheld and why."
         ),
+        "related_heading": "Related records",
         "cite_heading": "Cite this record",
         "cite_available_at": "Available at",
         "cite_permalink": "Permanent link",
@@ -507,6 +508,7 @@ _CATALOG: dict[str, dict[str, str]] = {
             "la comunidad o persona responsable, inicie sesión para ver qué se retiene y "
             "por qué."
         ),
+        "related_heading": "Registros relacionados",
         "cite_heading": "Citar este registro",
         "cite_available_at": "Disponible en",
         "cite_permalink": "Enlace permanente",

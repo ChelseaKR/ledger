@@ -587,6 +587,27 @@ def _citation_html(record: DisclosedRecord, *, base_url: str, archive_name: str,
     )
 
 
+def _related_html(related: list[DisclosedRecord], *, lang: str) -> str:
+    """A "Related records" section linking records that share a subject.
+
+    Empty when there are none. Each related record is a :class:`DisclosedRecord` the
+    viewer may already list (the caller passes only viewer-visible candidates), so a
+    link here reveals nothing the subject facet would not (no-outing rule). Titles are
+    escaped and ids quoted."""
+    if not related:
+        return ""
+    rows = "\n".join(
+        f'        <li><a href="/record/{quote(r.record_id)}">{_esc(r.title)}</a></li>'
+        for r in related
+    )
+    return (
+        '    <section aria-labelledby="related-heading">\n'
+        f'      <h2 id="related-heading">{_esc(i18n.t(lang, "related_heading"))}</h2>\n'
+        f'      <ul class="related">\n{rows}\n      </ul>\n'
+        "    </section>"
+    )
+
+
 def _record_main_html(
     record: DisclosedRecord,
     *,
@@ -595,6 +616,7 @@ def _record_main_html(
     lang: str = "en",
     base_url: str = "",
     archive_name: str = "",
+    related: list[DisclosedRecord] | None = None,
 ) -> str:
     """Compose the single-record ``<main>``, with a content-warning interstitial.
 
@@ -718,6 +740,12 @@ def _record_main_html(
             f"{body}\n"
             "    </section>"
         )
+
+    # Records on the same subjects, so a reader can follow a topic across the
+    # collection (the record-level counterpart to the subject facet, P1-4).
+    related_html = _related_html(related or [], lang=lang)
+    if related_html:
+        parts.append(related_html)
 
     # A stable, quotable citation for scholarship, plus a machine-readable metadata
     # link (user research P2-3). Drawn only from disclosed metadata, so no identity.
