@@ -146,6 +146,20 @@ def test_search_within_a_facet_returns_the_intersection(server_base: str) -> Non
     assert "Showing 1-1 of 1 record(s)." in body
 
 
+def test_api_search_applies_the_same_filters(server_base: str) -> None:
+    """/api/search returns JSON narrowed by the same composable filters as the page."""
+    import json
+
+    payload = json.loads(_get(server_base, "/api/search?q=march&subject=protest"))
+    assert payload["query"] == "march"
+    assert payload["total"] == 1
+    assert payload["page"] == 1 and payload["pages"] == 1
+    titles = [r["title"] for r in payload["records"]]
+    assert titles == ["The big march"]
+    # The disclosed safe shape — never an identity field.
+    assert "identity_ref" not in payload["records"][0]
+
+
 @pytest.fixture
 def dated_base(tmp_path: Path) -> Iterator[str]:
     config = Config.default("Dated Archive", tmp_path / "arc")

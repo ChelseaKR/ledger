@@ -46,7 +46,7 @@ from email.parser import BytesParser
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlsplit
 
-from ledger import consent, contribute, i18n, oai, review, search, upload
+from ledger import consent, contribute, i18n, oai, pagination, review, search, upload
 from ledger.access import anonymous, disclose, is_listable
 from ledger.access.grants import load_grants
 from ledger.errors import AccessDenied, LedgerError, ObjectNotFound, ValidationError
@@ -357,6 +357,8 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
                 self._handle_record(path[len("/record/") :], params)
             elif path == "/api/records":
                 self._handle_api_records()
+            elif path == "/api/search":
+                self._handle_api_search(params)
             elif path.startswith("/api/record/"):
                 self._handle_api_record(path[len("/api/record/") :])
             elif path.startswith("/static/"):
@@ -946,6 +948,35 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
                 active.append((field, values[0]))
         return active
 
+    @staticmethod
+    def _apply_filters(
+        records: list[DisclosedRecord],
+        *,
+        query: str,
+        active: list[tuple[str, str]],
+        date_from: str,
+        date_to: str,
+        sort: str,
+    ) -> list[DisclosedRecord]:
+        """Apply the composable discovery filters to ``records``, in order.
+
+        Search (which ranks by relevance) then each active facet then the date range
+        then an explicit sort — the same pipeline behind the browse/search page and
+        the JSON search API, so both surfaces narrow a result set identically. Every
+        step operates on the already-disclosed set, so no filter can surface a value a
+        viewer may not see (no-outing rule)."""
+        if query:
+            records = search.search(records, query)
+        for field, value in active:
+            records = search.filter_by_facet(records, field, value)
+        if date_from or date_to:
+            records = search.filter_by_date_range(records, start=date_from, end=date_to)
+        if sort == "newest":
+            records = search.sort_by_date(records, newest=True)
+        elif sort == "oldest":
+            records = search.sort_by_date(records, newest=False)
+        return records
+
     def _render_results(self, params: dict[str, list[str]]) -> None:
         """Render the browse/search page applying the query and every active facet.
 
@@ -957,25 +988,18 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         grant = self._resolve_grant()
         query = (params.get("q", [""])[0]).strip()
         active = self._active_facets(params)
-
         date_from = (params.get("from", [""])[0]).strip()[:20]
         date_to = (params.get("to", [""])[0]).strip()[:20]
-
-        records = self._archive().browse(grant)
-        if query:
-            records = search.search(records, query)
-        for field, value in active:
-            records = search.filter_by_facet(records, field, value)
-        if date_from or date_to:
-            records = search.filter_by_date_range(records, start=date_from, end=date_to)
-        # An explicit sort overrides the default order (search relevance, else browse
-        # order) so a reader can read a topic chronologically (uses the dc:date a
-        # contributor can now supply). An unknown value leaves the default untouched.
         sort = (params.get("sort", [""])[0]).strip()
-        if sort == "newest":
-            records = search.sort_by_date(records, newest=True)
-        elif sort == "oldest":
-            records = search.sort_by_date(records, newest=False)
+
+        records = self._apply_filters(
+            self._archive().browse(grant),
+            query=query,
+            active=active,
+            date_from=date_from,
+            date_to=date_to,
+            sort=sort,
+        )
 
         if query:
             heading = f"Search results for “{query}”"
@@ -1093,6 +1117,38 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         records = self._archive().browse(grant)
         reasons = _is_insider(grant)
         self._send_json(200, {"records": [r.to_dict(withheld_reasons=reasons) for r in records]})
+
+    def _handle_api_search(self, params: dict[str, list[str]]) -> None:
+        """``GET /api/search`` — JSON results for the composable discovery filters.
+
+        Accepts the same ``q`` / ``subject`` / ``type`` / ``language`` / ``from`` /
+        ``to`` / ``sort`` / ``page`` parameters as the HTML browse, applies them
+        through the one shared filter pipeline, paginates the same way, and returns the
+        disclosed safe shape — so an integrator gets exactly what the page shows, never
+        a withheld value or an identity (no-outing rule). The body reports the active
+        query and the pagination so a caller can walk the pages."""
+        grant = self._resolve_grant()
+        reasons = _is_insider(grant)
+        records = self._apply_filters(
+            self._archive().browse(grant),
+            query=(params.get("q", [""])[0]).strip(),
+            active=self._active_facets(params),
+            date_from=(params.get("from", [""])[0]).strip()[:20],
+            date_to=(params.get("to", [""])[0]).strip()[:20],
+            sort=(params.get("sort", [""])[0]).strip(),
+        )
+        window = pagination.paginate(records, self._page_from(params), pagination.DEFAULT_PER_PAGE)
+        self._send_json(
+            200,
+            {
+                "query": (params.get("q", [""])[0]).strip(),
+                "total": window.total,
+                "page": window.number,
+                "pages": window.pages,
+                "per_page": window.per_page,
+                "records": [r.to_dict(withheld_reasons=reasons) for r in window.items],
+            },
+        )
 
     def _handle_api_record(self, raw_id: str) -> None:
         """``GET /api/record/{id}`` — JSON of one record's disclosed shape."""
