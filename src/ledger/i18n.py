@@ -189,6 +189,10 @@ _CATALOG: dict[str, dict[str, str]] = {
             "{count} details are restricted under your current access. If you are a "
             "community member or steward, sign in to see what is withheld and why."
         ),
+        "cite_heading": "Cite this record",
+        "cite_available_at": "Available at",
+        "cite_permalink": "Permanent link",
+        "cite_download": "Download metadata (JSON)",
         "rec_consent_link": "Are you the contributor? Manage or withdraw your consent",
         "rec_object_link": "Are you named in this record and object to it? Tell a steward",
         "payload_transcript": "Transcript",
@@ -483,6 +487,10 @@ _CATALOG: dict[str, dict[str, str]] = {
             "la comunidad o persona responsable, inicie sesión para ver qué se retiene y "
             "por qué."
         ),
+        "cite_heading": "Citar este registro",
+        "cite_available_at": "Disponible en",
+        "cite_permalink": "Enlace permanente",
+        "cite_download": "Descargar metadatos (JSON)",
         "rec_consent_link": "¿Es usted el colaborador? Gestione o retire su consentimiento",
         "rec_object_link": (
             "¿Está nombrado en este registro y se opone a él? Avise a una persona responsable"

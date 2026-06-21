@@ -50,6 +50,47 @@ def test_facet_value_is_escaped_and_quoted() -> None:
     assert "&lt;script&gt;" in html  # shown as escaped text
 
 
+def test_record_page_offers_a_citation_and_metadata_link() -> None:
+    """A record page shows a stable citation, a permalink, and a metadata download."""
+    record = DisclosedRecord(
+        record_id="rec-9",
+        title="The May march",
+        dublin_core={"date": ["1994"], "publisher": ["Ignored Publisher"]},
+        fields={},
+        payloads=(),
+        content_warnings=(),
+        withheld=(),
+    )
+    html = _record_main_html(
+        record,
+        proceed=True,
+        base_url="https://archive.example/",
+        archive_name="People's Archive",
+    )
+    assert "Cite this record" in html
+    # The citation carries title, date, the archive name, and the permalink.
+    assert "The May march. 1994. People&#x27;s Archive." in html
+    assert "https://archive.example/record/rec-9" in html
+    # A machine-readable metadata link points at the JSON API.
+    assert 'href="/api/record/rec-9"' in html
+
+
+def test_citation_escapes_a_crafted_title() -> None:
+    """A title with markup cannot break out of the citation."""
+    record = DisclosedRecord(
+        record_id="r",
+        title='<script>"x"',
+        dublin_core={},
+        fields={},
+        payloads=(),
+        content_warnings=(),
+        withheld=(),
+    )
+    html = _record_main_html(record, proceed=True, base_url="https://x.org", archive_name="A")
+    assert "<script>" not in html
+    assert "&lt;script&gt;" in html
+
+
 def test_record_page_is_localized() -> None:
     """The record page chrome (headings, links, withheld note) renders in Spanish."""
     record = DisclosedRecord(

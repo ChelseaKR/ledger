@@ -198,6 +198,13 @@ a:hover {
   margin: 0.5rem 0;
 }
 
+/* --- citation: a quotable, easy-to-select reference block --------------- */
+.citation {
+  background: var(--surface);
+  border-left: 3px solid var(--border);
+  padding: 0.5rem 0.75rem;
+}
+
 /* --- search match highlight --------------------------------------------- */
 /* The matched term in a result snippet, marked with <mark>. Colour is not the
  * only signal: <mark> is a semantic element a screen reader can expose, and the

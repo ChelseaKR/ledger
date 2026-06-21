@@ -506,8 +506,46 @@ def _dc_value_html(element: str, values: list[str]) -> str:
     return _esc("; ".join(values))
 
 
+def _citation_html(record: DisclosedRecord, *, base_url: str, archive_name: str, lang: str) -> str:
+    """A "Cite this record" block: a formatted citation, a permalink, a metadata link.
+
+    Scholarship needs a stable, quotable reference (user research P2-3). The citation
+    is ``Title. [Date.] Archive. URL`` built from already-disclosed metadata (the
+    archive name falls back to the record's Dublin Core ``publisher``), so it carries
+    no identity. The permalink and the ``Available at`` URL are the record's public
+    address; a "download metadata" link points at the JSON API for machine reuse.
+    Everything is escaped, and the URL is quoted, so no value can break the markup."""
+    root = base_url.rstrip("/")
+    permalink = f"{root}/record/{quote(record.record_id)}"
+    publisher = record.dublin_core.get("publisher") or []
+    archive = archive_name or (publisher[0] if publisher else "")
+    dates = record.dublin_core.get("date") or []
+    date_part = f" {_esc(dates[0])}." if dates and dates[0] else ""
+    archive_part = f" {_esc(archive)}." if archive else ""
+    citation = (
+        f"{_esc(record.title)}.{date_part}{archive_part} "
+        f"{_esc(i18n.t(lang, 'cite_available_at'))} {_esc(permalink)}"
+    )
+    return (
+        '    <section aria-labelledby="cite-heading">\n'
+        f'      <h2 id="cite-heading">{_esc(i18n.t(lang, "cite_heading"))}</h2>\n'
+        f'      <p class="citation">{citation}</p>\n'
+        f"      <p>{_esc(i18n.t(lang, 'cite_permalink'))}: "
+        f'<a href="{_esc(permalink)}">{_esc(permalink)}</a></p>\n'
+        f'      <p><a href="/api/record/{quote(record.record_id)}">'
+        f"{_esc(i18n.t(lang, 'cite_download'))}</a></p>\n"
+        "    </section>"
+    )
+
+
 def _record_main_html(
-    record: DisclosedRecord, *, proceed: bool, insider: bool = False, lang: str = "en"
+    record: DisclosedRecord,
+    *,
+    proceed: bool,
+    insider: bool = False,
+    lang: str = "en",
+    base_url: str = "",
+    archive_name: str = "",
 ) -> str:
     """Compose the single-record ``<main>``, with a content-warning interstitial.
 
@@ -631,6 +669,10 @@ def _record_main_html(
             f"{body}\n"
             "    </section>"
         )
+
+    # A stable, quotable citation for scholarship, plus a machine-readable metadata
+    # link (user research P2-3). Drawn only from disclosed metadata, so no identity.
+    parts.append(_citation_html(record, base_url=base_url, archive_name=archive_name, lang=lang))
 
     # The contributor's front door: act on the promise that consent is revocable
     # (user research P0-2). Shown to everyone — only the claim token (issued at

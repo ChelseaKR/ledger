@@ -1022,7 +1022,12 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             self._handle_not_found()
             return
         main_html = _record_main_html(
-            record, proceed=proceed, insider=_is_insider(grant), lang=self._lang()
+            record,
+            proceed=proceed,
+            insider=_is_insider(grant),
+            lang=self._lang(),
+            base_url=self._base_url(),
+            archive_name=self._archive().config.archive_name,
         )
         self._send_html(
             200,
