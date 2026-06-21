@@ -99,19 +99,27 @@ def _page(title: str, *, lang: str, main_html: str, nav_html: str = "") -> str:
     )
 
 
-def _search_form(query: str = "", *, lang: str = "en") -> str:
+def _search_form(
+    query: str = "", *, lang: str = "en", active_facets: list[tuple[str, str]] | None = None
+) -> str:
     """Render the search form with a programmatically associated label.
 
     The ``<label for>`` is tied to the input's ``id`` so assistive technology
     announces the field's purpose, and the current ``query`` is escaped back into
     ``value`` so a search term cannot inject markup (accessibility, security). The
-    label and button are localized so a switched-language reader sees them in their
-    own language (user research I2)."""
+    label and button are localized (user research I2). Any ``active_facets`` ride
+    along as hidden inputs, so submitting a search *keeps* the current facet filters
+    — search and faceted browse compose rather than replacing each other."""
+    hidden = "".join(
+        f'  <input type="hidden" name="{_esc(field)}" value="{_esc(value)}">\n'
+        for field, value in (active_facets or [])
+    )
     return (
         '<form class="search" role="search" method="get" action="/search">\n'
         f'  <label for="q">{_esc(i18n.t(lang, "search_label"))}</label>\n'
         f'  <input id="q" name="q" type="search" value="{_esc(query)}" '
         'autocomplete="off">\n'
+        f"{hidden}"
         f'  <button type="submit">{_esc(i18n.t(lang, "search_button"))}</button>\n'
         "</form>\n"
     )
@@ -225,32 +233,65 @@ def _records_table_html(
     )
 
 
-def _facets_html(records: list[DisclosedRecord]) -> str:
-    """Browsable subject/type facets so a topic is reachable, not just a title.
+def _facet_href(current_path: str, field: str, value: str, *, active: bool) -> str:
+    """The browse URL that toggles facet ``field=value`` on the current path.
 
-    Each facet value links to a filtered browse (``/?subject=...``), turning the
-    careful Dublin Core into a finding aid rather than decoration (user research
-    P1-4). Built from already-disclosed records, so a facet never reveals a value
-    a viewer may not see.
+    Preserves the existing query (the search term ``q`` and any *other* active
+    facets) and only ever touches ``field``: an inactive value is *set* (replacing any
+    prior value of that field), an active one is *removed* (toggled off). ``page`` is
+    always dropped so toggling a filter resets to the first page. This is what makes
+    search and facets compose — clicking a facet narrows the current results rather
+    than starting a fresh browse."""
+    split = urlsplit(current_path)
+    kept = [(k, v) for k, v in parse_qsl(split.query) if k != "page"]
+    if active:
+        kept = [(k, v) for k, v in kept if not (k == field and v == value)]
+    else:
+        kept = [(k, v) for k, v in kept if k != field]
+        kept.append((field, value))
+    path = split.path or "/"
+    return path + ("?" + urlencode(kept) if kept else "")
+
+
+def _facets_html(
+    records: list[DisclosedRecord],
+    *,
+    current_path: str = "/",
+    active: list[tuple[str, str]] | None = None,
+    lang: str = "en",
+) -> str:
+    """Browsable subject/type/language facets that compose with search.
+
+    Each facet value links (via :func:`_facet_href`) to the current view *narrowed* by
+    that value, keeping the search term and other facets, turning the careful Dublin
+    Core into a finding aid rather than decoration (user research P1-4). An already-
+    active value is marked ``aria-current`` and its link removes it (a toggle). Built
+    from the already-disclosed, already-matched ``records``, so a facet never reveals a
+    value a viewer may not see and the counts describe the current results.
     """
+    active_set = set(active or [])
     blocks: list[str] = []
-    for field_name, label in (
-        ("subject", "Subjects"),
-        ("type", "Types"),
-        ("language", "Languages"),
+    for field_name, label_key in (
+        ("subject", "facet_subjects"),
+        ("type", "facet_types"),
+        ("language", "facet_languages"),
     ):
         items = search.facets(records, field_name)
         if not items:
             continue
-        links = "\n".join(
-            f'        <li><a href="/?{field_name}={quote(f.value)}">{_esc(f.value)}</a> '
-            f'<span class="muted">({f.count})</span></li>'
-            for f in items
-        )
+        rows: list[str] = []
+        for f in items:
+            is_active = (field_name, f.value) in active_set
+            href = _facet_href(current_path, field_name, f.value, active=is_active)
+            mark = ' aria-current="true"' if is_active else ""
+            rows.append(
+                f'        <li><a href="{_esc(href)}"{mark}>{_esc(f.value)}</a> '
+                f'<span class="muted">({f.count})</span></li>'
+            )
         blocks.append(
             f'    <section aria-labelledby="facet-{field_name}">\n'
-            f'      <h2 id="facet-{field_name}">{label}</h2>\n'
-            f'      <ul class="facets">\n{links}\n      </ul>\n'
+            f'      <h2 id="facet-{field_name}">{_esc(i18n.t(lang, label_key))}</h2>\n'
+            f'      <ul class="facets">\n{chr(10).join(rows)}\n      </ul>\n'
             "    </section>"
         )
     return "\n".join(blocks)
@@ -304,7 +345,7 @@ def _browse_main_html(
     heading: str,
     query: str = "",
     lang: str = "en",
-    all_records: list[DisclosedRecord] | None = None,
+    active_facets: list[tuple[str, str]] | None = None,
     page: int = 1,
     per_page: int = pagination.DEFAULT_PER_PAGE,
     current_path: str = "/",
@@ -313,15 +354,18 @@ def _browse_main_html(
 
     Renders the list and the table as two complete, equivalent presentations of
     the same records (accessibility — equivalent list and table views), plus
-    browsable subject/type facets. Heading order is ``h1`` (page) then ``h2`` (each
-    view) then ``h3`` (list items), with no levels skipped (accessibility).
+    browsable subject/type/language facets that *compose* with the search box.
+    Heading order is ``h1`` (page) then ``h2`` (each view) then ``h3`` (list items),
+    with no levels skipped (accessibility).
 
     The result set is paginated (:mod:`ledger.pagination`): only the current page's
-    records are rendered into each view, with a pager below, so a large collection
-    stays a light, navigable page rather than one unbounded wall of items. Facet
-    counts are still computed over the *whole* set (``all_records``), so the sidebar
-    describes the full collection, not just this page.
+    records are rendered into each view, with a pager below. ``records`` is the full
+    matched set (query + facets already applied), so the facet sidebar and counts
+    describe *these* results — clicking a facet narrows the current search rather than
+    starting over. ``active_facets`` are the filters in force, so the sidebar can mark
+    them and offer a clear-filters link, and the search form carries them as it posts.
     """
+    active = active_facets or []
     window = pagination.paginate(records, page, per_page)
     shown = list(window.items)
     # The empty state distinguishes "no matches" from a permission problem, in
@@ -338,7 +382,17 @@ def _browse_main_html(
             total=window.total,
         )
         status_line = f'      <p class="count">{_esc(showing)}</p>\n'
-    facets = _facets_html(all_records if all_records is not None else records)
+    # A "clear filters" link when any query or facet is active, so a reader is never
+    # stuck inside a narrowed view (escapability).
+    if query or active:
+        split = urlsplit(current_path)
+        clear = (
+            f'    <p class="clear-filters"><a href="{_esc(split.path or "/")}">'
+            f"{_esc(i18n.t(lang, 'clear_filters'))}</a></p>\n"
+        )
+    else:
+        clear = ""
+    facets = _facets_html(records, current_path=current_path, active=active, lang=lang)
     pager = _pager_html(window, current_path, lang=lang)
     list_heading = _esc(i18n.t(lang, "results_list_heading"))
     table_heading = _esc(i18n.t(lang, "results_table_heading"))
@@ -348,10 +402,11 @@ def _browse_main_html(
     # present on every render so the announcement fires as the results load.
     return (
         f"    <h1>{_esc(heading)}</h1>\n"
-        f"    {_search_form(query, lang=lang)}"
+        f"    {_search_form(query, lang=lang, active_facets=active)}"
         '    <div class="results-status" role="status" aria-live="polite">\n'
         f"{status_line}"
         "    </div>\n"
+        f"{clear}"
         '    <section aria-labelledby="list-heading">\n'
         f'      <h2 id="list-heading">{list_heading}</h2>\n'
         f"      {_records_list_html(shown, query=query, lang=lang)}\n"

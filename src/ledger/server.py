@@ -913,34 +913,79 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
     def _handle_browse(self, params: dict[str, list[str]]) -> None:
         """``GET /`` — the accessible browse page (list + table equivalents).
 
-        Supports faceted browse: ``?subject=`` / ``?type=`` filter by a Dublin Core
-        facet so a topic is reachable, not just an exact title (user research P1-4).
-        """
+        Faceted browse and search compose: ``?subject=`` / ``?type=`` / ``?language=``
+        filter by a Dublin Core facet and ``?q=`` searches, and any combination
+        narrows to the intersection, so a reader can search *within* a topic (user
+        research P1-4)."""
+        self._render_results(params)
+
+    def _handle_search(self, params: dict[str, list[str]]) -> None:
+        """``GET /search?q=`` — search disclosed records, composing with any facets.
+
+        Search runs over already-disclosed records (so it can never surface a field
+        the grant may not see) and indexes subjects, descriptions, and types, not just
+        titles. The same active facets apply, so search and faceted browse are one
+        finding aid rather than two. A non-Latin query shows a plain hint that search
+        is English-biased."""
+        self._render_results(params)
+
+    @staticmethod
+    def _active_facets(params: dict[str, list[str]]) -> list[tuple[str, str]]:
+        """Every active Dublin Core facet filter, one value per field, in field order.
+
+        Composing facets (subject AND type AND language) lets a reader narrow on more
+        than one axis at once. Only the first value of each field is taken, so a
+        crafted repeated param cannot AND a field against itself into nothing."""
+        active: list[tuple[str, str]] = []
+        for field in ("subject", "type", "language"):
+            values = params.get(field)
+            if values and values[0]:
+                active.append((field, values[0]))
+        return active
+
+    def _render_results(self, params: dict[str, list[str]]) -> None:
+        """Render the browse/search page applying the query and every active facet.
+
+        Starts from the records the grant may list, searches them by ``q`` (which also
+        ranks them by relevance), then narrows by each active facet — the intersection.
+        Facet counts and the sidebar are computed over the matched set so they narrow
+        the *current* results, not the whole collection."""
         lang = self._lang()
         grant = self._resolve_grant()
+        query = (params.get("q", [""])[0]).strip()
+        active = self._active_facets(params)
+
         records = self._archive().browse(grant)
-        facet_field, facet_value = self._facet_from(params)
-        if facet_field and facet_value:
-            records = search.filter_by_facet(records, facet_field, facet_value)
-            heading = f"{facet_field.capitalize()}: {facet_value}"
+        if query:
+            records = search.search(records, query)
+        for field, value in active:
+            records = search.filter_by_facet(records, field, value)
+
+        if query:
+            heading = f"Search results for “{query}”"
+        elif len(active) == 1:
+            heading = f"{active[0][0].capitalize()}: {active[0][1]}"
+        elif active:
+            heading = "Filtered records"
         else:
             heading = "Browse the archive"
-        main_html = _browse_main_html(
+        hint = (
+            '<p class="hint">Search currently matches Latin-script text; results may '
+            "be incomplete for other scripts.</p>"
+            if query and search.looks_non_latin(query)
+            else ""
+        )
+        main_html = hint + _browse_main_html(
             records,
             heading=heading,
+            query=query,
             lang=lang,
-            all_records=self._all_for_facets(grant),
+            active_facets=active,
             page=self._page_from(params),
             current_path=self.path,
         )
-        self._send_html(200, _page("Browse", lang=lang, main_html=main_html, nav_html=self._nav()))
-
-    @staticmethod
-    def _facet_from(params: dict[str, list[str]]) -> tuple[str, str]:
-        for fld in ("subject", "type", "language"):
-            if params.get(fld):
-                return fld, params[fld][0]
-        return "", ""
+        title = f"Search — {query}" if query else "Browse"
+        self._send_html(200, _page(title, lang=lang, main_html=main_html, nav_html=self._nav()))
 
     @staticmethod
     def _page_from(params: dict[str, list[str]]) -> int:
@@ -953,48 +998,6 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             return int(raw)
         except ValueError:
             return 1
-
-    def _all_for_facets(self, grant: Grant) -> list[DisclosedRecord]:
-        return self._archive().browse(grant)
-
-    def _handle_search(self, params: dict[str, list[str]]) -> None:
-        """``GET /search?q=`` — search disclosed records over their Dublin Core.
-
-        Search runs over already-disclosed records (so it can never surface a field
-        the grant may not see) and now indexes subjects, descriptions, and types —
-        not just titles — so a topic search actually finds records (user research
-        P1-4). A non-Latin query shows a plain hint that search is English-biased.
-        """
-        lang = self._lang()
-        grant = self._resolve_grant()
-        query = (params.get("q", [""])[0]).strip()
-        disclosed = self._archive().browse(grant)
-        matched = search.search(disclosed, query)
-        heading = f"Search results for “{query}”" if query else "Search"
-        hint = (
-            '<p class="hint">Search currently matches Latin-script text; results may '
-            "be incomplete for other scripts.</p>"
-            if query and search.looks_non_latin(query)
-            else ""
-        )
-        main_html = hint + _browse_main_html(
-            matched,
-            heading=heading,
-            query=query,
-            lang=lang,
-            all_records=disclosed,
-            page=self._page_from(params),
-            current_path=self.path,
-        )
-        self._send_html(
-            200,
-            _page(
-                f"Search — {query}" if query else "Search",
-                lang=lang,
-                main_html=main_html,
-                nav_html=self._nav(),
-            ),
-        )
 
     def _handle_record(self, raw_id: str, params: dict[str, list[str]]) -> None:
         """``GET /record/{id}`` — a single record view with a CW interstitial."""
