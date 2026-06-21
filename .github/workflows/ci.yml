@@ -102,7 +102,10 @@ jobs:
       - name: Vulnerable dependency scan (pip-audit)
         run: pip-audit -r <(pip freeze)
       - name: Secret scan (gitleaks)
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "false"
+        # Run the pinned gitleaks binary directly. The gitleaks-action v2 crashes
+        # on pull_request events (internal GitHub API RequestError) before it ever
+        # scans; the binary is deterministic and honours .gitleaks.toml.
+        run: |
+          GL=8.24.3
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GL}/gitleaks_${GL}_linux_x64.tar.gz" | tar -xz -C /tmp gitleaks
+          /tmp/gitleaks detect --source . --config .gitleaks.toml --no-banner --redact --exit-code 1
