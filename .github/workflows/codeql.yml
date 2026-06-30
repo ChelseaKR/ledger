@@ -1,11 +1,10 @@
 name: codeql
 
-# Vulnerability management: static security analysis on every change to main and on
-# a weekly schedule, so a newly-discovered class of bug is caught even with no code
-# change (security-aware maintenance).
+# Vulnerability management: static security analysis on every pull request into main
+# and on a weekly schedule, so a newly-discovered class of bug is caught even with no
+# code change (security-aware maintenance). The post-merge push run is redundant with
+# the pull-request run and is dropped to save Actions minutes.
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
   schedule:
@@ -13,6 +12,12 @@ on:
 
 permissions:
   contents: read
+
+# Cancel a superseded analysis when a PR branch is updated; the latest revision is
+# the only one whose result the merge gate cares about.
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   analyze:
