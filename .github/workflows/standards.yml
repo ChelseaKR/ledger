@@ -6,10 +6,12 @@
 # private half). Installed by automation/ci-fetch/install.sh.
 name: standards
 
+# pull_request is intentionally omitted: fork PRs do not receive repo secrets, so the
+# private-standards fetch (deploy key) would fail for external contributors once this
+# repo is public. The freshness gate is a maintainer concern, enforced on every push to main.
 on:
   push:
     branches: [main]
-  pull_request:
 
 # Least privilege: this job only reads. No write scope is granted to GITHUB_TOKEN.
 permissions:
