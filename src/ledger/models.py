@@ -137,6 +137,7 @@ class PremisEventType(StrEnum):
 
     INGESTION = "ingestion"
     FIXITY_CHECK = "fixity check"
+    FORMAT_IDENTIFICATION = "format identification"
     REPLICATION = "replication"
     REDACTION = "redaction"
     POLICY_CHANGE = "access-policy change"

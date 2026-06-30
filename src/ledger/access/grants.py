@@ -78,6 +78,30 @@ def steward(subject: str) -> Grant:
     )
 
 
+def designated_successor(subject: str, *, expires_at: str | None = None) -> Grant:
+    """Build a designated-successor grant: steward-level, but with NO identity-unseal.
+
+    Mutual-aid groups and volunteer collectives disband, and their knowledge dies
+    with them unless someone is empowered to take over. A *designated successor* is
+    the person or collective a folding group names to inherit stewardship of its
+    archive (EX1, group continuity). This grant gives them everything an ordinary
+    steward has — they can read access-restricted content and administer the archive
+    — but, exactly like :func:`steward`, it holds **no** ``identity_unseal`` tokens:
+    inheriting the archive is not inheriting the power to out the people in it. The
+    successor must be granted identity-unseal separately and deliberately, under the
+    community's own governance, if ever (least privilege, the no-outing rule).
+
+    ``expires_at`` may bound the grant when the hand-off is meant to be temporary
+    (e.g. a caretaker during a transition); omitted, it does not expire.
+    """
+    return build_grant(
+        subject,
+        levels=(AccessPolicy.PUBLIC, AccessPolicy.COMMUNITY, AccessPolicy.STEWARDS),
+        is_steward=True,
+        expires_at=expires_at,
+    )
+
+
 def load_grants(path: Path) -> dict[str, Grant]:
     """Load a subject -> grant mapping from a JSON file.
 
