@@ -12,6 +12,12 @@
 unaffiliated with any employer or client; contains no proprietary or client material. Built for and
 with community archivists and mutual-aid organizers, not for a government or institutional customer.
 
+> **Maturity & safety.** This is a **pre-1.0 reference implementation.** The confidentiality
+> guarantees described below (no-outing, sealed disclosure, fixity) are enforced by merge-blocking
+> tests, but ledger has **not yet had an independent security or cryptography audit.** Evaluate it
+> against your own threat model before entrusting real, high-stakes records — see
+> [`SECURITY.md`](./SECURITY.md) and [`docs/THREAT-MODEL.md`](./docs/THREAT-MODEL.md).
+
 **Why this domain.** Queer history is disproportionately undocumented, and the documentation that
 exists is fragile. It lives on a single laptop, a dead Facebook group, a hosted service that changes
 its terms, a shoebox under someone's bed. The people best placed to keep it are often the people

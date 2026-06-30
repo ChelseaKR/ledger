@@ -1,0 +1,24 @@
+cff-version: 1.2.0
+message: "If you use ledger, please cite it as below."
+title: "ledger — a privacy-first community archive for queer histories and mutual-aid knowledge"
+abstract: >-
+  A digital-preservation tool that lets a queer community keep its own records in
+  content-addressed, checksummed, replicated storage with consent-based, selective
+  disclosure, designed so that holding a record can never out the person who made it.
+type: software
+authors:
+  - given-names: Chelsea
+    family-names: Kelly-Reif
+license: AGPL-3.0-or-later
+repository-code: "https://github.com/ChelseaKR/ledger"
+url: "https://github.com/ChelseaKR/ledger"
+version: "0.1.0"
+keywords:
+  - digital-preservation
+  - community-archives
+  - privacy
+  - consent
+  - OAIS
+  - BagIt
+  - PREMIS
+  - Dublin-Core
