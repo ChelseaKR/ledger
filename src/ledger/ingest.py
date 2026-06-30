@@ -56,6 +56,7 @@ from ledger.models import (
     now_iso,
 )
 from ledger.oais import AIP, SIP
+from ledger.preservation import identify_file
 
 # Names of the metadata artifacts written beside ``data/`` inside every bag. They
 # are tag files (covered by the tag manifest), so their integrity is part of the
@@ -251,10 +252,13 @@ def ingest_sip(
 
     1. **Fixity + store.** Each payload file is hashed under both manifest
        algorithms and ``put_file`` into the content-addressed ``store`` (dedupe,
-       integrity). A :class:`~ledger.models.PayloadFile` entry is built carrying
-       the content address, size, media type, and the file's intended policy —
-       taken from a matching entry already on ``sip.record.payloads`` if present,
-       else the record's ``default_policy`` (default to narrowest).
+       integrity). The format is identified from the bytes (OAIS Preservation
+       Planning: a PRONOM/DROID-style content signature, with an at-risk flag for
+       obsolescent formats), informing the media type. A
+       :class:`~ledger.models.PayloadFile` entry is built carrying the content
+       address, size, media type, and the file's intended policy — taken from a
+       matching entry already on ``sip.record.payloads`` if present, else the
+       record's ``default_policy`` (default to narrowest).
     2. **Seal identity.** If the SIP carries an identity and a ``vault`` exists,
        the identity is added to the vault and the returned opaque ``identity_ref``
        is set on the record. The identity goes nowhere else (safety).
@@ -263,9 +267,10 @@ def ingest_sip(
        never a person, plus the ``Bagging-Date`` (``now``, injected for
        reproducibility) and the record id as External-Identifier.
     4. **Document.** The record manifest, Dublin Core sidecar, and a PREMIS log
-       (one INGESTION event plus a FIXITY_CHECK event per payload) are written as
-       tag files beside ``data/`` inside the bag, so their integrity is covered by
-       the bag's own tag manifest (integrity, auditability).
+       (one INGESTION event plus a FIXITY_CHECK and a FORMAT_IDENTIFICATION event
+       per payload) are written as tag files beside ``data/`` inside the bag, so
+       their integrity is covered by the bag's own tag manifest (integrity,
+       auditability).
 
     Before returning, every clear-text artifact is re-scanned for the contributor
     identity and a :class:`~ledger.errors.LedgerError` raised on any hit (defense
@@ -279,6 +284,11 @@ def ingest_sip(
     declared = {p.filename: p for p in record.payloads}
     payload_entries: list[PayloadFile] = []
     fixity_events: list[PremisEvent] = []
+    # PREMIS format-identification events + the IANA media types identified, so the
+    # archive models OAIS Preservation Planning (format obsolescence), not only
+    # bit-fixity (RM4; NDSA Levels; DPC Handbook).
+    format_events: list[PremisEvent] = []
+    identified_media_types: list[str] = []
     # The sources actually stored + bagged (ciphertext for absolute-SEALED files).
     bag_payload: dict[str, Path] = {}
     sealed_tmp: Path | None = None
@@ -286,13 +296,18 @@ def ingest_sip(
         source = sip.payload[filename]
         existing = declared.get(filename)
         transcript = existing.transcript if existing is not None else ""
+        # Identify the format from the clear source bytes (content-based, before any
+        # at-rest encryption). A confident content signature beats a filename guess.
+        fmt = identify_file(source)
+        identified_media_types.append(fmt.media_type)
         if existing is not None:
             media_type = existing.media_type
         else:
-            # Infer from the filename so the Files list and API report something
-            # meaningful instead of always octet-stream (correctness, usability).
+            # Prefer a content-based media type; else infer from the filename so the
+            # Files list and API report something meaningful instead of octet-stream
+            # (correctness, usability).
             guessed, _ = mimetypes.guess_type(filename)
-            media_type = guessed or "application/octet-stream"
+            media_type = fmt.media_type if fmt.basis == "signature" else (guessed or fmt.media_type)
         policy = existing.policy if existing is not None else record.default_policy
         # An absolute-SEALED payload FILE is encrypted at rest: the content store and
         # the bag hold ciphertext, never the clear bytes, so a stolen disk or hostile
@@ -336,6 +351,20 @@ def ingest_sip(
                 event_datetime=now,
             )
         )
+        # A format-identification event per payload (OAIS Preservation Planning): the
+        # identified format, its PRONOM PUID where known, how it was identified, and —
+        # for an obsolescent/proprietary format — the migration recommendation. The
+        # detail carries only format metadata, never identity or content (no-outing).
+        format_events.append(
+            PremisEvent(
+                event_type=PremisEventType.FORMAT_IDENTIFICATION,
+                agent=agent,
+                outcome="at-risk" if fmt.at_risk else "success",
+                detail=fmt.summary(),
+                linked_object=str(address),
+                event_datetime=now,
+            )
+        )
     record.payloads = payload_entries
     # Stamp the manifest with the injected ingest instant so a golden ingest is
     # byte-reproducible rather than carrying the wall-clock construction time.
@@ -347,6 +376,12 @@ def ingest_sip(
         year = re.search(r"\b(1[89]\d{2}|20\d{2})\b", record.title)
         if year:
             record.dublin_core.date = [year.group(1)]
+    # Backfill dc:format with the identified IANA media types when none was given, so
+    # the format is discoverable in the catalogue and the preservation risk is legible
+    # (RM4; Dublin Core `format` is the standard home for the media type). Sorted +
+    # de-duplicated for a deterministic sidecar.
+    if not record.dublin_core.format and identified_media_types:
+        record.dublin_core.format = sorted(set(identified_media_types))
 
     # Absolute-SEALED fields are encrypted AT REST so a stolen disk or hostile
     # replica reveals nothing, not even to a steward (user research P2-4). Such a
@@ -400,6 +435,8 @@ def ingest_sip(
             )
         )
         for event in fixity_events:
+            premis.record(event)
+        for event in format_events:
             premis.record(event)
         premis_json = premis.to_json()
 

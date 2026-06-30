@@ -28,7 +28,7 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from ledger import acr_gen, demo, dualcontrol
+from ledger import acr_gen, demo, dualcontrol, preservation, succession
 from ledger.access.grants import anonymous, community_member, steward
 from ledger.access.redaction import redact_field, redact_payload
 from ledger.config import Config, StorageLocation
@@ -198,6 +198,18 @@ def _cmd_ingest(args: argparse.Namespace) -> int:
             print(
                 f"note: {p.filename} is audio/video with no transcript; add one with "
                 f"--transcript '{p.filename}=...' so it is accessible (WCAG 1.2)",
+                file=sys.stderr,
+            )
+    # Preservation-planning advisory: an obsolescent/proprietary format may verify by
+    # fixity yet become unreadable over time. Nudge toward migration, do not block
+    # (OAIS Preservation Planning; NDSA Levels). The PREMIS log already records this.
+    for file_arg in args.files or []:
+        src = Path(file_arg)
+        fmt = preservation.identify_file(src)
+        if fmt.at_risk:
+            print(
+                f"note: {src.name} is {fmt.name}, an at-risk/obsolescent format. "
+                f"{fmt.recommendation}",
                 file=sys.stderr,
             )
     return 0
@@ -666,6 +678,41 @@ def _cmd_vault_rekey(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_handoff(args: argparse.Namespace) -> int:
+    """``handoff`` — produce a continuity hand-off manifest for a folding group (EX1).
+
+    Builds a no-outing-safe :class:`~ledger.succession.HandoffManifest`: it
+    re-verifies every bag's fixity, inventories the records by opaque id, records
+    where the bytes and the *encrypted* vault live, and embeds a plain-language
+    runbook a designated successor can follow to stand the archive back up and prove
+    it arrived intact. The manifest carries no contributor identity, no sealed value,
+    and never the vault key (which must travel out-of-band).
+
+    Writes the JSON manifest to ``--out`` when given (else prints it to stdout), and
+    a short, safe summary to stdout. Exits non-zero if any bag failed fixity, so a
+    group never hands off a corrupt archive believing it is whole.
+    """
+    archive = _open_archive(Path(args.root))
+    now = args.now if args.now else now_iso()
+    manifest = succession.build_handoff(archive, now=now, successor=args.successor)
+    manifest_json = manifest.to_json()
+    if args.out:
+        out_path = Path(args.out)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(manifest_json + "\n", encoding="utf-8")
+        print(f"wrote hand-off manifest for {manifest.total_records} record(s) to {out_path}")
+    else:
+        print(manifest_json)
+    status = "all bags verified" if manifest.all_fixity_ok else "FIXITY FAILURES PRESENT"
+    print(
+        f"hand-off: {manifest.total_records} record(s); {status}; "
+        f"vault {'present' if manifest.vault_present else 'absent'} "
+        "(copy its key out-of-band, never in the manifest)",
+        file=sys.stderr,
+    )
+    return 0 if manifest.all_fixity_ok else 1
+
+
 def _cmd_demo(args: argparse.Namespace) -> int:
     """``demo`` — run the self-contained, scripted no-outing proof end to end."""
     return demo.main()
@@ -858,6 +905,15 @@ def _build_parser() -> argparse.ArgumentParser:
     p_rekey.add_argument("--actor", required=True, help="steward id performing the rotation")
     p_rekey.add_argument("--now", help="ISO-8601 timestamp")
     p_rekey.set_defaults(func=_cmd_vault_rekey)
+
+    p_handoff = sub.add_parser(
+        "handoff", help="produce a continuity hand-off manifest (group succession)"
+    )
+    p_handoff.add_argument("--root", required=True)
+    p_handoff.add_argument("--successor", help="name of the collective/person taking over")
+    p_handoff.add_argument("--out", help="write the JSON manifest here (default: stdout)")
+    p_handoff.add_argument("--now", help="ISO-8601 timestamp for a reproducible manifest")
+    p_handoff.set_defaults(func=_cmd_handoff)
 
     p_demo = sub.add_parser("demo", help="run the scripted end-to-end no-outing proof")
     p_demo.set_defaults(func=_cmd_demo)
