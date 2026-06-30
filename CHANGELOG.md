@@ -6,6 +6,28 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Disclosure-policy workflow.** First-class, accountable steward commands to set and
+  apply a disclosure policy on an already-archived item, enforced by the core engine and
+  honoured by the reading-room:
+  - `ledger seal` sets the policy of a single field, a payload, or the record default —
+    including a temporal embargo (`--field … --level sealed-until --until <date>`,
+    time-gated release), a conditional seal (`--condition`), or an absolute seal. Backed
+    by `moderate.set_field_policy` / `moderate.set_payload_policy`, each a recorded,
+    non-mutating transform emitting a PREMIS `access-policy change` event.
+  - `ledger redact` wires the existing `access.redaction` transform into a workflow:
+    it destructively replaces a field value with `[redacted]` or drops a payload from the
+    stored manifest, recording a PREMIS `redaction` event that names only the
+    field/filename, never the removed value.
+  - Both require a rationale (accountability) and persist through the one identity-refusing
+    write path, so no policy change can leak a contributor identity or a sealed value.
+- **Reading-room enforcement proof.** An end-to-end test that applies an embargo and a
+  redaction through the workflow, then drives the live stdlib reading-room over loopback
+  and asserts the embargoed, redacted, and sealed-identity sentinels appear on no
+  anonymous surface (HTML, JSON record/list APIs, CSV export), while the withholding is
+  still acknowledged honestly without exposing the embargo date to outsiders.
+
 ## [0.1.0] — 2026-06-16
 
 First reference implementation. A small collective can install ledger, self-host it

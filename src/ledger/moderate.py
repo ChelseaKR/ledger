@@ -261,6 +261,120 @@ def change_consent(
     return updated, event, action
 
 
+def set_field_policy(
+    record: Record,
+    field_name: str,
+    new_policy: AccessPolicy,
+    *,
+    unseal_at: str | None = None,
+    unseal_condition: str | None = None,
+    actor: str,
+    reason: str,
+    now: str,
+) -> tuple[Record, PremisEvent, ModerationAction]:
+    """Set one descriptive field's disclosure policy, returning a copy + audit trail.
+
+    Where :func:`change_consent` moves the record's *default* policy, this moves a
+    *single field's* policy — the granular control that lets a steward embargo or
+    seal one sensitive field (a name, a location) while the rest of the record stays
+    public (selective disclosure, autonomy). It is the engine-side primitive behind
+    the ``ledger seal`` workflow, covering every disclosure shape the core supports:
+
+    * a plain visibility level (``public`` / ``community`` / ``stewards``);
+    * a **temporal embargo** — ``sealed-until`` with ``unseal_at`` — that binds every
+      tier (including stewards) until the date passes, i.e. time-gated release;
+    * a **conditional seal** — ``sealed-conditional`` with ``unseal_condition`` — that
+      opens only when a named condition is met;
+    * an **absolute seal** (``sealed``) that no grant satisfies.
+
+    ``unseal_at``/``unseal_condition`` are set on the field exactly as given, so
+    re-sealing replaces any prior date/condition and moving to a dateless level
+    clears them (predictability). Raises :class:`~ledger.errors.ModerationError`
+    naming only the field if no such field exists — never a value (no-outing rule).
+
+    Returns the updated record, a PREMIS ``POLICY_CHANGE`` event, and a
+    ``consent-change`` action. The event detail names only the field and the new
+    policy (and, for an embargo, the public date) — never the withheld value
+    (auditability, confidentiality).
+    """
+    _require_reason(reason)
+    if record.field_named(field_name) is None:
+        raise ModerationError(f"record has no field named {field_name!r}")
+    new_fields = [
+        replace(f, policy=new_policy, unseal_at=unseal_at, unseal_condition=unseal_condition)
+        if f.name == field_name
+        else f
+        for f in record.fields
+    ]
+    updated = replace(record, fields=new_fields)
+    # The embargo date is collection-public (the reading-room already shows it as a
+    # withheld reason), so naming it in the steward-only audit trail leaks nothing;
+    # the field's *value* never appears here.
+    when = f" until {unseal_at}" if new_policy is AccessPolicy.SEALED_UNTIL and unseal_at else ""
+    event = PremisEvent(
+        event_type=PremisEventType.POLICY_CHANGE,
+        agent=actor,
+        outcome="success",
+        detail=f"field {field_name!r} policy changed to {new_policy.value}{when}",
+        linked_object=record.record_id,
+        event_datetime=now,
+    )
+    action = ModerationAction(
+        action="consent-change",
+        actor=actor,
+        reason=reason,
+        target_record=record.record_id,
+        at=now,
+    )
+    return updated, event, action
+
+
+def set_payload_policy(
+    record: Record,
+    filename: str,
+    new_policy: AccessPolicy,
+    *,
+    actor: str,
+    reason: str,
+    now: str,
+) -> tuple[Record, PremisEvent, ModerationAction]:
+    """Set one payload's disclosure policy, returning a copy + audit trail.
+
+    The payload counterpart to :func:`set_field_policy`: a steward can restrict or
+    open a single attached file (an audio master, a scan) independently of the
+    record's descriptive fields. A :class:`~ledger.models.PayloadFile` carries no
+    unseal date, so this sets the visibility *level* only — a dated embargo is a
+    field-level concept. Raises :class:`~ledger.errors.ModerationError` naming only
+    the filename if no such payload exists (no-outing rule).
+
+    Returns the updated record, a PREMIS ``POLICY_CHANGE`` event, and a
+    ``consent-change`` action; the detail names only the filename and policy.
+    """
+    _require_reason(reason)
+    if not any(p.filename == filename for p in record.payloads):
+        raise ModerationError(f"record has no payload named {filename!r}")
+    new_payloads = [
+        replace(p, policy=new_policy) if p.filename == filename else p for p in record.payloads
+    ]
+    updated = replace(record, payloads=new_payloads)
+    event = PremisEvent(
+        event_type=PremisEventType.POLICY_CHANGE,
+        agent=actor,
+        outcome="success",
+        detail=f"payload {filename!r} policy changed to {new_policy.value}",
+        linked_object=record.record_id,
+        event_datetime=now,
+    )
+    action = ModerationAction(
+        action="consent-change",
+        actor=actor,
+        reason=reason,
+        target_record=record.record_id,
+        at=now,
+    )
+    return updated, event, action
+
+
 def takedown(
     record_id: str,
     *,
