@@ -30,6 +30,7 @@ from pathlib import Path
 
 from ledger import acr_gen, demo, dualcontrol
 from ledger.access.grants import anonymous, community_member, steward
+from ledger.access.redaction import redact_field, redact_payload
 from ledger.config import Config, StorageLocation
 from ledger.errors import LedgerError
 from ledger.identity import ContributorIdentity
@@ -46,7 +47,13 @@ from ledger.models import (
     Record,
     now_iso,
 )
-from ledger.moderate import add_content_warning, change_consent, takedown
+from ledger.moderate import (
+    add_content_warning,
+    change_consent,
+    set_field_policy,
+    set_payload_policy,
+    takedown,
+)
 from ledger.replicate import verify_replicas
 from ledger.server import serve
 
@@ -316,6 +323,97 @@ def _cmd_cw(args: argparse.Namespace) -> int:
     )
     _persist_record(archive, updated, event)
     print(f"content warning {args.warning!r} added to {args.id} by {action.actor}")
+    return 0
+
+
+def _cmd_seal(args: argparse.Namespace) -> int:
+    """``seal`` — set the disclosure policy of one field, payload, or the record default.
+
+    The first-class, accountable workflow for *applying* a disclosure policy to an
+    already-archived item — embargo, conditional release, or a plain visibility level
+    — without re-ingesting it. It is the steward-facing complement to the per-field
+    policies a contributor chooses at ingest: a steward can later embargo a name until
+    a date (``--field name --level sealed-until --until 2035-01-01``), seal a payload
+    to stewards, or move the whole record's default (``--default``).
+
+    Exactly one target is required (``--field`` / ``--payload`` / ``--default``).
+    ``--until`` (a temporal embargo) and ``--condition`` apply only to a *field*, since
+    only a field carries an unseal date/condition; using them with another target is a
+    clean error. Every change routes through the audited moderation layer (a rationale
+    is required) and persists the new manifest plus a PREMIS event (autonomy,
+    accountability, the no-outing rule).
+    """
+    archive = _open_archive(Path(args.root))
+    record = archive.get(args.id)
+    now = args.now if args.now else now_iso()
+    try:
+        level = AccessPolicy(args.level)
+    except ValueError as exc:
+        raise LedgerError(f"unknown access level: {args.level!r}") from exc
+
+    if (args.until or args.condition) and not args.field:
+        raise LedgerError("--until/--condition apply only to a --field target")
+
+    if args.field:
+        updated, event, action = set_field_policy(
+            record,
+            args.field,
+            level,
+            unseal_at=args.until,
+            unseal_condition=args.condition,
+            actor=args.actor,
+            reason=args.reason,
+            now=now,
+        )
+        target = f"field {args.field!r}"
+    elif args.payload:
+        updated, event, action = set_payload_policy(
+            record, args.payload, level, actor=args.actor, reason=args.reason, now=now
+        )
+        target = f"payload {args.payload!r}"
+    else:
+        updated, event, action = change_consent(
+            record, level, actor=args.actor, reason=args.reason, now=now
+        )
+        target = "default policy"
+    _persist_record(archive, updated, event)
+    print(f"{target} for {args.id} set to {level.value} by {action.actor}")
+    return 0
+
+
+def _cmd_redact(args: argparse.Namespace) -> int:
+    """``redact`` — apply a recorded redaction to a stored field or payload.
+
+    Unlike ``seal`` (which gates *visibility* but keeps the value at rest for a future
+    authorized viewer), a redaction is a destructive *transform*: it replaces a field's
+    value with ``[redacted]`` or drops a payload from the manifest, then persists the
+    lossy copy. It is the tool for content that must never be served again — a name a
+    contributor asked to be erased — not merely held back. The change is recorded as a
+    PREMIS ``REDACTION`` event naming only the field/filename (never the removed value),
+    so the redaction is provable after the fact (auditability, the no-outing rule).
+
+    A rationale is required (accountability), exactly as for ``policy``/``takedown``;
+    the reason gates the action but is not itself persisted, so a free-text note can
+    never become a leak vector. Exactly one of ``--field`` / ``--payload`` is required;
+    an unknown target is a clean error that names only the target, not any value.
+    """
+    if not args.reason or not args.reason.strip():
+        raise LedgerError("a redaction requires a non-empty --reason")
+    archive = _open_archive(Path(args.root))
+    record = archive.get(args.id)
+    now = args.now if args.now else now_iso()
+    if args.field:
+        if record.field_named(args.field) is None:
+            raise LedgerError(f"record has no field named {args.field!r}")
+        updated, event = redact_field(record, args.field, agent=args.actor, now=now)
+        target = f"field {args.field!r}"
+    else:
+        if not any(p.filename == args.payload for p in record.payloads):
+            raise LedgerError(f"record has no payload named {args.payload!r}")
+        updated, event = redact_payload(record, args.payload, agent=args.actor, now=now)
+        target = f"payload {args.payload!r}"
+    _persist_record(archive, updated, event)
+    print(f"redacted {target} from {args.id} by {args.actor}")
     return 0
 
 
@@ -667,6 +765,36 @@ def _build_parser() -> argparse.ArgumentParser:
     p_policy.add_argument("--reason", required=True, help="rationale (required, auditable)")
     p_policy.add_argument("--now", help="ISO-8601 timestamp")
     p_policy.set_defaults(func=_cmd_policy)
+
+    p_seal = sub.add_parser(
+        "seal", help="set the disclosure policy of a field, payload, or record default"
+    )
+    p_seal.add_argument("--root", required=True)
+    p_seal.add_argument("--id", required=True)
+    seal_target = p_seal.add_mutually_exclusive_group(required=True)
+    seal_target.add_argument("--field", help="name of the field to set a policy on")
+    seal_target.add_argument("--payload", help="filename of the payload to set a policy on")
+    seal_target.add_argument(
+        "--default", action="store_true", help="set the record's default policy"
+    )
+    p_seal.add_argument("--level", required=True, help="access level to set")
+    p_seal.add_argument("--until", help="embargo date (ISO-8601); --field with sealed-until only")
+    p_seal.add_argument("--condition", help="unseal condition name; --field only")
+    p_seal.add_argument("--actor", required=True, help="steward id making the change")
+    p_seal.add_argument("--reason", required=True, help="rationale (required, auditable)")
+    p_seal.add_argument("--now", help="ISO-8601 timestamp")
+    p_seal.set_defaults(func=_cmd_seal)
+
+    p_redact = sub.add_parser("redact", help="apply a recorded redaction to a field or payload")
+    p_redact.add_argument("--root", required=True)
+    p_redact.add_argument("--id", required=True)
+    redact_target = p_redact.add_mutually_exclusive_group(required=True)
+    redact_target.add_argument("--field", help="name of the field to redact")
+    redact_target.add_argument("--payload", help="filename of the payload to drop")
+    p_redact.add_argument("--actor", required=True, help="steward id making the change")
+    p_redact.add_argument("--reason", required=True, help="rationale (required, auditable)")
+    p_redact.add_argument("--now", help="ISO-8601 timestamp")
+    p_redact.set_defaults(func=_cmd_redact)
 
     p_cw = sub.add_parser("cw", help="add a content warning to an existing record")
     p_cw.add_argument("--root", required=True)

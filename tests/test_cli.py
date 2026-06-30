@@ -315,3 +315,205 @@ def test_ingest_rejects_malformed_field_pair(
     assert rc != 0
     err = capsys.readouterr().err
     assert "name=value" in err
+
+
+# --- seal / redact: the disclosure-policy workflow -------------------------
+
+# A loud sealed-field sentinel: it is published at ingest, then sealed/redacted, and
+# must disappear from the anonymous disclosed view once the workflow runs (safety).
+_SEALED_FIELD_VALUE = "SENTINEL-CLI-SEALED-FIELD-7Q4X"
+
+
+def _ingest_sealed_probe(root: Path, capsys: pytest.CaptureFixture[str]) -> str:
+    """Ingest a PUBLIC record carrying a probe field and return its record id."""
+    assert _init(root) == 0
+    capsys.readouterr()
+    rc = cli.main(
+        [
+            "ingest",
+            "--root",
+            str(root),
+            "--title",
+            "Workflow sample",
+            "--public-field",
+            f"venue={_SEALED_FIELD_VALUE}",
+            "--now",
+            _NOW,
+            str(_FIXTURES / "public.txt"),
+        ]
+    )
+    assert rc == 0
+    out = capsys.readouterr().out
+    record_id = next(
+        line.split("record_id:")[1].strip()
+        for line in out.splitlines()
+        if line.startswith("record_id:")
+    )
+    assert record_id
+    return record_id
+
+
+def test_seal_embargo_removes_field_from_anonymous_view(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``seal --field --until`` embargoes a field so anonymous no longer sees its value.
+
+    The published probe value must be present before the seal and absent after, while
+    the disclosed view honestly names the field as withheld (selective disclosure).
+    """
+    root = tmp_path / "arc"
+    rid = _ingest_sealed_probe(root, capsys)
+
+    # Visible before the seal.
+    assert cli.main(["show", "--root", str(root), "--id", rid, "--now", _NOW]) == 0
+    assert _SEALED_FIELD_VALUE in capsys.readouterr().out
+
+    rc = cli.main(
+        [
+            "seal",
+            "--root",
+            str(root),
+            "--id",
+            rid,
+            "--field",
+            "venue",
+            "--level",
+            "sealed-until",
+            "--until",
+            "2099-01-01",
+            "--actor",
+            "steward",
+            "--reason",
+            "contributor asked to embargo",
+            "--now",
+            _NOW,
+        ]
+    )
+    assert rc == 0
+    assert "set to sealed-until" in capsys.readouterr().out
+
+    # Gone from the anonymous disclosed view; the field is named as withheld instead.
+    assert cli.main(["show", "--root", str(root), "--id", rid, "--now", _NOW]) == 0
+    shown = json.loads(capsys.readouterr().out)
+    assert _SEALED_FIELD_VALUE not in json.dumps(shown)
+    assert "venue" not in shown["fields"]
+    assert any(w["name"] == "venue" for w in shown["withheld"])
+
+
+def test_seal_rejects_until_without_field_target(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``--until`` is a field-only concept; using it with ``--default`` is a clean error."""
+    root = tmp_path / "arc"
+    rid = _ingest_sealed_probe(root, capsys)
+    rc = cli.main(
+        [
+            "seal",
+            "--root",
+            str(root),
+            "--id",
+            rid,
+            "--default",
+            "--level",
+            "sealed-until",
+            "--until",
+            "2099-01-01",
+            "--actor",
+            "steward",
+            "--reason",
+            "r",
+            "--now",
+            _NOW,
+        ]
+    )
+    assert rc != 0
+    assert "error:" in capsys.readouterr().err
+
+
+def test_redact_field_erases_value_in_stored_manifest(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``redact --field`` replaces the value on disk, so even a steward view cannot see it."""
+    root = tmp_path / "arc"
+    rid = _ingest_sealed_probe(root, capsys)
+    rc = cli.main(
+        [
+            "redact",
+            "--root",
+            str(root),
+            "--id",
+            rid,
+            "--field",
+            "venue",
+            "--actor",
+            "steward",
+            "--reason",
+            "erase on request",
+            "--now",
+            _NOW,
+        ]
+    )
+    assert rc == 0
+    assert "redacted field 'venue'" in capsys.readouterr().out
+
+    # The value is gone from the steward view too — redaction is destructive at rest.
+    assert (
+        cli.main(["show", "--root", str(root), "--id", rid, "--as", "steward", "--now", _NOW]) == 0
+    )
+    shown = capsys.readouterr().out
+    assert _SEALED_FIELD_VALUE not in shown
+    assert "[redacted]" in shown
+
+
+def test_redact_requires_reason(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """A redaction without a rationale is rejected (accountability)."""
+    root = tmp_path / "arc"
+    rid = _ingest_sealed_probe(root, capsys)
+    rc = cli.main(
+        [
+            "redact",
+            "--root",
+            str(root),
+            "--id",
+            rid,
+            "--field",
+            "venue",
+            "--actor",
+            "steward",
+            "--reason",
+            "   ",
+            "--now",
+            _NOW,
+        ]
+    )
+    assert rc != 0
+    assert "error:" in capsys.readouterr().err
+
+
+def test_redact_unknown_field_fails_without_leaking(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Redacting a non-existent field fails cleanly, naming only the field."""
+    root = tmp_path / "arc"
+    rid = _ingest_sealed_probe(root, capsys)
+    rc = cli.main(
+        [
+            "redact",
+            "--root",
+            str(root),
+            "--id",
+            rid,
+            "--field",
+            "nope",
+            "--actor",
+            "steward",
+            "--reason",
+            "r",
+            "--now",
+            _NOW,
+        ]
+    )
+    assert rc != 0
+    err = capsys.readouterr().err
+    assert "nope" in err
+    assert _SEALED_FIELD_VALUE not in err
