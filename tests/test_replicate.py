@@ -198,3 +198,60 @@ def test_replicate_corrupt_bag_quarantines_and_raises(
     # The bad copy is isolated under quarantine/, not left at the live replica path.
     assert (Path(loc.path) / "quarantine" / bag.name).exists()
     assert not (Path(loc.path) / bag.name).exists()
+
+
+@pytest.mark.preservation
+def test_truncated_replica_is_reported_then_healed(tmp_path: Path, source_bag: Bag) -> None:
+    """A replica truncated mid-transfer fails verify and is rebuilt from a good copy.
+
+    Models a transfer interrupted partway through a payload file: one file arrives
+    truncated to zero length. The divergent copy is never trusted — ``verify_replicas``
+    degrades it to ``ok=False`` (the manifest digest no longer matches) and ``heal``
+    restores it from the replica that still validates.
+    """
+    good = _location(tmp_path, "mirror-good")
+    torn = _location(tmp_path, "mirror-torn")
+    replicate_bag(source_bag.path, good, agent=_AGENT, now=_NOW)
+    replicate_bag(source_bag.path, torn, agent=_AGENT, now=_NOW)
+
+    # Truncate one payload file, as if the byte stream was cut off mid-copy.
+    target = Path(torn.path) / source_bag.name / "data" / "photo.jpg"
+    target.write_bytes(b"")
+
+    before = verify_replicas(source_bag.name, [good, torn])
+    assert before[0].ok
+    assert not before[1].ok  # the truncated copy is not promoted to trusted
+
+    events = heal(source_bag.name, [good, torn], agent=_AGENT, now=_NOW)
+    assert len(events) == 1
+    assert events[0].outcome == "success"
+
+    after = verify_replicas(source_bag.name, [good, torn])
+    assert all(status.ok for status in after)
+
+
+@pytest.mark.preservation
+def test_structurally_partial_replica_is_not_promoted(tmp_path: Path, source_bag: Bag) -> None:
+    """A replica missing a required bag file (interrupted early) is reported, not trusted.
+
+    A transfer that stopped before a structural file arrived is not a valid bag at
+    all. ``verify_replicas`` degrades it to ``ok=False`` rather than raising (one
+    partial copy must not blind the steward to the others), and ``heal`` rebuilds it.
+    """
+    good = _location(tmp_path, "mirror-good")
+    partial = _location(tmp_path, "mirror-partial")
+    replicate_bag(source_bag.path, good, agent=_AGENT, now=_NOW)
+    replicate_bag(source_bag.path, partial, agent=_AGENT, now=_NOW)
+
+    # Remove a required structural file, as if the transfer ended before it arrived.
+    (Path(partial.path) / source_bag.name / "bagit.txt").unlink()
+
+    before = verify_replicas(source_bag.name, [good, partial])
+    assert before[0].ok
+    assert not before[1].ok
+
+    events = heal(source_bag.name, [good, partial], agent=_AGENT, now=_NOW)
+    assert len(events) == 1
+
+    after = verify_replicas(source_bag.name, [good, partial])
+    assert all(status.ok for status in after)

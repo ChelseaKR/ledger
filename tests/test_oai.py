@@ -231,16 +231,19 @@ def test_sitemap_contains_record_urls() -> None:
     root = _parse(xml)
     assert root.tag == f"{_SITEMAP_NS}urlset"
     locs = [e.text for e in root.iter(f"{_SITEMAP_NS}loc")]
+    # The browse root leads (where the feed is auto-discovered), then each record.
     assert locs == [
+        "https://archive.example/",
         "https://archive.example/record/rec-a",
         "https://archive.example/record/rec-b",
     ]
 
 
-def test_sitemap_is_well_formed_when_empty() -> None:
-    """An empty sitemap is still a parseable, empty ``<urlset>``."""
+def test_sitemap_lists_the_root_when_empty() -> None:
+    """An empty collection's sitemap still lists the browse root, parseably."""
     from ledger.oai import sitemap_xml
 
     root = _parse(sitemap_xml([], "https://archive.example"))
     assert root.tag == f"{_SITEMAP_NS}urlset"
-    assert list(root) == []
+    locs = [e.text for e in root.iter(f"{_SITEMAP_NS}loc")]
+    assert locs == ["https://archive.example/"]

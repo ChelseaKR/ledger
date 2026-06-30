@@ -15,6 +15,8 @@ wall clock, no randomness — so the same inputs always yield the same answer
 
 from __future__ import annotations
 
+from datetime import UTC
+
 from ledger.errors import AccessDenied
 from ledger.models import (
     PUBLIC_GRANT,
@@ -181,7 +183,11 @@ def disclose(
             visible_fields[fld.name] = fld.value
         else:
             withheld.append(
-                Redaction(fld.name, withheld_reason(fld.policy, fld.unseal_at), fld.policy.value)
+                Redaction(
+                    fld.name,
+                    withheld_reason(fld.policy, fld.unseal_at, now=now),
+                    fld.policy.value,
+                )
             )
 
     payloads: list[PayloadFile] = []
@@ -208,13 +214,42 @@ def disclose(
     )
 
 
-def withheld_reason(policy: AccessPolicy, unseal_at: str | None) -> str:
+def _embargo_countdown(now: str, unseal_at: str) -> str:
+    """A plain, honest " (opens …)" suffix for a temporal embargo, or "" if reached.
+
+    Turns a bare "sealed until <date>" into a live promise a reader can act on
+    (user research C2 — "an embargo should say how long, not just that it exists").
+    Derived only from the already-shown embargo date and the public ``now``, so it
+    leaks nothing new. Day-granular and inclusive of date-only ``unseal_at``.
+    """
+    try:
+        # A date-only ``unseal_at`` parses naive while a ``…Z`` ``now`` parses aware;
+        # normalize both to UTC so the subtraction is always valid.
+        until = parse_iso(unseal_at)
+        current = parse_iso(now)
+        if until.tzinfo is None:
+            until = until.replace(tzinfo=UTC)
+        if current.tzinfo is None:
+            current = current.replace(tzinfo=UTC)
+        days = (until - current).days
+    except (ValueError, TypeError):
+        return ""
+    if days <= 0:
+        return " (opens today)"
+    if days == 1:
+        return " (opens tomorrow)"
+    return f" (opens in {days} days)"
+
+
+def withheld_reason(policy: AccessPolicy, unseal_at: str | None, *, now: str | None = None) -> str:
     """A safe, human label for *why* a field/payload is withheld — never its value.
 
     The phrasing is plain (user research P1-3): a legitimate viewer should be able
     to tell "not for you yet" (community/steward) from "locked until a date" from
     "restricted from everyone", without the label leaking the content. A read path
-    serving an outsider generalizes this to a count (P2-2).
+    serving an outsider generalizes this to a count (P2-2). When ``now`` is given for
+    a dated temporal seal, a live countdown ("opens in N days") is appended so the
+    embargo is an honest promise to a time, not just a label (C2).
     """
     match policy:
         case AccessPolicy.COMMUNITY:
@@ -223,7 +258,8 @@ def withheld_reason(policy: AccessPolicy, unseal_at: str | None) -> str:
             return "restricted to stewards"
         case AccessPolicy.SEALED_UNTIL:
             if unseal_at:
-                return f"sealed until {unseal_at[:10]}"
+                countdown = _embargo_countdown(now, unseal_at) if now else ""
+                return f"sealed until {unseal_at[:10]}{countdown}"
             return "sealed (no opening date set)"
         case AccessPolicy.SEALED_CONDITIONAL:
             return "sealed until a condition is met"

@@ -89,6 +89,7 @@ markers = [
     "preservation: fixity, bagging, and content-addressing guarantees",
     "disclosure: access-policy, grant, and no-outing guarantees",
     "accessibility: surfaces that must meet WCAG 2.2 AA",
+    "recovery: backup/restore and disaster-recovery guarantees",
 ]
 
 [tool.coverage.run]

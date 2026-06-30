@@ -114,6 +114,7 @@ def serialize_record(record: Record) -> str:
                 "media_type": p.media_type,
                 "size_bytes": p.size_bytes,
                 "policy": p.policy.value,
+                "transcript": p.transcript,
             }
             for p in record.payloads
         ],
@@ -182,6 +183,7 @@ def _payload_from_dict(item: dict[str, object]) -> PayloadFile:
         media_type=str(item.get("media_type", "application/octet-stream")),
         size_bytes=size if isinstance(size, int) else 0,
         policy=AccessPolicy(str(item.get("policy", AccessPolicy.SEALED_UNTIL.value))),
+        transcript=str(item.get("transcript", "")),
     )
 
 
@@ -283,6 +285,7 @@ def ingest_sip(
     for filename in sorted(sip.payload):
         source = sip.payload[filename]
         existing = declared.get(filename)
+        transcript = existing.transcript if existing is not None else ""
         if existing is not None:
             media_type = existing.media_type
         else:
@@ -318,6 +321,7 @@ def ingest_sip(
                 media_type=media_type,
                 size_bytes=size,
                 policy=policy,
+                transcript=transcript,
             )
         )
         # A fixity check per payload: the stored address re-derived from the bytes,
@@ -597,6 +601,98 @@ class Archive:
             return deserialize_record(in_bag.read_text(encoding="utf-8"))
         raise ObjectNotFound(record_id)
 
+    def apply_update(self, record: Record, event: PremisEvent) -> None:
+        """Persist an updated record manifest and append a PREMIS event to its bag.
+
+        The shared write path behind every post-ingest change (a consent/policy
+        change, a content warning, a review decision): it rewrites the fast-lookup
+        ``records/`` copy and the in-bag manifest so the next disclosure reflects the
+        change, and appends ``event`` to the bag's PREMIS log so the action is
+        auditable (accountability, traceability). All writes go through the
+        identity-refusing :func:`serialize_record`, so a persisted manifest can never
+        carry an in-memory identity (no-outing rule).
+        """
+        manifest = serialize_record(record)
+        fast = self.records_dir / f"{record.record_id}.json"
+        fast.write_text(manifest, encoding="utf-8", newline="\n")
+
+        bag_dir = self.bags_dir / record.record_id
+        in_bag = bag_dir / _RECORD_FILENAME
+        if in_bag.exists():
+            in_bag.write_text(manifest, encoding="utf-8", newline="\n")
+        premis_path = bag_dir / _PREMIS_FILENAME
+        if premis_path.exists():
+            log = PremisLog.read(premis_path)
+            log.record(event)
+            log.write(premis_path)
+
+    def log_takedown(self, event: PremisEvent) -> None:
+        """Append a takedown/withdrawal decision to the archive-level takedowns log.
+
+        The accountable record of *why* a record was removed, kept in
+        ``logs/takedowns.premis.json`` so it outlives the data it documents. The one
+        place a removal decision is persisted, shared by a steward takedown and a
+        contributor's pre-publication withdrawal (accountability, separation of
+        concerns)."""
+        log_path = self.logs_dir / "takedowns.premis.json"
+        self.logs_dir.mkdir(parents=True, exist_ok=True)
+        log = PremisLog.read(log_path) if log_path.exists() else PremisLog()
+        log.record(event)
+        log.write(log_path)
+
+    def remove_all_copies(self, record_id: str) -> tuple[int, bool]:
+        """Physically remove every stored copy of ``record_id`` and revoke its identity.
+
+        The shared *effect* behind a steward takedown and a contributor's withdrawal
+        of a pending submission: it revokes any sealed identity from the vault, then
+        deletes the record's bag, its fast-lookup manifest, and every configured
+        replica. Returns ``(copies_removed, identity_revoked)`` so the caller can
+        report counts without naming anything (no-outing rule). It records *no* audit
+        decision itself — the caller owns the accountable "why", recording it before
+        calling this so the reason outlives the data (separation of concerns).
+
+        Because this builds the paths it ``rmtree``s from ``record_id``, the id is
+        first validated to be a single safe path component (no separators, not ``.``
+        or ``..``, no NUL). A real record id is an opaque hex string, so this only ever
+        rejects a crafted id — but it guarantees a malicious or buggy caller can never
+        turn a removal into a directory traversal that deletes outside the archive
+        (defense in depth on a destructive primitive).
+        """
+        if (
+            not record_id
+            or record_id in {".", ".."}
+            or any(sep in record_id for sep in ("/", "\\", "\x00"))
+        ):
+            raise LedgerError("invalid record id")
+        identity_ref: str | None = None
+        try:
+            identity_ref = self.get(record_id).identity_ref
+        except LedgerError:
+            identity_ref = None
+
+        revoked = False
+        if identity_ref is not None:
+            try:
+                self._open_vault(None).revoke(identity_ref)
+                revoked = True
+            except LedgerError:
+                revoked = False
+
+        removed = 0
+        bag_dir = self.bags_dir / record_id
+        if bag_dir.exists():
+            shutil.rmtree(bag_dir)
+            removed += 1
+        fast = self.records_dir / f"{record_id}.json"
+        if fast.exists():
+            fast.unlink()
+        for location in self.config.locations:
+            replica = Path(location.path) / record_id
+            if replica.exists() and replica != bag_dir:
+                shutil.rmtree(replica)
+                removed += 1
+        return removed, revoked
+
     def disclose(
         self,
         record_id: str,
@@ -671,7 +767,149 @@ class Archive:
         vault = self._open_vault(None)
         return vault.resolve(record.identity_ref, grant, stamp)
 
+    # --- key rotation -------------------------------------------------------
+
+    def rekey_vault(
+        self,
+        new_key: bytes,
+        *,
+        old_key: bytes | None = None,
+        agent: str = "ledger",
+        now: str | None = None,
+    ) -> int:
+        """Rotate the identity-vault key, re-encrypting every sealed identity.
+
+        Rotation is a deliberate, recorded act, like every other sensitive steward
+        operation in ledger: it opens the vault with the current key (``old_key`` or
+        ``LEDGER_VAULT_KEY``), re-encrypts every identity under ``new_key`` (atomic —
+        the vault is untouched unless all entries re-encrypt), and appends a
+        ``REKEY`` PREMIS event to ``logs/key-rotations.premis.json`` so the rotation
+        is auditable. Only a count is recorded; no key, ref plaintext, or identity is
+        ever logged (no-outing rule).
+
+        Refuses (fail-closed) when the archive holds absolute-``SEALED`` content at
+        rest — a sealed field value or payload encrypted under the *same* vault key.
+        Rotating the identity entries alone would orphan that content, so rather than
+        silently strand it the rotation stops and tells the steward, leaving the
+        harder re-bagging migration for a deliberate, separate step. The common
+        archive (identity sealing and temporal seals, no absolute at-rest seals)
+        rotates cleanly.
+
+        Returns the number of identities re-encrypted. Raises
+        :class:`~ledger.errors.LedgerError` if there is no vault to rotate or if
+        absolute-sealed at-rest content is present.
+        """
+        if not self.vault_path.exists():
+            raise LedgerError("no identity vault exists to rekey")
+        for record in self._all_records():
+            sealed_at_rest = (
+                any(f.policy is AccessPolicy.SEALED for f in record.fields)
+                or any(p.policy is AccessPolicy.SEALED for p in record.payloads)
+                or (record.default_policy is AccessPolicy.SEALED and bool(record.payloads))
+            )
+            if sealed_at_rest:
+                raise LedgerError(
+                    "cannot rekey: the archive holds absolute-sealed content encrypted "
+                    "under the current vault key; rotating identities alone would orphan "
+                    "it. A full re-bagging migration is required first."
+                )
+        stamp = now if now is not None else now_iso()
+        vault = self._open_vault(old_key)
+        count = vault.rekey(new_key)
+
+        self.logs_dir.mkdir(parents=True, exist_ok=True)
+        log_path = self.logs_dir / "key-rotations.premis.json"
+        log = PremisLog.read(log_path) if log_path.exists() else PremisLog()
+        log.record(
+            PremisEvent(
+                event_type=PremisEventType.REKEY,
+                agent=agent,
+                outcome="success",
+                detail=f"identity vault rekeyed; {count} identity(ies) re-encrypted",
+                linked_object=None,
+                event_datetime=stamp,
+            )
+        )
+        log.write(log_path)
+        return count
+
+    # --- readiness ----------------------------------------------------------
+
+    def check_readiness(self) -> tuple[bool, str]:
+        """Cheap structural readiness probe for ``/healthz`` (no unsealing).
+
+        Confirms the archive can serve *at all* before the more expensive fixity
+        sweep, so a liveness check can distinguish "the process is up but the store
+        or vault is unreachable" from "everything is fine". It reads no payload,
+        unseals no identity, and returns only a generic, non-identity-bearing reason
+        code (no-outing rule):
+
+        * ``store-unreadable`` — the store root is missing or not readable.
+        * ``records-unreadable`` — the records directory is missing or not readable.
+        * ``vault-unopenable`` — a vault key is provisioned and a vault file exists,
+          but it cannot be opened with that key (wrong key or tampering). An archive
+          with no vault yet is still ready — affordability: contributors may not have
+          been sealed yet.
+
+        Returns ``(ready, reason)`` where ``reason`` is ``""`` when ready.
+        """
+        if not self.store_root.is_dir() or not os.access(self.store_root, os.R_OK):
+            return (False, "store-unreadable")
+        if not self.records_dir.is_dir() or not os.access(self.records_dir, os.R_OK):
+            return (False, "records-unreadable")
+        key = _vault_key_from_env()
+        if key is not None and self.vault_path.exists():
+            try:
+                IdentityVault.open(self.vault_path, key)
+            except LedgerError:
+                return (False, "vault-unopenable")
+        return (True, "")
+
     # --- audit --------------------------------------------------------------
+
+    def record_events(self, record_id: str) -> list[PremisEvent]:
+        """Return one record's own PREMIS events, in log order (oldest first).
+
+        Reads only that record's bag ``premis.json``; returns an empty list if the bag
+        or its log is missing or unreadable rather than raising, so a caller can ask
+        about any record id safely. PREMIS events are identity-free by construction, so
+        this discloses nothing protected (no-outing rule)."""
+        premis_path = self.bags_dir / record_id / _PREMIS_FILENAME
+        if not premis_path.exists():
+            return []
+        try:
+            return list(PremisLog.read(premis_path).events)
+        except (LedgerError, ValueError, OSError):
+            return []
+
+    def audit_events(self, *, limit: int = 200) -> list[PremisEvent]:
+        """Aggregate the archive's PREMIS events, newest first, for a steward view.
+
+        Gathers every event from each bag's ``premis.json`` and the archive-level
+        logs (takedowns, key rotations), sorts newest-first, and caps at ``limit``.
+        PREMIS events are identity-free by construction — an event carries an agent,
+        an outcome, a detail, an opaque ``linked_object`` (a content address, record
+        id, or bag id), and a timestamp, never a contributor identity or a sealed
+        value (no-outing rule) — so this read-only audit view discloses nothing a
+        steward should not see. One unreadable log never aborts the sweep
+        (degradability)."""
+        events: list[PremisEvent] = []
+        if self.bags_dir.exists():
+            for bag in sorted(p for p in self.bags_dir.iterdir() if p.is_dir()):
+                premis_path = bag / _PREMIS_FILENAME
+                if premis_path.exists():
+                    try:
+                        events.extend(PremisLog.read(premis_path).events)
+                    except (LedgerError, ValueError, OSError):
+                        continue
+        if self.logs_dir.exists():
+            for log_path in sorted(self.logs_dir.glob("*.premis.json")):
+                try:
+                    events.extend(PremisLog.read(log_path).events)
+                except (LedgerError, ValueError, OSError):
+                    continue
+        events.sort(key=lambda e: e.event_datetime, reverse=True)
+        return events[:limit]
 
     def audit_fixity(self) -> list[tuple[str, AuditReport]]:
         """Validate every stored bag, returning ``(bag_name, report)`` per bag.

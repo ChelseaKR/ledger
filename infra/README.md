@@ -120,6 +120,36 @@ docker compose -f infra/docker-compose.yml exec ledger ledger browse --root /dat
 `.env` is present and identity sealing works. If you prefer a one-off container,
 use `run --rm` instead — it also reads `.env`.
 
+### Letting contributors submit from the browser (optional)
+
+By default the server is read-only. To let contributors submit a record themselves
+(rather than a steward at the CLI), start the server with `--allow-contributions`.
+A `/contribute` form then accepts a title, an account, content warnings, an optional
+**sealed** contact, and a *requested* visibility:
+
+```sh
+# Requires LEDGER_VAULT_KEY so a contributor's sealed contact can be encrypted.
+ledger serve --root /data --allow-contributions
+```
+
+Safety properties of the contribution path, by construction:
+
+- **Nothing is published by submitting.** Every submission lands *sealed-pending* and
+  is queued for review. A steward opens the **`/steward` console** (with a steward
+  grant) and **Publishes** it (opening it to the visibility the contributor asked for)
+  or **Withholds** it (held for revision) — each choice recorded as an audited event.
+  Nothing goes public by inaction. (The CLI `ledger policy` / `takedown` / `cw` still
+  work for any out-of-band change.)
+- **No-outing.** A contributor's name/contact is optional, sealed into the vault on
+  submit, and never echoed on the confirmation page, in a log, or in an error.
+- **Off by default.** A read-only deployment never grows a write path unless you opt
+  in, and `--allow-contributions` refuses to start without `LEDGER_VAULT_KEY`.
+
+> **Operator note.** The form is an open, unauthenticated POST. On a public-facing
+> deployment, put it behind a reverse-proxy rate limit (and/or an invite link or
+> CAPTCHA) to deter spam. Binary file upload is intentionally not yet supported on
+> this path — stewards attach payload files via `ledger ingest`.
+
 ---
 
 ## Backups
@@ -164,7 +194,16 @@ docker run --rm \
 ```
 
 Move that tarball off the box. Store the vault key separately. Test a restore at
-least once — an untested backup is a hope, not a backup.
+least once — an untested backup is a hope, not a backup. To test it automatically,
+extract a backup to a scratch directory and run `ledger verify-backup` against it
+(cron-friendly: it exits non-zero if any bag fails fixity, so your scheduler can
+alarm):
+
+```sh
+# Extract the latest backup somewhere, then verify it restores intact.
+mkdir -p /tmp/restore-check && tar xzf <your-backup>.tar.gz -C /tmp/restore-check
+ledger verify-backup --backup /tmp/restore-check
+```
 
 ### Restore
 
@@ -182,6 +221,44 @@ docker compose -f infra/docker-compose.yml exec ledger ledger audit --root /data
 
 Run a fixity audit after every restore (below) to confirm the bags came back
 bit-intact.
+
+---
+
+## Rotating the vault key
+
+Key rotation is a *when*, not an *if* — a steward who held the key leaves, you
+suspect the key was exposed, or your community sets a rotation cadence. `ledger
+vault rekey` re-encrypts every sealed identity under a new key in one atomic step
+and records a `REKEY` PREMIS event in `logs/key-rotations.premis.json`. The refs in
+every record are unchanged, so nothing else has to move.
+
+Both keys are passed **through the environment, never on the command line** (a key
+in `argv` lands in shell history and the process table): the current key in
+`LEDGER_VAULT_KEY` and the new key in `LEDGER_NEW_VAULT_KEY`.
+
+```sh
+# Generate the new key and hold it somewhere safe FIRST.
+NEW_KEY="$(docker run --rm python:3.12-slim python -c \
+  'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')"
+
+# Rotate. LEDGER_VAULT_KEY already lives in infra/.env (the current key).
+docker compose -f infra/docker-compose.yml exec \
+  -e LEDGER_NEW_VAULT_KEY="$NEW_KEY" \
+  ledger ledger vault rekey --root /data --actor <your-steward-id>
+
+# On success: replace LEDGER_VAULT_KEY in infra/.env with $NEW_KEY, then restart.
+docker compose -f infra/docker-compose.yml up -d
+```
+
+The command prints only a count — never a key or an identity. **After it succeeds,
+update `LEDGER_VAULT_KEY` to the new key** (and re-do your separately-stored key
+backup); the old key no longer opens the vault.
+
+> **One limitation, by design.** If your archive holds *absolute-sealed* content
+> (a field or payload sealed from everyone, encrypted at rest under the same key),
+> `vault rekey` refuses rather than silently orphaning it — that content needs a
+> full re-bagging migration first. Archives that use identity sealing and temporal
+> seals (the common case) rotate cleanly.
 
 ---
 
@@ -333,7 +410,18 @@ ledger browse   --root /data [--as steward]                  # what a viewer can
 ledger takedown --root /data --id <id> --actor <s> --reason <why>
 ledger policy   --root /data --id <id> --level <lvl> --actor <s> --reason <why>
 ledger add-location --root /data --name <n> --path <p> --kind mirror
+ledger vault rekey --root /data --actor <s>                   # rotate the vault key (keys via env)
+
+# Dual-control (when config dual_control_threshold > 1): no one steward acts alone
+ledger propose  --root /data --action <takedown|unseal|publish> --id <id> --actor <s> --reason <why>
+ledger approve  --root /data --id <proposal-id> --actor <other-steward>   # executes when threshold met
+ledger proposals --root /data                                # list open proposals
 ```
+
+To require two stewards for every takedown, identity-unseal, and publish-to-public,
+set `"dual_control_threshold": 2` in the archive config. A first steward's `takedown`
+(or `propose`) then only *proposes* the action; it runs once a second, distinct
+steward `approve`s it. The default of `1` keeps single-steward behaviour.
 
 `docker compose down -v` would delete the volume and the entire archive with it.
 There is no `-v` in any command above on purpose.

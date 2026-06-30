@@ -36,31 +36,44 @@ from __future__ import annotations
 
 import gzip
 import hashlib
-import html
 import http.server
 import json
 import os
+import tempfile
 import time
-from collections.abc import Iterable
+from email import policy as email_policy
+from email.parser import BytesParser
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlsplit
 
-from ledger import consent, i18n, oai, search
-from ledger.access import anonymous
+from ledger import consent, contribute, export, i18n, oai, pagination, review, search, upload
+from ledger.access import anonymous, disclose, is_listable
 from ledger.access.grants import load_grants
-from ledger.errors import AccessDenied, LedgerError, ObjectNotFound
+from ledger.errors import AccessDenied, LedgerError, ObjectNotFound, ValidationError
 from ledger.ingest import Archive
-from ledger.models import AccessPolicy, DisclosedRecord, Grant, now_iso
-
-
-def _is_insider(grant: Grant) -> bool:
-    """Whether a viewer is a trusted insider (community member or steward).
-
-    An insider is shown *why* each part is withheld (honesty, P1-3); an outsider
-    gets only a count, so the set of redaction reasons cannot be scraped as
-    targeting metadata about what a record hides (P2-2)."""
-    return grant.is_steward or AccessPolicy.COMMUNITY in grant.levels
-
+from ledger.models import (
+    AccessPolicy,
+    ContentAddress,
+    DisclosedRecord,
+    Grant,
+    HashAlgo,
+    PayloadFile,
+    PremisEvent,
+    PremisEventType,
+    Record,
+    now_iso,
+)
+from ledger.moderate import change_consent, takedown
+from ledger.render import (
+    _browse_main_html,
+    _error_main_html,
+    _esc,
+    _is_insider,
+    _nav_html,
+    _overview_main_html,
+    _page,
+    _record_main_html,
+)
 
 # Where the bundled, framework-free web assets live, resolved relative to this
 # module so the server works from any working directory (portability). The static
@@ -90,396 +103,9 @@ _STATIC_CONTENT_TYPES: dict[str, str] = {
     ".txt": "text/plain; charset=utf-8",
 }
 
-# The site's one stylesheet, linked from every page.
-_STYLESHEET_HREF: str = "/static/app.css"
-
-
-# --- HTML rendering ---------------------------------------------------------
-#
-# HTML is rendered in plain Python (no template engine -> standard-library only,
-# no lock-in). Every interpolated value goes through `_esc`, which is the only
-# way text reaches the page, so escaping cannot be forgotten per call site
-# (security — no XSS, by construction).
-
-
-def _esc(value: object) -> str:
-    """HTML-escape ``value`` for safe interpolation, quotes included.
-
-    This is the single text-to-HTML boundary in the module: every dynamic string
-    (titles, descriptions, field values, ids, queries, redaction notes) passes
-    through here, so an attacker-controlled value cannot break out of its element
-    or attribute context (security — no cross-site scripting).
-    """
-    return html.escape(str(value), quote=True)
-
-
-def _page(title: str, *, lang: str, main_html: str, nav_html: str = "") -> str:
-    """Wrap ``main_html`` in the shared, accessible page shell.
-
-    The shell encodes the WCAG 2.2 AA structure every page shares (accessibility):
-    a declared document type and ``lang``; a unique, descriptive ``<title>``; a
-    visible "skip to main content" link as the *first* focusable element; the
-    ``header``/``nav``/``main``/``footer`` landmarks; and a single ``<main>``
-    target the skip link jumps to. ``title`` is escaped because record titles flow
-    into it (security).
-
-    Colour is never the sole signal anywhere in the shell, and no positive
-    ``tabindex`` is used, so keyboard focus order follows source order
-    (accessibility).
-    """
-    nav_block = f'\n    <nav aria-label="Site">{nav_html}</nav>' if nav_html else ""
-    return (
-        "<!doctype html>\n"
-        f'<html lang="{_esc(lang)}">\n'
-        "<head>\n"
-        '  <meta charset="utf-8">\n'
-        '  <meta name="viewport" content="width=device-width, initial-scale=1">\n'
-        f"  <title>{_esc(title)} — ledger</title>\n"
-        f'  <link rel="stylesheet" href="{_STYLESHEET_HREF}">\n'
-        "</head>\n"
-        "<body>\n"
-        f'  <a class="skip-link" href="#main">{_esc(i18n.t(lang, "skip_link"))}</a>\n'
-        '  <p class="banner" role="note">Reference implementation — sample data is '
-        "synthetic.</p>\n"
-        "  <header>\n"
-        '    <p class="brand"><a href="/">ledger — community archive</a></p>'
-        f"{nav_block}\n"
-        "  </header>\n"
-        '  <main id="main" tabindex="-1">\n'
-        f"{main_html}\n"
-        "  </main>\n"
-        "  <footer>\n"
-        f"    <p>{_esc(i18n.t(lang, 'footer_privacy'))}</p>\n"
-        f'    <p class="meta"><a href="/about">{_esc(i18n.t(lang, "nav_about"))}</a> · '
-        '<a href="/governance">Governance</a> · '
-        '<a href="/how-it-works">How it works</a></p>\n'
-        "  </footer>\n"
-        "</body>\n"
-        "</html>\n"
-    )
-
-
-def _search_form(query: str = "") -> str:
-    """Render the search form with a programmatically associated label.
-
-    The ``<label for>`` is tied to the input's ``id`` so assistive technology
-    announces the field's purpose, and the current ``query`` is escaped back into
-    ``value`` so a search term cannot inject markup (accessibility, security).
-    """
-    return (
-        '<form class="search" role="search" method="get" action="/search">\n'
-        '  <label for="q">Search titles and descriptions</label>\n'
-        f'  <input id="q" name="q" type="search" value="{_esc(query)}" '
-        'autocomplete="off">\n'
-        '  <button type="submit">Search</button>\n'
-        "</form>\n"
-    )
-
-
-def _summary_text(record: DisclosedRecord) -> str:
-    """A short, identity-free description for a record, drawn from Dublin Core.
-
-    Uses the first ``description`` element if present (collection-level metadata,
-    never identity), else an empty string. Returned raw; callers escape at the
-    point of interpolation.
-    """
-    descriptions = record.dublin_core.get("description", [])
-    return descriptions[0] if descriptions else ""
-
-
-def _records_list_html(records: Iterable[DisclosedRecord]) -> str:
-    """Render the records as a semantic list — one accessible equivalent view.
-
-    The list and the table (:func:`_records_table_html`) present the same data in
-    two equally complete forms, so a user of either a screen reader or a small
-    screen gets the full content (accessibility — documented non-visual
-    equivalent). Link text is the record title (descriptive links, never "click
-    here"). All text is escaped (security).
-    """
-    items: list[str] = []
-    for record in records:
-        summary = _summary_text(record)
-        warn = ' <span class="badge">Content warning</span>' if record.content_warnings else ""
-        summary_html = f"<p>{_esc(summary)}</p>" if summary else ""
-        items.append(
-            "    <li>\n"
-            f'      <h3><a href="/record/{quote(record.record_id)}">'
-            f"{_esc(record.title)}</a>{warn}</h3>\n"
-            f"      {summary_html}\n"
-            "    </li>"
-        )
-    if not items:
-        return '<p class="empty">No records are available to you yet.</p>'
-    body = "\n".join(items)
-    return f'<ul class="record-list">\n{body}\n</ul>'
-
-
-def _records_table_html(records: Iterable[DisclosedRecord]) -> str:
-    """Render the records as a data table — the documented non-visual equivalent.
-
-    The table carries a ``<caption>`` describing its purpose and ``<th scope>`` on
-    every header so assistive technology can associate each cell with its column
-    (accessibility). The "Content warning" column uses the literal word, never a
-    colour or icon alone, so the signal survives for colour-blind and
-    text-only users (accessibility — colour is not the only signal). All cells are
-    escaped (security).
-    """
-    rows: list[str] = []
-    for record in records:
-        warn = "Yes" if record.content_warnings else "No"
-        summary = _summary_text(record)
-        rows.append(
-            "      <tr>\n"
-            f'        <td><a href="/record/{quote(record.record_id)}">'
-            f"{_esc(record.title)}</a></td>\n"
-            f"        <td>{_esc(summary)}</td>\n"
-            f"        <td>{warn}</td>\n"
-            "      </tr>"
-        )
-    body = (
-        "\n".join(rows)
-        if rows
-        else ('      <tr><td colspan="3">No records are available to you yet.</td></tr>')
-    )
-    return (
-        '<table class="record-table">\n'
-        "  <caption>All records you may view, with their titles, summaries, and "
-        "whether each carries a content warning.</caption>\n"
-        "  <thead>\n"
-        "    <tr>\n"
-        '      <th scope="col">Title</th>\n'
-        '      <th scope="col">Summary</th>\n'
-        '      <th scope="col">Content warning</th>\n'
-        "    </tr>\n"
-        "  </thead>\n"
-        "  <tbody>\n"
-        f"{body}\n"
-        "  </tbody>\n"
-        "</table>"
-    )
-
-
-def _facets_html(records: list[DisclosedRecord]) -> str:
-    """Browsable subject/type facets so a topic is reachable, not just a title.
-
-    Each facet value links to a filtered browse (``/?subject=...``), turning the
-    careful Dublin Core into a finding aid rather than decoration (user research
-    P1-4). Built from already-disclosed records, so a facet never reveals a value
-    a viewer may not see.
-    """
-    blocks: list[str] = []
-    for field_name, label in (("subject", "Subjects"), ("type", "Types")):
-        items = search.facets(records, field_name)
-        if not items:
-            continue
-        links = "\n".join(
-            f'        <li><a href="/?{field_name}={quote(f.value)}">{_esc(f.value)}</a> '
-            f'<span class="muted">({f.count})</span></li>'
-            for f in items
-        )
-        blocks.append(
-            f'    <section aria-labelledby="facet-{field_name}">\n'
-            f'      <h2 id="facet-{field_name}">{label}</h2>\n'
-            f'      <ul class="facets">\n{links}\n      </ul>\n'
-            "    </section>"
-        )
-    return "\n".join(blocks)
-
-
-def _browse_main_html(
-    records: list[DisclosedRecord],
-    *,
-    heading: str,
-    query: str = "",
-    lang: str = "en",
-    all_records: list[DisclosedRecord] | None = None,
-) -> str:
-    """Compose the browse/search ``<main>``: one ``<h1>``, the form, then both views.
-
-    Renders the list and the table as two complete, equivalent presentations of
-    the same records (accessibility — equivalent list and table views), plus
-    browsable subject/type facets. Heading order is ``h1`` (page) then ``h2`` (each
-    view) then ``h3`` (list items), with no levels skipped (accessibility).
-    """
-    count = len(records)
-    # The empty state distinguishes "no matches" from a permission problem, in
-    # plain language (user research T5/P1-3) — without revealing that anything is
-    # hidden (the public list simply omits non-listable records).
-    if count == 0:
-        empty = f'    <p class="empty">{_esc(i18n.t(lang, "empty_no_matches"))}</p>\n'
-    else:
-        empty = ""
-    facets = _facets_html(all_records if all_records is not None else records)
-    return (
-        f"    <h1>{_esc(heading)}</h1>\n"
-        f"    {_search_form(query)}"
-        f'    <p class="count">{count} record(s) shown.</p>\n'
-        f"{empty}"
-        '    <section aria-labelledby="list-heading">\n'
-        '      <h2 id="list-heading">Records (list view)</h2>\n'
-        f"      {_records_list_html(records)}\n"
-        "    </section>\n"
-        '    <section aria-labelledby="table-heading">\n'
-        '      <h2 id="table-heading">Records (table view)</h2>\n'
-        f"      {_records_table_html(records)}\n"
-        "    </section>\n"
-        f"{facets}"
-    )
-
-
-def _record_main_html(
-    record: DisclosedRecord, *, proceed: bool, insider: bool = False, lang: str = "en"
-) -> str:
-    """Compose the single-record ``<main>``, with a content-warning interstitial.
-
-    If the record carries content warnings and the viewer has not yet chosen to
-    proceed (``proceed`` is false), only the title and a *text* interstitial are
-    rendered: the warnings are listed as words, headed "Content warnings", with a
-    link to proceed to the content (accessibility — the warning is programmatic and
-    textual, never colour- or icon-only; safety — warnings surface before any
-    render of the underlying material).
-
-    Once proceeding (or when there are no warnings) the disclosed fields, payload
-    list, and Dublin Core are shown, and any withheld field/payload is named in a
-    plain-text "Withheld" note so the lossy view is honest about being lossy
-    (honesty, fidelity). Identity never appears: the source is a
-    :class:`~ledger.models.DisclosedRecord`, which has no identity field.
-    """
-    rid = record.record_id
-    if record.content_warnings and not proceed:
-        # Each tag is glossed in plain language so a non-native or low-literacy
-        # reader can actually decide whether to view it (user research T9/P2-1).
-        warnings = "\n".join(
-            f"      <li>{_esc(i18n.gloss_cw(lang, w))}</li>" for w in record.content_warnings
-        )
-        proceed_href = f"/record/{quote(rid)}?proceed=1#content"
-        # role="alert" + an h1 that IS the warning means a screen reader announces the
-        # warning the instant the page loads and lands on it first, instead of a user
-        # reading into gated content unawares (user research T13/P1-2; WCAG 4.1.3).
-        return (
-            '    <section class="interstitial" role="alert" aria-labelledby="cw-heading">\n'
-            f'      <h1 id="cw-heading" tabindex="-1">{_esc(i18n.t(lang, "content_warning_heading"))}'
-            f": {_esc(record.title)}</h1>\n"
-            "      <p>This record carries the following content warnings. Review them "
-            "before continuing.</p>\n"
-            "      <ul>\n"
-            f"{warnings}\n"
-            "      </ul>\n"
-            f'      <p><a class="proceed" href="{_esc(proceed_href)}">'
-            f"{_esc(i18n.t(lang, 'proceed'))}</a></p>\n"
-            "    </section>"
-        )
-
-    parts: list[str] = [f"    <h1>{_esc(record.title)}</h1>"]
-
-    if record.content_warnings:
-        # Even after proceeding, restate the warnings as text above the content so
-        # the signal is never lost (safety, accessibility).
-        warnings = ", ".join(_esc(w) for w in record.content_warnings)
-        parts.append(
-            f'    <p class="cw-note" id="content"><strong>Content warnings:</strong> {warnings}</p>'
-        )
-    else:
-        parts.append('    <p id="content" class="visually-hidden">Record content.</p>')
-
-    # Disclosed descriptive fields.
-    if record.fields:
-        rows = "\n".join(
-            f'      <div class="field"><dt>{_esc(name)}</dt><dd>{_esc(value)}</dd></div>'
-            for name, value in record.fields.items()
-        )
-        parts.append(
-            '    <section aria-labelledby="fields-heading">\n'
-            '      <h2 id="fields-heading">Details</h2>\n'
-            "      <dl>\n"
-            f"{rows}\n"
-            "      </dl>\n"
-            "    </section>"
-        )
-
-    # Dublin Core descriptive metadata (collection-level; never identity).
-    dc_rows = [
-        f'      <div class="field"><dt>{_esc(element)}</dt><dd>{_esc("; ".join(values))}</dd></div>'
-        for element, values in record.dublin_core.items()
-        if values
-    ]
-    if dc_rows:
-        parts.append(
-            '    <section aria-labelledby="meta-heading">\n'
-            '      <h2 id="meta-heading">Catalogue metadata</h2>\n'
-            "      <dl>\n" + "\n".join(dc_rows) + "\n      </dl>\n"
-            "    </section>"
-        )
-
-    # Payload files the viewer may see — each is a real, fixity-verified download
-    # link (user research C4: the filename was previously an inert false affordance).
-    if record.payloads:
-        files = "\n".join(
-            f'      <li><a href="/record/{quote(rid)}/file/{quote(p.filename)}">'
-            f"{_esc(p.filename)}</a> "
-            f'<span class="muted">({_esc(p.media_type)}, {p.size_bytes} bytes)</span></li>'
-            for p in record.payloads
-        )
-        parts.append(
-            '    <section aria-labelledby="files-heading">\n'
-            '      <h2 id="files-heading">Files</h2>\n'
-            "      <ul>\n"
-            f"{files}\n"
-            "      </ul>\n"
-            "    </section>"
-        )
-
-    # Withheld parts, stated plainly so the partial view is honest. An insider sees
-    # each part and WHY (e.g. "sealed until 2030-01-01"); an outsider sees only a
-    # count, so the redaction reasons can't be scraped as targeting metadata (P2-2).
-    if record.withheld:
-        if insider:
-            rows = "\n".join(
-                f"      <li>{_esc(r.name)} — {_esc(r.reason)}</li>" for r in record.withheld
-            )
-            body = (
-                "      <p>Some parts of this record are not available under your current "
-                "access:</p>\n"
-                f'      <ul class="withheld-list">\n{rows}\n      </ul>'
-            )
-        else:
-            n = len(record.withheld)
-            noun = "detail is" if n == 1 else "details are"
-            body = (
-                f"      <p>{n} {noun} restricted under your current access. If you are "
-                "a community member or steward, sign in to see what is withheld and why.</p>"
-            )
-        parts.append(
-            '    <section aria-labelledby="redactions-heading">\n'
-            '      <h2 id="redactions-heading">Withheld</h2>\n'
-            f"{body}\n"
-            "    </section>"
-        )
-
-    # The contributor's front door: act on the promise that consent is revocable
-    # (user research P0-2). Shown to everyone — only the claim token (issued at
-    # ingest) lets the actual contributor file a request.
-    parts.append(
-        f'    <p class="consent-link"><a href="/record/{quote(rid)}/consent">'
-        "Are you the contributor? Manage or withdraw your consent</a></p>"
-    )
-    parts.append(f'    <p><a href="/">{_esc(i18n.t(lang, "back_to_records"))}</a></p>')
-    return "\n".join(parts)
-
-
-def _error_main_html(heading: str, message: str) -> str:
-    """Render an accessible error ``<main>``.
-
-    The ``message`` names only the condition and, at most, an object id — never a
-    sealed value or any identity (no-outing rule; error pages disclose nothing).
-    """
-    return (
-        f"    <h1>{_esc(heading)}</h1>\n"
-        f"    <p>{_esc(message)}</p>\n"
-        '    <p><a href="/">Back to all records</a></p>'
-    )
-
-
+# Friendly labels for consent/objection request kinds, shared by the steward console
+# and the contributor status page so a steward can tell a subject's objection from a
+# contributor's own request at a glance (user research B3).
 # --- the request handler ----------------------------------------------------
 
 
@@ -558,6 +184,23 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         grants = getattr(self.server, "grants", None)
         return grants if isinstance(grants, dict) else {}
 
+    def _allow_contributions(self) -> bool:
+        """Whether the contributor submission surface is enabled on this server.
+
+        Off by default: an existing read-only deployment never grows a write path by
+        surprise. A steward opts in explicitly (``serve --allow-contributions``), so
+        the closed default is the safe one (least privilege, least surprise).
+        """
+        return bool(getattr(self.server, "allow_contributions", False))
+
+    def _nav(self) -> str:
+        """Site navigation for the current request, including Contribute when enabled."""
+        return _nav_html(
+            self._lang(),
+            contribute=self._allow_contributions(),
+            current_path=self.path,
+        )
+
     # --- response helpers ---------------------------------------------------
 
     def _send(self, status: int, body: bytes, content_type: str) -> None:
@@ -578,6 +221,17 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             "base-uri 'none'; form-action 'self'",
         )
         self.send_header("Referrer-Policy", "no-referrer")
+        # Persist an explicit ?lang= pick so the reader's choice survives navigation.
+        # The cookie holds only the UI language code — no identity, no record id
+        # (no-outing rule). Lax + HttpOnly: it is sent on top-level navigations and is
+        # never exposed to script. No Secure flag, so it still works for a community
+        # running ledger over plain HTTP on an inexpensive box (availability).
+        chosen_lang = getattr(self, "_set_lang_cookie", None)
+        if chosen_lang is not None:
+            self.send_header(
+                "Set-Cookie",
+                f"lang={chosen_lang}; Path=/; Max-Age=31536000; SameSite=Lax; HttpOnly",
+            )
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(body)
@@ -592,13 +246,48 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         self._send(status, body, "application/json; charset=utf-8")
 
     def _lang(self) -> str:
-        """Negotiate the response language from the viewer's ``Accept-Language``.
+        """Resolve the response language: explicit choice, remembered choice, then header.
 
         A non-native reader gets localized UI strings and content-warning glosses
-        where available, falling back to English (user research P2-1). Negotiation
-        is against the languages ledger actually has strings for (``i18n.SUPPORTED``).
-        """
-        return i18n.negotiate(self.headers.get("Accept-Language"))
+        where available, falling back to English (user research P2-1). The order is:
+
+        1. an explicit ``?lang=`` query — the language picker — which also sets a
+           ``lang`` cookie so the choice persists as the reader navigates;
+        2. a previously chosen language remembered in that cookie;
+        3. otherwise the browser's ``Accept-Language`` header.
+
+        Negotiation is always against the languages ledger actually ships strings for
+        (``i18n.SUPPORTED``); an unknown or unsupported value falls through to the
+        next step, never to a blank page. The cookie holds only a UI language code,
+        never an identity or a record reference (no-outing rule). The result is cached
+        for the request so the several render calls agree."""
+        cached = getattr(self, "_lang_cache", None)
+        if cached is not None:
+            return str(cached)
+        query = parse_qs(urlsplit(self.path).query)
+        choice = (query.get("lang", [""])[0] or "").strip().lower()
+        if choice in i18n.SUPPORTED:
+            self._set_lang_cookie = choice  # persist the explicit pick
+            self._lang_cache = choice
+            return choice
+        remembered = self._cookie_value("lang").strip().lower()
+        if remembered in i18n.SUPPORTED:
+            self._lang_cache = remembered
+            return remembered
+        negotiated = i18n.negotiate(self.headers.get("Accept-Language"))
+        self._lang_cache = negotiated
+        return negotiated
+
+    def _cookie_value(self, name: str) -> str:
+        """Return the value of cookie ``name`` from the request, or ``""``.
+
+        A small, dependency-free parse of the ``Cookie`` header; only the language
+        preference cookie is read here, and it carries no identity (no-outing rule)."""
+        for part in self.headers.get("Cookie", "").split(";"):
+            key, _, value = part.strip().partition("=")
+            if key == name:
+                return value.strip()
+        return ""
 
     # --- routing ------------------------------------------------------------
 
@@ -627,8 +316,12 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
                 self._handle_healthz()
             elif path == "/status":
                 self._handle_status()
+            elif path == "/consent-status":
+                self._handle_consent_status(params)
             elif path == "/about":
                 self._handle_about()
+            elif path == "/overview":
+                self._handle_overview()
             elif path == "/governance":
                 self._handle_governance()
             elif path == "/how-it-works":
@@ -639,17 +332,35 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
                 self._handle_oai(params)
             elif path == "/sitemap.xml":
                 self._handle_sitemap()
+            elif path == "/robots.txt":
+                self._handle_robots()
+            elif path == "/feed.atom":
+                self._handle_feed()
             elif path == "/steward":
                 self._handle_steward_console()
+            elif path == "/steward/audit":
+                self._handle_steward_audit()
+            elif path == "/contribute":
+                self._handle_contribute_form()
+            elif path == "/withdraw":
+                self._handle_withdraw_form()
+            elif path == "/edit":
+                self._handle_edit_form()
             elif path.startswith("/record/") and "/file/" in path:
                 rid, _, name = path[len("/record/") :].partition("/file/")
                 self._handle_file(rid, name)
             elif path.startswith("/record/") and path.endswith("/consent"):
                 self._handle_consent_form(path[len("/record/") : -len("/consent")])
+            elif path.startswith("/record/") and path.endswith("/object"):
+                self._handle_object_form(path[len("/record/") : -len("/object")])
             elif path.startswith("/record/"):
                 self._handle_record(path[len("/record/") :], params)
             elif path == "/api/records":
                 self._handle_api_records()
+            elif path == "/api/search":
+                self._handle_api_search(params)
+            elif path == "/api/search.csv":
+                self._handle_api_search_csv(params)
             elif path.startswith("/api/record/"):
                 self._handle_api_record(path[len("/api/record/") :])
             elif path.startswith("/static/"):
@@ -669,11 +380,24 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         self._t0 = time.monotonic()
         path = urlsplit(self.path).path
         try:
-            if path.startswith("/record/") and path.endswith("/consent"):
+            if path == "/contribute":
+                self._post_contribute()
+            elif path == "/withdraw":
+                self._post_withdraw()
+            elif path == "/edit":
+                self._post_edit()
+            elif path.startswith("/record/") and path.endswith("/consent"):
                 self._post_consent(path[len("/record/") : -len("/consent")])
+            elif path.startswith("/record/") and path.endswith("/object"):
+                self._post_object(path[len("/record/") : -len("/object")])
             elif path.startswith("/steward/requests/") and path.endswith("/resolve"):
                 rid = path[len("/steward/requests/") : -len("/resolve")]
                 self._post_resolve_request(rid)
+            elif path == "/steward/submissions/withhold":
+                self._post_bulk_withhold()
+            elif path.startswith("/steward/submissions/") and path.endswith("/review"):
+                rid = path[len("/steward/submissions/") : -len("/review")]
+                self._post_review_submission(rid)
             else:
                 self._handle_not_found()
         except BrokenPipeError:  # pragma: no cover - client disconnected
@@ -684,6 +408,13 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
 
         Bounded by Content-Length; a missing/oversized length yields an empty form
         rather than reading unbounded input (robustness)."""
+        return {k: v[0] for k, v in self._read_form_multi().items() if v}
+
+    def _read_form_multi(self) -> dict[str, list[str]]:
+        """Read a urlencoded POST body keeping *all* values per key.
+
+        Same bounds as :meth:`_read_form`; used where a field repeats (e.g. a set of
+        checkboxes posting the same name), which the flat reader would collapse."""
         try:
             length = int(self.headers.get("Content-Length", "0"))
         except ValueError:
@@ -691,10 +422,79 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         if length <= 0 or length > 64 * 1024:
             return {}
         raw = self.rfile.read(length).decode("utf-8", "replace")
-        return {k: v[0] for k, v in parse_qs(raw).items() if v}
+        return parse_qs(raw)
+
+    def _read_contribution(self) -> tuple[dict[str, str], tuple[str, bytes] | None]:
+        """Read a contribution POST body as ``(fields, upload)``.
+
+        Dispatches on ``Content-Type`` so the contribution form works whether it
+        posts urlencoded (text-only, the long-standing path) or
+        ``multipart/form-data`` (when a file is attached, backlog A2). ``upload`` is
+        ``(filename, bytes)`` for the single attached file, or ``None`` when no file
+        was sent. Both forms are bounded before any bytes are read: urlencoded at the
+        64 KiB field cap, multipart at the upload size cap plus a small slack for the
+        field parts and MIME framing, so a contribution can never read unbounded input
+        (availability). The bytes are still untrusted here — :func:`upload.sniff_media_type`
+        decides whether they are an accepted type before anything is stored."""
+        ctype = self.headers.get("Content-Type", "")
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            return {}, None
+        if length <= 0:
+            return {}, None
+        if ctype.startswith("multipart/form-data"):
+            # Cap the whole body at the file limit plus 1 MiB of slack for the text
+            # fields and multipart boundaries/headers, so an attached file can be up to
+            # MAX_UPLOAD_BYTES while the body as a whole still cannot exhaust memory.
+            if length > upload.MAX_UPLOAD_BYTES + 1024 * 1024:
+                return {}, None
+            return self._parse_multipart(length, ctype)
+        if length > 64 * 1024:
+            return {}, None
+        raw = self.rfile.read(length).decode("utf-8", "replace")
+        return {k: v[0] for k, v in parse_qs(raw).items() if v}, None
+
+    def _parse_multipart(
+        self, length: int, content_type: str
+    ) -> tuple[dict[str, str], tuple[str, bytes] | None]:
+        """Parse a bounded ``multipart/form-data`` body into ``(fields, upload)``.
+
+        Reads exactly ``length`` bytes (already capped by the caller) and parses them
+        with the stdlib email parser by prepending the request's ``Content-Type`` as a
+        MIME header — no third-party multipart library. Each text part becomes a
+        ``fields`` entry; the first part carrying a filename becomes the single
+        ``upload``. The filename is kept only to suggest a stored name and is sanitised
+        elsewhere; the bytes are never trusted on type until sniffed."""
+        raw = self.rfile.read(length)
+        header = (
+            b"Content-Type: "
+            + content_type.encode("latin-1", "replace")
+            + b"\r\nMIME-Version: 1.0\r\n\r\n"
+        )
+        message = BytesParser(policy=email_policy.default).parsebytes(header + raw)
+        fields: dict[str, str] = {}
+        attached: tuple[str, bytes] | None = None
+        if message.is_multipart():
+            for part in message.iter_parts():
+                name = part.get_param("name", header="content-disposition")
+                if name is None:
+                    continue
+                decoded = part.get_payload(decode=True)
+                data = decoded if isinstance(decoded, bytes) else b""
+                filename = part.get_filename()
+                if filename:
+                    if attached is None and data:
+                        attached = (filename, data)
+                else:
+                    fields[str(name)] = data.decode("utf-8", "replace")
+        return fields, attached
 
     def _consent_store(self) -> consent.ConsentRequestStore:
         return consent.ConsentRequestStore(self._archive().logs_dir / "consent-requests.json")
+
+    def _submission_queue(self) -> review.SubmissionQueue:
+        return review.SubmissionQueue(self._archive().logs_dir / "submission-queue.json")
 
     def _post_consent(self, raw_id: str) -> None:
         """``POST /record/{id}/consent`` — file a contributor consent request.
@@ -722,7 +522,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
                     "Invalid request",
                     lang=lang,
                     main_html=_error_main_html("Invalid request", "Please choose a valid action."),
-                    nav_html=_nav_html(lang),
+                    nav_html=self._nav(),
                 ),
             )
             return
@@ -740,11 +540,13 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             "    <h1>Request received</h1>\n"
             f"    <p>Your request to {_esc(kind)} this record has been recorded{_esc(note)}. "
             f"A steward will review it. {_esc(rt)}</p>\n"
-            f"    <p>Your reference is <code>{_esc(req.request_id)}</code>.</p>\n"
+            f"    <p>Your reference is <code>{_esc(req.request_id)}</code>. "
+            f"Check its progress anytime at "
+            f'<a href="/consent-status?ref={quote(req.request_id)}">/consent-status</a>.</p>\n'
             '    <p><a href="/">Back to all records</a></p>'
         )
         self._send_html(
-            200, _page("Request received", lang=lang, main_html=main_html, nav_html=_nav_html(lang))
+            200, _page("Request received", lang=lang, main_html=main_html, nav_html=self._nav())
         )
 
     def _post_resolve_request(self, raw_id: str) -> None:
@@ -761,6 +563,154 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("Location", "/steward")
         self.end_headers()
 
+    def _post_review_submission(self, raw_id: str) -> None:
+        """``POST /steward/submissions/{id}/review`` — approve or withhold a submission.
+
+        Steward-gated. A submission lands sealed-pending; this is where a steward
+        makes the deliberate act that opens it (Hard Rule 2 — nothing publishes by
+        inaction). ``publish`` opens the record to the visibility the contributor
+        requested (carried on the ``account`` field); ``withhold`` restricts it to
+        stewards, held for revision. Either way the decision is recorded as an
+        accountable, audited :func:`ledger.moderate.change_consent` event and the
+        record leaves the queue. No identity or submitted content is logged."""
+        grant = self._resolve_grant()
+        if not grant.is_steward:
+            self._handle_not_found()
+            return
+        record_id = _decode_id(raw_id)
+        action = self._read_form().get("action", "")
+        if action not in {"publish", "withhold"}:
+            self._handle_not_found()
+            return
+        self._apply_review(record_id, action, grant.subject)
+        self.send_response(303)
+        self.send_header("Location", "/steward")
+        self.end_headers()
+
+    def _apply_review(self, record_id: str, action: str, actor: str) -> None:
+        """Publish or withhold one pending submission, recording an audited decision.
+
+        The shared effect behind the per-record review form and the bulk-withhold
+        action: ``publish`` opens the record to the visibility the contributor
+        requested (carried on the ``account`` field); ``withhold`` restricts it to
+        stewards, held for revision. Either way the decision is an accountable,
+        audited :func:`ledger.moderate.change_consent` event and the record leaves
+        the queue. A record that has since vanished only has its stale queue entry
+        cleared. No identity or submitted content is logged (no-outing rule)."""
+        archive = self._archive()
+        try:
+            record = archive.get(record_id)
+        except ObjectNotFound:
+            self._submission_queue().remove(record_id)
+            return
+        if action == "publish":
+            target = next(
+                (f.policy for f in record.fields if f.name == "account"),
+                AccessPolicy.COMMUNITY,
+            )
+            reason = "approved from the steward review queue"
+        else:
+            target = AccessPolicy.STEWARDS
+            reason = "withheld at steward review, pending revision"
+        updated, event, _action = change_consent(
+            record, target, actor=actor, reason=reason, now=now_iso()
+        )
+        archive.apply_update(updated, event)
+        self._submission_queue().remove(record_id)
+
+    def _post_bulk_withhold(self) -> None:
+        """``POST /steward/submissions/withhold`` — withhold several submissions at once.
+
+        Steward-gated. Withholding is the *conservative* bulk action: it only ever
+        restricts records to stewards (held for revision), never opens them, so a
+        bulk click can never over-expose a record — publishing stays a deliberate,
+        per-record act behind "open and read it first". Each selected id is withheld
+        through the one audited review path; unknown ids are harmless (a missing
+        record just clears its queue entry)."""
+        grant = self._resolve_grant()
+        if not grant.is_steward:
+            self._handle_not_found()
+            return
+        selected = self._read_form_multi().get("select", [])
+        for record_id in selected:
+            self._apply_review(record_id, "withhold", grant.subject)
+        self.send_response(303)
+        self.send_header("Location", "/steward")
+        self.end_headers()
+
+    def _handle_object_form(
+        self, raw_id: str, *, error: str | None = None, status: int = 200
+    ) -> None:
+        """``GET /record/{id}/object`` — a *subject's* objection form (no claim token).
+
+        A person named or described in a record they did not contribute can ask a
+        steward to review it — to redact a name or take it down (user research B3:
+        subjects have agency, not only the contributor). Unlike the contributor
+        consent form, it needs no claim token; the record must be listable to the
+        viewer or this is a neutral 404 (it never confirms a sealed record exists).
+        The objection is queued for a steward, who weighs it — nothing is automatic.
+        """
+        record_id = _decode_id(raw_id)
+        grant = self._resolve_grant()
+        lang = self._lang()
+        try:
+            self._archive().disclose(record_id, grant)
+        except (AccessDenied, ObjectNotFound):
+            self._handle_not_found()
+            return
+        error_html = f'    <p class="error" role="alert">{_esc(error)}</p>\n' if error else ""
+        main_html = (
+            "    <h1>Object to this record</h1>\n"
+            "    <p>If you are named or described in this record and did not contribute "
+            "it, you can ask a steward to review it — for example, to redact your name "
+            "or take it down. A steward weighs every objection; nothing happens "
+            "automatically.</p>\n"
+            f"{error_html}"
+            f'    <form method="post" action="/record/{quote(record_id)}/object">\n'
+            '      <p><label for="message">What is your concern?</label></p>\n'
+            '      <p><textarea id="message" name="message" rows="5" required></textarea></p>\n'
+            '      <p><button type="submit">Send to a steward</button></p>\n'
+            "    </form>"
+        )
+        self._send_html(
+            status, _page("Object", lang=lang, main_html=main_html, nav_html=self._nav())
+        )
+
+    def _post_object(self, raw_id: str) -> None:
+        """``POST /record/{id}/object`` — file a subject's objection for steward review.
+
+        Queues a ``kind="object"`` request (B3). The objector's message is stored for
+        the steward but never logged or echoed in an error (no-outing rule); they get
+        a reference token to check progress at ``/consent-status`` (B2)."""
+        record_id = _decode_id(raw_id)
+        grant = self._resolve_grant()
+        lang = self._lang()
+        try:
+            self._archive().disclose(record_id, grant)
+        except (AccessDenied, ObjectNotFound):
+            self._handle_not_found()
+            return
+        message = self._read_form().get("message", "").strip()
+        if not message:
+            self._handle_object_form(
+                raw_id, error="Please describe your concern so a steward can act on it.", status=400
+            )
+            return
+        req = consent.ConsentRequest(record_id=record_id, kind="object", message=message)
+        self._consent_store().add(req)
+        rt = self._archive().config.consent_response_time or "A steward will review your request."
+        main_html = (
+            "    <h1>Your objection was received</h1>\n"
+            f"    <p>It has been recorded for a steward to review. {_esc(rt)}</p>\n"
+            f"    <p>Your reference is <code>{_esc(req.request_id)}</code>. "
+            f"Check its progress at "
+            f'<a href="/consent-status?ref={quote(req.request_id)}">/consent-status</a>.</p>\n'
+            '    <p><a href="/">Back to all records</a></p>'
+        )
+        self._send_html(
+            200, _page("Objection received", lang=lang, main_html=main_html, nav_html=self._nav())
+        )
+
     def _handle_steward_console(self) -> None:
         """``GET /steward`` — a steward's accountable console (gated).
 
@@ -774,42 +724,195 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         if not grant.is_steward:
             self._handle_not_found()
             return
+        archive = self._archive()
+        pending = self._submission_queue().pending()
+        if pending:
+            sub_rows = []
+            for item in pending:
+                edited = ""
+                try:
+                    record = archive.get(item.record_id)
+                    title = record.title
+                    # Show what "Publish (as requested)" will actually do, so a steward
+                    # never opens a record wider than the contributor asked without
+                    # seeing it first (safety — no accidental over-exposure).
+                    visibility = contribute.current_visibility(record)
+                    target = i18n.t(lang, f"sw_vis_{visibility}")
+                    cw = (
+                        f' <span class="badge">{_esc(i18n.t(lang, "content_warning_heading"))}</span>'
+                        if record.content_warnings
+                        else ""
+                    )
+                    # Flag a submission the contributor corrected after submitting, so a
+                    # steward part-way through review knows it changed and re-reads it.
+                    corrections = sum(
+                        1
+                        for event in archive.record_events(item.record_id)
+                        if event.event_type is PremisEventType.CORRECTION
+                    )
+                    if corrections == 1:
+                        edited = (
+                            f' <span class="badge">{_esc(i18n.t(lang, "badge_edited_one"))}</span>'
+                        )
+                    elif corrections > 1:
+                        label = i18n.t(lang, "badge_edited_many", count=corrections)
+                        edited = f' <span class="badge">{_esc(label)}</span>'
+                except ObjectNotFound:
+                    title = "(record unavailable)"
+                    target = ""
+                    cw = ""
+                submitted = i18n.t(lang, "sw_submitted", when=item.submitted_at)
+                # The select checkbox associates with the separate bulk-withhold form
+                # via the HTML ``form`` attribute, so it can live inside this <li> (and
+                # its per-item form) without illegally nesting forms.
+                cid = f"sel-{quote(item.record_id)}"
+                sub_rows.append(
+                    "      <li>\n"
+                    f'        <input type="checkbox" id="{cid}" name="select" '
+                    f'value="{_esc(item.record_id)}" form="bulk-withhold">\n'
+                    f'        <label for="{cid}">{_esc(i18n.t(lang, "sw_select_label"))}</label>\n'
+                    f"        <strong>{_esc(title)}</strong>{cw}{edited} "
+                    f'<a href="/record/{quote(item.record_id)}">{_esc(item.record_id)}</a> '
+                    f'<span class="muted">({_esc(submitted)})</span>\n'
+                    f"        <p>{_esc(i18n.t(lang, 'sw_would_publish_as'))} "
+                    f"<strong>{_esc(target)}</strong>. "
+                    f"{_esc(i18n.t(lang, 'sw_open_to_read'))}</p>\n"
+                    '        <form method="post" '
+                    f'action="/steward/submissions/{quote(item.record_id)}/review">\n'
+                    '          <button type="submit" name="action" value="publish">'
+                    f"{_esc(i18n.t(lang, 'sw_publish_button'))}</button>\n"
+                    '          <button type="submit" name="action" value="withhold">'
+                    f"{_esc(i18n.t(lang, 'sw_withhold_button'))}</button>\n"
+                    "        </form>\n"
+                    "      </li>"
+                )
+            # The bulk form holds only the submit button; the checkboxes above join it
+            # by ``form="bulk-withhold"``. Withhold-only — the safe, conservative bulk
+            # action that can never over-expose a record.
+            bulk_form = (
+                '    <form id="bulk-withhold" method="post" '
+                'action="/steward/submissions/withhold">\n'
+                f'      <p><button type="submit">{_esc(i18n.t(lang, "sw_bulk_withhold"))}'
+                "</button></p>\n"
+                "    </form>"
+            )
+            submissions_html = (
+                f'    <ul class="submissions">\n{chr(10).join(sub_rows)}\n    </ul>\n{bulk_form}'
+            )
+        else:
+            submissions_html = f"    <p>{_esc(i18n.t(lang, 'sw_no_submissions'))}</p>"
         open_reqs = self._consent_store().open_requests()
         if open_reqs:
             rows = "\n".join(
                 "      <li>\n"
-                f"        <strong>{_esc(r.kind)}</strong> on record "
+                f"        <strong>{_esc(i18n.t(lang, f'req_kind_{r.kind}'))}</strong> "
+                f"{_esc(i18n.t(lang, 'sw_on_record'))} "
                 f'<a href="/record/{quote(r.record_id)}">{_esc(r.record_id)}</a> '
-                f'<span class="muted">({_esc(r.created_at)}, ref {_esc(r.request_id)})</span>\n'
+                f'<span class="muted">'
+                f"({_esc(i18n.t(lang, 'sw_request_meta', when=r.created_at, ref=r.request_id))})"
+                "</span>\n"
                 f'        <form method="post" action="/steward/requests/{quote(r.request_id)}/resolve">\n'
                 '          <input type="hidden" name="status" value="resolved">\n'
-                '          <button type="submit">Mark resolved</button>\n'
+                f'          <button type="submit">{_esc(i18n.t(lang, "sw_mark_resolved"))}</button>\n'
                 "        </form>\n"
                 "      </li>"
                 for r in open_reqs
             )
             requests_html = f'    <ul class="requests">\n{rows}\n    </ul>'
         else:
-            requests_html = "    <p>No open requests.</p>"
+            requests_html = f"    <p>{_esc(i18n.t(lang, 'sw_no_requests'))}</p>"
+        # The CLI command names are literal (never translated); the prose around them is.
+        cli_line = (
+            f"      <p>{_esc(i18n.t(lang, 'sw_cli_intro'))} <code>ledger policy</code> "
+            f"{_esc(i18n.t(lang, 'sw_cli_policy_note'))} <code>ledger takedown</code>, "
+            f"{_esc(i18n.t(lang, 'sw_cli_cw_note'))}</p>\n"
+        )
         main_html = (
-            "    <h1>Steward console</h1>\n"
+            f"    <h1>{_esc(i18n.t(lang, 'sw_console_heading'))}</h1>\n"
+            '    <section aria-labelledby="sub-heading">\n'
+            f'      <h2 id="sub-heading">{_esc(i18n.t(lang, "sw_submissions_heading"))}</h2>\n'
+            f"      <p>{_esc(i18n.t(lang, 'sw_submissions_intro'))}</p>\n"
+            f"{submissions_html}\n"
+            "    </section>\n"
             '    <section aria-labelledby="req-heading">\n'
-            '      <h2 id="req-heading">Open consent &amp; takedown requests</h2>\n'
+            f'      <h2 id="req-heading">{_esc(i18n.t(lang, "sw_requests_heading"))}</h2>\n'
             f"{requests_html}\n"
             "    </section>\n"
             '    <section aria-labelledby="note-heading">\n'
-            '      <h2 id="note-heading">Before you act</h2>\n'
-            "      <p>You can read access-restricted content to do your work, but content "
-            "sealed with the 'sealed' policy — and every contributor's identity — is "
-            "restricted even from you. Some records may be sealed above your access; their "
-            "absence here does not mean they do not exist.</p>\n"
-            "      <p>Action a request with the audited CLI: <code>ledger policy</code> "
-            "(change access), <code>ledger takedown</code>, or <code>ledger cw</code> "
-            "(add a content warning) — each records who acted and why.</p>\n"
+            f'      <h2 id="note-heading">{_esc(i18n.t(lang, "sw_before_heading"))}</h2>\n'
+            f"      <p>{_esc(i18n.t(lang, 'sw_before_access'))}</p>\n"
+            f"{cli_line}"
+            f'      <p><a href="/steward/audit">{_esc(i18n.t(lang, "sw_view_audit"))}</a> '
+            f"{_esc(i18n.t(lang, 'sw_view_audit_note'))}</p>\n"
             "    </section>"
         )
         self._send_html(
-            200, _page("Steward console", lang=lang, main_html=main_html, nav_html=_nav_html(lang))
+            200,
+            _page(
+                i18n.t(lang, "sw_console_heading"),
+                lang=lang,
+                main_html=main_html,
+                nav_html=self._nav(),
+            ),
+        )
+
+    def _handle_steward_audit(self) -> None:
+        """``GET /steward/audit`` — a read-only, identity-free PREMIS audit log (gated).
+
+        A steward could verify *that* the vault never opened but could not, until now,
+        read the archive's own account of what happened (user research D3). This
+        renders the aggregated PREMIS events — ingestion, fixity checks, replication,
+        consent/policy changes, takedowns, key rotations — newest first, as an
+        accessible table. Every event is identity-free by construction
+        (:meth:`Archive.audit_events`), so the log carries no contributor identity or
+        sealed value. Steward-gated; a non-steward gets a neutral 404."""
+        grant = self._resolve_grant()
+        lang = self._lang()
+        if not grant.is_steward:
+            self._handle_not_found()
+            return
+        events = self._archive().audit_events()
+        if events:
+            rows = "\n".join(
+                "        <tr>\n"
+                f"          <td>{_esc(e.event_datetime)}</td>\n"
+                f"          <td>{_esc(e.event_type.value)}</td>\n"
+                f"          <td>{_esc(e.outcome)}</td>\n"
+                f"          <td>{_esc(e.agent)}</td>\n"
+                f"          <td>{_esc(e.linked_object or '')}</td>\n"
+                f"          <td>{_esc(e.detail)}</td>\n"
+                "        </tr>"
+                for e in events
+            )
+            table = (
+                "    <table>\n"
+                f"      <caption>{_esc(i18n.t(lang, 'audit_caption'))}</caption>\n"
+                "      <thead>\n"
+                "        <tr>\n"
+                f'          <th scope="col">{_esc(i18n.t(lang, "audit_col_when"))}</th>\n'
+                f'          <th scope="col">{_esc(i18n.t(lang, "audit_col_event"))}</th>\n'
+                f'          <th scope="col">{_esc(i18n.t(lang, "audit_col_outcome"))}</th>\n'
+                f'          <th scope="col">{_esc(i18n.t(lang, "audit_col_agent"))}</th>\n'
+                f'          <th scope="col">{_esc(i18n.t(lang, "audit_col_object"))}</th>\n'
+                f'          <th scope="col">{_esc(i18n.t(lang, "audit_col_detail"))}</th>\n'
+                "        </tr>\n"
+                "      </thead>\n"
+                f"      <tbody>\n{rows}\n      </tbody>\n"
+                "    </table>"
+            )
+        else:
+            table = f"    <p>{_esc(i18n.t(lang, 'audit_no_events'))}</p>"
+        main_html = (
+            f"    <h1>{_esc(i18n.t(lang, 'audit_heading'))}</h1>\n"
+            f"    <p>{_esc(i18n.t(lang, 'audit_intro'))}</p>\n"
+            f"{table}\n"
+            f'    <p><a href="/steward">{_esc(i18n.t(lang, "audit_back"))}</a></p>'
+        )
+        self._send_html(
+            200,
+            _page(
+                i18n.t(lang, "audit_heading"), lang=lang, main_html=main_html, nav_html=self._nav()
+            ),
         )
 
     # --- HTML routes --------------------------------------------------------
@@ -817,49 +920,97 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
     def _handle_browse(self, params: dict[str, list[str]]) -> None:
         """``GET /`` — the accessible browse page (list + table equivalents).
 
-        Supports faceted browse: ``?subject=`` / ``?type=`` filter by a Dublin Core
-        facet so a topic is reachable, not just an exact title (user research P1-4).
-        """
-        lang = self._lang()
-        grant = self._resolve_grant()
-        records = self._archive().browse(grant)
-        facet_field, facet_value = self._facet_from(params)
-        if facet_field and facet_value:
-            records = search.filter_by_facet(records, facet_field, facet_value)
-            heading = f"{facet_field.capitalize()}: {facet_value}"
-        else:
-            heading = "Browse the archive"
-        main_html = _browse_main_html(
-            records, heading=heading, lang=lang, all_records=self._all_for_facets(grant)
-        )
-        self._send_html(
-            200, _page("Browse", lang=lang, main_html=main_html, nav_html=_nav_html(lang))
-        )
-
-    @staticmethod
-    def _facet_from(params: dict[str, list[str]]) -> tuple[str, str]:
-        for fld in ("subject", "type"):
-            if params.get(fld):
-                return fld, params[fld][0]
-        return "", ""
-
-    def _all_for_facets(self, grant: Grant) -> list[DisclosedRecord]:
-        return self._archive().browse(grant)
+        Faceted browse and search compose: ``?subject=`` / ``?type=`` / ``?language=``
+        filter by a Dublin Core facet and ``?q=`` searches, and any combination
+        narrows to the intersection, so a reader can search *within* a topic (user
+        research P1-4)."""
+        self._render_results(params)
 
     def _handle_search(self, params: dict[str, list[str]]) -> None:
-        """``GET /search?q=`` — search disclosed records over their Dublin Core.
+        """``GET /search?q=`` — search disclosed records, composing with any facets.
 
         Search runs over already-disclosed records (so it can never surface a field
-        the grant may not see) and now indexes subjects, descriptions, and types —
-        not just titles — so a topic search actually finds records (user research
-        P1-4). A non-Latin query shows a plain hint that search is English-biased.
-        """
+        the grant may not see) and indexes subjects, descriptions, and types, not just
+        titles. The same active facets apply, so search and faceted browse are one
+        finding aid rather than two. A non-Latin query shows a plain hint that search
+        is English-biased."""
+        self._render_results(params)
+
+    @staticmethod
+    def _active_facets(params: dict[str, list[str]]) -> list[tuple[str, str]]:
+        """Every active Dublin Core facet filter, one value per field, in field order.
+
+        Composing facets (subject AND type AND language) lets a reader narrow on more
+        than one axis at once. Only the first value of each field is taken, so a
+        crafted repeated param cannot AND a field against itself into nothing."""
+        active: list[tuple[str, str]] = []
+        for field in ("subject", "type", "language"):
+            values = params.get(field)
+            if values and values[0]:
+                active.append((field, values[0]))
+        return active
+
+    @staticmethod
+    def _apply_filters(
+        records: list[DisclosedRecord],
+        *,
+        query: str,
+        active: list[tuple[str, str]],
+        date_from: str,
+        date_to: str,
+        sort: str,
+    ) -> list[DisclosedRecord]:
+        """Apply the composable discovery filters to ``records``, in order.
+
+        Search (which ranks by relevance) then each active facet then the date range
+        then an explicit sort — the same pipeline behind the browse/search page and
+        the JSON search API, so both surfaces narrow a result set identically. Every
+        step operates on the already-disclosed set, so no filter can surface a value a
+        viewer may not see (no-outing rule)."""
+        if query:
+            records = search.search(records, query)
+        for field, value in active:
+            records = search.filter_by_facet(records, field, value)
+        if date_from or date_to:
+            records = search.filter_by_date_range(records, start=date_from, end=date_to)
+        if sort == "newest":
+            records = search.sort_by_date(records, newest=True)
+        elif sort == "oldest":
+            records = search.sort_by_date(records, newest=False)
+        return records
+
+    def _render_results(self, params: dict[str, list[str]]) -> None:
+        """Render the browse/search page applying the query and every active facet.
+
+        Starts from the records the grant may list, searches them by ``q`` (which also
+        ranks them by relevance), then narrows by each active facet — the intersection.
+        Facet counts and the sidebar are computed over the matched set so they narrow
+        the *current* results, not the whole collection."""
         lang = self._lang()
         grant = self._resolve_grant()
         query = (params.get("q", [""])[0]).strip()
-        disclosed = self._archive().browse(grant)
-        matched = search.search(disclosed, query)
-        heading = f"Search results for “{query}”" if query else "Search"
+        active = self._active_facets(params)
+        date_from = (params.get("from", [""])[0]).strip()[:20]
+        date_to = (params.get("to", [""])[0]).strip()[:20]
+        sort = (params.get("sort", [""])[0]).strip()
+
+        records = self._apply_filters(
+            self._archive().browse(grant),
+            query=query,
+            active=active,
+            date_from=date_from,
+            date_to=date_to,
+            sort=sort,
+        )
+
+        if query:
+            heading = f"Search results for “{query}”"
+        elif len(active) == 1:
+            heading = f"{active[0][0].capitalize()}: {active[0][1]}"
+        elif active:
+            heading = "Filtered records"
+        else:
+            heading = "Browse the archive"
         hint = (
             '<p class="hint">Search currently matches Latin-script text; results may '
             "be incomplete for other scripts.</p>"
@@ -867,17 +1018,31 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             else ""
         )
         main_html = hint + _browse_main_html(
-            matched, heading=heading, query=query, lang=lang, all_records=disclosed
+            records,
+            heading=heading,
+            query=query,
+            lang=lang,
+            active_facets=active,
+            sort=sort,
+            date_from=date_from,
+            date_to=date_to,
+            page=self._page_from(params),
+            current_path=self.path,
         )
-        self._send_html(
-            200,
-            _page(
-                f"Search — {query}" if query else "Search",
-                lang=lang,
-                main_html=main_html,
-                nav_html=_nav_html(lang),
-            ),
-        )
+        title = f"Search — {query}" if query else "Browse"
+        self._send_html(200, _page(title, lang=lang, main_html=main_html, nav_html=self._nav()))
+
+    @staticmethod
+    def _page_from(params: dict[str, list[str]]) -> int:
+        """The requested 1-based page from ``?page=``, defaulting to 1.
+
+        A missing or non-numeric value is treated as page 1; an out-of-range number
+        is clamped later by :func:`ledger.pagination.paginate`, so this never raises."""
+        raw = (params.get("page", ["1"])[0]).strip()
+        try:
+            return int(raw)
+        except ValueError:
+            return 1
 
     def _handle_record(self, raw_id: str, params: dict[str, list[str]]) -> None:
         """``GET /record/{id}`` — a single record view with a CW interstitial."""
@@ -892,8 +1057,17 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             # (confidentiality — the absence of a record leaks nothing).
             self._handle_not_found()
             return
+        # Other records on the same subjects the *viewer* may list, so the related
+        # links never point at anything the viewer could not already see (no-outing).
+        related = search.related_by_subject(record, self._archive().browse(grant))
         main_html = _record_main_html(
-            record, proceed=proceed, insider=_is_insider(grant), lang=self._lang()
+            record,
+            proceed=proceed,
+            insider=_is_insider(grant),
+            lang=self._lang(),
+            base_url=self._base_url(),
+            archive_name=self._archive().config.archive_name,
+            related=related,
         )
         self._send_html(
             200,
@@ -901,7 +1075,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
                 record.title,
                 lang=self._lang(),
                 main_html=main_html,
-                nav_html=_nav_html(self._lang()),
+                nav_html=self._nav(),
             ),
         )
 
@@ -933,7 +1107,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
                 "Not found",
                 lang=self._lang(),
                 main_html=main_html,
-                nav_html=_nav_html(self._lang()),
+                nav_html=self._nav(),
             ),
         )
 
@@ -946,6 +1120,70 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         reasons = _is_insider(grant)
         self._send_json(200, {"records": [r.to_dict(withheld_reasons=reasons) for r in records]})
 
+    def _handle_api_search(self, params: dict[str, list[str]]) -> None:
+        """``GET /api/search`` — JSON results for the composable discovery filters.
+
+        Accepts the same ``q`` / ``subject`` / ``type`` / ``language`` / ``from`` /
+        ``to`` / ``sort`` / ``page`` parameters as the HTML browse, applies them
+        through the one shared filter pipeline, paginates the same way, and returns the
+        disclosed safe shape — so an integrator gets exactly what the page shows, never
+        a withheld value or an identity (no-outing rule). The body reports the active
+        query and the pagination so a caller can walk the pages."""
+        grant = self._resolve_grant()
+        reasons = _is_insider(grant)
+        records = self._apply_filters(
+            self._archive().browse(grant),
+            query=(params.get("q", [""])[0]).strip(),
+            active=self._active_facets(params),
+            date_from=(params.get("from", [""])[0]).strip()[:20],
+            date_to=(params.get("to", [""])[0]).strip()[:20],
+            sort=(params.get("sort", [""])[0]).strip(),
+        )
+        window = pagination.paginate(records, self._page_from(params), pagination.DEFAULT_PER_PAGE)
+        self._send_json(
+            200,
+            {
+                "query": (params.get("q", [""])[0]).strip(),
+                "total": window.total,
+                "page": window.number,
+                "pages": window.pages,
+                "per_page": window.per_page,
+                "records": [r.to_dict(withheld_reasons=reasons) for r in window.items],
+            },
+        )
+
+    #: Cap an export so a single request cannot stream an unbounded body.
+    _CSV_EXPORT_CAP = 5000
+
+    def _handle_api_search_csv(self, params: dict[str, list[str]]) -> None:
+        """``GET /api/search.csv`` — the filtered result set as a CSV download.
+
+        Same composable filters as the page and the JSON API, run through the one
+        shared pipeline, but rendered as CSV for spreadsheet analysis (the whole result
+        set, not one page, capped so a request stays bounded). Only the disclosed safe
+        shape is written — no identity, no withheld value (no-outing rule) — and each
+        cell is guarded against spreadsheet formula injection (:mod:`ledger.export`)."""
+        grant = self._resolve_grant()
+        records = self._apply_filters(
+            self._archive().browse(grant),
+            query=(params.get("q", [""])[0]).strip(),
+            active=self._active_facets(params),
+            date_from=(params.get("from", [""])[0]).strip()[:20],
+            date_to=(params.get("to", [""])[0]).strip()[:20],
+            sort=(params.get("sort", [""])[0]).strip(),
+        )
+        csv_text = export.records_csv(records[: self._CSV_EXPORT_CAP], base_url=self._base_url())
+        body = csv_text.encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/csv; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Content-Disposition", 'attachment; filename="search-results.csv"')
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(body)
+
     def _handle_api_record(self, raw_id: str) -> None:
         """``GET /api/record/{id}`` — JSON of one record's disclosed shape."""
         record_id = _decode_id(raw_id)
@@ -957,6 +1195,369 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             self._send_json(404, {"error": "not found"})
             return
         self._send_json(200, record.to_dict(withheld_reasons=_is_insider(grant)))
+
+    # --- contributor submission (opt-in write path) -------------------------
+
+    def _handle_contribute_form(
+        self,
+        *,
+        error: str | None = None,
+        status: int = 200,
+        values: dict[str, str] | None = None,
+        preview_html: str | None = None,
+    ) -> None:
+        """``GET /contribute`` — the accessible contribution form, when enabled.
+
+        Returns a neutral 404 when the submission surface is off, so a read-only
+        deployment never advertises a write path (least privilege). The form itself
+        is plain about review-before-publish and sealed contact (no-outing rule);
+        ``values`` re-fills it after a preview or a validation error, and
+        ``preview_html`` shows the stranger-view panel above the form on a preview."""
+        if not self._allow_contributions():
+            self._handle_not_found()
+            return
+        lang = self._lang()
+        main_html = contribute.render_contribute_main(
+            self._archive().config,
+            lang=lang,
+            error=error,
+            values=values,
+            preview_html=preview_html,
+        )
+        self._send_html(
+            status, _page("Contribute", lang=lang, main_html=main_html, nav_html=self._nav())
+        )
+
+    def _post_contribute(self) -> None:
+        """``POST /contribute`` — preview, edit, or submit a contribution.
+
+        The form's primary action is **preview**: the contributor first sees exactly
+        what a stranger would see if it were published at the requested visibility,
+        with nothing stored. **edit** returns to the form with their entries intact.
+        Only **submit** stores it — sealed-pending, through the one ingest path, with
+        any contact sealed into the vault and never echoed (the no-outing rule). A
+        validation error re-renders the form (with the entries kept); a sealing
+        failure declines without naming anything submitted."""
+        if not self._allow_contributions():
+            self._handle_not_found()
+            return
+        form, attachment = self._read_contribution()
+        action = form.get("action", "preview")
+        try:
+            submission = contribute.parse_submission(form, self._archive().config)
+        except ValidationError as exc:
+            message = i18n.t(self._lang(), exc.code, **exc.fields)
+            self._handle_contribute_form(error=message, status=400, values=form)
+            return
+        if action != "submit":
+            self._render_contribute_preview(submission, form)
+            return
+        # Validate any attached file from its *bytes* before storing anything: an
+        # oversized or non-allowlisted upload is refused with a re-rendered form, and
+        # the contributor's text is kept. The stored media type is server-determined
+        # by sniffing, never the client's filename or Content-Type (backlog A2).
+        payload: dict[str, Path]
+        with tempfile.TemporaryDirectory(prefix="ledger-upload-") as tmpdir:
+            if attachment is not None:
+                error = self._stage_upload(attachment, submission.record, Path(tmpdir))
+                if error is not None:
+                    self._handle_contribute_form(error=error, status=400, values=form)
+                    return
+                stored_name = submission.record.payloads[0].filename
+                payload = {stored_name: Path(tmpdir) / stored_name}
+            else:
+                payload = {}
+            stamp = now_iso()
+            try:
+                self._archive().ingest(
+                    payload,
+                    submission.record,
+                    identity=submission.identity,
+                    agent="contribution",
+                    now=stamp,
+                )
+            except LedgerError:
+                # Name nothing the contributor submitted; just decline cleanly.
+                self._handle_contribute_form(
+                    error=i18n.t(self._lang(), "err_save_failed"),
+                    status=503,
+                    values=form,
+                )
+                return
+        # Queue it for steward review. The entry is identity-free (id + timestamp);
+        # the record stays sealed-pending until a steward acts (Hard Rule 2).
+        record_id = submission.record.record_id
+        self._submission_queue().add(record_id, now=stamp)
+        # Hand the contributor a reference + a claim token (a capability, not an
+        # identity) so they can withdraw the submission themselves while it is still
+        # pending. Only when a claim secret is configured; otherwise the thanks page
+        # stays generic and self-withdrawal is unavailable.
+        claim_token = self._claim_token(record_id)
+        lang = self._lang()
+        self._send_html(
+            200,
+            _page(
+                "Thank you",
+                lang=lang,
+                main_html=contribute.render_thanks_main(
+                    reference=record_id if claim_token else None,
+                    claim_token=claim_token,
+                    lang=lang,
+                ),
+                nav_html=self._nav(),
+            ),
+        )
+
+    def _stage_upload(
+        self, attachment: tuple[str, bytes], record: Record, tmpdir: Path
+    ) -> str | None:
+        """Validate and stage an attached file, or return a safe error to show.
+
+        The bytes are the only thing trusted: the file is refused if it is larger than
+        :data:`upload.MAX_UPLOAD_BYTES` or if :func:`upload.sniff_media_type` does not
+        recognise it as one of the allowlisted types. On success the bytes are written
+        under ``tmpdir`` with a sanitised filename and a :class:`PayloadFile` is
+        pre-declared on ``record`` so the one ingest path stores it with the
+        *server-sniffed* media type and the record's sealed-pending policy — never a
+        type taken from the client. The returned error names no submitted value
+        (no-outing rule). On success returns ``None``."""
+        filename, data = attachment
+        lang = self._lang()
+        if len(data) > upload.MAX_UPLOAD_BYTES:
+            megabytes = upload.MAX_UPLOAD_BYTES // (1024 * 1024)
+            return i18n.t(lang, "err_file_too_large", max=megabytes)
+        media_type = upload.sniff_media_type(data)
+        if media_type is None:
+            return i18n.t(lang, "err_file_type", types=", ".join(upload.ALLOWED_TYPES))
+        safe = _safe_filename(filename) or "upload"
+        (tmpdir / safe).write_bytes(data)
+        # The payload follows the record's sealed-pending default, so it is invisible
+        # until a steward reviews it — exactly like the rest of the submission. The
+        # address is a placeholder; the one ingest path recomputes it from the bytes.
+        record.payloads = [
+            PayloadFile(
+                filename=safe,
+                address=ContentAddress(algo=HashAlgo.SHA256, digest="0" * 64),
+                media_type=media_type,
+                policy=record.default_policy,
+            )
+        ]
+        return None
+
+    def _render_contribute_preview(
+        self, submission: contribute.Submission, form: dict[str, str]
+    ) -> None:
+        """Re-render the form with a "what a stranger sees" panel, storing nothing.
+
+        Simulates the published state (default policy opened to the requested
+        visibility) and discloses it to the anonymous public through the single
+        disclosure chokepoint, so the preview cannot show a stranger more than a real
+        read path would. When the record would not be listable to a stranger, the
+        panel honestly says a stranger sees nothing. The contributor's entries are
+        re-filled into the form below the panel — their sealed contact is never in
+        the panel itself."""
+        preview = contribute.preview_record(submission)
+        now = now_iso()
+        stranger_view = (
+            disclose(preview, anonymous(), now) if is_listable(preview, anonymous(), now) else None
+        )
+        visibility = form.get("visibility") or "community"
+        panel = contribute.render_preview_panel(
+            stranger_view, visibility=visibility, lang=self._lang()
+        )
+        self._handle_contribute_form(values=form, preview_html=panel)
+
+    # --- contributor self-service withdrawal --------------------------------
+
+    def _claim_secret(self) -> bytes:
+        """The configured claim secret as bytes, or empty when none is set."""
+        return os.environ.get("LEDGER_CLAIM_SECRET", "").encode("utf-8")
+
+    def _claim_token(self, record_id: str) -> str | None:
+        """A claim token for ``record_id``, or ``None`` when no claim secret is set."""
+        secret = self._claim_secret()
+        return consent.issue_claim_token(record_id, secret) if secret else None
+
+    def _withdrawal_enabled(self) -> bool:
+        """Self-withdrawal needs both the contribution surface and a claim secret.
+
+        Without contributions there is nothing to withdraw; without a claim secret no
+        token was ever issued, so authorship cannot be proven and the surface stays
+        closed (least privilege)."""
+        return self._allow_contributions() and bool(self._claim_secret())
+
+    def _handle_withdraw_form(self, *, error: str | None = None, reference: str = "") -> None:
+        """``GET /withdraw`` — the form to withdraw a still-pending submission.
+
+        A neutral 404 when self-withdrawal is off, so a deployment without it never
+        advertises the path (least privilege)."""
+        if not self._withdrawal_enabled():
+            self._handle_not_found()
+            return
+        lang = self._lang()
+        main_html = contribute.render_withdraw_main(error=error, reference=reference, lang=lang)
+        self._send_html(
+            200, _page("Withdraw", lang=lang, main_html=main_html, nav_html=self._nav())
+        )
+
+    def _post_withdraw(self) -> None:
+        """``POST /withdraw`` — withdraw a pending submission given a valid claim token.
+
+        Permitted only while the submission is *still pending* (in the review queue,
+        never published): a contributor may freely undo their own not-yet-public
+        submission, but once a steward has published a record it is governed by the
+        normal consent/takedown path, not a self-service form. A valid claim token
+        proves authorship.
+
+        Every failure — unknown reference, bad token, or a record that is no longer
+        pending — returns the *same* neutral error, so the endpoint cannot be used as
+        an oracle to test whether a record exists or what state it is in (no-outing
+        rule). On success the one shared removal effect erases every copy and revokes
+        any sealed identity, the decision is recorded in the takedowns log, and the
+        confirmation names nothing that was withdrawn."""
+        if not self._withdrawal_enabled():
+            self._handle_not_found()
+            return
+        form = self._read_form()
+        reference = (form.get("ref") or "").strip()
+        claim = (form.get("claim") or "").strip()
+        secret = self._claim_secret()
+        queue = self._submission_queue()
+        authorized = (
+            bool(reference)
+            and consent.verify_claim_token(reference, claim, secret)
+            and queue.contains(reference)
+        )
+        if not authorized:
+            # One neutral message for every failure: never confirm a record exists.
+            self._handle_withdraw_form(
+                error=i18n.t(self._lang(), "err_withdraw_failed"),
+                reference=reference,
+            )
+            return
+        now = now_iso()
+        archive = self._archive()
+        # Record the accountable decision first (its "why" must outlive the data),
+        # then erase every copy through the one shared removal effect. The actor is
+        # the contributor themselves; the reason names no one.
+        event, _action = takedown(
+            reference,
+            actor="contributor",
+            reason="contributor withdrawal before publication",
+            now=now,
+        )
+        archive.log_takedown(event)
+        archive.remove_all_copies(reference)
+        queue.remove(reference)
+        lang = self._lang()
+        self._send_html(
+            200,
+            _page(
+                "Withdrawn",
+                lang=lang,
+                main_html=contribute.render_withdraw_done_main(lang=lang),
+                nav_html=self._nav(),
+            ),
+        )
+
+    def _handle_edit_form(
+        self, *, error: str | None = None, values: dict[str, str] | None = None
+    ) -> None:
+        """``GET /edit`` — the form to load and correct a still-pending submission.
+
+        Gated identically to withdrawal (contributions on and a claim secret set);
+        a neutral 404 otherwise so a deployment without it never advertises the path."""
+        if not self._withdrawal_enabled():
+            self._handle_not_found()
+            return
+        lang = self._lang()
+        main_html = contribute.render_edit_main(
+            self._archive().config, lang=lang, values=values, error=error
+        )
+        self._send_html(200, _page("Edit", lang=lang, main_html=main_html, nav_html=self._nav()))
+
+    def _post_edit(self) -> None:
+        """``POST /edit`` — load or save an edit to a pending submission.
+
+        Authorship is proven by the claim token on every POST, and editing is allowed
+        only while the submission is *still pending* (in the review queue) — once a
+        steward has published a record it follows the normal governance path, not this
+        self-service form. ``action=load`` pulls the current values into the form so
+        the contributor can see what they are changing; ``action=save`` validates and
+        persists the correction through the one update path, recording a PREMIS
+        CORRECTION event. A bad reference/code returns the same neutral error as
+        withdrawal, so the endpoint is no existence oracle (no-outing rule). The sealed
+        contact is never loaded back or editable here."""
+        if not self._withdrawal_enabled():
+            self._handle_not_found()
+            return
+        form = self._read_form()
+        reference = (form.get("ref") or "").strip()
+        claim = (form.get("claim") or "").strip()
+        secret = self._claim_secret()
+        queue = self._submission_queue()
+        authorized = (
+            bool(reference)
+            and consent.verify_claim_token(reference, claim, secret)
+            and queue.contains(reference)
+        )
+        archive = self._archive()
+        record = None
+        if authorized:
+            try:
+                record = archive.get(reference)
+            except LedgerError:
+                record = None
+        if record is None:
+            self._handle_edit_form(error=i18n.t(self._lang(), "err_edit_failed"), values=form)
+            return
+
+        if form.get("action") == "save":
+            try:
+                updated = contribute.apply_edit(record, form, archive.config)
+            except ValidationError as exc:
+                message = i18n.t(self._lang(), exc.code, **exc.fields)
+                self._handle_edit_form(error=message, values=form)
+                return
+            event = PremisEvent(
+                event_type=PremisEventType.CORRECTION,
+                agent="contributor",
+                outcome="success",
+                detail="contributor edited a pending submission",
+                linked_object=reference,
+                event_datetime=now_iso(),
+            )
+            archive.apply_update(updated, event)
+            lang = self._lang()
+            self._send_html(
+                200,
+                _page(
+                    "Edited",
+                    lang=lang,
+                    main_html=contribute.render_edit_done_main(lang=lang),
+                    nav_html=self._nav(),
+                ),
+            )
+            return
+
+        # action=load (default): prefill the form from the current record.
+        account = record.field_named("account")
+        dc = record.dublin_core
+        values = {
+            "ref": reference,
+            "claim": claim,
+            "title": record.title,
+            "summary": dc.description[0] if dc.description else "",
+            "subject": ", ".join(dc.subject),
+            "type": dc.type[0] if dc.type else "",
+            "date": dc.date[0] if dc.date else "",
+            "language": dc.language[0] if dc.language else "",
+            "account": account.value if account is not None else "",
+            "visibility": contribute.current_visibility(record),
+        }
+        for warning in record.content_warnings:
+            values[f"cw_{warning}"] = "1"
+        self._handle_edit_form(values=values)
 
     # --- health -------------------------------------------------------------
 
@@ -973,16 +1574,29 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         """
         archive = self._archive()
         grant = self._resolve_grant()
+        # Structural readiness first: a liveness probe must fail when the store or
+        # vault is unreachable, not just when a checksum drifts. The reason code is
+        # generic infrastructure state — never a path, id, or identity (no-outing).
+        ready, reason = archive.check_readiness()
+        if not ready:
+            self._send_json(
+                503, {"status": "degraded", "all_verified": False, "ready": False, "reason": reason}
+            )
+            return
         try:
             reports = archive.audit_fixity()
         except LedgerError:
-            self._send_json(503, {"status": "degraded", "all_verified": False})
+            self._send_json(503, {"status": "degraded", "all_verified": False, "ready": True})
             return
         passed = sum(1 for _name, r in reports if r.ok)
         failed = len(reports) - passed
         status = "ok" if failed == 0 else "degraded"
         code = 200 if failed == 0 else 503
-        body: dict[str, object] = {"status": status, "all_verified": failed == 0}
+        body: dict[str, object] = {
+            "status": status,
+            "all_verified": failed == 0,
+            "ready": True,
+        }
         if grant.is_steward:
             body["fixity"] = {
                 "bags_audited": len(reports),
@@ -1032,8 +1646,54 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             '    <p class="muted">Machine-readable health is at '
             '<a href="/healthz">/healthz</a>.</p>'
         )
+        self._send_html(200, _page("Status", lang=lang, main_html=main_html, nav_html=self._nav()))
+
+    def _handle_consent_status(self, params: dict[str, list[str]]) -> None:
+        """``GET /consent-status`` — let a contributor check a request's progress.
+
+        A contributor who filed a withdraw/tighten/correct/contact request was given
+        a random reference token; entering it here shows whether a steward has acted
+        (user research T4/B2 — "revocable was true in the room, not on the website").
+        The token is the only key, so no one without it learns anything. The page
+        shows the *kind*, when it was filed, and a plain-language status — never the
+        contributor's private message, and nothing identity-bearing (no-outing)."""
+        lang = self._lang()
+        ref = (params.get("ref", [""])[0] or "").strip()
+        if not ref:
+            result_html = ""
+        else:
+            req = self._consent_store().get(ref)
+            if req is None:
+                result_html = (
+                    f'    <p class="error" role="status">{_esc(i18n.t(lang, "cs_not_found"))}</p>\n'
+                )
+            else:
+                kind = i18n.t(lang, f"req_kind_{req.kind}")
+                status = i18n.t(lang, f"cs_status_{req.status}")
+                result_html = (
+                    '    <section class="status" role="status" '
+                    f'aria-label="{_esc(i18n.t(lang, "cs_status_aria"))}">\n'
+                    f"      <p>{_esc(i18n.t(lang, 'cs_request_label', kind=kind))}</p>\n"
+                    f"      <p>{_esc(i18n.t(lang, 'cs_filed_label', when=req.created_at))}</p>\n"
+                    f"      <p><strong>{_esc(i18n.t(lang, 'cs_status_label', status=status))}"
+                    "</strong></p>\n"
+                    "    </section>\n"
+                )
+        main_html = (
+            f"    <h1>{_esc(i18n.t(lang, 'cs_heading'))}</h1>\n"
+            f"    <p>{_esc(i18n.t(lang, 'cs_intro'))}</p>\n"
+            f"{result_html}"
+            '    <form method="get" action="/consent-status">\n'
+            "      <p>\n"
+            f'        <label for="ref">{_esc(i18n.t(lang, "cs_ref_label"))}</label>\n'
+            f'        <input type="text" id="ref" name="ref" value="{_esc(ref)}">\n'
+            "      </p>\n"
+            f'      <p><button type="submit">{_esc(i18n.t(lang, "cs_button"))}</button></p>\n'
+            "    </form>\n"
+        )
         self._send_html(
-            200, _page("Status", lang=lang, main_html=main_html, nav_html=_nav_html(lang))
+            200,
+            _page(i18n.t(lang, "cs_heading"), lang=lang, main_html=main_html, nav_html=self._nav()),
         )
 
     # --- plain-language safety surface (user research P0-4) -----------------
@@ -1042,7 +1702,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         lang = self._lang()
         body = "\n".join(f"    <p>{_esc(p)}</p>" for p in paragraphs if p)
         main_html = f"    <h1>{_esc(heading)}</h1>\n{body}"
-        self._send_html(200, _page(title, lang=lang, main_html=main_html, nav_html=_nav_html(lang)))
+        self._send_html(200, _page(title, lang=lang, main_html=main_html, nav_html=self._nav()))
 
     def _handle_about(self) -> None:
         """``GET /about`` — who runs the archive and how it protects people."""
@@ -1191,7 +1851,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             "    </form>"
         )
         self._send_html(
-            200, _page("Manage consent", lang=lang, main_html=main_html, nav_html=_nav_html(lang))
+            200, _page("Manage consent", lang=lang, main_html=main_html, nav_html=self._nav())
         )
 
     # --- interoperability (user research P2-3): OAI-PMH + sitemap ----------
@@ -1203,6 +1863,25 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
     def _base_url(self) -> str:
         host = self.headers.get("Host", "localhost")
         return f"http://{host}"
+
+    def _handle_overview(self) -> None:
+        """``GET /overview`` — an at-a-glance summary of the public collection.
+
+        Summarises only the anonymous-public set, so the totals, top facets, and date
+        span describe what is publicly visible and never reveal the existence or count
+        of sealed records (no-outing rule / P2-2). Each facet links into the faceted
+        browse, turning the overview into a finding aid (P2-3)."""
+        lang = self._lang()
+        main_html = _overview_main_html(self._public_records(), lang=lang)
+        self._send_html(
+            200,
+            _page(
+                i18n.t(lang, "overview_heading"),
+                lang=lang,
+                main_html=main_html,
+                nav_html=self._nav(),
+            ),
+        )
 
     def _handle_oai(self, params: dict[str, list[str]]) -> None:
         """``GET /oai`` — a minimal OAI-PMH provider over public records only."""
@@ -1224,6 +1903,47 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         ids = [r.record_id for r in self._public_records()]
         xml = oai.sitemap_xml(ids, self._base_url())
         self._send(200, xml.encode("utf-8"), "application/xml; charset=utf-8")
+
+    def _handle_robots(self) -> None:
+        """``GET /robots.txt`` — guide crawlers to public content, away from the rest.
+
+        Points crawlers at the sitemap so the *public* records are discoverable (the
+        harvestability user research P2-3 asks for), while disallowing the write and
+        operator surfaces — the contribution, withdrawal, edit, and steward paths, the
+        JSON API, and the consent-status lookup — so a search engine never indexes a
+        form or a steward console. It is advisory, not access control (those paths are
+        already gated or carry no listable content); it keeps non-content pages out of
+        public indexes (privacy hygiene). No request value enters the response."""
+        root = self._base_url()
+        lines = [
+            "User-agent: *",
+            "Disallow: /steward",
+            "Disallow: /contribute",
+            "Disallow: /withdraw",
+            "Disallow: /edit",
+            "Disallow: /api/",
+            "Disallow: /consent-status",
+            f"Sitemap: {root}/sitemap.xml",
+            "",
+        ]
+        self._send(200, "\n".join(lines).encode("utf-8"), "text/plain; charset=utf-8")
+
+    def _handle_feed(self) -> None:
+        """``GET /feed.atom`` — an Atom feed of the most recent public records.
+
+        Always the *anonymous public* view, regardless of the viewer, so this
+        cacheable, aggregator-fetched surface can never carry community-only or
+        sealed content (least privilege). It re-serializes only already-disclosed
+        public records, so no identity or sealed value can appear (no-outing rule).
+        """
+        cfg = self._archive().config
+        xml = oai.atom_feed_xml(
+            self._public_records(),
+            archive_name=cfg.archive_name,
+            base_url=self._base_url(),
+            now=now_iso(),
+        )
+        self._send(200, xml.encode("utf-8"), "application/atom+xml; charset=utf-8")
 
     # --- static files (path-traversal safe) --------------------------------
 
@@ -1283,28 +2003,18 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
 # --- module-level render helpers (shared by routes) -------------------------
 
 
-def _nav_html(lang: str = "en") -> str:
-    """The site navigation: descriptive links only, no positive tabindex.
-
-    Labels are localized (i18n), and the "Status" link points at the human-readable
-    ``/status`` page rather than the raw-JSON ``/healthz`` endpoint, which alarmed
-    non-technical users and was unreadable to a screen reader (user research P1-1).
-    """
-    return (
-        f'\n      <a href="/">{_esc(i18n.t(lang, "nav_browse"))}</a>\n'
-        f'      <a href="/search">{_esc(i18n.t(lang, "nav_search"))}</a>\n'
-        f'      <a href="/about">{_esc(i18n.t(lang, "nav_about"))}</a>\n'
-        f'      <a href="/status">{_esc(i18n.t(lang, "nav_status"))}</a>\n    '
-    )
-
-
 def _safe_filename(name: str) -> str:
     """A filename safe to place in a ``Content-Disposition`` header.
 
     Strips path separators, quotes, and control characters so a crafted payload
-    filename cannot inject a header or escape the field (securability)."""
+    filename cannot inject a header or escape the field (securability). A name that
+    survives as empty or as only dots (``.``/``..``) is replaced with a safe default:
+    as a path component such a name points at a directory, so writing the upload to
+    ``tmpdir / name`` would raise instead of storing a file (robustness)."""
     cleaned = "".join(c for c in name if c.isprintable() and c not in '"\\/\r\n')
-    return cleaned or "file"
+    if not cleaned.strip("."):
+        return "file"
+    return cleaned
 
 
 def _decode_id(raw: str) -> str:
@@ -1326,6 +2036,7 @@ def make_server(
     host: str = "127.0.0.1",
     port: int = 8000,
     grants_path: Path | None = None,
+    allow_contributions: bool = False,
 ) -> http.server.HTTPServer:
     """Build (but do not start) the browse server bound to ``archive``.
 
@@ -1348,6 +2059,7 @@ def make_server(
     # Attach the dependencies the handler reads per request.
     httpd.archive = archive  # type: ignore[attr-defined]
     httpd.grants = grants  # type: ignore[attr-defined]
+    httpd.allow_contributions = allow_contributions  # type: ignore[attr-defined]
     return httpd
 
 
@@ -1357,6 +2069,7 @@ def serve(
     host: str = "127.0.0.1",
     port: int = 8000,
     grants_path: Path | None = None,
+    allow_contributions: bool = False,
 ) -> None:
     """Build and run the browse server until interrupted (blocking).
 
@@ -1364,7 +2077,13 @@ def serve(
     point. Binds to loopback by default (securability) and shuts down cleanly on
     ``KeyboardInterrupt`` so a steward can stop it without a traceback (usability).
     """
-    httpd = make_server(archive, host=host, port=port, grants_path=grants_path)
+    httpd = make_server(
+        archive,
+        host=host,
+        port=port,
+        grants_path=grants_path,
+        allow_contributions=allow_contributions,
+    )
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:  # pragma: no cover - interactive shutdown

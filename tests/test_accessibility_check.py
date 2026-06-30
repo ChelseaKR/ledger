@@ -131,6 +131,22 @@ def test_contrast_audit_passes_real_stylesheet() -> None:
     assert audit_css_contrast(css, label="app.css") == []
 
 
+def test_contrast_audit_checks_a_dark_theme_override() -> None:
+    """A dark-mode override that fails AA is caught — both themes are audited."""
+    good_base = (
+        ":root{--ink:#1a1a1a;--bg:#ffffff;--muted:#595959;--surface:#f4f4f6;"
+        "--link:#0b5cab;--link-visited:#6a1b9a;--accent:#6a1b9a;--bg:#ffffff;"
+        "--warn-ink:#7a1d1d;--warn-bg:#fff4f4;--border:#767676;"
+        "--mark-ink:#1a1a1a;--mark-bg:#fce8b2;}"
+    )
+    # The dark override makes body text nearly invisible on the dark background.
+    dark = "@media (prefers-color-scheme: dark){:root{--bg:#121212;--ink:#202020;}}"
+    problems = audit_css_contrast(good_base + dark, label="themed.css")
+    assert any("below WCAG AA" in p and "theme 1" in p for p in problems)
+    # The default (light) theme is fine, so the only failures name the dark theme.
+    assert all("theme 1" in p for p in problems if "below WCAG AA" in p)
+
+
 def test_contrast_audit_flags_a_failing_pair() -> None:
     """A low-contrast token is caught, so the gate enforces AA rather than trusting it."""
     bad = ":root{--ink:#bbbbbb;--bg:#ffffff;--muted:#cccccc;--surface:#ffffff;"

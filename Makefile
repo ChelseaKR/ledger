@@ -37,6 +37,9 @@ test: ## Run the test suite (preservation + disclosure + no-outing audit)
 cov: ## Run tests with coverage
 	$(PY) -m pytest --cov --cov-report=term-missing
 
+backup-test: ## Exercise the full back-up -> wipe -> restore disaster-recovery cycle
+	$(PY) -m pytest -m recovery
+
 audit: ## Dependency vulnerability scan
 	$(PY) -m pip_audit || true
 

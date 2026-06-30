@@ -82,7 +82,9 @@ active abuse) subject to prompt ratification.
    default system means a removed steward immediately falls back to their underlying
    membership level. If the removed steward held the vault key or an `identity_unseal`
    grant, **the key must be rotated and the grant revoked** — removal of the steward
-   grant alone does not undo a key they have already seen.
+   grant alone does not undo a key they have already seen. Rotation is a first-class,
+   recorded operation: `ledger vault rekey` re-encrypts the vault under a new key and
+   logs a `REKEY` PREMIS event (see the steward runbook in `infra/README.md`).
 3. **Record and review.** The removal, its reason, and any emergency action are recorded
    and reviewed by the community at the next opportunity. An emergency suspension that the
    community does not ratify is reversed.
@@ -111,6 +113,15 @@ contestable**. This is not a matter of steward etiquette; it is enforced by
   steward-initiated takedown, review by a second steward where two exist. A takedown is a
   *decision record* plus an *effect*: `takedown(...)` records the accountable decision,
   and the caller then removes copies and propagates the takedown to replicas (see §5).
+  **Dual-control (enforced).** Setting `dual_control_threshold` in the config above 1
+  makes the "second steward" rule a *control*, not just etiquette: a takedown — and an
+  identity-unseal or a publish-to-public — is then *proposed* (`ledger takedown` /
+  `ledger propose`) and runs only once that many **distinct** stewards approve it
+  (`ledger approve`), so no single compromised or coerced steward can erase a record,
+  out a contributor, or expose a sealed-pending submission alone. At the default
+  threshold of 1 the behaviour is unchanged. An approved *unseal* records the
+  authorization but the CLI never prints an identity — retrieval stays the audited
+  `identity_unseal` grant path.
 - **Consent changes** tighten or alter a record's default policy. A contributor's own
   consent change is honored on request; a steward recording a consent change on a
   contributor's behalf must state the reason and, where possible, the contributor's
@@ -120,6 +131,34 @@ A moderation decision **without a stated reason is rejected at the boundary.** E
 `ModerationAction` requires a non-empty `reason`, validated both at construction and again
 when appended to the log (`_require_reason`, `src/ledger/moderate.py`). A decision nobody
 will explain is not a decision the system will record.
+
+### Whose consent governs a record that names several people
+
+A record often describes or names people who are not its contributor. ledger resolves
+the multi-party question deliberately, and **without an automatic veto**:
+
+- **The contributor retains control** of their own record's policy and fields. Consent
+  to *keep, tighten, or withdraw* the record is the contributor's, exercised with their
+  claim token (`/record/{id}/consent`).
+- **A named subject has a voice, not a switch.** Anyone named or described in a record
+  they did not contribute may **object** (`/record/{id}/object`, no claim token needed).
+  An objection is a first-class, recorded request (`kind="object"`) that a steward must
+  weigh — it does **not** automatically restrict or remove the record. This deliberately
+  avoids two failure modes: a heckler silently censoring a record by objecting, and a
+  contributor's account of harm being erased by the person it names.
+- **A steward adjudicates** each objection on the record, balancing the contributor's
+  account, the subject's safety, and the community's interest, and records the decision
+  with a reason like any moderation action. Where two stewards exist, a contested
+  objection warrants a second steward's review (as for a steward-initiated takedown).
+- **Safety still wins by construction.** None of this can out a contributor: a subject's
+  objection, and a steward's handling of it, run through the same surfaces that carry no
+  contributor identity (no-outing rule). And the narrowest-disclosure default means a
+  record that names someone is sealed-pending until a steward publishes it, so the first
+  review already considers who is named before anything is public.
+
+This is a governance rule, enforced by the objection mechanism (`kind="object"`) plus a
+recorded, contestable steward decision — not by code that lets one party silently
+override another.
 
 ### How decisions are recorded — the `ModerationLog`
 

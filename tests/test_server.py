@@ -195,7 +195,40 @@ def test_healthz_returns_200_with_status_only_for_outsiders(
     data = json.loads(body)
     assert data["status"] == "ok"
     assert data["all_verified"] is True
+    assert data["ready"] is True  # structural readiness probe passed
     assert "fixity" not in data  # counts are not exposed to outsiders
+
+
+@pytest.mark.accessibility
+def test_search_results_count_is_in_a_live_region(
+    server: tuple[HTTPServer, str, str],
+) -> None:
+    """The result count sits in a polite live region so it is announced (WCAG 4.1.3).
+
+    A screen-reader user who searches should hear how many records came back without
+    hunting for the number; the count and empty-state live in a ``role="status"``
+    region with ``aria-live="polite"`` for exactly that.
+    """
+    _httpd, base, _rid = server
+    for path in ("/", "/search?q=Thursday"):
+        _status, body, _headers = _get(base, path)
+        assert 'role="status"' in body
+        assert 'aria-live="polite"' in body
+        # The count text is what the region announces (now a paginated window).
+        assert "record(s)." in body
+        assert "Showing 1-" in body
+
+
+def test_search_highlights_the_matched_term(server: tuple[HTTPServer, str, str]) -> None:
+    """A search result shows *why* it matched, marking the term with <mark> (E3)."""
+    _httpd, base, _rid = server
+    # "history" appears only in the record's description, so a match there proves the
+    # snippet is drawn from the body, not just the title.
+    _status, body, _headers = _get(base, "/search?q=history")
+    assert "<mark>history</mark>" in body
+    # Plain browse (no query) shows no highlight — the snippet is search-only.
+    _status, browse_body, _headers = _get(base, "/")
+    assert "<mark>" not in browse_body
 
 
 # --- the no-outing rule, across every response -----------------------------

@@ -23,22 +23,25 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from ledger import acr_gen, demo
+from ledger import acr_gen, demo, dualcontrol
 from ledger.access.grants import anonymous, community_member, steward
 from ledger.config import Config, StorageLocation
 from ledger.errors import LedgerError
 from ledger.identity import ContributorIdentity
-from ledger.ingest import Archive, serialize_record
-from ledger.metadata.premis import PremisLog
+from ledger.ingest import Archive
 from ledger.models import (
     AccessPolicy,
+    ContentAddress,
     DublinCore,
     Field,
     Grant,
+    HashAlgo,
+    PayloadFile,
     PremisEvent,
     Record,
     now_iso,
@@ -143,6 +146,27 @@ def _cmd_ingest(args: argparse.Namespace) -> int:
         source = Path(file_arg)
         payload[source.name] = source
 
+    # A transcript/caption makes audio or video accessible to a Deaf or hard-of-
+    # hearing reader (user research H3). Pre-declare the payload carrying it so the
+    # one ingest path preserves the transcript (it recomputes the address/size). The
+    # media type is guessed so an audio/video file is recognised as such.
+    import mimetypes
+
+    predeclared: list[PayloadFile] = []
+    for fname, text in _parse_pairs(args.transcript or []):
+        guessed, _ = mimetypes.guess_type(fname)
+        predeclared.append(
+            PayloadFile(
+                filename=fname,
+                address=ContentAddress(algo=HashAlgo.SHA256, digest="0" * 64),
+                media_type=guessed or "application/octet-stream",
+                policy=record.default_policy,
+                transcript=text,
+            )
+        )
+    if predeclared:
+        record.payloads = predeclared
+
     identity: ContributorIdentity | None = None
     # Seal whenever ANY contributor material is supplied, so a contact given without
     # a name is never silently dropped (data loss of sensitive input -> safety).
@@ -160,6 +184,15 @@ def _cmd_ingest(args: argparse.Namespace) -> int:
     if record.identity_ref is not None:
         # Print ONLY the opaque token; never the contributor's name or contact.
         print(f"identity_ref: {record.identity_ref}")
+    # Accessibility advisory: audio/video without a transcript is unusable to a Deaf
+    # or hard-of-hearing reader. Nudge, do not block (user research H3 / WCAG 1.2).
+    for p in record.payloads:
+        if p.media_type.startswith(("audio/", "video/")) and not p.transcript:
+            print(
+                f"note: {p.filename} is audio/video with no transcript; add one with "
+                f"--transcript '{p.filename}=...' so it is accessible (WCAG 1.2)",
+                file=sys.stderr,
+            )
     return 0
 
 
@@ -193,8 +226,22 @@ def _cmd_serve(args: argparse.Namespace) -> int:
         raise LedgerError(f"port out of range (0-65535): {args.port}")
     archive = _open_archive(Path(args.root))
     grants_path = Path(args.grants) if args.grants else None
+    if args.allow_contributions and not os.environ.get("LEDGER_VAULT_KEY"):
+        # The contribution form offers an optional sealed contact, which must be
+        # encrypted into the vault on submit. Refuse to enable the write path without
+        # a key rather than risk dropping a contributor's sealed details (safety).
+        raise LedgerError(
+            "--allow-contributions requires LEDGER_VAULT_KEY so contributor contact "
+            "details can be sealed into the vault"
+        )
     print(f"serving {archive.config.archive_name!r} on http://{args.host}:{args.port}")
-    serve(archive, host=args.host, port=args.port, grants_path=grants_path)
+    serve(
+        archive,
+        host=args.host,
+        port=args.port,
+        grants_path=grants_path,
+        allow_contributions=args.allow_contributions,
+    )
     return 0
 
 
@@ -222,27 +269,13 @@ def _cmd_audit(args: argparse.Namespace) -> int:
 
 
 def _persist_record(archive: Archive, record: Record, event: PremisEvent) -> None:
-    """Write an updated record manifest and append a PREMIS event to its bag.
+    """Persist an updated record manifest and PREMIS event via the archive.
 
-    Persists the change to the fast-lookup ``records/`` copy and to the in-bag
-    manifest so the next disclosure reflects it, and appends ``event`` to the
-    bag's PREMIS log so the action is auditable (accountability, traceability).
-    All writes go through the identity-refusing :func:`serialize_record`, so a
-    persisted manifest can never carry an in-memory identity (no-outing rule).
+    Thin wrapper over :meth:`Archive.apply_update` (the shared write path) so the
+    CLI and the server persist post-ingest changes identically (no-outing rule is
+    enforced once, in one place).
     """
-    manifest = serialize_record(record)
-    fast = archive.records_dir / f"{record.record_id}.json"
-    fast.write_text(manifest, encoding="utf-8", newline="\n")
-
-    bag_dir = archive.bags_dir / record.record_id
-    in_bag = bag_dir / "record.json"
-    if in_bag.exists():
-        in_bag.write_text(manifest, encoding="utf-8", newline="\n")
-    premis_path = bag_dir / _PREMIS_FILENAME
-    if premis_path.exists():
-        log = PremisLog.read(premis_path)
-        log.record(event)
-        log.write(premis_path)
+    archive.apply_update(record, event)
 
 
 def _cmd_policy(args: argparse.Namespace) -> int:
@@ -286,70 +319,194 @@ def _cmd_cw(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_verify_backup(args: argparse.Namespace) -> int:
+    """``verify-backup`` — prove a backed-up archive restores intact (cron-friendly).
+
+    An untested backup is a hope, not a backup (user research K1). Point this at a
+    restored copy of the archive root (a directory holding ``store/`` and
+    ``identity.vault``) and it re-validates the backup *in place*: it re-points the
+    config at the backup location (the stored paths are the original box's), confirms
+    the store and — when ``LEDGER_VAULT_KEY`` is set — the vault are readable without
+    unsealing anything, then runs full RFC 8493 fixity over every bag. Exit ``0`` when
+    every bag passes, non-zero otherwise, so a cron job can alarm on a bad backup.
+    Only bag names and counts are printed (no-outing rule).
+    """
+    backup = Path(args.backup)
+    config = Config.load(backup / "store" / _CONFIG_FILENAME)
+    # The config records the ORIGINAL box's absolute paths; re-point it at the backup
+    # so we verify the copy on disk, not wherever it was first written.
+    config.store_root = str(backup / "store")
+    config.vault_path = str(backup / "identity.vault")
+    archive = Archive(config)
+
+    ready, reason = archive.check_readiness()
+    if not ready:
+        print(f"FAIL: backup is not readable ({reason})", file=sys.stderr)
+        return 1
+
+    reports = archive.audit_fixity()
+    failures = 0
+    for name, report in reports:
+        ok = report.ok
+        if not ok:
+            failures += 1
+        print(f"{'PASS' if ok else 'FAIL'}\t{name}\t({report.checked} file(s) checked)")
+    summary = "PASS" if failures == 0 else "FAIL"
+    print(f"{summary}: backup at {backup} — {len(reports)} bag(s) verified, {failures} failed")
+    return 0 if failures == 0 else 1
+
+
+def _proposal_store(archive: Archive) -> dualcontrol.ProposalStore:
+    """The dual-control proposal store for ``archive`` (under ``logs/``)."""
+    return dualcontrol.ProposalStore(archive.logs_dir / "proposals.json")
+
+
+def _perform_takedown(
+    archive: Archive, record_id: str, *, actor: str, reason: str, now: str
+) -> str:
+    """Record and execute a takedown; return a no-outing-safe summary line.
+
+    The accountable decision is recorded and durably persisted FIRST (its audit
+    trail of *why* must outlive the data), then every stored copy is removed and the
+    contributor identity revoked through the one shared removal effect
+    (:meth:`Archive.remove_all_copies`). Only the record id and counts appear in the
+    summary (no-outing rule). Factored so both the direct path and an approved
+    dual-control proposal execute the identical effect.
+    """
+    event, action = takedown(record_id, actor=actor, reason=reason, now=now)
+
+    # Whether there is a sealed identity to revoke, checked BEFORE removal so a failed
+    # revoke can still be reported once the bag (and the ref) are gone.
+    try:
+        had_identity = archive.get(record_id).identity_ref is not None
+    except LedgerError:
+        had_identity = False
+
+    archive.log_takedown(event)
+
+    removed, revoked = archive.remove_all_copies(record_id)
+    if had_identity and not revoked:  # pragma: no cover - vault failure is rare
+        print(
+            "warning: could not revoke identity from the vault; "
+            "revoke it manually to complete the takedown",
+            file=sys.stderr,
+        )
+
+    suffix = "; identity revoked" if revoked else ""
+    return f"record {record_id} taken down by {action.actor}; {removed} copy(ies) removed{suffix}"
+
+
+def _execute_proposal(
+    archive: Archive, proposal: dualcontrol.ActionProposal, *, actor: str, now: str
+) -> str:
+    """Perform an approved proposal's action; return a no-outing-safe summary.
+
+    ``takedown`` and ``publish`` execute their concrete effect. ``unseal`` records
+    the *authorization* only: dual-control gates the decision, but the CLI never
+    prints a contributor identity — retrieval stays the audited ``identity_unseal``
+    grant path (no-outing rule)."""
+    if proposal.action == "takedown":
+        return _perform_takedown(
+            archive, proposal.target, actor=actor, reason=proposal.reason, now=now
+        )
+    if proposal.action == "publish":
+        record = archive.get(proposal.target)
+        updated, event, _action = change_consent(
+            record, AccessPolicy.PUBLIC, actor=actor, reason=proposal.reason, now=now
+        )
+        archive.apply_update(updated, event)
+        return f"record {proposal.target} published by {actor}"
+    if proposal.action == "unseal":
+        return (
+            f"identity-unseal for {proposal.target} authorized by "
+            f"{proposal.approved_count()} steward(s) — retrieve via an identity_unseal "
+            "grant; the CLI never prints an identity"
+        )
+    raise LedgerError(f"unknown proposal action: {proposal.action}")
+
+
 def _cmd_takedown(args: argparse.Namespace) -> int:
     """``takedown`` — record an accountable takedown and remove stored copies.
 
-    Order matters and is now honoured: (1) the accountable decision is recorded and
-    durably persisted FIRST, so the audit trail of *why* survives even if removal is
-    interrupted or retried; (2) the contributor identity is revoked from the vault
-    (right to be forgotten); (3) every stored copy is deleted from the bag, the
-    fast-lookup manifest, and each configured location. Only the record id and
-    counts are printed (no-outing rule).
-    """
-    import shutil
-
+    Under dual-control (``config.dual_control_threshold`` > 1) this *proposes* the
+    takedown instead of executing it, so no single steward can erase a record alone;
+    it runs only once enough distinct stewards approve (``ledger approve``). At the
+    default threshold of 1 it executes immediately, exactly as before."""
     archive = _open_archive(Path(args.root))
     now = args.now if args.now else now_iso()
-    event, action = takedown(args.id, actor=args.actor, reason=args.reason, now=now)
-
-    # Capture the sealed identity ref BEFORE any deletion, so step 2 can revoke it.
-    identity_ref: str | None = None
-    try:
-        identity_ref = archive.get(args.id).identity_ref
-    except LedgerError:
-        identity_ref = None
-
-    # 1. Record and DURABLY persist the decision first (accountability — the record
-    #    of why a takedown happened must outlive the data it concerns).
-    log_path = archive.logs_dir / "takedowns.premis.json"
-    archive.logs_dir.mkdir(parents=True, exist_ok=True)
-    log = PremisLog.read(log_path) if log_path.exists() else PremisLog()
-    log.record(event)
-    log.write(log_path)
-
-    # 2. Revoke the contributor identity from the vault. A vault that cannot be
-    #    opened is NOT skipped silently — warn so a steward can revoke by hand
-    #    (consent / right to be forgotten, failure transparency).
-    revoked = False
-    if identity_ref is not None:
-        try:
-            archive._open_vault(None).revoke(identity_ref)
-            revoked = True
-        except LedgerError as exc:
-            print(
-                f"warning: could not revoke identity from the vault ({exc}); "
-                "revoke it manually to complete the takedown",
-                file=sys.stderr,
+    threshold = archive.config.dual_control_threshold
+    if threshold > 1:
+        prop = _proposal_store(archive).add(
+            dualcontrol.ActionProposal(
+                action="takedown",
+                target=args.id,
+                reason=args.reason,
+                proposer=args.actor,
+                created_at=now,
             )
+        )
+        print(
+            f"takedown PROPOSED for {args.id} (proposal {prop.proposal_id}); "
+            f"needs {threshold} steward approvals ({prop.approved_count()}/{threshold}). "
+            f"Another steward runs: ledger approve --root {args.root} "
+            f"--id {prop.proposal_id} --actor <steward-id>"
+        )
+        return 0
+    print(_perform_takedown(archive, args.id, actor=args.actor, reason=args.reason, now=now))
+    return 0
 
-    # 3. Remove every stored copy.
-    removed = 0
-    bag_dir = archive.bags_dir / args.id
-    if bag_dir.exists():
-        shutil.rmtree(bag_dir)
-        removed += 1
-    fast = archive.records_dir / f"{args.id}.json"
-    if fast.exists():
-        fast.unlink()
 
-    for location in archive.config.locations:
-        replica = Path(location.path) / args.id
-        if replica.exists() and replica != bag_dir:
-            shutil.rmtree(replica)
-            removed += 1
+def _cmd_propose(args: argparse.Namespace) -> int:
+    """``propose`` — propose a high-stakes action for dual-control approval."""
+    if args.action not in dualcontrol.ACTIONS:
+        raise LedgerError(
+            f"unknown action {args.action!r}; expected one of {sorted(dualcontrol.ACTIONS)}"
+        )
+    archive = _open_archive(Path(args.root))
+    now = args.now if args.now else now_iso()
+    store = _proposal_store(archive)
+    prop = store.add(
+        dualcontrol.ActionProposal(
+            action=args.action,
+            target=args.id,
+            reason=args.reason,
+            proposer=args.actor,
+            created_at=now,
+        )
+    )
+    threshold = archive.config.dual_control_threshold
+    print(
+        f"proposed {args.action} for {args.id} (proposal {prop.proposal_id}); "
+        f"{prop.approved_count()}/{threshold} approval(s)"
+    )
+    if prop.is_ready(threshold):
+        print(_execute_proposal(archive, prop, actor=args.actor, now=now))
+        store.mark(prop.proposal_id, "executed")
+    return 0
 
-    suffix = "; identity revoked" if revoked else ""
-    print(f"record {args.id} taken down by {action.actor}; {removed} copy(ies) removed{suffix}")
+
+def _cmd_approve(args: argparse.Namespace) -> int:
+    """``approve`` — approve a pending proposal; execute it once the threshold is met."""
+    archive = _open_archive(Path(args.root))
+    now = args.now if args.now else now_iso()
+    store = _proposal_store(archive)
+    prop = store.approve(args.id, args.actor)
+    threshold = archive.config.dual_control_threshold
+    print(f"approved proposal {prop.proposal_id} ({prop.approved_count()}/{threshold})")
+    if prop.is_ready(threshold):
+        print(_execute_proposal(archive, prop, actor=args.actor, now=now))
+        store.mark(prop.proposal_id, "executed")
+    return 0
+
+
+def _cmd_proposals(args: argparse.Namespace) -> int:
+    """``proposals`` — list open dual-control proposals awaiting approval."""
+    archive = _open_archive(Path(args.root))
+    threshold = archive.config.dual_control_threshold
+    open_props = _proposal_store(archive).open_proposals()
+    for p in open_props:
+        print(f"{p.proposal_id}\t{p.action}\t{p.target}\t{p.approved_count()}/{threshold}")
+    print(f"({len(open_props)} open proposal(s); threshold {threshold})")
     return 0
 
 
@@ -380,6 +537,34 @@ def _cmd_add_location(args: argparse.Namespace) -> int:
     config.locations.append(StorageLocation(name=args.name, path=args.path, kind=args.kind))
     config.save(root / "store" / _CONFIG_FILENAME)
     print(f"added {args.kind} location {args.name!r} at {args.path}")
+    return 0
+
+
+def _cmd_vault_rekey(args: argparse.Namespace) -> int:
+    """``vault rekey`` — rotate the identity-vault key, re-encrypting every identity.
+
+    Both keys travel as environment variables, never on the command line: the
+    current key in ``LEDGER_VAULT_KEY`` and the new key in ``LEDGER_NEW_VAULT_KEY``
+    (confidentiality — a key in argv would land in shell history and the process
+    table). The rotation is atomic and records a ``REKEY`` PREMIS event; only a
+    count is printed, never a key or an identity (no-outing rule). After it
+    succeeds, the steward sets ``LEDGER_VAULT_KEY`` to the new key going forward.
+    """
+    archive = _open_archive(Path(args.root))
+    new_raw = os.environ.get("LEDGER_NEW_VAULT_KEY")
+    if not new_raw:
+        raise LedgerError(
+            "set LEDGER_NEW_VAULT_KEY to the new vault key (via the environment, never argv)"
+        )
+    old_raw = os.environ.get("LEDGER_VAULT_KEY")
+    now = args.now if args.now else now_iso()
+    count = archive.rekey_vault(
+        new_raw.encode("ascii"),
+        old_key=old_raw.encode("ascii") if old_raw else None,
+        agent=args.actor,
+        now=now,
+    )
+    print(f"rekeyed {count} identity(ies); set LEDGER_VAULT_KEY to the new key going forward")
     return 0
 
 
@@ -425,6 +610,12 @@ def _build_parser() -> argparse.ArgumentParser:
         "--sealed-field", action="append", metavar="name=value", help="a SEALED field"
     )
     p_ingest.add_argument("--cw", action="append", metavar="WARNING", help="content warning")
+    p_ingest.add_argument(
+        "--transcript",
+        action="append",
+        metavar="filename=text",
+        help="a transcript/caption for an audio or video payload (accessibility)",
+    )
     p_ingest.add_argument("--contributor-name", help="sealed into the vault; never printed back")
     p_ingest.add_argument("--contributor-contact", help="sealed into the vault")
     p_ingest.add_argument("--actor", default="ledger", help="ingest agent id")
@@ -449,11 +640,24 @@ def _build_parser() -> argparse.ArgumentParser:
     p_serve.add_argument("--host", default="127.0.0.1")
     p_serve.add_argument("--port", type=int, default=8000)
     p_serve.add_argument("--grants", help="path to a pre-provisioned grants JSON file")
+    p_serve.add_argument(
+        "--allow-contributions",
+        action="store_true",
+        help="enable the /contribute submission form (requires LEDGER_VAULT_KEY)",
+    )
     p_serve.set_defaults(func=_cmd_serve)
 
     p_audit = sub.add_parser("audit", help="validate every bag's fixity")
     p_audit.add_argument("--root", required=True)
     p_audit.set_defaults(func=_cmd_audit)
+
+    p_verify_backup = sub.add_parser(
+        "verify-backup", help="prove a restored backup is intact (cron-friendly)"
+    )
+    p_verify_backup.add_argument(
+        "--backup", required=True, help="path to a restored archive root (holds store/ + vault)"
+    )
+    p_verify_backup.set_defaults(func=_cmd_verify_backup)
 
     p_policy = sub.add_parser("policy", help="record an accountable consent/policy change")
     p_policy.add_argument("--root", required=True)
@@ -481,6 +685,30 @@ def _build_parser() -> argparse.ArgumentParser:
     p_takedown.add_argument("--now", help="ISO-8601 timestamp")
     p_takedown.set_defaults(func=_cmd_takedown)
 
+    p_propose = sub.add_parser("propose", help="propose a high-stakes action (dual-control)")
+    p_propose.add_argument("--root", required=True)
+    p_propose.add_argument(
+        "--action", required=True, choices=sorted(dualcontrol.ACTIONS), help="action to propose"
+    )
+    p_propose.add_argument(
+        "--id", required=True, help="target record id (or identity ref for unseal)"
+    )
+    p_propose.add_argument("--actor", required=True, help="proposing steward id")
+    p_propose.add_argument("--reason", required=True, help="rationale (required, auditable)")
+    p_propose.add_argument("--now", help="ISO-8601 timestamp")
+    p_propose.set_defaults(func=_cmd_propose)
+
+    p_approve = sub.add_parser("approve", help="approve a pending dual-control proposal")
+    p_approve.add_argument("--root", required=True)
+    p_approve.add_argument("--id", required=True, help="proposal id")
+    p_approve.add_argument("--actor", required=True, help="approving steward id")
+    p_approve.add_argument("--now", help="ISO-8601 timestamp")
+    p_approve.set_defaults(func=_cmd_approve)
+
+    p_proposals = sub.add_parser("proposals", help="list open dual-control proposals")
+    p_proposals.add_argument("--root", required=True)
+    p_proposals.set_defaults(func=_cmd_proposals)
+
     p_replicas = sub.add_parser("replicas", help="report a bag's replica health")
     p_replicas.add_argument("--root", required=True)
     p_replicas.add_argument("--id", required=True)
@@ -492,6 +720,16 @@ def _build_parser() -> argparse.ArgumentParser:
     p_loc.add_argument("--path", required=True)
     p_loc.add_argument("--kind", default="mirror", choices=["local", "mirror"])
     p_loc.set_defaults(func=_cmd_add_location)
+
+    p_vault = sub.add_parser("vault", help="identity-vault maintenance")
+    vault_sub = p_vault.add_subparsers(dest="vault_command", required=True, metavar="SUBCOMMAND")
+    p_rekey = vault_sub.add_parser(
+        "rekey", help="rotate the vault key (keys via env vars, never argv)"
+    )
+    p_rekey.add_argument("--root", required=True)
+    p_rekey.add_argument("--actor", required=True, help="steward id performing the rotation")
+    p_rekey.add_argument("--now", help="ISO-8601 timestamp")
+    p_rekey.set_defaults(func=_cmd_vault_rekey)
 
     p_demo = sub.add_parser("demo", help="run the scripted end-to-end no-outing proof")
     p_demo.set_defaults(func=_cmd_demo)

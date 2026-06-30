@@ -131,6 +131,11 @@ class Config:
     steward_vetting: str = ""
     consent_response_time: str = ""
     contact: str = ""
+    # Dual-control: how many DISTINCT stewards must approve a high-stakes action
+    # (takedown, identity-unseal, publish-to-public) before it executes. 1 (the
+    # default) is single-steward — no change to existing behaviour; a community sets
+    # 2+ to require co-approval, so no one steward can act alone (user research D1).
+    dual_control_threshold: int = 1
     schema_version: int = CONFIG_SCHEMA_VERSION
 
     def validate(self) -> None:
@@ -163,6 +168,8 @@ class Config:
             raise ConfigError("vault_path must not be empty")
         if not isinstance(self.default_policy, AccessPolicy):
             raise ConfigError(f"unknown default_policy: {self.default_policy!r}")
+        if self.dual_control_threshold < 1:
+            raise ConfigError("dual_control_threshold must be at least 1")
         for location in self.locations:
             location.validate()
 
@@ -186,6 +193,7 @@ class Config:
             "steward_vetting": self.steward_vetting,
             "consent_response_time": self.consent_response_time,
             "contact": self.contact,
+            "dual_control_threshold": self.dual_control_threshold,
         }
 
     def save(self, path: Path) -> None:
@@ -259,6 +267,7 @@ class Config:
             steward_vetting=str(migrated.get("steward_vetting", "")),
             consent_response_time=str(migrated.get("consent_response_time", "")),
             contact=str(migrated.get("contact", "")),
+            dual_control_threshold=int(str(migrated.get("dual_control_threshold", 1))),
             schema_version=CONFIG_SCHEMA_VERSION,
         )
         config.validate()

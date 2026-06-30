@@ -141,10 +141,12 @@ class PremisEventType(StrEnum):
     REDACTION = "redaction"
     POLICY_CHANGE = "access-policy change"
     CONSENT_CHANGE = "consent change"
+    CORRECTION = "correction"
     TAKEDOWN = "deletion"
     QUARANTINE = "quarantine"
     VALIDATION = "validation"
     MODERATION = "moderation"
+    REKEY = "key rotation"
 
 
 @dataclass(frozen=True)
@@ -247,13 +249,21 @@ class Field:
 
 @dataclass
 class PayloadFile:
-    """A file inside the bag, addressed by content, carrying its own policy."""
+    """A file inside the bag, addressed by content, carrying its own policy.
+
+    ``transcript`` is a first-class caption/transcript for audio or video so the
+    content is available to a Deaf or hard-of-hearing reader, and to anyone on a slow
+    or silent connection (user research H3). It is plain descriptive text — never a
+    warning conveyed only in audio — and is disclosed under the same policy as the
+    payload it describes.
+    """
 
     filename: str
     address: ContentAddress
     media_type: str = "application/octet-stream"
     size_bytes: int = 0
     policy: AccessPolicy = AccessPolicy.SEALED_UNTIL
+    transcript: str = ""
 
 
 @dataclass

@@ -58,7 +58,12 @@ __all__ = [
 # The documented set of asks a contributor can make about their own record. Kept
 # small and closed so a steward queue has a predictable, styleable vocabulary and a
 # typo'd kind is rejected at construction rather than mis-routed (correctness).
-VALID_KINDS: frozenset[str] = frozenset({"withdraw", "tighten", "correct", "contact"})
+VALID_KINDS: frozenset[str] = frozenset(
+    # The first four are filed by the *contributor* (claim-token gated). "object" is
+    # filed by a *subject* — a person named in a record they did not contribute — who
+    # has no claim token; it is a first-class request a steward must weigh (B3).
+    {"withdraw", "tighten", "correct", "contact", "object"}
+)
 
 # The lifecycle a steward may move a request through. "open" is the initial state a
 # request is filed in; a steward acknowledges it (seen) and later resolves it
@@ -163,6 +168,17 @@ class ConsentRequestStore:
     def open_requests(self) -> list[ConsentRequest]:
         """The subset of requests still awaiting steward action (``status == open``)."""
         return [req for req in self._read() if req.status == _OPEN]
+
+    def get(self, request_id: str) -> ConsentRequest | None:
+        """The request with ``request_id``, or ``None`` if there is none.
+
+        Lets a contributor who holds their reference token check a request's
+        status. The token is the only key; lookup leaks nothing to anyone without
+        it (the id is a 64-bit random token, not enumerable)."""
+        for req in self._read():
+            if req.request_id == request_id:
+                return req
+        return None
 
     def add(self, req: ConsentRequest) -> None:
         """Append ``req`` to the queue and persist atomically (append-only).

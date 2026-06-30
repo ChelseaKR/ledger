@@ -14,10 +14,14 @@ from ledger.models import DisclosedRecord
 from ledger.search import (
     Facet,
     facets,
+    filter_by_date_range,
     filter_by_facet,
     index_text,
     looks_non_latin,
+    related_by_subject,
     search,
+    snippet,
+    sort_by_date,
 )
 
 
@@ -199,3 +203,157 @@ def test_looks_non_latin_false_for_ascii_query() -> None:
     assert looks_non_latin("mutual aid") is False
     assert looks_non_latin("1987!") is False
     assert looks_non_latin("") is False
+
+
+# --- E2: relevance ranking + language facet ---------------------------------
+
+
+def test_search_ranks_title_hits_above_body_hits() -> None:
+    """A query that matches a record's title ranks it above a description-only match."""
+    title_hit = _disclosed("r-title", "Mutual aid pantry", dublin_core={"description": ["x"]})
+    body_hit = _disclosed(
+        "r-body", "Thursday notes", dublin_core={"description": ["the mutual aid roster"]}
+    )
+    # Input order puts the body hit first; relevance must surface the title hit first.
+    results = search([body_hit, title_hit], "mutual aid")
+    assert [r.record_id for r in results] == ["r-title", "r-body"]
+
+
+def test_search_ties_keep_input_order() -> None:
+    """Equal-scoring matches preserve the caller's order (stable, reproducible)."""
+    a = _disclosed("a", "aid", dublin_core={})
+    b = _disclosed("b", "aid", dublin_core={})
+    assert [r.record_id for r in search([a, b], "aid")] == ["a", "b"]
+    assert [r.record_id for r in search([b, a], "aid")] == ["b", "a"]
+
+
+def test_language_is_a_facet() -> None:
+    """Language is now a browsable facet, filterable like subject/type."""
+    en = _disclosed("en", "One", dublin_core={"language": ["en"]})
+    es = _disclosed("es", "Dos", dublin_core={"language": ["es"]})
+    langs = {f.value: f.count for f in facets([en, es], "language")}
+    assert langs == {"en": 1, "es": 1}
+    assert [r.record_id for r in filter_by_facet([en, es], "language", "es")] == ["es"]
+
+
+# --- snippets (backlog E3) -------------------------------------------------
+
+
+def _text(snip: object) -> str:
+    """The plain concatenated text of a snippet's runs."""
+    assert snip is not None
+    return "".join(text for text, _matched in snip.runs)  # type: ignore[attr-defined]
+
+
+def test_snippet_marks_the_matched_term_with_original_casing() -> None:
+    """A snippet flags the matched span and preserves the source's casing."""
+    record = _disclosed(
+        "rec",
+        title="A Flyer",
+        dublin_core={"description": ["Notes about Mutual Aid networks in winter."]},
+    )
+    snip = snippet(record, "mutual")
+    assert snip is not None
+    # Exactly the matched span is flagged, with the document's own capitalization.
+    marked = [text for text, matched in snip.runs if matched]
+    assert marked == ["Mutual"]
+    assert "Mutual Aid networks" in _text(snip)
+
+
+def test_snippet_returns_none_without_a_query_or_match() -> None:
+    """No query, or a term absent from the disclosed text, yields no snippet."""
+    record = _disclosed("rec", title="Title", dublin_core={"description": ["Some body text."]})
+    assert snippet(record, "") is None
+    assert snippet(record, "   ") is None
+    assert snippet(record, "absent") is None
+
+
+def test_snippet_windows_long_text_around_the_match_with_ellipses() -> None:
+    """A match deep in long text yields a bounded window bracketed by ellipses."""
+    body = ("lorem ipsum " * 40) + "needle here " + ("dolor sit " * 40)
+    record = _disclosed("rec", title="Doc", dublin_core={"description": [body]})
+    snip = snippet(record, "needle", width=80)
+    assert snip is not None
+    whole = _text(snip)
+    assert "needle" in whole
+    assert whole.startswith("… ") and whole.endswith(" …")
+    # The window is bounded, not the whole document.
+    assert len(whole) < len(body)
+    assert [t for t, m in snip.runs if m] == ["needle"]
+
+
+def test_snippet_highlights_multiple_terms() -> None:
+    """Every query term present in the window is flagged, not just the first."""
+    record = _disclosed(
+        "rec",
+        title="winter mutual aid drive",
+        dublin_core={"description": ["A winter mutual aid drive for the neighbourhood."]},
+    )
+    snip = snippet(record, "winter aid")
+    assert snip is not None
+    marked = {text.lower() for text, matched in snip.runs if matched}
+    assert {"winter", "aid"} <= marked
+
+
+# --- sort by date ----------------------------------------------------------
+
+
+def test_sort_by_date_orders_and_puts_undated_last() -> None:
+    a = _disclosed("a", "A", dublin_core={"date": ["1990"]})
+    b = _disclosed("b", "B", dublin_core={"date": ["2020-05-01"]})
+    c = _disclosed("c", "C")  # no date
+    assert [r.record_id for r in sort_by_date([a, b, c], newest=True)] == ["b", "a", "c"]
+    assert [r.record_id for r in sort_by_date([a, b, c], newest=False)] == ["a", "b", "c"]
+
+
+def test_sort_by_date_is_stable_on_ties() -> None:
+    a = _disclosed("a", "A", dublin_core={"date": ["2000"]})
+    b = _disclosed("b", "B", dublin_core={"date": ["2000"]})
+    assert [r.record_id for r in sort_by_date([a, b], newest=True)] == ["a", "b"]
+    assert [r.record_id for r in sort_by_date([b, a], newest=True)] == ["b", "a"]
+
+
+# --- related records -------------------------------------------------------
+
+
+def test_related_by_subject_ranks_by_shared_count_and_excludes_self() -> None:
+    base = _disclosed("base", "Base", dublin_core={"subject": ["protest", "housing"]})
+    two = _disclosed("two", "Two", dublin_core={"subject": ["protest", "housing"]})
+    one = _disclosed("one", "One", dublin_core={"subject": ["protest"]})
+    none = _disclosed("none", "None", dublin_core={"subject": ["mutual aid"]})
+    related = related_by_subject(base, [base, none, one, two])
+    # 'two' (2 shared) before 'one' (1 shared); 'none' and the record itself excluded.
+    assert [r.record_id for r in related] == ["two", "one"]
+
+
+def test_related_by_subject_is_empty_without_subjects() -> None:
+    base = _disclosed("base", "Base")  # no subjects
+    other = _disclosed("other", "Other", dublin_core={"subject": ["x"]})
+    assert related_by_subject(base, [other]) == []
+
+
+def test_related_by_subject_respects_the_limit() -> None:
+    base = _disclosed("base", "Base", dublin_core={"subject": ["x"]})
+    candidates = [_disclosed(f"r{i}", f"R{i}", dublin_core={"subject": ["x"]}) for i in range(10)]
+    assert len(related_by_subject(base, candidates, limit=3)) == 3
+
+
+# --- date range ------------------------------------------------------------
+
+
+def test_filter_by_date_range_bounds_and_undated() -> None:
+    a = _disclosed("a", "A", dublin_core={"date": ["1990"]})
+    b = _disclosed("b", "B", dublin_core={"date": ["2000-05-01"]})
+    c = _disclosed("c", "C", dublin_core={"date": ["2010"]})
+    d = _disclosed("d", "D")  # undated, excluded when a range is in force
+    recs = [a, b, c, d]
+    assert [r.record_id for r in filter_by_date_range(recs, start="2000")] == ["b", "c"]
+    # end is inclusive of the whole year: 2000-05-01 starts with "2000".
+    assert [r.record_id for r in filter_by_date_range(recs, end="2000")] == ["a", "b"]
+    assert [r.record_id for r in filter_by_date_range(recs, start="1995", end="2005")] == ["b"]
+
+
+def test_filter_by_date_range_no_bounds_returns_all() -> None:
+    a = _disclosed("a", "A")
+    b = _disclosed("b", "B", dublin_core={"date": ["1999"]})
+    assert filter_by_date_range([a, b]) == [a, b]
