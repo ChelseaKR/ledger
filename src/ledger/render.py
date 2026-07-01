@@ -794,8 +794,8 @@ def _record_main_html(
             )
         else:
             n = len(record.withheld)
-            key = "rec_withheld_outsider_one" if n == 1 else "rec_withheld_outsider_many"
-            body = f"      <p>{_esc(i18n.t(lang, key, count=n))}</p>"
+            # Plural-correct via ngettext (count drives singular/plural in i18n.t).
+            body = f"      <p>{_esc(i18n.t(lang, 'rec_withheld_outsider', count=n))}</p>"
         parts.append(
             '    <section aria-labelledby="redactions-heading">\n'
             f'      <h2 id="redactions-heading">{_esc(i18n.t(lang, "rec_withheld_heading"))}</h2>\n'

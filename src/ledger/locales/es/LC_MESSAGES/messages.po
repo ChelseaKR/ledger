@@ -1,0 +1,812 @@
+# Spanish translations for ledger-archive.
+# Copyright (C) 2026 ORGANIZATION
+# This file is distributed under the same license as the ledger-archive
+# project.
+# FIRST AUTHOR <EMAIL@ADDRESS>, 2026.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: ledger-archive 0.1.0\n"
+"Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
+"POT-Creation-Date: 2026-06-30 00:00+0000\n"
+"PO-Revision-Date: 2026-06-30 00:00+0000\n"
+"Last-Translator: ledger contributors\n"
+"Language: es\n"
+"Language-Team: es <LL@li.org>\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.18.0\n"
+
+#, python-brace-format
+msgid ""
+" Published as {visibility}, this record would be visible to {audience} — "
+"it would not appear in public browse or search."
+msgstr ""
+" Publicado como {visibility}, este registro sería visible para "
+"{audience}: no aparecería en la exploración ni la búsqueda públicas."
+
+msgid "(add a content warning) — each records who acted and why."
+msgstr ""
+"(añadir una advertencia de contenido); cada uno registra quién actuó y "
+"por qué."
+
+msgid "(change access),"
+msgstr "(cambiar acceso),"
+
+msgid ""
+"A steward reviews every submission before anything becomes visible — "
+"nothing is published automatically."
+msgstr ""
+"Una persona responsable revisa cada envío antes de que algo se haga "
+"visible; nada se publica automáticamente."
+
+msgid "A stranger sees nothing."
+msgstr "Un desconocido no ve nada."
+
+msgid "A title is required."
+msgstr "Se requiere un título."
+
+msgid "About"
+msgstr "Acerca de"
+
+msgid "Abuse — describes ongoing harm or mistreatment"
+msgstr "Abuso — describe daño o maltrato continuo"
+
+msgid "Action a request with the audited CLI:"
+msgstr "Gestione una solicitud con la CLI auditada:"
+
+msgid "Agent"
+msgstr "Agente"
+
+msgid ""
+"All records you may view, with their titles, summaries, and whether each "
+"carries a content warning."
+msgstr ""
+"Todos los registros que puede ver, con sus títulos, resúmenes y si cada "
+"uno lleva una advertencia de contenido."
+
+msgid "An account is required."
+msgstr "Se requiere un relato."
+
+msgid ""
+"An at-a-glance summary of the public records in this archive — the "
+"topics, kinds, and languages they cover. Every number counts only what is"
+" publicly visible."
+msgstr ""
+"Un resumen general de los registros públicos de este archivo: los temas, "
+"los tipos y los idiomas que abarcan. Cada cifra cuenta únicamente lo que "
+"es públicamente visible."
+
+msgid "Apply dates"
+msgstr "Aplicar fechas"
+
+msgid "Are you named in this record and object to it? Tell a steward"
+msgstr ""
+"¿Está nombrado en este registro y se opone a él? Avise a una persona "
+"responsable"
+
+msgid "Are you the contributor? Manage or withdraw your consent"
+msgstr "¿Es usted el colaborador? Gestione o retire su consentimiento"
+
+msgid "Attach a file (optional)"
+msgstr "Adjuntar un archivo (opcional)"
+
+msgid "Audit log"
+msgstr "Registro de auditoría"
+
+msgid "Available at"
+msgstr "Disponible en"
+
+msgid "Back to records"
+msgstr "Volver a los registros"
+
+msgid "Back to the archive"
+msgstr "Volver al archivo"
+
+msgid "Back to the steward console"
+msgstr "Volver a la consola de administración"
+
+msgid "Before you act"
+msgstr "Antes de actuar"
+
+msgid "Browse"
+msgstr "Explorar"
+
+msgid "Catalogue metadata"
+msgstr "Metadatos de catálogo"
+
+msgid "Check a request"
+msgstr "Consultar una solicitud"
+
+msgid "Check status"
+msgstr "Consultar el estado"
+
+msgid "Cite this record"
+msgstr "Citar este registro"
+
+msgid "Clear filters"
+msgstr "Quitar los filtros"
+
+msgid "Collection overview"
+msgstr "Resumen de la colección"
+
+msgid "Comma-separated topics, e.g. mutual aid, housing."
+msgstr "Temas separados por comas, p. ej. ayuda mutua, vivienda."
+
+msgid "Community only — vetted members"
+msgstr "Solo la comunidad — miembros verificados"
+
+msgid "Community only — vetted members of this community"
+msgstr "Solo para la comunidad — miembros verificados de esta comunidad"
+
+msgid "Contact (optional, sealed)"
+msgstr "Contacto (opcional, sellado)"
+
+msgid "Content warning"
+msgstr "Advertencia de contenido"
+
+msgid "Content warnings (optional)"
+msgstr "Advertencias de contenido (opcional)"
+
+msgid "Content warnings:"
+msgstr "Advertencias de contenido:"
+
+#, python-brace-format
+msgid "Content warnings: {list}"
+msgstr "Advertencias de contenido: {list}"
+
+msgid "Continue"
+msgstr "Continuar"
+
+msgid "Contribute to the archive"
+msgstr "Contribuir al archivo"
+
+msgid ""
+"Contributions arrive sealed — nothing is visible until you publish it. "
+"Publishing opens a record to the visibility the contributor asked for; "
+"withholding holds it for revision. Every choice is recorded."
+msgstr ""
+"Las contribuciones llegan selladas: nada es visible hasta que usted lo "
+"publique. Publicar abre un registro a la visibilidad que pidió el "
+"colaborador; retenerlo lo guarda para revisión. Cada decisión se "
+"registra."
+
+msgid "Date"
+msgstr "Fecha"
+
+msgid "Deadnaming — refers to a name a person no longer uses"
+msgstr "Nombre muerto — se refiere a un nombre que una persona ya no usa"
+
+msgid "Death — describes the death of a person"
+msgstr "Muerte — describe la muerte de una persona"
+
+msgid "Deportation — describes removal from a country or its threat"
+msgstr "Deportación — describe la expulsión de un país o su amenaza"
+
+msgid ""
+"Descriptive details make this record findable by topic and browsable by "
+"facet. Like the summary, they are shown to anyone who can see the record."
+msgstr ""
+"Los detalles descriptivos hacen que este registro se pueda encontrar por "
+"tema y explorar por faceta. Como el resumen, se muestran a cualquiera que"
+" pueda ver el registro."
+
+msgid "Detail"
+msgstr "Detalle"
+
+msgid "Details"
+msgstr "Detalles"
+
+msgid "Details (optional)"
+msgstr "Detalles (opcional)"
+
+msgid "Download metadata (JSON)"
+msgstr "Descargar metadatos (JSON)"
+
+msgid "Download results (CSV)"
+msgstr "Descargar resultados (CSV)"
+
+msgid "Edit a pending submission"
+msgstr "Editar un envío pendiente"
+
+#, python-brace-format
+msgid "Edited ({count} time)"
+msgid_plural "Edited ({count} times)"
+msgstr[0] "Editado ({count} vez)"
+msgstr[1] "Editado ({count} veces)"
+
+msgid ""
+"Enter the reference code you were given when you filed a consent or "
+"takedown request to see whether a steward has acted on it."
+msgstr ""
+"Introduzca el código de referencia que recibió al presentar una solicitud"
+" de consentimiento o de retirada para ver si una persona responsable ha "
+"actuado sobre ella."
+
+msgid "Event"
+msgstr "Evento"
+
+msgid ""
+"Every recorded action across the archive, newest first. This log carries "
+"no contributor identity or sealed value — only what happened, who acted, "
+"and the outcome."
+msgstr ""
+"Cada acción registrada en todo el archivo, las más recientes primero. "
+"Este registro no contiene ninguna identidad de colaborador ni valor "
+"sellado: solo qué ocurrió, quién actuó y el resultado."
+
+msgid "File"
+msgstr "Archivo"
+
+#, python-brace-format
+msgid "Filed: {when}"
+msgstr "Presentada: {when}"
+
+msgid "Files"
+msgstr "Archivos"
+
+msgid "From"
+msgstr "Desde"
+
+msgid "Hate speech — contains slurs or attacks on a group"
+msgstr "Discurso de odio — contiene insultos o ataques a un grupo"
+
+msgid "How should this be shared?"
+msgstr "¿Cómo debería compartirse esto?"
+
+msgid "How to reach you"
+msgstr "Cómo localizarle"
+
+msgid "If a steward publishes this, a stranger who is not signed in would see:"
+msgstr ""
+"Si una persona responsable publica esto, un desconocido que no haya "
+"iniciado sesión vería:"
+
+msgid ""
+"If you contributed something and it is still waiting for review, you can "
+"withdraw it here using the reference and withdrawal code from your "
+"confirmation page. Withdrawing permanently removes the submission and "
+"erases any contact details you sealed with it. Once a steward has "
+"published a record, request a change from its page instead."
+msgstr ""
+"Si aportó algo y todavía está a la espera de revisión, puede retirarlo "
+"aquí con la referencia y el código de retirada de su página de "
+"confirmación. Retirarlo elimina permanentemente el envío y borra "
+"cualquier dato de contacto que haya sellado con él. Una vez que una "
+"persona responsable haya publicado un registro, solicite un cambio desde "
+"su página."
+
+msgid ""
+"If your submission is still waiting for review, you can correct it here. "
+"Enter the reference and code from your confirmation, choose “Load my "
+"submission”, make your changes, then save. Once a steward has published a"
+" record, this no longer applies — request a change from its page instead."
+msgstr ""
+"Si su envío todavía está a la espera de revisión, puede corregirlo aquí. "
+"Introduzca la referencia y el código de su confirmación, elija «Cargar mi"
+" envío», haga sus cambios y luego guárdelos. Una vez que una persona "
+"responsable haya publicado un registro, esto ya no se aplica: solicite un"
+" cambio desde su página."
+
+msgid "Incarceration — describes jail, prison, or detention"
+msgstr "Encarcelamiento — describe cárcel, prisión o detención"
+
+msgid ""
+"It has been permanently removed, along with any contact details you had "
+"sealed with it. Nothing from it remains in the archive."
+msgstr ""
+"Se ha eliminado permanentemente, junto con cualquier dato de contacto que"
+" hubiera sellado con él. No queda nada de él en el archivo."
+
+msgid ""
+"It is sealed and waiting for a steward to review it. Nothing you "
+"submitted is public yet, and any contact details you gave are encrypted "
+"and will never be shown."
+msgstr ""
+"Está sellada y a la espera de que una persona responsable la revise. Nada"
+" de lo que envió es público todavía, y cualquier dato de contacto que "
+"haya proporcionado está cifrado y nunca se mostrará."
+
+msgid "Keep this if you might change your mind"
+msgstr "Guarde esto por si cambia de opinión"
+
+msgid "Language"
+msgstr "Idioma"
+
+msgid "Languages"
+msgstr "Idiomas"
+
+msgid "Load my submission"
+msgstr "Cargar mi envío"
+
+msgid "Mark resolved"
+msgstr "Marcar como resuelta"
+
+msgid "Medical — describes injury, illness, or clinical procedures"
+msgstr "Médico — describe lesiones, enfermedades o procedimientos clínicos"
+
+msgid "Name"
+msgstr "Nombre"
+
+msgid "Newest"
+msgstr "Más recientes"
+
+msgid "Next"
+msgstr "Siguiente"
+
+msgid "No"
+msgstr "No"
+
+msgid "No open requests."
+msgstr "No hay solicitudes abiertas."
+
+msgid "No recorded events yet."
+msgstr "Aún no hay eventos registrados."
+
+msgid "No records are available to you yet."
+msgstr "Aún no hay registros disponibles para usted."
+
+msgid "No records match your search."
+msgstr "Ningún registro coincide con su búsqueda."
+
+msgid "No submissions awaiting review."
+msgstr "No hay envíos a la espera de revisión."
+
+msgid "No transcript provided for this audio/video."
+msgstr "No se proporcionó transcripción para este audio/vídeo."
+
+msgid "Object"
+msgstr "Objeto"
+
+msgid "Oldest"
+msgstr "Más antiguos"
+
+msgid ""
+"One line shown in listings, search results, and the feed. Anyone who can "
+"see this record will see this summary."
+msgstr ""
+"Una línea que se muestra en los listados, los resultados de búsqueda y el"
+" canal. Cualquiera que pueda ver este registro verá este resumen."
+
+msgid ""
+"Only a steward with explicit permission can ever see this. It is "
+"encrypted, never shown publicly, and never reveals who contributed a "
+"record."
+msgstr ""
+"Solo una persona responsable con permiso explícito puede verlo. Está "
+"cifrado, nunca se muestra públicamente y nunca revela quién aportó un "
+"registro."
+
+msgid "Open consent & takedown requests"
+msgstr "Solicitudes abiertas de consentimiento y retirada"
+
+msgid "Open the record to read it before deciding."
+msgstr "Abra el registro para leerlo antes de decidir."
+
+msgid "Outcome"
+msgstr "Resultado"
+
+msgid "Outing — reveals someone's identity without their consent"
+msgstr "Exposición — revela la identidad de alguien sin su consentimiento"
+
+msgid "Overview"
+msgstr "Resumen"
+
+#, python-brace-format
+msgid "Page {number} of {pages}"
+msgstr "Página {number} de {pages}"
+
+msgid "Pagination"
+msgstr "Paginación"
+
+msgid ""
+"Parts of this record have been kept private by the contributor or a "
+"steward. You are seeing everything you are allowed to see."
+msgstr ""
+"El colaborador o una persona responsable han mantenido privadas algunas "
+"partes de este registro. Está viendo todo lo que tiene permitido ver."
+
+msgid "Permanent link"
+msgstr "Enlace permanente"
+
+msgid "Police violence — describes harm or force by police"
+msgstr "Violencia policial — describe daño o fuerza por parte de la policía"
+
+msgid "Preview what a stranger sees"
+msgstr "Previsualizar lo que ve un desconocido"
+
+msgid "Preview — what a stranger would see"
+msgstr "Vista previa: lo que vería un desconocido"
+
+msgid "Previous"
+msgstr "Anterior"
+
+msgid "Public — anyone may read it"
+msgstr "Público — cualquiera puede leerlo"
+
+msgid "Public — anyone may read it once a steward approves"
+msgstr ""
+"Público — cualquiera podrá leerlo cuando una persona responsable lo "
+"apruebe"
+
+msgid "Publish (as requested)"
+msgstr "Publicar (como se solicitó)"
+
+msgid "Received — a steward has not acted on it yet."
+msgstr "Recibida — una persona responsable aún no ha actuado sobre ella."
+
+msgid "Record content."
+msgstr "Contenido del registro."
+
+msgid "Recorded actions, newest first"
+msgstr "Acciones registradas, las más recientes primero"
+
+msgid "Records (list view)"
+msgstr "Registros (vista de lista)"
+
+msgid "Records (table view)"
+msgstr "Registros (vista de tabla)"
+
+msgid "Reference"
+msgstr "Referencia"
+
+msgid "Related records"
+msgstr "Registros relacionados"
+
+msgid "Relevance"
+msgstr "Relevancia"
+
+msgid "Request status"
+msgstr "Estado de la solicitud"
+
+#, python-brace-format
+msgid "Request: {kind}"
+msgstr "Solicitud: {kind}"
+
+msgid "Resolved — a steward has acted on it."
+msgstr "Resuelta — una persona responsable ha actuado sobre ella."
+
+msgid "Save changes"
+msgstr "Guardar cambios"
+
+msgid "Sealed — keep it withheld for now"
+msgstr "Sellado — manténgalo reservado por ahora"
+
+msgid "Sealed — kept private for now"
+msgstr "Sellado — reservado por ahora"
+
+msgid "Search"
+msgstr "Buscar"
+
+msgid "Search the archive"
+msgstr "Buscar en el archivo"
+
+msgid "Seen by a steward and under consideration."
+msgstr "Vista por una persona responsable y en consideración."
+
+msgid "Select this submission"
+msgstr "Seleccionar este envío"
+
+msgid "Self-harm — describes a person hurting themselves"
+msgstr "Autolesión — describe que una persona se hace daño a sí misma"
+
+msgid "Sexual violence — describes sexual assault or coercion"
+msgstr "Violencia sexual — describe agresión o coerción sexual"
+
+msgid ""
+"Share a story, an account, or knowledge worth keeping. A steward reviews "
+"every submission before anything is published — your contribution is kept"
+" sealed until then. Use \"Preview\" to see exactly what a stranger would "
+"see before you submit."
+msgstr ""
+"Comparta una historia, un relato o conocimiento que valga la pena "
+"conservar. Una persona responsable revisa cada envío antes de publicar "
+"nada: su contribución se mantiene sellada hasta entonces. Use \"Vista "
+"previa\" para ver exactamente lo que vería un desconocido antes de "
+"enviar."
+
+#, python-brace-format
+msgid "Showing {start}-{end} of {total} record(s)."
+msgstr "Mostrando {start}-{end} de {total} registro(s)."
+
+msgid "Skip to main content"
+msgstr "Saltar al contenido principal"
+
+msgid "Some parts of this record are not available under your current access:"
+msgstr "Algunas partes de este registro no están disponibles con su acceso actual:"
+
+msgid "Some parts of this record are not shown"
+msgstr "Algunas partes de este registro no se muestran"
+
+msgid "Sort by:"
+msgstr "Ordenar por:"
+
+#, python-brace-format
+msgid "Spanning {earliest} to {latest}."
+msgstr "Desde {earliest} hasta {latest}."
+
+msgid "Status"
+msgstr "Estado"
+
+#, python-brace-format
+msgid "Status: {status}"
+msgstr "Estado: {status}"
+
+msgid "Steward console"
+msgstr "Consola de administración"
+
+msgid "Subjects"
+msgstr "Temas"
+
+msgid "Submissions awaiting review"
+msgstr "Envíos a la espera de revisión"
+
+msgid "Submit for review"
+msgstr "Enviar para revisión"
+
+msgid "Substance use — describes drug or alcohol use"
+msgstr "Uso de sustancias — describe el uso de drogas o alcohol"
+
+msgid "Suicide — describes suicide or suicidal thoughts"
+msgstr "Suicidio — describe el suicidio o pensamientos suicidas"
+
+msgid "Summary"
+msgstr "Resumen"
+
+msgid "Summary (optional)"
+msgstr "Resumen (opcional)"
+
+msgid "Thank you — your contribution was received"
+msgstr "Gracias: se recibió su contribución"
+
+#, python-brace-format
+msgid "That file is too large. The limit is {max} MB."
+msgstr "Ese archivo es demasiado grande. El límite es {max} MB."
+
+#, python-brace-format
+msgid "That file type isn't accepted. Allowed types are: {types}."
+msgstr "Ese tipo de archivo no se acepta. Tipos permitidos: {types}."
+
+msgid "That submission is too long."
+msgstr "Ese envío es demasiado largo."
+
+msgid "The language of the material, e.g. English or Spanish."
+msgstr "El idioma del material, p. ej. inglés o español."
+
+msgid "There are no public records yet."
+msgstr "Aún no hay registros públicos."
+
+msgid ""
+"This record carries the following content warnings. Review them before "
+"continuing."
+msgstr ""
+"Este registro lleva las siguientes advertencias de contenido. Revíselas "
+"antes de continuar."
+
+msgid "This record has access restrictions."
+msgstr "Este registro tiene restricciones de acceso."
+
+msgid "Those contact details are too long."
+msgstr "Esos datos de contacto son demasiado largos."
+
+msgid "Tick anything a reader should be warned about before this is shown."
+msgstr ""
+"Marque todo aquello sobre lo que se deba advertir a quien lo lea antes de"
+" mostrarlo."
+
+msgid "Title"
+msgstr "Título"
+
+msgid "To"
+msgstr "Hasta"
+
+msgid "To withdraw it, go to"
+msgstr "Para retirarlo, vaya a"
+
+msgid "Transcript"
+msgstr "Transcripción"
+
+msgid "Type"
+msgstr "Tipo"
+
+msgid "Types"
+msgstr "Tipos"
+
+msgid "View the audit log"
+msgstr "Ver el registro de auditoría"
+
+msgid "Violence — describes physical harm or attack"
+msgstr "Violencia — describe daño físico o un ataque"
+
+msgid ""
+"We could not find a pending submission with that reference and code. "
+"Check both and try again."
+msgstr ""
+"No se encontró un envío pendiente con esa referencia y ese código. "
+"Compruebe ambos e inténtelo de nuevo."
+
+msgid ""
+"We could not find a request with that reference. Check it and try again —"
+" it is the code shown when you filed the request."
+msgstr ""
+"No se encontró una solicitud con esa referencia. Compruébela e inténtelo "
+"de nuevo: es el código que se mostró cuando presentó la solicitud."
+
+msgid ""
+"We could not withdraw a pending submission with that reference and code. "
+"Check both and try again."
+msgstr ""
+"No se pudo retirar un envío pendiente con esa referencia y ese código. "
+"Compruebe ambos e inténtelo de nuevo."
+
+msgid "What a stranger sees"
+msgstr "Lo que ve un desconocido"
+
+msgid "What kind of material this is, e.g. photograph, oral history, flyer."
+msgstr "Qué clase de material es, p. ej. fotografía, historia oral, folleto."
+
+msgid "When"
+msgstr "Cuándo"
+
+msgid "When the material is from, e.g. 1994 or 2021-05-01."
+msgstr "De cuándo es el material, p. ej. 1994 o 2021-05-01."
+
+msgid ""
+"While your submission is still waiting for review you can withdraw it "
+"yourself. To do that you will need both of these — keep them private, as "
+"together they let someone withdraw this submission:"
+msgstr ""
+"Mientras su envío siga a la espera de revisión, puede retirarlo usted "
+"mismo. Para ello necesitará ambos datos; manténgalos en privado, ya que "
+"juntos permiten retirar este envío:"
+
+msgid "Withdraw a submission"
+msgstr "Retirar un envío"
+
+msgid "Withdraw this submission"
+msgstr "Retirar este envío"
+
+msgid "Withdrawal code"
+msgstr "Código de retirada"
+
+msgid "Withheld"
+msgstr "Retenido"
+
+msgid "Withhold"
+msgstr "Retener"
+
+msgid "Withhold selected"
+msgstr "Retener los seleccionados"
+
+msgid "Would publish as:"
+msgstr "Se publicaría como:"
+
+msgid "Yes"
+msgstr "Sí"
+
+msgid "You can also correct it on"
+msgstr "También puede corregirlo en"
+
+#, python-brace-format
+msgid ""
+"You can attach one image, audio file, or PDF (up to {max} MB). Accepted: "
+"{accepted}. The file is reviewed with the rest of your submission and is "
+"not public until a steward publishes it."
+msgstr ""
+"Puede adjuntar una imagen, un archivo de audio o un PDF (hasta {max} MB)."
+" Aceptados: {accepted}. El archivo se revisa junto con el resto de su "
+"envío y no es público hasta que una persona responsable lo publique."
+
+msgid ""
+"You can read access-restricted content to do your work, but content "
+"sealed with the 'sealed' policy — and every contributor's identity — is "
+"restricted even from you. Some records may be sealed above your access; "
+"their absence here does not mean they do not exist."
+msgstr ""
+"Puede leer contenido de acceso restringido para hacer su trabajo, pero el"
+" contenido sellado con la política «sealed» —y la identidad de cada "
+"colaborador— está restringido incluso para usted. Algunos registros "
+"pueden estar sellados por encima de su acceso; su ausencia aquí no "
+"significa que no existan."
+
+msgid "Your account"
+msgstr "Su relato"
+
+msgid "Your changes were saved"
+msgstr "Se guardaron sus cambios"
+
+msgid "Your code"
+msgstr "Su código"
+
+msgid "Your contribution could not be saved right now. Please try again."
+msgstr "No se pudo guardar su contribución en este momento. Inténtelo de nuevo."
+
+msgid "Your identity is never shown. Contributors control what is public."
+msgstr "Su identidad nunca se muestra. Los colaboradores controlan qué es público."
+
+msgid ""
+"Your name and contact are never shown to any reader — they are sealed. "
+"They are not in this preview."
+msgstr ""
+"Su nombre y su contacto nunca se muestran a ningún lector: están "
+"sellados. No están en esta vista previa."
+
+msgid ""
+"Your pending submission has been updated. It is still sealed and waiting "
+"for a steward to review it."
+msgstr ""
+"Su envío pendiente se ha actualizado. Sigue sellado y a la espera de que "
+"una persona responsable lo revise."
+
+msgid "Your request reference"
+msgstr "La referencia de su solicitud"
+
+msgid "Your submission was withdrawn"
+msgstr "Su envío fue retirado"
+
+msgid "and enter both."
+msgstr "e introduzca ambos."
+
+msgid "ask a steward to make contact"
+msgstr "pedir a una persona responsable que se ponga en contacto"
+
+msgid "community members only"
+msgstr "solo los miembros de la comunidad"
+
+msgid "correct the record"
+msgstr "corregir el registro"
+
+msgid "no one yet"
+msgstr "nadie todavía"
+
+msgid "objection from a person named in the record"
+msgstr "objeción de una persona nombrada en el registro"
+
+msgid "on record"
+msgstr "en el registro"
+
+#, python-brace-format
+msgid "submitted {when}"
+msgstr "enviado {when}"
+
+msgid "the edit page"
+msgstr "la página de edición"
+
+msgid "the withdrawal page"
+msgstr "la página de retirada"
+
+msgid "tighten access"
+msgstr "restringir el acceso"
+
+msgid "withdraw / take down"
+msgstr "retirar / dar de baja"
+
+#, python-brace-format
+msgid ""
+"{count} detail is restricted under your current access. If you are a "
+"community member or steward, sign in to see what is withheld and why."
+msgid_plural ""
+"{count} details are restricted under your current access. If you are a "
+"community member or steward, sign in to see what is withheld and why."
+msgstr[0] ""
+"{count} detalle está restringido con su acceso actual. Si es miembro de "
+"la comunidad o persona responsable, inicie sesión para ver qué se retiene"
+" y por qué."
+msgstr[1] ""
+"{count} detalles están restringidos con su acceso actual. Si es miembro "
+"de la comunidad o persona responsable, inicie sesión para ver qué se "
+"retiene y por qué."
+
+#, python-brace-format
+msgid "{count} public record(s)."
+msgstr "{count} registro(s) público(s)."
+
+#, python-brace-format
+msgid "{when}, ref {ref}"
+msgstr "{when}, ref {ref}"
+
+msgid "— every recorded action across the archive."
+msgstr "— cada acción registrada en todo el archivo."
+
