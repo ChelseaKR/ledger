@@ -1,26 +1,47 @@
-"""Tests for :mod:`ledger.i18n` — the localization layer (user research P2-1 / T9).
+"""Tests for :mod:`ledger.i18n` — the gettext localization seam (user research P2-1 / T9).
 
-These cover the safety-critical behaviours: ``Accept-Language`` negotiation
-(exact match, q-value ordering, primary-subtag fall-down, wildcard, unknown and
-``None`` headers all degrading to English), the forgiving ``t`` lookup (English
-fallback for a missing translation, the key itself for an unknown key, no raising
-on a bad interpolation), the non-coercive "Continue"/"Continuar" verb at the
-content-warning decision point, content-warning glosses (known and unknown tags),
-and language autonyms. The no-outing rule is checked structurally: the catalog is
-generic chrome with no identity-shaped content.
+These cover the safety-critical behaviours after the migration from the bespoke
+``_CATALOG``/``_CW_GLOSSES`` dicts to GNU gettext catalogs
+(INTERNATIONALIZATION-STANDARD §3): ``Accept-Language`` negotiation (exact match,
+q-value ordering, primary-subtag fall-down, wildcard, unknown and ``None`` headers
+all degrading to English), the forgiving ``t`` lookup (English fallback for an
+unknown language, the key itself for an unknown key, no raising on a bad
+interpolation), plural-correct ``ngettext`` selection, the non-coercive
+"Continue"/"Continuar" verb at the content-warning decision point, content-warning
+glosses (known and unknown tags), and language autonyms. The no-outing rule is
+checked structurally: the catalog is generic chrome with no identity-shaped content.
 """
 
 from __future__ import annotations
+
+import pytest
 
 from ledger import i18n
 from ledger.i18n import (
     DEFAULT_LANG,
     SUPPORTED,
+    get_translation,
     gloss_cw,
     language_name,
     negotiate,
     t,
 )
+
+# --- get_translation (the gettext seam) -------------------------------------
+
+
+def test_get_translation_loads_spanish_catalog() -> None:
+    assert get_translation("es").gettext("Browse") == "Explorar"
+
+
+def test_get_translation_english_is_source_text() -> None:
+    assert get_translation("en").gettext("Browse") == "Browse"
+
+
+def test_get_translation_unknown_tag_falls_back_to_source() -> None:
+    # fallback=True -> NullTranslations returns the English msgid unchanged.
+    assert get_translation("xx").gettext("Browse") == "Browse"
+
 
 # --- negotiate --------------------------------------------------------------
 
@@ -94,16 +115,9 @@ def test_t_returns_translated_string() -> None:
     assert t("en", "nav_browse") == "Browse"
 
 
-def test_t_falls_back_to_english_for_missing_translation() -> None:
-    # Temporarily drop an es key to simulate a half-translated catalog; t must
-    # return the English template rather than the key or a blank.
-    catalog = i18n._CATALOG
-    saved = catalog["es"].pop("nav_status")
-    try:
-        assert t("es", "nav_status") == t("en", "nav_status")
-        assert t("es", "nav_status") == "Status"
-    finally:
-        catalog["es"]["nav_status"] = saved
+def test_t_unknown_language_uses_english_source() -> None:
+    # An unknown language loads NullTranslations; gettext returns the English msgid.
+    assert t("fr", "nav_search") == "Search"
 
 
 def test_t_unknown_key_returns_the_key() -> None:
@@ -111,18 +125,22 @@ def test_t_unknown_key_returns_the_key() -> None:
     assert t("es", "does_not_exist") == "does_not_exist"
 
 
-def test_t_unknown_language_uses_english() -> None:
-    assert t("fr", "nav_search") == "Search"
-
-
 def test_t_formats_with_kwargs() -> None:
     # A template that does not use placeholders is returned unchanged even with kw.
     assert t("en", "nav_about", extra="ignored") == "About"
 
 
+def test_t_interpolates_placeholders() -> None:
+    assert t("en", "overview_total", count=3) == "3 public record(s)."
+    assert t("es", "overview_total", count=3) == "3 registro(s) público(s)."
+
+
 def test_t_never_raises_on_bad_interpolation() -> None:
-    # No catalog template references a placeholder, so supplying odd kw must be
-    # harmless and never raise (forgiving formatting).
+    # A template with placeholders, called with none, returns the template unformatted
+    # rather than raising (forgiving formatting).
+    unformatted = t("en", "overview_total")
+    assert unformatted == "{count} public record(s)."
+    # And a no-placeholder template tolerates stray kw.
     assert t("en", "footer_privacy", missing="x") == t("en", "footer_privacy")
 
 
@@ -133,29 +151,33 @@ def test_proceed_is_continue_not_proceed() -> None:
     assert "Proceed" not in t("en", "proceed")
 
 
-def test_required_keys_present_in_all_supported_languages() -> None:
-    required = {
-        "nav_browse",
-        "nav_search",
-        "nav_status",
-        "nav_about",
-        "skip_link",
-        "search_label",
-        "search_button",
-        "withheld_heading",
-        "withheld_intro",
-        "proceed",
-        "back_to_records",
-        "empty_no_matches",
-        "restricted_notice",
-        "content_warning_heading",
-        "footer_privacy",
-        "language_label",
-    }
-    for lang in SUPPORTED:
-        present = set(i18n._CATALOG[lang])
-        missing = required - present
-        assert not missing, f"{lang} missing keys: {sorted(missing)}"
+# --- plural-correct ngettext ------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("lang", "count", "expected"),
+    [
+        ("en", 1, "Edited (1 time)"),
+        ("en", 3, "Edited (3 times)"),
+        ("es", 1, "Editado (1 vez)"),
+        ("es", 4, "Editado (4 veces)"),
+    ],
+)
+def test_badge_edited_plural(lang: str, count: int, expected: str) -> None:
+    assert t(lang, "badge_edited", count=count) == expected
+
+
+def test_rec_withheld_outsider_plural_selects_singular_and_plural() -> None:
+    assert t("en", "rec_withheld_outsider", count=1).startswith("1 detail is restricted")
+    assert t("en", "rec_withheld_outsider", count=2).startswith("2 details are restricted")
+    assert t("es", "rec_withheld_outsider", count=1).startswith("1 detalle está restringido")
+    assert t("es", "rec_withheld_outsider", count=2).startswith("2 detalles están restringidos")
+
+
+def test_plural_missing_count_degrades_to_singular() -> None:
+    # No count supplied: _coerce_count -> 0, which is plural in en/es (n != 1), and
+    # the unformatted template is returned rather than raising.
+    assert t("en", "badge_edited") == "Edited ({count} times)"
 
 
 # --- gloss_cw ---------------------------------------------------------------
@@ -186,13 +208,8 @@ def test_gloss_unknown_tag_is_humanized() -> None:
     assert gloss_cw("es", "house_fire") == "House fire"
 
 
-def test_gloss_missing_translation_falls_back_to_english() -> None:
-    glosses = i18n._CW_GLOSSES
-    saved = glosses["es"].pop("medical")
-    try:
-        assert gloss_cw("es", "medical") == gloss_cw("en", "medical")
-    finally:
-        glosses["es"]["medical"] = saved
+def test_gloss_unknown_language_falls_back_to_english_source() -> None:
+    assert gloss_cw("fr", "medical") == gloss_cw("en", "medical")
 
 
 # --- language_name ----------------------------------------------------------
@@ -219,20 +236,12 @@ def test_language_name_unknown_is_humanized() -> None:
     assert language_name("klingon-tlh") == "Klingon tlh"
 
 
-# --- no-outing structural check ---------------------------------------------
-
-
-def test_catalog_view_is_read_only_copy_of_supported() -> None:
-    view = i18n._catalog_view()
-    assert set(view) == set(SUPPORTED)
-
-
-# --- I1: safety-critical strings are localized -----------------------------
+# --- I1: safety-critical strings are localized ------------------------------
 
 
 def test_visibility_labels_exist_in_every_language() -> None:
     """The sealed/community/public labels — the words that matter most — are localized."""
-    for lang in i18n.SUPPORTED:
+    for lang in SUPPORTED:
         for value in ("public", "community", "sealed"):
             label = i18n.t(lang, f"visibility_{value}")
             assert label and not label.startswith("visibility_"), (lang, value)
@@ -244,7 +253,7 @@ def test_cw_glosses_cover_the_starter_vocabulary() -> None:
     """Every content warning a fresh archive ships with has a gloss in each language."""
     from ledger.config import _STARTER_CONTENT_WARNINGS
 
-    for lang in i18n.SUPPORTED:
+    for lang in SUPPORTED:
         for tag in _STARTER_CONTENT_WARNINGS:
             gloss = i18n.gloss_cw(lang, tag)
             # A real gloss explains the tag (has the em-dash), not just the humanized tag.

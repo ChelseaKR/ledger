@@ -45,6 +45,11 @@ dev = [
     "ruff>=0.6",
     "mypy>=1.11",
     "pip-audit>=2.7",
+    # i18n message-catalog tooling (INTERNATIONALIZATION-STANDARD §3/§4). Babel
+    # provides `pybabel extract` and the CLDR-backed `Locale.parse` used by the
+    # i18n gates. Pure Python (no PyICU/native ICU build), so ledger keeps its
+    # "run on one inexpensive box, no heavy dependency tree" property.
+    "babel>=2.16",
 ]
 
 [project.urls]

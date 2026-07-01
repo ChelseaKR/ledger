@@ -1,0 +1,793 @@
+# English translations for ledger-archive.
+# Copyright (C) 2026 ORGANIZATION
+# This file is distributed under the same license as the ledger-archive
+# project.
+# FIRST AUTHOR <EMAIL@ADDRESS>, 2026.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: ledger-archive 0.1.0\n"
+"Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
+"POT-Creation-Date: 2026-06-30 00:00+0000\n"
+"PO-Revision-Date: 2026-06-30 00:00+0000\n"
+"Last-Translator: ledger contributors\n"
+"Language: en\n"
+"Language-Team: en <LL@li.org>\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.18.0\n"
+
+#, python-brace-format
+msgid ""
+" Published as {visibility}, this record would be visible to {audience} — "
+"it would not appear in public browse or search."
+msgstr ""
+" Published as {visibility}, this record would be visible to {audience} — "
+"it would not appear in public browse or search."
+
+msgid "(add a content warning) — each records who acted and why."
+msgstr "(add a content warning) — each records who acted and why."
+
+msgid "(change access),"
+msgstr "(change access),"
+
+msgid ""
+"A steward reviews every submission before anything becomes visible — "
+"nothing is published automatically."
+msgstr ""
+"A steward reviews every submission before anything becomes visible — "
+"nothing is published automatically."
+
+msgid "A stranger sees nothing."
+msgstr "A stranger sees nothing."
+
+msgid "A title is required."
+msgstr "A title is required."
+
+msgid "About"
+msgstr "About"
+
+msgid "Abuse — describes ongoing harm or mistreatment"
+msgstr "Abuse — describes ongoing harm or mistreatment"
+
+msgid "Action a request with the audited CLI:"
+msgstr "Action a request with the audited CLI:"
+
+msgid "Agent"
+msgstr "Agent"
+
+msgid ""
+"All records you may view, with their titles, summaries, and whether each "
+"carries a content warning."
+msgstr ""
+"All records you may view, with their titles, summaries, and whether each "
+"carries a content warning."
+
+msgid "An account is required."
+msgstr "An account is required."
+
+msgid ""
+"An at-a-glance summary of the public records in this archive — the "
+"topics, kinds, and languages they cover. Every number counts only what is"
+" publicly visible."
+msgstr ""
+"An at-a-glance summary of the public records in this archive — the "
+"topics, kinds, and languages they cover. Every number counts only what is"
+" publicly visible."
+
+msgid "Apply dates"
+msgstr "Apply dates"
+
+msgid "Are you named in this record and object to it? Tell a steward"
+msgstr "Are you named in this record and object to it? Tell a steward"
+
+msgid "Are you the contributor? Manage or withdraw your consent"
+msgstr "Are you the contributor? Manage or withdraw your consent"
+
+msgid "Attach a file (optional)"
+msgstr "Attach a file (optional)"
+
+msgid "Audit log"
+msgstr "Audit log"
+
+msgid "Available at"
+msgstr "Available at"
+
+msgid "Back to records"
+msgstr "Back to records"
+
+msgid "Back to the archive"
+msgstr "Back to the archive"
+
+msgid "Back to the steward console"
+msgstr "Back to the steward console"
+
+msgid "Before you act"
+msgstr "Before you act"
+
+msgid "Browse"
+msgstr "Browse"
+
+msgid "Catalogue metadata"
+msgstr "Catalogue metadata"
+
+msgid "Check a request"
+msgstr "Check a request"
+
+msgid "Check status"
+msgstr "Check status"
+
+msgid "Cite this record"
+msgstr "Cite this record"
+
+msgid "Clear filters"
+msgstr "Clear filters"
+
+msgid "Collection overview"
+msgstr "Collection overview"
+
+msgid "Comma-separated topics, e.g. mutual aid, housing."
+msgstr "Comma-separated topics, e.g. mutual aid, housing."
+
+msgid "Community only — vetted members"
+msgstr "Community only — vetted members"
+
+msgid "Community only — vetted members of this community"
+msgstr "Community only — vetted members of this community"
+
+msgid "Contact (optional, sealed)"
+msgstr "Contact (optional, sealed)"
+
+msgid "Content warning"
+msgstr "Content warning"
+
+msgid "Content warnings (optional)"
+msgstr "Content warnings (optional)"
+
+msgid "Content warnings:"
+msgstr "Content warnings:"
+
+#, python-brace-format
+msgid "Content warnings: {list}"
+msgstr "Content warnings: {list}"
+
+msgid "Continue"
+msgstr "Continue"
+
+msgid "Contribute to the archive"
+msgstr "Contribute to the archive"
+
+msgid ""
+"Contributions arrive sealed — nothing is visible until you publish it. "
+"Publishing opens a record to the visibility the contributor asked for; "
+"withholding holds it for revision. Every choice is recorded."
+msgstr ""
+"Contributions arrive sealed — nothing is visible until you publish it. "
+"Publishing opens a record to the visibility the contributor asked for; "
+"withholding holds it for revision. Every choice is recorded."
+
+msgid "Date"
+msgstr "Date"
+
+msgid "Deadnaming — refers to a name a person no longer uses"
+msgstr "Deadnaming — refers to a name a person no longer uses"
+
+msgid "Death — describes the death of a person"
+msgstr "Death — describes the death of a person"
+
+msgid "Deportation — describes removal from a country or its threat"
+msgstr "Deportation — describes removal from a country or its threat"
+
+msgid ""
+"Descriptive details make this record findable by topic and browsable by "
+"facet. Like the summary, they are shown to anyone who can see the record."
+msgstr ""
+"Descriptive details make this record findable by topic and browsable by "
+"facet. Like the summary, they are shown to anyone who can see the record."
+
+msgid "Detail"
+msgstr "Detail"
+
+msgid "Details"
+msgstr "Details"
+
+msgid "Details (optional)"
+msgstr "Details (optional)"
+
+msgid "Download metadata (JSON)"
+msgstr "Download metadata (JSON)"
+
+msgid "Download results (CSV)"
+msgstr "Download results (CSV)"
+
+msgid "Edit a pending submission"
+msgstr "Edit a pending submission"
+
+#, python-brace-format
+msgid "Edited ({count} time)"
+msgid_plural "Edited ({count} times)"
+msgstr[0] "Edited ({count} time)"
+msgstr[1] "Edited ({count} times)"
+
+msgid ""
+"Enter the reference code you were given when you filed a consent or "
+"takedown request to see whether a steward has acted on it."
+msgstr ""
+"Enter the reference code you were given when you filed a consent or "
+"takedown request to see whether a steward has acted on it."
+
+msgid "Event"
+msgstr "Event"
+
+msgid ""
+"Every recorded action across the archive, newest first. This log carries "
+"no contributor identity or sealed value — only what happened, who acted, "
+"and the outcome."
+msgstr ""
+"Every recorded action across the archive, newest first. This log carries "
+"no contributor identity or sealed value — only what happened, who acted, "
+"and the outcome."
+
+msgid "File"
+msgstr "File"
+
+#, python-brace-format
+msgid "Filed: {when}"
+msgstr "Filed: {when}"
+
+msgid "Files"
+msgstr "Files"
+
+msgid "From"
+msgstr "From"
+
+msgid "Hate speech — contains slurs or attacks on a group"
+msgstr "Hate speech — contains slurs or attacks on a group"
+
+msgid "How should this be shared?"
+msgstr "How should this be shared?"
+
+msgid "How to reach you"
+msgstr "How to reach you"
+
+msgid "If a steward publishes this, a stranger who is not signed in would see:"
+msgstr "If a steward publishes this, a stranger who is not signed in would see:"
+
+msgid ""
+"If you contributed something and it is still waiting for review, you can "
+"withdraw it here using the reference and withdrawal code from your "
+"confirmation page. Withdrawing permanently removes the submission and "
+"erases any contact details you sealed with it. Once a steward has "
+"published a record, request a change from its page instead."
+msgstr ""
+"If you contributed something and it is still waiting for review, you can "
+"withdraw it here using the reference and withdrawal code from your "
+"confirmation page. Withdrawing permanently removes the submission and "
+"erases any contact details you sealed with it. Once a steward has "
+"published a record, request a change from its page instead."
+
+msgid ""
+"If your submission is still waiting for review, you can correct it here. "
+"Enter the reference and code from your confirmation, choose “Load my "
+"submission”, make your changes, then save. Once a steward has published a"
+" record, this no longer applies — request a change from its page instead."
+msgstr ""
+"If your submission is still waiting for review, you can correct it here. "
+"Enter the reference and code from your confirmation, choose “Load my "
+"submission”, make your changes, then save. Once a steward has published a"
+" record, this no longer applies — request a change from its page instead."
+
+msgid "Incarceration — describes jail, prison, or detention"
+msgstr "Incarceration — describes jail, prison, or detention"
+
+msgid ""
+"It has been permanently removed, along with any contact details you had "
+"sealed with it. Nothing from it remains in the archive."
+msgstr ""
+"It has been permanently removed, along with any contact details you had "
+"sealed with it. Nothing from it remains in the archive."
+
+msgid ""
+"It is sealed and waiting for a steward to review it. Nothing you "
+"submitted is public yet, and any contact details you gave are encrypted "
+"and will never be shown."
+msgstr ""
+"It is sealed and waiting for a steward to review it. Nothing you "
+"submitted is public yet, and any contact details you gave are encrypted "
+"and will never be shown."
+
+msgid "Keep this if you might change your mind"
+msgstr "Keep this if you might change your mind"
+
+msgid "Language"
+msgstr "Language"
+
+msgid "Languages"
+msgstr "Languages"
+
+msgid "Load my submission"
+msgstr "Load my submission"
+
+msgid "Mark resolved"
+msgstr "Mark resolved"
+
+msgid "Medical — describes injury, illness, or clinical procedures"
+msgstr "Medical — describes injury, illness, or clinical procedures"
+
+msgid "Name"
+msgstr "Name"
+
+msgid "Newest"
+msgstr "Newest"
+
+msgid "Next"
+msgstr "Next"
+
+msgid "No"
+msgstr "No"
+
+msgid "No open requests."
+msgstr "No open requests."
+
+msgid "No recorded events yet."
+msgstr "No recorded events yet."
+
+msgid "No records are available to you yet."
+msgstr "No records are available to you yet."
+
+msgid "No records match your search."
+msgstr "No records match your search."
+
+msgid "No submissions awaiting review."
+msgstr "No submissions awaiting review."
+
+msgid "No transcript provided for this audio/video."
+msgstr "No transcript provided for this audio/video."
+
+msgid "Object"
+msgstr "Object"
+
+msgid "Oldest"
+msgstr "Oldest"
+
+msgid ""
+"One line shown in listings, search results, and the feed. Anyone who can "
+"see this record will see this summary."
+msgstr ""
+"One line shown in listings, search results, and the feed. Anyone who can "
+"see this record will see this summary."
+
+msgid ""
+"Only a steward with explicit permission can ever see this. It is "
+"encrypted, never shown publicly, and never reveals who contributed a "
+"record."
+msgstr ""
+"Only a steward with explicit permission can ever see this. It is "
+"encrypted, never shown publicly, and never reveals who contributed a "
+"record."
+
+msgid "Open consent & takedown requests"
+msgstr "Open consent & takedown requests"
+
+msgid "Open the record to read it before deciding."
+msgstr "Open the record to read it before deciding."
+
+msgid "Outcome"
+msgstr "Outcome"
+
+msgid "Outing — reveals someone's identity without their consent"
+msgstr "Outing — reveals someone's identity without their consent"
+
+msgid "Overview"
+msgstr "Overview"
+
+#, python-brace-format
+msgid "Page {number} of {pages}"
+msgstr "Page {number} of {pages}"
+
+msgid "Pagination"
+msgstr "Pagination"
+
+msgid ""
+"Parts of this record have been kept private by the contributor or a "
+"steward. You are seeing everything you are allowed to see."
+msgstr ""
+"Parts of this record have been kept private by the contributor or a "
+"steward. You are seeing everything you are allowed to see."
+
+msgid "Permanent link"
+msgstr "Permanent link"
+
+msgid "Police violence — describes harm or force by police"
+msgstr "Police violence — describes harm or force by police"
+
+msgid "Preview what a stranger sees"
+msgstr "Preview what a stranger sees"
+
+msgid "Preview — what a stranger would see"
+msgstr "Preview — what a stranger would see"
+
+msgid "Previous"
+msgstr "Previous"
+
+msgid "Public — anyone may read it"
+msgstr "Public — anyone may read it"
+
+msgid "Public — anyone may read it once a steward approves"
+msgstr "Public — anyone may read it once a steward approves"
+
+msgid "Publish (as requested)"
+msgstr "Publish (as requested)"
+
+msgid "Received — a steward has not acted on it yet."
+msgstr "Received — a steward has not acted on it yet."
+
+msgid "Record content."
+msgstr "Record content."
+
+msgid "Recorded actions, newest first"
+msgstr "Recorded actions, newest first"
+
+msgid "Records (list view)"
+msgstr "Records (list view)"
+
+msgid "Records (table view)"
+msgstr "Records (table view)"
+
+msgid "Reference"
+msgstr "Reference"
+
+msgid "Related records"
+msgstr "Related records"
+
+msgid "Relevance"
+msgstr "Relevance"
+
+msgid "Request status"
+msgstr "Request status"
+
+#, python-brace-format
+msgid "Request: {kind}"
+msgstr "Request: {kind}"
+
+msgid "Resolved — a steward has acted on it."
+msgstr "Resolved — a steward has acted on it."
+
+msgid "Save changes"
+msgstr "Save changes"
+
+msgid "Sealed — keep it withheld for now"
+msgstr "Sealed — keep it withheld for now"
+
+msgid "Sealed — kept private for now"
+msgstr "Sealed — kept private for now"
+
+msgid "Search"
+msgstr "Search"
+
+msgid "Search the archive"
+msgstr "Search the archive"
+
+msgid "Seen by a steward and under consideration."
+msgstr "Seen by a steward and under consideration."
+
+msgid "Select this submission"
+msgstr "Select this submission"
+
+msgid "Self-harm — describes a person hurting themselves"
+msgstr "Self-harm — describes a person hurting themselves"
+
+msgid "Sexual violence — describes sexual assault or coercion"
+msgstr "Sexual violence — describes sexual assault or coercion"
+
+msgid ""
+"Share a story, an account, or knowledge worth keeping. A steward reviews "
+"every submission before anything is published — your contribution is kept"
+" sealed until then. Use \"Preview\" to see exactly what a stranger would "
+"see before you submit."
+msgstr ""
+"Share a story, an account, or knowledge worth keeping. A steward reviews "
+"every submission before anything is published — your contribution is kept"
+" sealed until then. Use \"Preview\" to see exactly what a stranger would "
+"see before you submit."
+
+#, python-brace-format
+msgid "Showing {start}-{end} of {total} record(s)."
+msgstr "Showing {start}-{end} of {total} record(s)."
+
+msgid "Skip to main content"
+msgstr "Skip to main content"
+
+msgid "Some parts of this record are not available under your current access:"
+msgstr "Some parts of this record are not available under your current access:"
+
+msgid "Some parts of this record are not shown"
+msgstr "Some parts of this record are not shown"
+
+msgid "Sort by:"
+msgstr "Sort by:"
+
+#, python-brace-format
+msgid "Spanning {earliest} to {latest}."
+msgstr "Spanning {earliest} to {latest}."
+
+msgid "Status"
+msgstr "Status"
+
+#, python-brace-format
+msgid "Status: {status}"
+msgstr "Status: {status}"
+
+msgid "Steward console"
+msgstr "Steward console"
+
+msgid "Subjects"
+msgstr "Subjects"
+
+msgid "Submissions awaiting review"
+msgstr "Submissions awaiting review"
+
+msgid "Submit for review"
+msgstr "Submit for review"
+
+msgid "Substance use — describes drug or alcohol use"
+msgstr "Substance use — describes drug or alcohol use"
+
+msgid "Suicide — describes suicide or suicidal thoughts"
+msgstr "Suicide — describes suicide or suicidal thoughts"
+
+msgid "Summary"
+msgstr "Summary"
+
+msgid "Summary (optional)"
+msgstr "Summary (optional)"
+
+msgid "Thank you — your contribution was received"
+msgstr "Thank you — your contribution was received"
+
+#, python-brace-format
+msgid "That file is too large. The limit is {max} MB."
+msgstr "That file is too large. The limit is {max} MB."
+
+#, python-brace-format
+msgid "That file type isn't accepted. Allowed types are: {types}."
+msgstr "That file type isn't accepted. Allowed types are: {types}."
+
+msgid "That submission is too long."
+msgstr "That submission is too long."
+
+msgid "The language of the material, e.g. English or Spanish."
+msgstr "The language of the material, e.g. English or Spanish."
+
+msgid "There are no public records yet."
+msgstr "There are no public records yet."
+
+msgid ""
+"This record carries the following content warnings. Review them before "
+"continuing."
+msgstr ""
+"This record carries the following content warnings. Review them before "
+"continuing."
+
+msgid "This record has access restrictions."
+msgstr "This record has access restrictions."
+
+msgid "Those contact details are too long."
+msgstr "Those contact details are too long."
+
+msgid "Tick anything a reader should be warned about before this is shown."
+msgstr "Tick anything a reader should be warned about before this is shown."
+
+msgid "Title"
+msgstr "Title"
+
+msgid "To"
+msgstr "To"
+
+msgid "To withdraw it, go to"
+msgstr "To withdraw it, go to"
+
+msgid "Transcript"
+msgstr "Transcript"
+
+msgid "Type"
+msgstr "Type"
+
+msgid "Types"
+msgstr "Types"
+
+msgid "View the audit log"
+msgstr "View the audit log"
+
+msgid "Violence — describes physical harm or attack"
+msgstr "Violence — describes physical harm or attack"
+
+msgid ""
+"We could not find a pending submission with that reference and code. "
+"Check both and try again."
+msgstr ""
+"We could not find a pending submission with that reference and code. "
+"Check both and try again."
+
+msgid ""
+"We could not find a request with that reference. Check it and try again —"
+" it is the code shown when you filed the request."
+msgstr ""
+"We could not find a request with that reference. Check it and try again —"
+" it is the code shown when you filed the request."
+
+msgid ""
+"We could not withdraw a pending submission with that reference and code. "
+"Check both and try again."
+msgstr ""
+"We could not withdraw a pending submission with that reference and code. "
+"Check both and try again."
+
+msgid "What a stranger sees"
+msgstr "What a stranger sees"
+
+msgid "What kind of material this is, e.g. photograph, oral history, flyer."
+msgstr "What kind of material this is, e.g. photograph, oral history, flyer."
+
+msgid "When"
+msgstr "When"
+
+msgid "When the material is from, e.g. 1994 or 2021-05-01."
+msgstr "When the material is from, e.g. 1994 or 2021-05-01."
+
+msgid ""
+"While your submission is still waiting for review you can withdraw it "
+"yourself. To do that you will need both of these — keep them private, as "
+"together they let someone withdraw this submission:"
+msgstr ""
+"While your submission is still waiting for review you can withdraw it "
+"yourself. To do that you will need both of these — keep them private, as "
+"together they let someone withdraw this submission:"
+
+msgid "Withdraw a submission"
+msgstr "Withdraw a submission"
+
+msgid "Withdraw this submission"
+msgstr "Withdraw this submission"
+
+msgid "Withdrawal code"
+msgstr "Withdrawal code"
+
+msgid "Withheld"
+msgstr "Withheld"
+
+msgid "Withhold"
+msgstr "Withhold"
+
+msgid "Withhold selected"
+msgstr "Withhold selected"
+
+msgid "Would publish as:"
+msgstr "Would publish as:"
+
+msgid "Yes"
+msgstr "Yes"
+
+msgid "You can also correct it on"
+msgstr "You can also correct it on"
+
+#, python-brace-format
+msgid ""
+"You can attach one image, audio file, or PDF (up to {max} MB). Accepted: "
+"{accepted}. The file is reviewed with the rest of your submission and is "
+"not public until a steward publishes it."
+msgstr ""
+"You can attach one image, audio file, or PDF (up to {max} MB). Accepted: "
+"{accepted}. The file is reviewed with the rest of your submission and is "
+"not public until a steward publishes it."
+
+msgid ""
+"You can read access-restricted content to do your work, but content "
+"sealed with the 'sealed' policy — and every contributor's identity — is "
+"restricted even from you. Some records may be sealed above your access; "
+"their absence here does not mean they do not exist."
+msgstr ""
+"You can read access-restricted content to do your work, but content "
+"sealed with the 'sealed' policy — and every contributor's identity — is "
+"restricted even from you. Some records may be sealed above your access; "
+"their absence here does not mean they do not exist."
+
+msgid "Your account"
+msgstr "Your account"
+
+msgid "Your changes were saved"
+msgstr "Your changes were saved"
+
+msgid "Your code"
+msgstr "Your code"
+
+msgid "Your contribution could not be saved right now. Please try again."
+msgstr "Your contribution could not be saved right now. Please try again."
+
+msgid "Your identity is never shown. Contributors control what is public."
+msgstr "Your identity is never shown. Contributors control what is public."
+
+msgid ""
+"Your name and contact are never shown to any reader — they are sealed. "
+"They are not in this preview."
+msgstr ""
+"Your name and contact are never shown to any reader — they are sealed. "
+"They are not in this preview."
+
+msgid ""
+"Your pending submission has been updated. It is still sealed and waiting "
+"for a steward to review it."
+msgstr ""
+"Your pending submission has been updated. It is still sealed and waiting "
+"for a steward to review it."
+
+msgid "Your request reference"
+msgstr "Your request reference"
+
+msgid "Your submission was withdrawn"
+msgstr "Your submission was withdrawn"
+
+msgid "and enter both."
+msgstr "and enter both."
+
+msgid "ask a steward to make contact"
+msgstr "ask a steward to make contact"
+
+msgid "community members only"
+msgstr "community members only"
+
+msgid "correct the record"
+msgstr "correct the record"
+
+msgid "no one yet"
+msgstr "no one yet"
+
+msgid "objection from a person named in the record"
+msgstr "objection from a person named in the record"
+
+msgid "on record"
+msgstr "on record"
+
+#, python-brace-format
+msgid "submitted {when}"
+msgstr "submitted {when}"
+
+msgid "the edit page"
+msgstr "the edit page"
+
+msgid "the withdrawal page"
+msgstr "the withdrawal page"
+
+msgid "tighten access"
+msgstr "tighten access"
+
+msgid "withdraw / take down"
+msgstr "withdraw / take down"
+
+#, python-brace-format
+msgid ""
+"{count} detail is restricted under your current access. If you are a "
+"community member or steward, sign in to see what is withheld and why."
+msgid_plural ""
+"{count} details are restricted under your current access. If you are a "
+"community member or steward, sign in to see what is withheld and why."
+msgstr[0] ""
+"{count} detail is restricted under your current access. If you are a "
+"community member or steward, sign in to see what is withheld and why."
+msgstr[1] ""
+"{count} details are restricted under your current access. If you are a "
+"community member or steward, sign in to see what is withheld and why."
+
+#, python-brace-format
+msgid "{count} public record(s)."
+msgstr "{count} public record(s)."
+
+#, python-brace-format
+msgid "{when}, ref {ref}"
+msgstr "{when}, ref {ref}"
+
+msgid "— every recorded action across the archive."
+msgstr "— every recorded action across the archive."
+

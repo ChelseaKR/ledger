@@ -53,6 +53,29 @@ jobs:
           name: coverage
           path: coverage.xml
 
+  i18n:
+    name: i18n (gettext catalog gate)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
+        with:
+          python-version: "3.12"
+          cache: pip
+      # msgfmt (G7 PO-compilation gate) is a system gettext binary, not a pip
+      # dependency — installed here just like the supply-chain job installs a
+      # non-pip scanner. babel/pybabel come from the dev extras below.
+      - name: Install gettext (msgfmt)
+        run: sudo apt-get update && sudo apt-get install -y gettext
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+      # Exactly what `make verify` runs locally (no local/CI drift): G2-lite (POT
+      # committed & current), G7 (msgfmt --check), G6/G5 (EN/ES key-parity +
+      # completeness + placeholder parity), G3 (BCP 47 tag validity).
+      - name: i18n catalog gate (make i18n)
+        run: make i18n
+
   no-outing-audit:
     name: no-outing audit (safety gate)
     runs-on: ubuntu-latest

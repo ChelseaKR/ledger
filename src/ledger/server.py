@@ -750,12 +750,9 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
                         for event in archive.record_events(item.record_id)
                         if event.event_type is PremisEventType.CORRECTION
                     )
-                    if corrections == 1:
-                        edited = (
-                            f' <span class="badge">{_esc(i18n.t(lang, "badge_edited_one"))}</span>'
-                        )
-                    elif corrections > 1:
-                        label = i18n.t(lang, "badge_edited_many", count=corrections)
+                    if corrections >= 1:
+                        # Plural-correct via ngettext (count drives singular/plural).
+                        label = i18n.t(lang, "badge_edited", count=corrections)
                         edited = f' <span class="badge">{_esc(label)}</span>'
                 except ObjectNotFound:
                     title = "(record unavailable)"
