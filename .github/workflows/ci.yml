@@ -46,6 +46,11 @@ jobs:
         run: mypy
       - name: Test with coverage
         run: pytest --cov --cov-report=term-missing --cov-report=xml
+      # Per-module floor (CODE-QUALITY-STANDARD, security/crypto-critical paths):
+      # the access-policy, consent, and dual-control modules must hold >=95%
+      # branch coverage, above the 85% baseline. Mirrors `make cov`.
+      - name: Per-module coverage floor (access/consent/dual-control >=95%)
+        run: coverage report --include="src/ledger/access/*,src/ledger/consent.py,src/ledger/dualcontrol.py" --fail-under=95
       - name: Upload coverage
         if: matrix.python == '3.12'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
