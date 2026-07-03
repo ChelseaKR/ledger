@@ -31,6 +31,7 @@ import tempfile
 from pathlib import Path
 
 from ledger.access import disclose, is_listable
+from ledger.attest import attested_conditions
 from ledger.bag import validate_bag, write_bag
 from ledger.cas import ContentStore
 from ledger.config import Config
@@ -618,6 +619,17 @@ class Archive:
 
     # --- reads --------------------------------------------------------------
 
+    def attested_conditions(self) -> frozenset[str]:
+        """The ``SEALED_CONDITIONAL`` conditions attested-met for this archive.
+
+        Loaded from the durable attested-conditions set under ``logs/`` (written by
+        the 2-of-N :mod:`ledger.attest` flow). Every read path funnels this into
+        :func:`ledger.access.disclose` as ``conditions_met`` — see :meth:`disclose`
+        and :meth:`browse` — so a field "sealed until a condition is met" opens
+        uniformly for *all* callers (CLI, server, export) the moment its condition is
+        attested, and stays sealed until then (fail-closed)."""
+        return attested_conditions(self.logs_dir)
+
     def _record_path(self, record_id: str) -> Path:
         """The fast-lookup manifest path for ``record_id`` under ``records/``."""
         return self.records_dir / f"{record_id}.json"
@@ -746,7 +758,9 @@ class Archive:
         record (confidentiality).
         """
         stamp = now if now is not None else now_iso()
-        return disclose(self.get(record_id), grant, stamp)
+        return disclose(
+            self.get(record_id), grant, stamp, conditions_met=self.attested_conditions()
+        )
 
     def _all_records(self) -> list[Record]:
         """Load every stored record manifest from the fast-lookup directory.
@@ -777,10 +791,11 @@ class Archive:
         ``created_at`` then ``record_id`` — for a stable browse (predictability).
         """
         stamp = now if now is not None else now_iso()
+        conditions = self.attested_conditions()
         out: list[DisclosedRecord] = []
         for record in self._all_records():
-            if is_listable(record, grant, stamp):
-                out.append(disclose(record, grant, stamp))
+            if is_listable(record, grant, stamp, conditions_met=conditions):
+                out.append(disclose(record, grant, stamp, conditions_met=conditions))
         return out
 
     def resolve_identity(

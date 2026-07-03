@@ -58,6 +58,20 @@ _STARTER_CONTENT_WARNINGS: tuple[str, ...] = (
     "substance-use",
 )
 
+# A small, opinionated starter vocabulary for SEALED_CONDITIONAL *conditions* — the
+# named events that, once attested by stewards, open a "sealed until a condition is
+# met" field (:mod:`ledger.attest`, :func:`ledger.access.policy.is_visible`). Like the
+# content-warning vocabulary it is intentionally editable: a community extends it for
+# its own promises, but a fresh archive is never left with an empty vocabulary, so the
+# tier has real, name-checkable conditions instead of free-text a typo could break.
+DEFAULT_CONDITIONS: tuple[str, ...] = (
+    "death-of-contributor",
+    "group-dissolved",
+    "estate-cleared",
+    "contributor-consents-release",
+    "legal-hold-lifted",
+)
+
 
 @dataclass
 class StorageLocation:
@@ -121,6 +135,11 @@ class Config:
     locations: list[StorageLocation] = field(default_factory=list)
     default_policy: AccessPolicy = AccessPolicy.SEALED_UNTIL
     content_warnings: list[str] = field(default_factory=list)
+    # The controlled vocabulary of SEALED_CONDITIONAL conditions this archive
+    # recognises. A steward may only attest a condition drawn from this list, so a
+    # typo can never invent an ungoverned condition that quietly opens a seal
+    # (correctness, mirrors ``content_warnings``).
+    conditions: list[str] = field(default_factory=list)
     languages: list[str] = field(default_factory=lambda: ["en"])
     # Public-facing governance/operator text (user research P0-4). These power the
     # on-site About/Governance/How-it-works pages so the at-risk contributor can see
@@ -170,6 +189,12 @@ class Config:
             raise ConfigError(f"unknown default_policy: {self.default_policy!r}")
         if self.dual_control_threshold < 1:
             raise ConfigError("dual_control_threshold must be at least 1")
+        # A blank or whitespace-only condition would be un-attestable and could shadow
+        # a real one; reject it at load so the vocabulary stays a clean, name-checkable
+        # set (correctness — same care the rest of the config takes with its lists).
+        for condition in self.conditions:
+            if not condition or not condition.strip():
+                raise ConfigError("conditions must not contain an empty entry")
         for location in self.locations:
             location.validate()
 
@@ -187,6 +212,7 @@ class Config:
             "locations": [loc.to_dict() for loc in self.locations],
             "default_policy": self.default_policy.value,
             "content_warnings": list(self.content_warnings),
+            "conditions": list(self.conditions),
             "languages": list(self.languages),
             "about": self.about,
             "operators": self.operators,
@@ -261,6 +287,7 @@ class Config:
             locations=locations,
             default_policy=default_policy,
             content_warnings=[str(w) for w in _as_list(migrated.get("content_warnings", []))],
+            conditions=[str(c) for c in _as_list(migrated.get("conditions", []))],
             languages=[str(lang) for lang in _as_list(migrated.get("languages", ["en"]))],
             about=str(migrated.get("about", "")),
             operators=str(migrated.get("operators", "")),
@@ -323,6 +350,7 @@ class Config:
             ],
             default_policy=AccessPolicy.SEALED_UNTIL,
             content_warnings=list(_STARTER_CONTENT_WARNINGS),
+            conditions=list(DEFAULT_CONDITIONS),
             languages=["en"],
             about=(
                 "This is a community-governed archive. Records are preserved with "
