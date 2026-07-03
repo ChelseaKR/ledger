@@ -59,6 +59,18 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `validate_bag` used by every other replica. Closes the threat-model residual that
   a hostile or compromised replica host can read what it stores. See
   [`docs/MUTUAL-AID.md`](docs/MUTUAL-AID.md) for the operational runbook.
+- **Takedown tombstones and per-location propagation receipts (FIX-08).** A takedown now
+  persists a durable tombstone (`src/ledger/tombstones.py`, `logs/tombstones.json`)
+  recording that an opaque record id was removed and which storage locations have
+  confirmed it. `Archive.remove_all_copies` marks the primary store and every reachable
+  replica confirmed; a mirror that was offline at takedown time is left pending. When it
+  reattaches, the replication sweep (`replicate.apply_tombstones`, invoked from
+  `verify_replicas`/`heal`) deletes the stale copy, writes a per-location PREMIS
+  `TAKEDOWN` receipt to `logs/takedowns.premis.json`, and confirms the location — and
+  `heal` refuses to re-copy a tombstoned bag back, so a removal can never be silently
+  undone. `/consent-status` now reports honest per-location completion ("2 of 3 confirmed;
+  mirror-c pending", localized EN/ES) and never overstates it. Tombstones hold only opaque
+  ids, an action, and location names — never a title, field, or identity (no-outing).
 - **Disclosure-policy workflow.** First-class, accountable steward commands to set and
   apply a disclosure policy on an already-archived item, enforced by the core engine and
   honoured by the reading-room:

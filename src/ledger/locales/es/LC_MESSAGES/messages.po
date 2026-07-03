@@ -461,6 +461,10 @@ msgstr "Registros relacionados"
 msgid "Relevance"
 msgstr "Relevancia"
 
+#, python-brace-format
+msgid "Removal: {confirmed} of {total} storage location(s) have confirmed the takedown."
+msgstr "Retirada: {confirmed} de {total} ubicación(es) de almacenamiento han confirmado la retirada."
+
 msgid "Request status"
 msgstr "Estado de la solicitud"
 
@@ -540,6 +544,10 @@ msgstr "Estado: {status}"
 msgid "Steward console"
 msgstr "Consola de administración"
 
+#, python-brace-format
+msgid "Still pending at: {locations}."
+msgstr "Aún pendiente en: {locations}."
+
 msgid "Subjects"
 msgstr "Temas"
 
@@ -577,6 +585,9 @@ msgstr "Ese envío es demasiado largo."
 
 msgid "The language of the material, e.g. English or Spanish."
 msgstr "El idioma del material, p. ej. inglés o español."
+
+msgid "The takedown is confirmed at every storage location."
+msgstr "La retirada está confirmada en todas las ubicaciones de almacenamiento."
 
 msgid "There are no public records yet."
 msgstr "Aún no hay registros públicos."
