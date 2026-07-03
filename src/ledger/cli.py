@@ -36,6 +36,13 @@ from ledger.errors import LedgerError
 from ledger.export_drive import build_export_drive
 from ledger.identity import ContributorIdentity
 from ledger.ingest import Archive
+from ledger.lockdown import (
+    execute_lockdown,
+    execute_stand_up,
+    is_locked_down,
+    plan_lockdown,
+    verify_backup_location,
+)
 from ledger.models import (
     AccessPolicy,
     ContentAddress,
@@ -448,33 +455,59 @@ def _cmd_verify_backup(args: argparse.Namespace) -> int:
     Only bag names and counts are printed (no-outing rule).
     """
     backup = Path(args.backup)
-    config = Config.load(backup / "store" / _CONFIG_FILENAME)
-    # The config records the ORIGINAL box's absolute paths; re-point it at the backup
-    # so we verify the copy on disk, not wherever it was first written.
-    config.store_root = str(backup / "store")
-    config.vault_path = str(backup / "identity.vault")
-    archive = Archive(config)
-
-    ready, reason = archive.check_readiness()
-    if not ready:
-        print(f"FAIL: backup is not readable ({reason})", file=sys.stderr)
+    result = verify_backup_location(backup)
+    # A config/readiness failure yields no per-bag reports; report it as unreadable,
+    # exactly as before (an empty *but readable* archive still verifies as PASS).
+    if not result.ok and not result.bags:
+        print(f"FAIL: backup is not readable ({result.reason})", file=sys.stderr)
         return 1
 
-    reports = archive.audit_fixity()
-    failures = 0
-    for name, report in reports:
-        ok = report.ok
-        if not ok:
-            failures += 1
-        print(f"{'PASS' if ok else 'FAIL'}\t{name}\t({report.checked} file(s) checked)")
+    for bag in result.bags:
+        print(f"{'PASS' if bag.ok else 'FAIL'}\t{bag.name}\t({bag.checked} file(s) checked)")
+    failures = result.failures
     summary = "PASS" if failures == 0 else "FAIL"
-    print(f"{summary}: backup at {backup} — {len(reports)} bag(s) verified, {failures} failed")
+    print(f"{summary}: backup at {backup} — {len(result.bags)} bag(s) verified, {failures} failed")
     return 0 if failures == 0 else 1
 
 
 def _proposal_store(archive: Archive) -> dualcontrol.ProposalStore:
     """The dual-control proposal store for ``archive`` (under ``logs/``)."""
     return dualcontrol.ProposalStore(archive.logs_dir / "proposals.json")
+
+
+# Actions whose execution is *deferred* from the moment approval completes to a
+# deliberate, separate ``--execute`` step. Lockdown and stand-up are irreversible or
+# safety-critical enough that gathering approvals must not, by itself, fire them:
+# assembling the authority and pulling the trigger are kept as two conscious acts.
+_DEFERRED_ACTIONS: frozenset[str] = frozenset({"lockdown", "stand-up"})
+
+
+def _deferred_ready_hint(root: str, proposal: dualcontrol.ActionProposal) -> str:
+    """The line printed when a deferred proposal becomes approved (tells the operator
+    the separate, deliberate command that actually performs it)."""
+    return (
+        f"proposal {proposal.proposal_id} ({proposal.action}) is APPROVED — "
+        f"run the deliberate step: ledger {proposal.action} --root {root} "
+        "--actor <steward> --execute"
+    )
+
+
+def _ready_deferred_proposal(archive: Archive, action: str) -> dualcontrol.ActionProposal:
+    """The oldest open, approved proposal for ``action``; error if none is ready.
+
+    The gate behind ``lockdown --execute`` / ``stand-up --execute``: the destructive
+    or safety-critical step runs only when a dual-control proposal for it has reached
+    the archive's approval threshold (accountability — no one steward acts alone)."""
+    store = _proposal_store(archive)
+    threshold = archive.config.dual_control_threshold
+    for proposal in store.open_proposals():
+        if proposal.action == action and proposal.is_ready(threshold):
+            return proposal
+    raise LedgerError(
+        f"{action} --execute requires an APPROVED dual-control proposal; run "
+        f"`ledger propose --action {action} --id <target> --actor <steward> --reason ...` "
+        "and gather approvals with `ledger approve`"
+    )
 
 
 def _perform_takedown(
@@ -595,8 +628,11 @@ def _cmd_propose(args: argparse.Namespace) -> int:
         f"{prop.approved_count()}/{threshold} approval(s)"
     )
     if prop.is_ready(threshold):
-        print(_execute_proposal(archive, prop, actor=args.actor, now=now))
-        store.mark(prop.proposal_id, "executed")
+        if prop.action in _DEFERRED_ACTIONS:
+            print(_deferred_ready_hint(args.root, prop))
+        else:
+            print(_execute_proposal(archive, prop, actor=args.actor, now=now))
+            store.mark(prop.proposal_id, "executed")
     return 0
 
 
@@ -609,8 +645,71 @@ def _cmd_approve(args: argparse.Namespace) -> int:
     threshold = archive.config.dual_control_threshold
     print(f"approved proposal {prop.proposal_id} ({prop.approved_count()}/{threshold})")
     if prop.is_ready(threshold):
-        print(_execute_proposal(archive, prop, actor=args.actor, now=now))
-        store.mark(prop.proposal_id, "executed")
+        if prop.action in _DEFERRED_ACTIONS:
+            print(_deferred_ready_hint(args.root, prop))
+        else:
+            print(_execute_proposal(archive, prop, actor=args.actor, now=now))
+            store.mark(prop.proposal_id, "executed")
+    return 0
+
+
+def _cmd_lockdown(args: argparse.Namespace) -> int:
+    """``lockdown`` — enter the duress posture (dry-run by default).
+
+    Without ``--execute`` this is a **dry run**: it prints the ordered steps a
+    lockdown would take (stop non-PUBLIC disclosure, and — only if configured and only
+    after off-box replicas verify — shred the local vault) and changes nothing. With
+    ``--execute`` it performs the lockdown, but only once a dual-control ``lockdown``
+    proposal has been approved (``ledger propose``/``approve``), so no single steward
+    can trigger a duress shred alone (accountability, fail-safe)."""
+    archive = _open_archive(Path(args.root))
+    now = args.now if args.now else now_iso()
+    if not args.execute:
+        for step in plan_lockdown(archive):
+            print(step)
+        print(
+            "dry run — nothing changed. Propose+approve a 'lockdown' action, "
+            "then re-run with --execute."
+        )
+        return 0
+    proposal = _ready_deferred_proposal(archive, "lockdown")
+    result = execute_lockdown(archive, actor=args.actor, now=now)
+    _proposal_store(archive).mark(proposal.proposal_id, "executed")
+    print(result.summary())
+    for step in result.steps:
+        print(f"  - {step}")
+    print(result.runbook)
+    return 0
+
+
+def _cmd_stand_up(args: argparse.Namespace) -> int:
+    """``stand-up`` — the inverse of lockdown: lift the freeze and restore (dry-run default).
+
+    Without ``--execute`` it describes what standing the archive back up would do and
+    reports whether it is currently locked down, changing nothing. With ``--execute``
+    it verifies an off-box replica, restores the local vault from it if the vault was
+    shredded, removes the lockdown flag, and resumes non-PUBLIC disclosure — but only
+    once a dual-control ``stand-up`` proposal has been approved (accountability)."""
+    archive = _open_archive(Path(args.root))
+    now = args.now if args.now else now_iso()
+    if not args.execute:
+        print(
+            "stand-up DRY-RUN — would verify an off-box replica, restore the vault if it "
+            "was shredded, remove lockdown.flag, and resume non-PUBLIC disclosure."
+        )
+        print(f"currently locked down: {is_locked_down(archive)}")
+        print(
+            "dry run — nothing changed. Propose+approve a 'stand-up' action, "
+            "then re-run with --execute."
+        )
+        return 0
+    proposal = _ready_deferred_proposal(archive, "stand-up")
+    result = execute_stand_up(archive, actor=args.actor, now=now)
+    _proposal_store(archive).mark(proposal.proposal_id, "executed")
+    print(result.summary())
+    for step in result.steps:
+        print(f"  - {step}")
+    print(result.runbook)
     return 0
 
 
@@ -1091,6 +1190,34 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p_att_list.add_argument("--root", required=True)
     p_att_list.set_defaults(func=_cmd_attest_list)
+
+    p_lockdown = sub.add_parser(
+        "lockdown",
+        help="enter the duress posture (dry-run default; --execute needs an approved proposal)",
+    )
+    p_lockdown.add_argument("--root", required=True)
+    p_lockdown.add_argument("--actor", required=True, help="steward id triggering the lockdown")
+    p_lockdown.add_argument(
+        "--execute",
+        action="store_true",
+        help="perform it (requires an approved dual-control 'lockdown' proposal)",
+    )
+    p_lockdown.add_argument("--now", help="ISO-8601 timestamp")
+    p_lockdown.set_defaults(func=_cmd_lockdown)
+
+    p_standup = sub.add_parser(
+        "stand-up",
+        help="lift lockdown and restore (dry-run default; --execute needs an approved proposal)",
+    )
+    p_standup.add_argument("--root", required=True)
+    p_standup.add_argument("--actor", required=True, help="steward id standing the archive back up")
+    p_standup.add_argument(
+        "--execute",
+        action="store_true",
+        help="perform it (requires an approved dual-control 'stand-up' proposal)",
+    )
+    p_standup.add_argument("--now", help="ISO-8601 timestamp")
+    p_standup.set_defaults(func=_cmd_stand_up)
 
     p_replicas = sub.add_parser("replicas", help="report a bag's replica health")
     p_replicas.add_argument("--root", required=True)

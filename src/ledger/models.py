@@ -148,6 +148,8 @@ class PremisEventType(StrEnum):
     VALIDATION = "validation"
     MODERATION = "moderation"
     REKEY = "key rotation"
+    LOCKDOWN = "lockdown"
+    STANDUP = "stand-up"
 
 
 @dataclass(frozen=True)

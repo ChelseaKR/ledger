@@ -57,6 +57,7 @@ from ledger.errors import (
     ValidationError,
 )
 from ledger.ingest import Archive
+from ledger.lockdown import is_locked_down
 from ledger.models import (
     AccessPolicy,
     ContentAddress,
@@ -192,7 +193,16 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         subject yields the anonymous public grant, so trust is never conferred by
         the header itself — only by a grant a steward provisioned ahead of time
         (deny by default, least privilege, securability).
+
+        Duress override (EXP-02): while the archive is in **lockdown**, every request
+        is forced down to the anonymous public grant regardless of the header, so no
+        route can disclose community-, steward-, or sealed-tier material — the whole
+        surface fails closed to PUBLIC-only until a steward stands the archive back up
+        (fail-closed, the no-outing rule under coercion). Read paths still serve the
+        public face; every ``is_steward``-gated write is refused as a side effect.
         """
+        if is_locked_down(self._archive()):
+            return anonymous()
         grants = self._grants()
         subject = self.headers.get(_GRANT_HEADER)
         if subject is not None:

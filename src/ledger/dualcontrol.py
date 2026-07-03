@@ -38,7 +38,9 @@ __all__ = ["ACTIONS", "ActionProposal", "ProposalStore"]
 # contributor's death, a group's dissolution); like the others it must be proposed
 # and approved by distinct stewards so no one steward can declare such a thing alone
 # (see :mod:`ledger.attest`).
-ACTIONS: frozenset[str] = frozenset({"takedown", "unseal", "publish", "attest"})
+ACTIONS: frozenset[str] = frozenset(
+    {"takedown", "unseal", "publish", "attest", "lockdown", "stand-up"}
+)
 
 _OPEN = "open"
 _EXECUTED = "executed"
