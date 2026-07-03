@@ -251,6 +251,7 @@ def _messages(translation: gettext.NullTranslations) -> dict[str, str]:
         "related_heading": _("Related records"),
         "cite_heading": _("Cite this record"),
         "cite_available_at": _("Available at"),
+        "cite_pid": _("Persistent identifier"),
         "cite_permalink": _("Permanent link"),
         "cite_download": _("Download metadata (JSON)"),
         "rec_consent_link": _("Are you the contributor? Manage or withdraw your consent"),

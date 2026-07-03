@@ -400,6 +400,9 @@ msgstr ""
 msgid "Permanent link"
 msgstr ""
 
+msgid "Persistent identifier"
+msgstr ""
+
 msgid "Police violence — describes harm or force by police"
 msgstr ""
 

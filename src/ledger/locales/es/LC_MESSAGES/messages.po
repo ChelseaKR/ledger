@@ -411,6 +411,9 @@ msgstr ""
 msgid "Permanent link"
 msgstr "Enlace permanente"
 
+msgid "Persistent identifier"
+msgstr "Identificador persistente"
+
 msgid "Police violence — describes harm or force by police"
 msgstr "Violencia policial — describe daño o fuerza por parte de la policía"
 
