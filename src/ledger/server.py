@@ -26,14 +26,21 @@ confidentiality — the no-outing rule, confirmed in depth below):
 * The static handler resolves and bounds every path under ``web/static`` so a
   ``../`` cannot escape the document root (securability — no path traversal).
 
-Grant resolution is deny-by-default: requests are anonymous unless an
-``X-Ledger-Grant: <subject>`` header names a *pre-provisioned* subject in the
-grants file. An unknown subject falls back to anonymous; the header is never
-trusted beyond looking up an existing grant (least privilege, securability).
+Grant resolution is deny-by-default and *authenticated*: requests are anonymous
+unless the ``X-Ledger-Grant`` header carries a valid HMAC-signed capability token
+(``subject:expiry:mac`` under ``LEDGER_GRANT_SECRET``) that mints a subject which
+is (a) not on the revocation list and (b) pre-provisioned in the grants file. A
+missing header, a missing secret, a forged/expired token, a revoked subject, or an
+unprovisioned subject all fall back to the same anonymous grant, so the header is
+never trusted beyond authenticating a lookup into an existing grant, and a bearer
+token by itself confers nothing (least privilege, securability). Each honoured
+grant use is recorded in a scrubbed audit line — subject and route class only,
+never the token (no-outing rule).
 """
 
 from __future__ import annotations
 
+import contextlib
 import gzip
 import hashlib
 import http.server
@@ -48,7 +55,7 @@ from urllib.parse import parse_qs, quote, unquote, urlsplit
 
 from ledger import consent, contribute, export, i18n, oai, pagination, review, search, upload
 from ledger.access import anonymous, disclose, is_listable
-from ledger.access.grants import load_grants
+from ledger.access.grants import load_grants, load_revocations, verify_grant_token
 from ledger.errors import (
     AccessDenied,
     LedgerError,
@@ -89,9 +96,10 @@ from ledger.render import (
 _WEB_ROOT: Path = Path(__file__).resolve().parent.parent.parent / "web"
 _STATIC_ROOT: Path = (_WEB_ROOT / "static").resolve()
 
-# Header a reverse proxy or an authenticated session may set to name a subject.
-# It is only ever used as a *lookup key* into a pre-provisioned grants file; the
-# header itself confers nothing (deny by default, least privilege).
+# Header carrying an HMAC-signed capability token (``subject:expiry:mac``). The
+# server verifies the token under ``LEDGER_GRANT_SECRET`` and uses the authenticated
+# subject only as a *lookup key* into a pre-provisioned grants file; an unsigned or
+# forged header confers nothing (deny by default, least privilege).
 _GRANT_HEADER: str = "X-Ledger-Grant"
 
 # A conservative allowlist of static file suffixes to content types. Anything not
@@ -186,13 +194,26 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
     # --- grant resolution (deny by default) --------------------------------
 
     def _resolve_grant(self) -> Grant:
-        """Resolve the viewer's grant — anonymous unless a known subject is named.
+        """Resolve the viewer's grant — anonymous unless an *authenticated* subject is named.
 
-        Reads the ``X-Ledger-Grant`` header and looks the subject up in the
-        pre-provisioned grants mapping bound to the server. An unknown (or absent)
-        subject yields the anonymous public grant, so trust is never conferred by
-        the header itself — only by a grant a steward provisioned ahead of time
-        (deny by default, least privilege, securability).
+        The ``X-Ledger-Grant`` header is no longer a bare subject string: it carries
+        an HMAC-signed capability token minting a subject and an expiry. Resolution
+        is deny-by-default at every step, and any failure collapses to the same
+        anonymous public grant so an attacker learns nothing from the difference:
+
+        * no header, or no server grant secret configured -> anonymous;
+        * a forged, malformed, or expired token (:func:`verify_grant_token` returns
+          ``None``) -> anonymous;
+        * a subject on the revocation list -> anonymous, even with a still-valid MAC
+          (immediate retraction without rotating the secret);
+        * a subject with no pre-provisioned grant -> anonymous (a valid token authors
+          nothing by itself; the grant is what a steward provisioned ahead of time).
+
+        Only when a token authenticates a subject that is *not* revoked *and* has a
+        provisioned grant is that grant returned — and a scrubbed grant-use line is
+        appended to the archive audit log first (subject + route class only, never
+        the token) so privileged access is accountable (least privilege, no-outing
+        rule).
 
         Duress override (EXP-02): while the archive is in **lockdown**, every request
         is forced down to the anonymous public grant regardless of the header, so no
@@ -203,13 +224,37 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         """
         if is_locked_down(self._archive()):
             return anonymous()
-        grants = self._grants()
-        subject = self.headers.get(_GRANT_HEADER)
-        if subject is not None:
-            grant = grants.get(subject)
-            if grant is not None:
-                return grant
-        return anonymous()
+        token = self.headers.get(_GRANT_HEADER)
+        if token is None:
+            return anonymous()
+        subject = verify_grant_token(token, self._grant_secret(), now=now_iso())
+        if subject is None:
+            return anonymous()
+        if subject in self._revocations():
+            return anonymous()
+        grant = self._grants().get(subject)
+        if grant is None:
+            return anonymous()
+        # A grant-use audit write must never fail the read it is recording.
+        with contextlib.suppress(OSError, LedgerError):  # pragma: no cover - defensive
+            self._archive().log_grant_use(subject, self._route_class())
+        return grant
+
+    def _route_class(self) -> str:
+        """A coarse, identity-free class for the current route (for the grant-use log).
+
+        Only the class of surface is recorded — ``api``, ``steward``, ``static``, or
+        ``browse`` — never the concrete path (which could carry a record id) or the
+        query string (which could carry a search term), so the audit line discloses
+        nothing (no-outing rule)."""
+        path = urlsplit(self.path).path
+        if path.startswith("/api/"):
+            return "api"
+        if path.startswith("/steward"):
+            return "steward"
+        if path.startswith("/static/"):
+            return "static"
+        return "browse"
 
     # --- typed access to the server-bound dependencies ---------------------
 
@@ -222,6 +267,20 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
     def _grants(self) -> dict[str, Grant]:
         grants = getattr(self.server, "grants", None)
         return grants if isinstance(grants, dict) else {}
+
+    def _grant_secret(self) -> bytes:
+        """The configured grant-token secret as bytes, or empty when none is set.
+
+        Mirrors :meth:`_claim_secret`: the secret lives only in the environment
+        (``LEDGER_GRANT_SECRET``), never in argv or a file the archive serves, and an
+        unset secret means *every* token is anonymous — no accidental trust when a
+        deployment forgot to configure one (deny by default, fail closed)."""
+        return os.environ.get("LEDGER_GRANT_SECRET", "").encode("utf-8")
+
+    def _revocations(self) -> set[str]:
+        """The set of revoked grant subjects bound to the server (empty when none)."""
+        revocations = getattr(self.server, "revocations", None)
+        return revocations if isinstance(revocations, set) else set()
 
     def _allow_contributions(self) -> bool:
         """Whether the contributor submission surface is enabled on this server.
@@ -2286,6 +2345,7 @@ def make_server(
     host: str = "127.0.0.1",
     port: int = 8000,
     grants_path: Path | None = None,
+    revocations_path: Path | None = None,
     allow_contributions: bool = False,
 ) -> http.server.HTTPServer:
     """Build (but do not start) the browse server bound to ``archive``.
@@ -2297,11 +2357,20 @@ def make_server(
     ``grants_path`` (an absent file yields no grants, so everyone is anonymous —
     deny by default) and attached to the server, where the handler reads it.
 
+    The revocation list is loaded from ``revocations_path`` when given, else from a
+    ``revocations.json`` sitting beside the grants file, so a steward who revokes a
+    subject with the CLI and restarts the server has that retraction take effect
+    (an absent file yields an empty set — nothing revoked). It too is attached to
+    the server for the handler to read.
+
     Dependencies are attached to the server instance rather than to module
     globals, so several archives can be served from one process without
     interfering (modularity, testability).
     """
     grants = load_grants(grants_path) if grants_path is not None else {}
+    if revocations_path is None and grants_path is not None:
+        revocations_path = grants_path.parent / "revocations.json"
+    revocations = load_revocations(revocations_path) if revocations_path is not None else set()
     # Threaded so the per-request response-time floor (which equalizes the timing of
     # a not-found vs a not-authorized record) never serializes other requests
     # (availability, responsiveness) — and so the site serves several readers at once.
@@ -2309,6 +2378,7 @@ def make_server(
     # Attach the dependencies the handler reads per request.
     httpd.archive = archive  # type: ignore[attr-defined]
     httpd.grants = grants  # type: ignore[attr-defined]
+    httpd.revocations = revocations  # type: ignore[attr-defined]
     httpd.allow_contributions = allow_contributions  # type: ignore[attr-defined]
     return httpd
 
@@ -2319,6 +2389,7 @@ def serve(
     host: str = "127.0.0.1",
     port: int = 8000,
     grants_path: Path | None = None,
+    revocations_path: Path | None = None,
     allow_contributions: bool = False,
 ) -> None:
     """Build and run the browse server until interrupted (blocking).
@@ -2332,6 +2403,7 @@ def serve(
         host=host,
         port=port,
         grants_path=grants_path,
+        revocations_path=revocations_path,
         allow_contributions=allow_contributions,
     )
     try:
