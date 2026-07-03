@@ -29,7 +29,7 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from ledger import acr_gen, attest, demo, dualcontrol, preservation, succession
+from ledger import acr_gen, attest, checkup, demo, dualcontrol, preservation, succession
 from ledger import backup as backup_mod
 from ledger.access.grants import (
     anonymous,
@@ -1155,6 +1155,42 @@ def _cmd_session_ingest(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_checkup(args: argparse.Namespace) -> int:
+    """``checkup`` — advisory adoption-readiness report against ``docs/ADOPTING.md`` (EX6/EXP-03).
+
+    Inspects the deployment it runs on and reports which operational controls from
+    ``ADOPTING.md`` it can see in place, which are missing, and which it honestly
+    cannot verify. It is read-only: it changes no config and has no ``--fix``. A
+    dated Markdown copy is written under the archive's ``audits/`` directory. With
+    ``--json`` the machine-readable report is printed instead of the table. Exit
+    code is ``1`` only on a real, seen failure (red); green and yellow both exit
+    ``0`` so a "could not verify" warning never breaks a script (operability). The
+    report names only operational facts, never an identity (no-outing rule).
+    """
+    archive = _open_archive(Path(args.root))
+    report = checkup.run_checkup(archive, now=args.now)
+
+    if args.json:
+        print(report.to_json())
+        return report.exit_code
+
+    symbol = {
+        checkup.CheckStatus.PASS: "PASS ",
+        checkup.CheckStatus.FAIL: "FAIL ",
+        checkup.CheckStatus.UNVERIFIED: "CHECK",
+    }
+    print(f"ledger readiness checkup — {report.generated_date} — {archive.config.archive_name}")
+    print(f"overall: {report.readiness.value.upper()}")
+    print()
+    for result in report.results:
+        print(f"  [{symbol[result.status]}] {result.title}")
+        print(f"          {result.explanation}")
+    print()
+    if report.report_path is not None:
+        print(f"report written to {report.report_path}")
+    return report.exit_code
+
+
 def _cmd_demo(args: argparse.Namespace) -> int:
     """``demo`` — run the self-contained, scripted no-outing proof end to end."""
     return demo.main()
@@ -1522,6 +1558,16 @@ def _build_parser() -> argparse.ArgumentParser:
     p_session_ingest.add_argument("--actor", default="ledger", help="ingest agent id")
     p_session_ingest.add_argument("--now", help="ISO-8601 timestamp for reproducible ingest")
     p_session_ingest.set_defaults(func=_cmd_session_ingest)
+
+    p_checkup = sub.add_parser(
+        "checkup", help="interactive adoption readiness checkup against ADOPTING.md"
+    )
+    p_checkup.add_argument("--root", required=True)
+    p_checkup.add_argument(
+        "--json", action="store_true", help="emit the machine-readable report instead of a table"
+    )
+    p_checkup.add_argument("--now", help="ISO-8601 timestamp for a reproducible report date")
+    p_checkup.set_defaults(func=_cmd_checkup)
 
     p_demo = sub.add_parser("demo", help="run the scripted end-to-end no-outing proof")
     p_demo.set_defaults(func=_cmd_demo)
