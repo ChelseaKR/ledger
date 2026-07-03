@@ -74,7 +74,7 @@ demo: ## Scripted end-to-end: ingest -> seal -> grant -> verified-replica -> no-
 serve: ## Run the accessible archive browse server locally
 	$(PY) -m ledger.cli serve --root ./local-archive
 
-i18n: ## i18n gettext catalog gate: POT current + EN/ES parity + PO compiles + BCP-47
+i18n: ## i18n gettext catalog gate: POT current + en/es/fr/ar parity + PO compiles + UTF-8 + BCP-47 + CLDR pin
 	# G2-lite — regenerate the extraction template and fail if it drifts from the
 	# committed one (a new/changed user-facing string without a re-extract is a
 	# merge-blocker). The normalizer freezes volatile header/flag noise so this is a
@@ -85,22 +85,26 @@ i18n: ## i18n gettext catalog gate: POT current + EN/ES parity + PO compiles + B
 	$(PY) tools/i18n_normalize_pot.py src/ledger/locales/messages.pot
 	git diff --exit-code -- src/ledger/locales/messages.pot
 	# G7 — every PO compiles cleanly (format + domain checks), no msgfmt errors.
-	msgfmt --check --check-format --check-domain -o /dev/null \
-		src/ledger/locales/en/LC_MESSAGES/messages.po
-	msgfmt --check --check-format --check-domain -o /dev/null \
-		src/ledger/locales/es/LC_MESSAGES/messages.po
-	# G6 EN/ES key-parity + G5 completeness/placeholder parity.
+	for lang in en es fr ar; do \
+		msgfmt --check --check-format --check-domain -o /dev/null \
+			src/ledger/locales/$$lang/LC_MESSAGES/messages.po || exit 1; \
+	done
+	# G1 — every catalog and every rendered page is valid UTF-8 (charset declared).
+	$(PY) tools/check_i18n_utf8.py
+	# G6 key-parity + G5 completeness/placeholder parity across en/es/fr/ar.
 	$(PY) tools/check_catalog_parity.py
 	# G3 — BCP 47 / RFC 5646 validity of every authored locale tag.
 	$(PY) tools/check_bcp47.py
-	@echo "i18n: POT current; EN/ES key-parity + completeness; PO compiles; BCP-47 valid."
+	# G12 — CLDR/locale-data freshness pin (Babel within the reviewed range, data loads).
+	$(PY) tools/check_i18n_deps.py
+	@echo "i18n: POT current; en/es/fr/ar key-parity + completeness; PO compiles; UTF-8; BCP-47 valid; CLDR pinned."
 
 i18n-compile: ## Compile the committed PO catalogs to MO (run after editing a .po)
-	msgfmt -o src/ledger/locales/en/LC_MESSAGES/messages.mo \
-		src/ledger/locales/en/LC_MESSAGES/messages.po
-	msgfmt -o src/ledger/locales/es/LC_MESSAGES/messages.mo \
-		src/ledger/locales/es/LC_MESSAGES/messages.po
-	@echo "i18n-compile: refreshed messages.mo for en, es."
+	for lang in en es fr ar; do \
+		msgfmt -o src/ledger/locales/$$lang/LC_MESSAGES/messages.mo \
+			src/ledger/locales/$$lang/LC_MESSAGES/messages.po || exit 1; \
+	done
+	@echo "i18n-compile: refreshed messages.mo for en, es, fr, ar."
 
 claims: ## Truthfulness gate: verify README/doc factual claims against the repo
 	$(PY) tools/check_claims.py

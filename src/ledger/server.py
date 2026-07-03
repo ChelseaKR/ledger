@@ -358,6 +358,13 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("X-Content-Type-Options", "nosniff")
+        # Language negotiation is observable and cache-correct (INTERNATIONALIZATION-
+        # STANDARD §6 G11): every response declares the language it was rendered in
+        # (Content-Language) and states that the representation varies by the request's
+        # Accept-Language, so a shared cache never serves one reader's language to
+        # another. The value is only a UI language code — no identity (no-outing rule).
+        self.send_header("Content-Language", self._lang())
+        self.send_header("Vary", "Accept-Language")
         self.send_header(
             "Content-Security-Policy",
             "default-src 'none'; style-src 'self'; img-src 'self'; "

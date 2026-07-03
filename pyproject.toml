@@ -84,7 +84,8 @@ dev = [
     # provides `pybabel extract` and the CLDR-backed `Locale.parse` used by the
     # i18n gates. Pure Python (no PyICU/native ICU build), so ledger keeps its
     # "run on one inexpensive box, no heavy dependency tree" property.
-    "babel>=2.16",
+    # G12: a new major may change CLDR plural/locale data and needs explicit review.
+    "babel>=2.16,<3",
 ]
 
 [tool.ruff]
