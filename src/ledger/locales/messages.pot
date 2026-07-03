@@ -126,6 +126,28 @@ msgstr ""
 msgid "Browse"
 msgstr ""
 
+msgid "Browse by place"
+msgstr ""
+
+msgid "Browse by time"
+msgstr ""
+
+msgid ""
+"Browse the archive by the places its records name. Each place links to "
+"every record that mentions it."
+msgstr ""
+
+msgid ""
+"Browse the archive by year. Each year links to the records from that "
+"period."
+msgstr ""
+
+msgid "By year (list view)"
+msgstr ""
+
+msgid "By year (table view)"
+msgstr ""
+
 msgid "Catalogue metadata"
 msgstr ""
 
@@ -326,6 +348,9 @@ msgstr ""
 msgid "Languages"
 msgstr ""
 
+msgid "Linked records"
+msgstr ""
+
 msgid "Load my submission"
 msgstr ""
 
@@ -359,7 +384,13 @@ msgstr ""
 msgid "No records are available to you yet."
 msgstr ""
 
+msgid "No records carry a date yet."
+msgstr ""
+
 msgid "No records match your search."
+msgstr ""
+
+msgid "No records name a place yet."
 msgstr ""
 
 msgid "No submissions awaiting review."
@@ -416,6 +447,9 @@ msgid "Permanent link"
 msgstr ""
 
 msgid "Persistent identifier"
+msgstr ""
+
+msgid "Places"
 msgstr ""
 
 msgid "Police violence — describes harm or force by police"
@@ -479,6 +513,12 @@ msgid "Records (list view)"
 msgstr ""
 
 msgid "Records (table view)"
+msgstr ""
+
+msgid "Records grouped by the year they are from, oldest first."
+msgstr ""
+
+msgid "Records that link here"
 msgstr ""
 
 msgid "Reference"
@@ -646,10 +686,16 @@ msgstr ""
 msgid "This record has access restrictions."
 msgstr ""
 
+msgid "This record links to"
+msgstr ""
+
 msgid "Those contact details are too long."
 msgstr ""
 
 msgid "Tick anything a reader should be warned about before this is shown."
+msgstr ""
+
+msgid "Timeline"
 msgstr ""
 
 msgid "Title"
@@ -737,6 +783,9 @@ msgid "Withhold selected"
 msgstr ""
 
 msgid "Would publish as:"
+msgstr ""
+
+msgid "Year"
 msgstr ""
 
 msgid "Yes"
@@ -860,6 +909,14 @@ msgstr ""
 
 #, python-brace-format
 msgid "{count} public record(s)."
+msgstr ""
+
+#, python-brace-format
+msgid "{count} record(s) carry no date and are not shown here."
+msgstr ""
+
+#, python-brace-format
+msgid "{count} record(s) name no place and are not shown here."
 msgstr ""
 
 #, python-brace-format

@@ -105,6 +105,8 @@ def _messages(translation: gettext.NullTranslations) -> dict[str, str]:
         "nav_browse": _("Browse"),
         "nav_search": _("Search"),
         "nav_overview": _("Overview"),
+        "nav_places": _("Places"),
+        "nav_timeline": _("Timeline"),
         "nav_status": _("Status"),
         "nav_about": _("About"),
         "nav_transparency": _("Transparency"),
@@ -269,6 +271,26 @@ def _messages(translation: gettext.NullTranslations) -> dict[str, str]:
             "Some parts of this record are not available under your current access:"
         ),
         "related_heading": _("Related records"),
+        "places_heading": _("Browse by place"),
+        "places_intro": _(
+            "Browse the archive by the places its records name. Each place links to every record that mentions it."
+        ),
+        "places_list_heading": _("Places"),
+        "places_empty": _("No records name a place yet."),
+        "places_omitted": _("{count} record(s) name no place and are not shown here."),
+        "timeline_heading": _("Browse by time"),
+        "timeline_intro": _(
+            "Browse the archive by year. Each year links to the records from that period."
+        ),
+        "timeline_empty": _("No records carry a date yet."),
+        "timeline_list_heading": _("By year (list view)"),
+        "timeline_table_heading": _("By year (table view)"),
+        "timeline_table_caption": _("Records grouped by the year they are from, oldest first."),
+        "timeline_undated": _("{count} record(s) carry no date and are not shown here."),
+        "col_year": _("Year"),
+        "relations_heading": _("Linked records"),
+        "relations_outgoing": _("This record links to"),
+        "relations_incoming": _("Records that link here"),
         "cite_heading": _("Cite this record"),
         "cite_available_at": _("Available at"),
         "cite_pid": _("Persistent identifier"),

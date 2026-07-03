@@ -31,25 +31,38 @@ confidence.
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from ledger.models import DisclosedRecord
+from ledger.models import DisclosedRecord, parse_iso
 
 __all__ = [
     "Facet",
+    "RecordRelations",
     "Snippet",
+    "facet_by_coverage",
     "facets",
     "filter_by_date_range",
     "filter_by_facet",
+    "group_by_year",
     "index_text",
     "looks_non_latin",
     "related_by_subject",
+    "resolve_relations",
     "search",
     "snippet",
     "sort_by_date",
 ]
+
+# A record id is a uuid4 hex string (see ``Record.record_id``): 32 lowercase hex
+# digits. The relation resolver uses this shape to tell an *internal* reference (a
+# value that names a record id) from an *external* identifier (a DOI, handle, or
+# URL) — see :func:`resolve_relations` for why the distinction is safety-critical.
+_RECORD_ID_RE = re.compile(r"[0-9a-f]{32}\Z")
+# A four-digit year at the start of an ISO-ish DC date (``YYYY``, ``YYYY-MM``, …).
+_YEAR_RE = re.compile(r"\s*(\d{4})")
 
 
 @dataclass(frozen=True)
@@ -147,6 +160,63 @@ def facets(records: Sequence[DisclosedRecord], field: str) -> list[Facet]:
         Facet(field=field, value=value, count=count)
         for value, count in sorted(counter.items(), key=lambda item: (-item[1], item[0]))
     ]
+
+
+def facet_by_coverage(records: Sequence[DisclosedRecord]) -> list[Facet]:
+    """Count the distinct Dublin Core ``coverage`` (place) values across ``records``.
+
+    The place-browse counterpart to the subject/type/language facets: it powers the
+    ``/places`` view, where each place links into the composed ``?coverage=`` facet
+    query so a reader can pivot from a place to every record that names it (roadmap
+    EX3). This is a thin, named alias over :func:`facets` so the place browse reads by
+    intent at the call site and stays in lock-step with how every other facet is
+    counted. Only disclosed Dublin Core is consulted, so a place never surfaces a
+    value a viewer may not see (no-outing rule), and the ordering is the same stable
+    count-descending, value-ascending order as every other facet.
+    """
+    return facets(records, "coverage")
+
+
+def group_by_year(records: Sequence[DisclosedRecord]) -> list[tuple[str, list[DisclosedRecord]]]:
+    """Group ``records`` by the year of their first Dublin Core ``date``, oldest first.
+
+    The timeline-browse counterpart to the facets (roadmap EX3): each group is a
+    ``(year, records)`` pair, years ascending so the timeline reads chronologically,
+    with the caller's input order preserved *within* a year as a stable tie-break
+    (reproducible ordering). The year is the four-digit lead of the disclosed ``date``
+    (``1994``, ``1994-05``, ``1994-05-01`` all group under ``1994``); a full ISO
+    timestamp is parsed via :func:`~ledger.models.parse_iso`, and anything else falls
+    back to a lenient leading-year match.
+
+    A record with no date — or a date with no extractable year — is **omitted**
+    entirely rather than bucketed, so an undated record never masquerades as belonging
+    to a year; the caller reports the omitted count as a plain note. Only disclosed
+    dates are read, so grouping can never reflect a withheld value (no-outing rule).
+    """
+    buckets: dict[str, list[DisclosedRecord]] = {}
+    for record in records:
+        year = _year_of(record)
+        if year is not None:
+            buckets.setdefault(year, []).append(record)
+    return [(year, buckets[year]) for year in sorted(buckets)]
+
+
+def _year_of(record: DisclosedRecord) -> str | None:
+    """The four-digit year of ``record``'s first Dublin Core ``date``, or ``None``.
+
+    Tries a strict ISO parse first (so a full timestamp yields its calendar year),
+    then a lenient leading four-digit match for the bare ``YYYY``/``YYYY-MM`` forms
+    ledger stores. Returns ``None`` when there is no date or no year can be read, so
+    the caller can omit the record from the timeline rather than mis-dating it."""
+    values = record.dublin_core.get("date") or []
+    raw = values[0] if values and values[0] else ""
+    if not raw:
+        return None
+    try:
+        return f"{parse_iso(raw).year:04d}"
+    except (ValueError, TypeError):
+        match = _YEAR_RE.match(raw)
+        return match.group(1) if match else None
 
 
 def filter_by_facet(
@@ -332,6 +402,93 @@ def related_by_subject(
             scored.append((len(shared), index, candidate))
     scored.sort(key=lambda item: (-item[0], item[1]))
     return [candidate for _shared, _index, candidate in scored[:limit]]
+
+
+@dataclass(frozen=True)
+class RecordRelations:
+    """The record-to-record relationships of one record, resolved for display.
+
+    Powers the accessible "related records" graph (roadmap EX4): a record's Dublin
+    Core ``relation`` values and the records that name *it* in theirs, presented as a
+    plain list rather than a visual node graph (the documented non-visual equivalent).
+
+    ``outgoing`` are the disclosed records this record points at; ``incoming`` are the
+    disclosed records that point back at it (the reciprocal); ``external`` are relation
+    values that name something outside the archive (a DOI, handle, or URL) and so
+    render as plain text, not a link. Every record here is a
+    :class:`DisclosedRecord`, so a relationship can never surface a record the viewer
+    may not already list, and — critically — a relation that names a *sealed* or
+    withheld record resolves to nothing at all, never leaking that it exists.
+    """
+
+    outgoing: tuple[DisclosedRecord, ...]
+    incoming: tuple[DisclosedRecord, ...]
+    external: tuple[str, ...]
+
+    def __bool__(self) -> bool:
+        """True when there is any relationship worth rendering."""
+        return bool(self.outgoing or self.incoming or self.external)
+
+
+def _looks_like_record_id(value: str) -> bool:
+    """Whether ``value`` has the shape of an internal record id (a uuid4 hex).
+
+    The relation resolver uses this to decide how an *unresolvable* relation value is
+    treated: an id-shaped value that is not in the disclosed set is a record the viewer
+    may not see (sealed, withheld, or gone) and must render as **nothing** so the page
+    never confirms it exists; a value that is *not* id-shaped is an external identifier
+    and renders as plain text. The distinction is what lets the archive show honest
+    external references without ever leaking a hidden internal record (no-outing rule).
+    """
+    return bool(_RECORD_ID_RE.fullmatch(value))
+
+
+def resolve_relations(
+    record: DisclosedRecord, candidates: Sequence[DisclosedRecord]
+) -> RecordRelations:
+    """Resolve ``record``'s Dublin Core ``relation`` links against disclosed records.
+
+    ``candidates`` is the set the *viewer* may list (the ``Archive.browse`` output), so
+    resolution is closed over exactly what the viewer can already see. For each
+    ``relation`` value on ``record``:
+
+    * if it names a disclosed record's id -> that record is an **outgoing** link;
+    * else if it does not even look like a record id -> it is an **external**
+      identifier, shown as plain text (no link);
+    * else (id-shaped but not disclosed) -> it is dropped silently, so a relation
+      pointing at a sealed/withheld/absent record leaks nothing (no-outing rule).
+
+    The **incoming** (reciprocal) set is every disclosed candidate whose own
+    ``relation`` names *this* record's id — "records that reference this one". A record
+    never relates to itself, duplicate values collapse, and input order is preserved,
+    so the rendered graph is stable and reproducible.
+    """
+    by_id = {c.record_id: c for c in candidates}
+    outgoing: list[DisclosedRecord] = []
+    external: list[str] = []
+    seen_out: set[str] = set()
+    for value in record.dublin_core.get("relation") or ():
+        if value == record.record_id or value in seen_out:
+            continue
+        target = by_id.get(value)
+        if target is not None:
+            outgoing.append(target)
+            seen_out.add(value)
+        elif not _looks_like_record_id(value):
+            if value not in external:
+                external.append(value)
+        # else: an id-shaped value we cannot see -> render nothing (no-outing).
+
+    incoming: list[DisclosedRecord] = []
+    for candidate in candidates:
+        if candidate.record_id == record.record_id:
+            continue
+        if record.record_id in (candidate.dublin_core.get("relation") or ()):
+            incoming.append(candidate)
+
+    return RecordRelations(
+        outgoing=tuple(outgoing), incoming=tuple(incoming), external=tuple(external)
+    )
 
 
 def filter_by_date_range(

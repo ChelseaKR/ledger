@@ -131,6 +131,32 @@ msgstr "Antes de actuar"
 msgid "Browse"
 msgstr "Explorar"
 
+msgid "Browse by place"
+msgstr "Explorar por lugar"
+
+msgid "Browse by time"
+msgstr "Explorar por fecha"
+
+msgid ""
+"Browse the archive by the places its records name. Each place links to "
+"every record that mentions it."
+msgstr ""
+"Recorra el archivo por los lugares que nombran sus registros. Cada lugar "
+"enlaza con todos los registros que lo mencionan."
+
+msgid ""
+"Browse the archive by year. Each year links to the records from that "
+"period."
+msgstr ""
+"Recorra el archivo por año. Cada año enlaza con los registros de ese "
+"periodo."
+
+msgid "By year (list view)"
+msgstr "Por año (vista de lista)"
+
+msgid "By year (table view)"
+msgstr "Por año (vista de tabla)"
+
 msgid "Catalogue metadata"
 msgstr "Metadatos de catálogo"
 
@@ -335,6 +361,9 @@ msgstr "Idioma"
 msgid "Languages"
 msgstr "Idiomas"
 
+msgid "Linked records"
+msgstr "Registros vinculados"
+
 msgid "Load my submission"
 msgstr "Cargar mi envío"
 
@@ -365,8 +394,14 @@ msgstr "Aún no hay eventos registrados."
 msgid "No records are available to you yet."
 msgstr "Aún no hay registros disponibles para usted."
 
+msgid "No records carry a date yet."
+msgstr "Ningún registro tiene una fecha todavía."
+
 msgid "No records match your search."
 msgstr "Ningún registro coincide con su búsqueda."
+
+msgid "No records name a place yet."
+msgstr "Ningún registro nombra un lugar todavía."
 
 msgid "No submissions awaiting review."
 msgstr "No hay envíos a la espera de revisión."
@@ -431,6 +466,9 @@ msgstr "Enlace permanente"
 msgid "Persistent identifier"
 msgstr "Identificador persistente"
 
+msgid "Places"
+msgstr "Lugares"
+
 msgid "Police violence — describes harm or force by police"
 msgstr "Violencia policial — describe daño o fuerza por parte de la policía"
 
@@ -489,6 +527,14 @@ msgstr "Registros (vista de lista)"
 
 msgid "Records (table view)"
 msgstr "Registros (vista de tabla)"
+
+msgid "Records grouped by the year they are from, oldest first."
+msgstr ""
+"Registros agrupados por el año del que provienen, del más antiguo al más "
+"reciente."
+
+msgid "Records that link here"
+msgstr "Registros que enlazan aquí"
 
 msgid "Reference"
 msgstr "Referencia"
@@ -649,6 +695,9 @@ msgstr ""
 msgid "This record has access restrictions."
 msgstr "Este registro tiene restricciones de acceso."
 
+msgid "This record links to"
+msgstr "Este registro enlaza con"
+
 msgid "Those contact details are too long."
 msgstr "Esos datos de contacto son demasiado largos."
 
@@ -656,6 +705,9 @@ msgid "Tick anything a reader should be warned about before this is shown."
 msgstr ""
 "Marque todo aquello sobre lo que se deba advertir a quien lo lea antes de"
 " mostrarlo."
+
+msgid "Timeline"
+msgstr "Cronología"
 
 msgid "Title"
 msgstr "Título"
@@ -746,6 +798,9 @@ msgstr "Retener los seleccionados"
 
 msgid "Would publish as:"
 msgstr "Se publicaría como:"
+
+msgid "Year"
+msgstr "Año"
 
 msgid "Yes"
 msgstr "Sí"
@@ -870,6 +925,14 @@ msgstr "{count} encontrado(s)"
 #, python-brace-format
 msgid "{count} public record(s)."
 msgstr "{count} registro(s) público(s)."
+
+#, python-brace-format
+msgid "{count} record(s) carry no date and are not shown here."
+msgstr "{count} registro(s) no tienen fecha y no se muestran aquí."
+
+#, python-brace-format
+msgid "{count} record(s) name no place and are not shown here."
+msgstr "{count} registro(s) no nombran ningún lugar y no se muestran aquí."
 
 #, python-brace-format
 msgid "{when}, ref {ref}"

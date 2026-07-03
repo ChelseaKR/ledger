@@ -350,6 +350,121 @@ def _overview_main_html(records: list[DisclosedRecord], *, lang: str = "en") -> 
     return "\n".join(parts)
 
 
+def _places_html(records: list[DisclosedRecord], *, lang: str = "en") -> str:
+    """A "browse by place" view: every Dublin Core ``coverage`` value with a count.
+
+    The accessible, framework-free stand-in for a map (roadmap EX3): rather than a tile
+    layer (forbidden by the CSP and by the no-external-assets rule), places are a
+    heading-structured list, each linking into the composed ``?coverage=`` facet query
+    so a reader pivots from a place to every record that names it. Counts come from
+    disclosed Dublin Core only, so a place never reveals a value a viewer may not see
+    (no-outing rule); records that name no place are simply omitted, with a plain count
+    note so the omission is honest rather than silent. Every value is escaped and the
+    query value URL-quoted, so a crafted place cannot break the markup (security).
+    """
+    total = len(records)
+    places = search.facet_by_coverage(records)
+    placed = sum(1 for r in records if r.dublin_core.get("coverage"))
+    parts = [
+        f"    <h1>{_esc(i18n.t(lang, 'places_heading'))}</h1>",
+        f"    <p>{_esc(i18n.t(lang, 'places_intro'))}</p>",
+    ]
+    if not places:
+        parts.append(f'    <p class="empty">{_esc(i18n.t(lang, "places_empty"))}</p>')
+        return "\n".join(parts)
+    rows = "\n".join(
+        f'        <li><a href="/?coverage={quote(f.value)}">{_esc(f.value)}</a> '
+        f'<span class="muted">({f.count})</span></li>'
+        for f in places
+    )
+    parts.append(
+        '    <section aria-labelledby="places-list-heading">\n'
+        f'      <h2 id="places-list-heading">{_esc(i18n.t(lang, "places_list_heading"))}</h2>\n'
+        f'      <ul class="places">\n{rows}\n      </ul>\n'
+        "    </section>"
+    )
+    omitted = total - placed
+    if omitted > 0:
+        parts.append(
+            f'    <p class="muted">{_esc(i18n.t(lang, "places_omitted", count=omitted))}</p>'
+        )
+    return "\n".join(parts)
+
+
+def _timeline_html(records: list[DisclosedRecord], *, lang: str = "en") -> str:
+    """A "browse by time" view: records grouped by year, as a list *and* a table.
+
+    The accessible timeline (roadmap EX3), mirroring the browse page's list+table dual
+    rendering so a screen-reader or small-screen reader gets the whole thing two
+    equivalent ways. The list is an ``<ol>`` of years (chronological), each year a
+    nested list of its record links; the table is the documented non-visual equivalent
+    with a ``<caption>`` and ``<th scope>`` on every header. Years come from
+    :func:`~ledger.search.group_by_year` over disclosed dates only, so nothing here can
+    reflect a withheld value (no-outing rule); undated records are omitted with a plain
+    count note. Every title is escaped and every id quoted (security).
+    """
+    total = len(records)
+    groups = search.group_by_year(records)
+    dated = sum(len(group) for _year, group in groups)
+    parts = [
+        f"    <h1>{_esc(i18n.t(lang, 'timeline_heading'))}</h1>",
+        f"    <p>{_esc(i18n.t(lang, 'timeline_intro'))}</p>",
+    ]
+    if not groups:
+        parts.append(f'    <p class="empty">{_esc(i18n.t(lang, "timeline_empty"))}</p>')
+        return "\n".join(parts)
+
+    list_items = "\n".join(
+        "        <li>\n"
+        f'          <p class="year">{_esc(year)}</p>\n'
+        "          <ul>\n"
+        + "\n".join(
+            f'            <li><a href="/record/{quote(r.record_id)}">{_esc(r.title)}</a></li>'
+            for r in group
+        )
+        + "\n          </ul>\n"
+        "        </li>"
+        for year, group in groups
+    )
+    parts.append(
+        '    <section aria-labelledby="timeline-list-heading">\n'
+        f'      <h2 id="timeline-list-heading">{_esc(i18n.t(lang, "timeline_list_heading"))}</h2>\n'
+        f'      <ol class="timeline">\n{list_items}\n      </ol>\n'
+        "    </section>"
+    )
+
+    table_rows = "\n".join(
+        "        <tr>\n"
+        f"          <td>{_esc(year)}</td>\n"
+        f'          <td><a href="/record/{quote(r.record_id)}">{_esc(r.title)}</a></td>\n'
+        "        </tr>"
+        for year, group in groups
+        for r in group
+    )
+    parts.append(
+        '    <section aria-labelledby="timeline-table-heading">\n'
+        f'      <h2 id="timeline-table-heading">'
+        f"{_esc(i18n.t(lang, 'timeline_table_heading'))}</h2>\n"
+        '      <table class="timeline-table">\n'
+        f"        <caption>{_esc(i18n.t(lang, 'timeline_table_caption'))}</caption>\n"
+        "        <thead>\n"
+        "          <tr>\n"
+        f'            <th scope="col">{_esc(i18n.t(lang, "col_year"))}</th>\n'
+        f'            <th scope="col">{_esc(i18n.t(lang, "col_title"))}</th>\n'
+        "          </tr>\n"
+        "        </thead>\n"
+        f"        <tbody>\n{table_rows}\n        </tbody>\n"
+        "      </table>\n"
+        "    </section>"
+    )
+    omitted = total - dated
+    if omitted > 0:
+        parts.append(
+            f'    <p class="muted">{_esc(i18n.t(lang, "timeline_undated", count=omitted))}</p>'
+        )
+    return "\n".join(parts)
+
+
 def _pager_html(
     page: pagination.Page[DisclosedRecord], current_path: str, *, lang: str = "en"
 ) -> str:
@@ -631,8 +746,9 @@ def _payload_li(rid: str, p: PayloadFile, *, lang: str = "en") -> str:
 
 # The Dublin Core elements the browse facets can filter on, whose values are rendered
 # as links into the faceted browse on a record page (kept in sync with the server's
-# facet routing and ``search.facets``).
-_FACET_FIELDS: tuple[str, ...] = ("subject", "type", "language")
+# facet routing and ``search.facets``). ``coverage`` (place) rides along so a place on
+# a record links into the same composed ``?coverage=`` query the /places browse uses.
+_FACET_FIELDS: tuple[str, ...] = ("subject", "type", "language", "coverage")
 
 
 def _dc_value_html(element: str, values: list[str]) -> str:
@@ -718,6 +834,52 @@ def _related_html(related: list[DisclosedRecord], *, lang: str) -> str:
     )
 
 
+def _relations_html(relations: search.RecordRelations | None, *, lang: str) -> str:
+    """Render the record-to-record relationship graph as an accessible nested list.
+
+    The list-equivalent of a node graph (roadmap EX4): a ``relation`` link this record
+    declares, plus the reciprocal — the records that declare a relation to *it* — under
+    proper headings so a screen reader can navigate the structure. External relation
+    identifiers (a DOI or URL that names nothing in this archive) render as plain text,
+    never a broken link. Empty when there is nothing to show. Every record here is one
+    the viewer may already list, and a relation to a sealed record was already dropped
+    by :func:`~ledger.search.resolve_relations`, so this section leaks nothing about a
+    hidden record's existence (no-outing rule). Titles are escaped and ids quoted.
+    """
+    if not relations:
+        return ""
+    blocks: list[str] = []
+    if relations.outgoing or relations.external:
+        items = [
+            f'          <li><a href="/record/{quote(r.record_id)}">{_esc(r.title)}</a></li>'
+            for r in relations.outgoing
+        ]
+        items += [f"          <li>{_esc(value)}</li>" for value in relations.external]
+        blocks.append(
+            '      <section aria-labelledby="rel-out-heading">\n'
+            f'        <h3 id="rel-out-heading">{_esc(i18n.t(lang, "relations_outgoing"))}</h3>\n'
+            f'        <ul class="relations-out">\n{chr(10).join(items)}\n        </ul>\n'
+            "      </section>"
+        )
+    if relations.incoming:
+        items = [
+            f'          <li><a href="/record/{quote(r.record_id)}">{_esc(r.title)}</a></li>'
+            for r in relations.incoming
+        ]
+        blocks.append(
+            '      <section aria-labelledby="rel-in-heading">\n'
+            f'        <h3 id="rel-in-heading">{_esc(i18n.t(lang, "relations_incoming"))}</h3>\n'
+            f'        <ul class="relations-in">\n{chr(10).join(items)}\n        </ul>\n'
+            "      </section>"
+        )
+    return (
+        '    <section aria-labelledby="relations-heading">\n'
+        f'      <h2 id="relations-heading">{_esc(i18n.t(lang, "relations_heading"))}</h2>\n'
+        f"{chr(10).join(blocks)}\n"
+        "    </section>"
+    )
+
+
 def _record_main_html(
     record: DisclosedRecord,
     *,
@@ -727,6 +889,7 @@ def _record_main_html(
     base_url: str = "",
     archive_name: str = "",
     related: list[DisclosedRecord] | None = None,
+    relations: search.RecordRelations | None = None,
 ) -> str:
     """Compose the single-record ``<main>``, with a content-warning interstitial.
 
@@ -801,11 +964,16 @@ def _record_main_html(
     # facetable elements (subject/type/language) each value is a link into the faceted
     # browse, so a reader on one record can discover related records by topic, kind, or
     # language — connecting a contributor's descriptive metadata to discovery (P1-4).
+    # ``relation`` is deliberately excluded from the raw catalogue: it is presented,
+    # resolved and access-checked, in the dedicated "Linked records" section instead.
+    # Printing its raw values here would echo a bare record id, which for a relation to
+    # a *sealed* record would leak that record's id (and thus its existence) as plain
+    # text — exactly what resolve_relations is careful to drop (no-outing rule).
     dc_rows = [
         f'      <div class="field"><dt>{_esc(element)}</dt>'
         f"<dd>{_dc_value_html(element, values)}</dd></div>"
         for element, values in record.dublin_core.items()
-        if values
+        if values and element != "relation"
     ]
     if dc_rows:
         parts.append(
@@ -856,6 +1024,13 @@ def _record_main_html(
     related_html = _related_html(related or [], lang=lang)
     if related_html:
         parts.append(related_html)
+
+    # Explicit record-to-record relationships declared in Dublin Core ``relation``
+    # (plus the reciprocal), rendered as an accessible list-equivalent graph (EX4). A
+    # relation to a sealed record was already dropped upstream, so this leaks nothing.
+    relations_html = _relations_html(relations, lang=lang)
+    if relations_html:
+        parts.append(relations_html)
 
     # A stable, quotable citation for scholarship, plus a machine-readable metadata
     # link (user research P2-3). Drawn only from disclosed metadata, so no identity.
@@ -1042,6 +1217,8 @@ def _nav_html(lang: str = "en", *, contribute: bool = False, current_path: str =
         f'\n      <a href="/">{_esc(i18n.t(lang, "nav_browse"))}</a>\n'
         f'      <a href="/search">{_esc(i18n.t(lang, "nav_search"))}</a>\n'
         f'      <a href="/overview">{_esc(i18n.t(lang, "nav_overview"))}</a>\n'
+        f'      <a href="/places">{_esc(i18n.t(lang, "nav_places"))}</a>\n'
+        f'      <a href="/timeline">{_esc(i18n.t(lang, "nav_timeline"))}</a>\n'
         f'      <a href="/about">{_esc(i18n.t(lang, "nav_about"))}</a>\n'
         f'      <a href="/transparency">{_esc(i18n.t(lang, "nav_transparency"))}</a>\n'
         f'      <a href="/status">{_esc(i18n.t(lang, "nav_status"))}</a>\n'
