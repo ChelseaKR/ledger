@@ -22,6 +22,7 @@ or golden run is reproducible (the demo relies on this).
 from __future__ import annotations
 
 import argparse
+import getpass
 import json
 import os
 import sys
@@ -29,6 +30,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from ledger import acr_gen, attest, demo, dualcontrol, preservation, succession
+from ledger import backup as backup_mod
 from ledger.access.grants import (
     anonymous,
     community_member,
@@ -39,6 +41,7 @@ from ledger.access.grants import (
     steward,
 )
 from ledger.access.redaction import redact_field, redact_payload
+from ledger.backup import create_backup, prune_backups, restore_backup, verify_backup
 from ledger.config import Config, StorageLocation
 from ledger.errors import LedgerError
 from ledger.export_drive import build_export_drive
@@ -49,7 +52,6 @@ from ledger.lockdown import (
     execute_stand_up,
     is_locked_down,
     plan_lockdown,
-    verify_backup_location,
 )
 from ledger.models import (
     AccessPolicy,
@@ -542,19 +544,90 @@ def _cmd_verify_backup(args: argparse.Namespace) -> int:
     Only bag names and counts are printed (no-outing rule).
     """
     backup = Path(args.backup)
-    result = verify_backup_location(backup)
-    # A config/readiness failure yields no per-bag reports; report it as unreadable,
-    # exactly as before (an empty *but readable* archive still verifies as PASS).
-    if not result.ok and not result.bags:
-        print(f"FAIL: backup is not readable ({result.reason})", file=sys.stderr)
-        return 1
+    report = verify_backup(backup)
+    return _print_verify_report(report, backup)
 
-    for bag in result.bags:
-        print(f"{'PASS' if bag.ok else 'FAIL'}\t{bag.name}\t({bag.checked} file(s) checked)")
-    failures = result.failures
-    summary = "PASS" if failures == 0 else "FAIL"
-    print(f"{summary}: backup at {backup} — {len(result.bags)} bag(s) verified, {failures} failed")
-    return 0 if failures == 0 else 1
+
+def _print_verify_report(report: backup_mod.VerifyReport, location: Path) -> int:
+    """Print a :class:`VerifyReport` in the cron-friendly ``PASS``/``FAIL`` form.
+
+    Shared by ``verify-backup`` and ``restore-backup`` so a restore is reported
+    through the identical surface. Prints only bag names and counts (no-outing
+    rule) and returns ``0`` when every bag passes, ``1`` otherwise.
+    """
+    if not report.ok and not report.bag_results:
+        print(f"FAIL: backup is not readable ({report.reason})", file=sys.stderr)
+        return 1
+    for name, ok, checked in report.bag_results:
+        print(f"{'PASS' if ok else 'FAIL'}\t{name}\t({checked} file(s) checked)")
+    summary = "PASS" if report.ok else "FAIL"
+    print(
+        f"{summary}: backup at {location} — "
+        f"{len(report.bag_results)} bag(s) verified, {report.failures} failed"
+    )
+    return 0 if report.ok else 1
+
+
+def _backup_passphrase() -> str:
+    """The backup passphrase, from ``LEDGER_BACKUP_PASSPHRASE`` or an interactive prompt.
+
+    The env var keeps a scheduled (cron/systemd) run non-interactive and keeps the
+    secret out of ``argv`` — a passphrase on the command line lands in shell history
+    and the process table (confidentiality). An interactive steward with no env var
+    set is prompted without echo. This passphrase is a *separate* secret from the
+    identity-vault key and must be stored apart from both the data and that key
+    (docs/BACKUP-RUNBOOK.md).
+    """
+    raw = os.environ.get("LEDGER_BACKUP_PASSPHRASE")
+    if raw:
+        return raw
+    entered = getpass.getpass("Backup passphrase: ")
+    if not entered:
+        raise LedgerError(
+            "no backup passphrase given (set LEDGER_BACKUP_PASSPHRASE or enter one at the prompt)"
+        )
+    return entered
+
+
+def _cmd_backup(args: argparse.Namespace) -> int:
+    """``backup`` — write one encrypted, off-box backup of the archive (cron-friendly).
+
+    Tars ``store/`` (bags, records, PREMIS logs, config) plus the encrypted
+    ``identity.vault``, encrypts the tar with a key derived from
+    ``LEDGER_BACKUP_PASSPHRASE`` (the same scrypt KDF the vault uses), and writes it
+    under ``--dest`` with a JSON sidecar manifest. A stolen backup is ciphertext
+    only. With ``--keep N`` it prunes older backups to the *N* newest so an
+    unattended nightly job does not fill the disk. Exit ``0`` on success, non-zero on
+    error, so cron can alarm. Prints only paths, counts, and the ciphertext digest
+    (no-outing rule)."""
+    config = _load_config(Path(args.root))
+    passphrase = _backup_passphrase()
+    report = create_backup(config, Path(args.dest), passphrase)
+    print(
+        f"wrote {report.archive_path.name} "
+        f"({report.ciphertext_bytes} byte(s), {report.bag_count} bag(s)); "
+        f"sha256={report.ciphertext_sha256}"
+    )
+    if args.keep is not None:
+        removed = prune_backups(Path(args.dest), args.keep)
+        if removed:
+            print(f"pruned {len(removed)} older backup(s), kept the {args.keep} newest")
+    return 0
+
+
+def _cmd_restore_backup(args: argparse.Namespace) -> int:
+    """``restore-backup`` — decrypt + untar a backup, then verify it (cron-friendly).
+
+    Reverses ``backup``: derives the key from ``LEDGER_BACKUP_PASSPHRASE`` and the
+    salt in the sidecar manifest, decrypts (a wrong passphrase or tampering fails
+    with a clear error), untars into ``--target``, and then runs the same
+    readability + RFC 8493 fixity checks as ``verify-backup`` so the restore is
+    *proven* intact. Exit ``0`` when every restored bag passes, non-zero otherwise —
+    the exit code a restore-drill cron job alarms on. Prints only bag names and
+    counts (no-outing rule)."""
+    target = Path(args.target)
+    report = restore_backup(Path(args.archive), _backup_passphrase(), target)
+    return _print_verify_report(report, target)
 
 
 def _proposal_store(archive: Archive) -> dualcontrol.ProposalStore:
@@ -1197,6 +1270,32 @@ def _build_parser() -> argparse.ArgumentParser:
         "--backup", required=True, help="path to a restored archive root (holds store/ + vault)"
     )
     p_verify_backup.set_defaults(func=_cmd_verify_backup)
+
+    p_backup = sub.add_parser(
+        "backup", help="write an encrypted, off-box backup of the archive (cron-friendly)"
+    )
+    p_backup.add_argument("--root", required=True)
+    p_backup.add_argument(
+        "--dest", required=True, help="directory to write the encrypted backup + manifest into"
+    )
+    p_backup.add_argument(
+        "--keep",
+        type=int,
+        default=None,
+        help="retain only the N newest backups in --dest (prune older ones)",
+    )
+    p_backup.set_defaults(func=_cmd_backup)
+
+    p_restore_backup = sub.add_parser(
+        "restore-backup", help="decrypt + untar a backup, then verify it (cron-friendly)"
+    )
+    p_restore_backup.add_argument(
+        "--archive", required=True, help="path to a ledger-backup-*.tar.fernet file"
+    )
+    p_restore_backup.add_argument(
+        "--target", required=True, help="empty directory to restore store/ + vault into"
+    )
+    p_restore_backup.set_defaults(func=_cmd_restore_backup)
 
     p_policy = sub.add_parser("policy", help="record an accountable consent/policy change")
     p_policy.add_argument("--root", required=True)
