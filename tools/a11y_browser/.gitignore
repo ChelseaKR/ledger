@@ -1,0 +1,8 @@
+# CI/dev-only browser harness — generated and installed artifacts, never committed.
+# NOTE: package-lock.json IS committed so `npm ci` is reproducible in CI.
+node_modules/
+/local-archive/
+/test-results/
+/playwright-report/
+/blob-report/
+/.playwright/
