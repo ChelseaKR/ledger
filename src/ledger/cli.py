@@ -50,9 +50,9 @@ from ledger.models import (
 from ledger.moderate import (
     add_content_warning,
     change_consent,
+    execute_takedown,
     set_field_policy,
     set_payload_policy,
-    takedown,
 )
 from ledger.replicate import verify_replicas
 from ledger.server import serve
@@ -481,20 +481,12 @@ def _perform_takedown(
     contributor identity revoked through the one shared removal effect
     (:meth:`Archive.remove_all_copies`). Only the record id and counts appear in the
     summary (no-outing rule). Factored so both the direct path and an approved
-    dual-control proposal execute the identical effect.
+    dual-control proposal execute the identical effect, which is itself shared with
+    the in-UI steward console via :func:`ledger.moderate.execute_takedown`.
     """
-    event, action = takedown(record_id, actor=actor, reason=reason, now=now)
-
-    # Whether there is a sealed identity to revoke, checked BEFORE removal so a failed
-    # revoke can still be reported once the bag (and the ref) are gone.
-    try:
-        had_identity = archive.get(record_id).identity_ref is not None
-    except LedgerError:
-        had_identity = False
-
-    archive.log_takedown(event)
-
-    removed, revoked = archive.remove_all_copies(record_id)
+    action, removed, revoked, had_identity = execute_takedown(
+        archive, record_id, actor=actor, reason=reason, now=now
+    )
     if had_identity and not revoked:  # pragma: no cover - vault failure is rare
         print(
             "warning: could not revoke identity from the vault; "

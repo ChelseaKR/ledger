@@ -49,7 +49,13 @@ from urllib.parse import parse_qs, quote, unquote, urlsplit
 from ledger import consent, contribute, export, i18n, oai, pagination, review, search, upload
 from ledger.access import anonymous, disclose, is_listable
 from ledger.access.grants import load_grants
-from ledger.errors import AccessDenied, LedgerError, ObjectNotFound, ValidationError
+from ledger.errors import (
+    AccessDenied,
+    LedgerError,
+    ModerationError,
+    ObjectNotFound,
+    ValidationError,
+)
 from ledger.ingest import Archive
 from ledger.models import (
     AccessPolicy,
@@ -63,11 +69,12 @@ from ledger.models import (
     Record,
     now_iso,
 )
-from ledger.moderate import change_consent, takedown
+from ledger.moderate import add_content_warning, change_consent, execute_takedown, takedown
 from ledger.render import (
     _browse_main_html,
     _error_main_html,
     _esc,
+    _history_main_html,
     _is_insider,
     _nav_html,
     _overview_main_html,
@@ -353,6 +360,8 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
                 self._handle_consent_form(path[len("/record/") : -len("/consent")])
             elif path.startswith("/record/") and path.endswith("/object"):
                 self._handle_object_form(path[len("/record/") : -len("/object")])
+            elif path.startswith("/record/") and path.endswith("/history"):
+                self._handle_record_history(path[len("/record/") : -len("/history")], params)
             elif path.startswith("/record/"):
                 self._handle_record(path[len("/record/") :], params)
             elif path == "/api/records":
@@ -393,6 +402,12 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             elif path.startswith("/steward/requests/") and path.endswith("/resolve"):
                 rid = path[len("/steward/requests/") : -len("/resolve")]
                 self._post_resolve_request(rid)
+            elif path.startswith("/steward/records/") and path.endswith("/warn"):
+                rid = path[len("/steward/records/") : -len("/warn")]
+                self._post_steward_warn(rid)
+            elif path.startswith("/steward/records/") and path.endswith("/takedown"):
+                rid = path[len("/steward/records/") : -len("/takedown")]
+                self._post_steward_takedown(rid)
             elif path == "/steward/submissions/withhold":
                 self._post_bulk_withhold()
             elif path.startswith("/steward/submissions/") and path.endswith("/review"):
@@ -638,6 +653,95 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("Location", "/steward")
         self.end_headers()
 
+    def _redirect_steward(self) -> None:
+        """Send the shared post-action redirect back to the steward console."""
+        self.send_response(303)
+        self.send_header("Location", "/steward")
+        self.end_headers()
+
+    def _reject_moderation(self) -> None:
+        """Render the neutral 400 page shown when a moderation action is refused.
+
+        A moderation decision requires a non-empty reason (accountability). When one is
+        missing the action is *not* recorded and the steward sees a plain page telling
+        them to go back and supply a rationale — no record content is echoed (no-outing
+        rule)."""
+        lang = self._lang()
+        self._send_html(
+            400,
+            _page(
+                i18n.t(lang, "mod_invalid_heading"),
+                lang=lang,
+                main_html=_error_main_html(
+                    i18n.t(lang, "mod_invalid_heading"), i18n.t(lang, "mod_invalid_body")
+                ),
+                nav_html=self._nav(),
+            ),
+        )
+
+    def _post_steward_warn(self, raw_id: str) -> None:
+        """``POST /steward/records/{id}/warn`` — add a content warning in-UI (gated).
+
+        The in-console equivalent of ``ledger cw``: a steward supplies the warning text
+        and a required rationale, and the decision routes through the audited
+        :func:`ledger.moderate.add_content_warning` +
+        :meth:`Archive.apply_update` path, so the warning is structured metadata on the
+        record and the ``MODERATION`` PREMIS event lands in the audit log the
+        ``/steward/audit`` page reads (accountability). Steward-gated (a non-steward
+        gets a neutral 404); an empty warning or reason is refused without recording
+        anything. No identity or sealed value is logged (no-outing rule)."""
+        grant = self._resolve_grant()
+        if not grant.is_steward:
+            self._handle_not_found()
+            return
+        record_id = _decode_id(raw_id)
+        form = self._read_form()
+        warning = form.get("warning", "").strip()
+        reason = form.get("reason", "")
+        if not warning:
+            self._reject_moderation()
+            return
+        archive = self._archive()
+        try:
+            record = archive.get(record_id)
+        except ObjectNotFound:
+            self._handle_not_found()
+            return
+        try:
+            updated, event, _action = add_content_warning(
+                record, warning, actor=grant.subject, reason=reason, now=now_iso()
+            )
+        except ModerationError:
+            self._reject_moderation()
+            return
+        archive.apply_update(updated, event)
+        self._redirect_steward()
+
+    def _post_steward_takedown(self, raw_id: str) -> None:
+        """``POST /steward/records/{id}/takedown`` — take a record down in-UI (gated).
+
+        The in-console equivalent of ``ledger takedown``: it records the accountable
+        decision and then removes every stored copy through the one shared effect
+        (:func:`ledger.moderate.execute_takedown`), the same primitive the CLI uses, so
+        the ``TAKEDOWN`` PREMIS event lands in the takedowns log the audit page reads
+        and any sealed identity is revoked (accountability, the no-outing rule). A
+        required rationale is enforced *before* any copy is touched, so a missing reason
+        removes nothing. Steward-gated; a non-steward gets a neutral 404."""
+        grant = self._resolve_grant()
+        if not grant.is_steward:
+            self._handle_not_found()
+            return
+        record_id = _decode_id(raw_id)
+        reason = self._read_form().get("reason", "")
+        try:
+            execute_takedown(
+                self._archive(), record_id, actor=grant.subject, reason=reason, now=now_iso()
+            )
+        except ModerationError:
+            self._reject_moderation()
+            return
+        self._redirect_steward()
+
     def _handle_object_form(
         self, raw_id: str, *, error: str | None = None, status: int = 200
     ) -> None:
@@ -711,6 +815,38 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             200, _page("Objection received", lang=lang, main_html=main_html, nav_html=self._nav())
         )
 
+    def _moderation_actions_html(self, record_id: str, lang: str) -> str:
+        """The in-UI warn/takedown forms + history link for one console record row.
+
+        Rendered as *sibling* forms inside the row (never nested, which is invalid
+        HTML), each posting to a steward-gated moderation route. Both carry a mandatory
+        ``reason`` field (``required`` in the browser, re-checked server-side against
+        :func:`ledger.moderate._require_reason`), so a decision cannot be recorded
+        without a rationale (accountability). The history link opens the record's
+        version comparison. No record content beyond the opaque id is interpolated
+        here (no-outing rule)."""
+        rid = quote(record_id)
+        warn_label = _esc(i18n.t(lang, "sw_warning_label"))
+        reason_label = _esc(i18n.t(lang, "sw_reason_label"))
+        return (
+            f'        <form method="post" action="/steward/records/{rid}/warn">\n'
+            f"          <label>{warn_label} "
+            '<input type="text" name="warning" required></label>\n'
+            f"          <label>{reason_label} "
+            '<input type="text" name="reason" required></label>\n'
+            '          <button type="submit">'
+            f"{_esc(i18n.t(lang, 'sw_warn_button'))}</button>\n"
+            "        </form>\n"
+            f'        <form method="post" action="/steward/records/{rid}/takedown">\n'
+            f"          <label>{reason_label} "
+            '<input type="text" name="reason" required></label>\n'
+            '          <button type="submit">'
+            f"{_esc(i18n.t(lang, 'sw_takedown_button'))}</button>\n"
+            "        </form>\n"
+            f'        <p><a href="/record/{rid}/history">'
+            f"{_esc(i18n.t(lang, 'sw_history_link'))}</a></p>\n"
+        )
+
     def _handle_steward_console(self) -> None:
         """``GET /steward`` — a steward's accountable console (gated).
 
@@ -781,6 +917,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
                     '          <button type="submit" name="action" value="withhold">'
                     f"{_esc(i18n.t(lang, 'sw_withhold_button'))}</button>\n"
                     "        </form>\n"
+                    f"{self._moderation_actions_html(item.record_id, lang)}"
                     "      </li>"
                 )
             # The bulk form holds only the submit button; the checkboxes above join it
@@ -1071,6 +1208,62 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             _page(
                 record.title,
                 lang=self._lang(),
+                main_html=main_html,
+                nav_html=self._nav(),
+            ),
+        )
+
+    def _handle_record_history(self, raw_id: str, params: dict[str, list[str]]) -> None:
+        """``GET /record/{id}/history`` — a record's living-document version history (gated).
+
+        Lists every prior manifest snapshot (timestamp + the kind of event that
+        superseded it) and shows a simple, field-by-field comparison of the *current*
+        record against a selected earlier version — the latest prior by default, or the
+        one named by ``?v=<address>``. The comparison covers only title, description,
+        content warnings, and default access; it never renders a sealed value or the
+        opaque identity token, and each snapshot already passed the identity-refusing
+        serializer (no-outing rule).
+
+        Steward-gated as the safest minimal disclosure choice: history is richer than a
+        single disclosed view, so it is shown only to a steward; anyone else gets the
+        same neutral 404 the rest of the site returns for a record they may not see."""
+        grant = self._resolve_grant()
+        lang = self._lang()
+        if not grant.is_steward:
+            self._handle_not_found()
+            return
+        record_id = _decode_id(raw_id)
+        archive = self._archive()
+        try:
+            current = archive.get(record_id)
+        except ObjectNotFound:
+            self._handle_not_found()
+            return
+        versions = archive.record_versions(record_id)
+        selected = (params.get("v", [""])[0]).strip()
+        addresses = [entry.get("address", "") for entry in versions]
+        if selected not in addresses:
+            # Default to the most recent prior snapshot (the index is oldest-first).
+            selected = addresses[-1] if addresses else ""
+        prior: Record | None = None
+        if selected:
+            try:
+                prior = archive.get_version(record_id, selected)
+            except (ObjectNotFound, LedgerError):
+                prior = None
+        main_html = _history_main_html(
+            record_id,
+            current=current,
+            prior=prior,
+            versions=versions,
+            selected=selected,
+            lang=lang,
+        )
+        self._send_html(
+            200,
+            _page(
+                i18n.t(lang, "hist_heading"),
+                lang=lang,
                 main_html=main_html,
                 nav_html=self._nav(),
             ),
