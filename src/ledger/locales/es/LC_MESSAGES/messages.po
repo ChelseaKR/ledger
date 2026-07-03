@@ -886,3 +886,23 @@ msgstr "seleccionado"
 #, python-brace-format
 msgid "{when} — superseded by {event}"
 msgstr "{when} — reemplazada por {event}"
+
+msgid "Consent tokens for the people named in this record"
+msgstr "Fichas de consentimiento para las personas nombradas en este registro"
+
+#, python-brace-format
+msgid "Responded {when}"
+msgstr "Respondido {when}"
+
+#, python-brace-format
+msgid "Response due by {when}"
+msgstr "Respuesta prevista antes de {when}"
+
+msgid "Token for a named person"
+msgstr "Ficha para una persona nombrada"
+
+msgid "You said this record names other people. Give each of them one of the tokens below, privately and in person where you can. Anyone who holds a token can object to being named and a steward will treat their objection as confirmed. These are shown only once and are not stored in a form anyone can read — copy them now:"
+msgstr "Dijiste que este registro nombra a otras personas. Entrega a cada una de ellas una de las fichas siguientes, en privado y en persona cuando puedas. Cualquiera que tenga una ficha puede oponerse a ser nombrado y un administrador tratará su objeción como confirmada. Se muestran una sola vez y no se guardan de forma legible para nadie — cópialas ahora:"
+
+msgid "verified objection from a named subject (token confirmed)"
+msgstr "objeción verificada de una persona nombrada (ficha confirmada)"

@@ -143,6 +143,8 @@ msgstr ""
 
 #, python-brace-format
 msgid "Comparing the current record with an earlier saved version. Record {id}."
+
+msgid "Consent tokens for the people named in this record"
 msgstr ""
 
 msgid "Contact (optional, sealed)"
@@ -470,6 +472,14 @@ msgstr ""
 msgid "Resolved — a steward has acted on it."
 msgstr ""
 
+#, python-brace-format
+msgid "Responded {when}"
+msgstr ""
+
+#, python-brace-format
+msgid "Response due by {when}"
+msgstr ""
+
 msgid "Save changes"
 msgstr ""
 
@@ -611,6 +621,9 @@ msgstr ""
 msgid "To withdraw it, go to"
 msgstr ""
 
+msgid "Token for a named person"
+msgstr ""
+
 msgid "Transcript"
 msgstr ""
 
@@ -703,6 +716,14 @@ msgid ""
 "their absence here does not mean they do not exist."
 msgstr ""
 
+msgid ""
+"You said this record names other people. Give each of them one of the "
+"tokens below, privately and in person where you can. Anyone who holds a "
+"token can object to being named and a steward will treat their objection "
+"as confirmed. These are shown only once and are not stored in a form "
+"anyone can read — copy them now:"
+msgstr ""
+
 msgid "Your account"
 msgstr ""
 
@@ -772,6 +793,9 @@ msgid "the withdrawal page"
 msgstr ""
 
 msgid "tighten access"
+msgstr ""
+
+msgid "verified objection from a named subject (token confirmed)"
 msgstr ""
 
 msgid "withdraw / take down"
