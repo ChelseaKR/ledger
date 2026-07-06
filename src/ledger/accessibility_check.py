@@ -153,7 +153,11 @@ class _Accessibility(HTMLParser):
 
     # --- streaming callbacks ------------------------------------------------
 
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+    # Pre-existing complexity (many checks fan out from one dispatch point); surfaced
+    # 2026-07-05 when CQ-05's complexity gate was enabled. Waived, not re-muted:
+    # tracked for a follow-up split rather than refactored under audit time
+    # pressure on safety-adjacent code (see ledger-REMEDIATION.md P3-2).
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:  # noqa: C901
         """Record the facts each opening tag contributes to the checks."""
         attr = {name: (value or "") for name, value in attrs}
 
@@ -240,7 +244,10 @@ def _to_int(value: str) -> int:
         return 0
 
 
-def check_html(markup: str, *, label: str) -> list[str]:
+# Pre-existing complexity (one function surveys every WCAG structural check);
+# surfaced 2026-07-05 when CQ-05's complexity gate was enabled. Waived, not
+# re-muted: tracked for a follow-up split (see ledger-REMEDIATION.md P3-2).
+def check_html(markup: str, *, label: str) -> list[str]:  # noqa: C901
     """Return a list of human-readable accessibility problems found in ``markup``.
 
     ``label`` names the source (a file path or a route) so each problem points the

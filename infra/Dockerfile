@@ -5,12 +5,14 @@
 # carries only what `ledger serve` needs — the package and its single runtime
 # dependency (`cryptography`) — and runs as an unprivileged user.
 #
-# Pin the base by tag here for a readable, reproducible build. For production you
-# should pin by *digest* so the base cannot change under you between builds, e.g.:
-#   FROM python:3.12-slim@sha256:<digest>
-# Look up the current digest with `docker buildx imagetools inspect python:3.12-slim`
-# and commit it. The tag below is the floor; the digest is the contract.
-FROM python:3.12-slim
+# Pinned by *digest*, not just tag, so the base cannot change under us between
+# builds (SEC-28/REL-18 — supply-chain reproducibility): a compromised or
+# silently-updated `python:3.12-slim` tag cannot swap out what we build from.
+# `python:3.12-slim` (3.12.13-slim-trixie) as of 2026-07-05. Renovate tracks this
+# digest and opens a PR when it moves (`renovate.json`); re-verify manually with
+# `docker buildx imagetools inspect python:3.12-slim` if it ever needs a bump by
+# hand.
+FROM python:3.12-slim@sha256:423ed6ab25b1921a477529254bfeeabf5855151dc2c3141699a1bfc852199fbf
 
 # Fail fast and loud, and keep Python from buffering logs or writing .pyc files
 # (observability — log lines appear immediately under a process supervisor).

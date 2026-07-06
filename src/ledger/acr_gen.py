@@ -33,6 +33,14 @@ _PARTIAL = "Partially Supports"
 _DOES_NOT = "Does Not Support"
 _NA = "Not Applicable"
 
+# Currency stamp (DOCUMENTATION-STANDARD DOC-15): every regeneration re-dates the
+# report so a reader can tell a fresh audit from a stale one at a glance, rather
+# than a document that looks current forever. Bump `_LAST_VERIFIED` by hand each
+# time the report is regenerated for a release (`make acr`); the cadence line
+# documents when a re-check is expected regardless.
+_LAST_VERIFIED = "2026-07-05"
+_RECHECK_CADENCE = "per release"
+
 
 @dataclass(frozen=True)
 class Criterion:
@@ -588,6 +596,8 @@ def render() -> str:
         "## ledger — a privacy-first community archive",
         "",
         "**Based on VPAT® Version 2.5 Rev — Revised Section 508 Edition**",
+        "",
+        f"Last verified: {_LAST_VERIFIED} · Recheck cadence: {_RECHECK_CADENCE}",
         "",
         "This report describes the accessibility conformance of ledger's public "
         "browse/search surface against WCAG 2.x (Levels A and AA, including the "

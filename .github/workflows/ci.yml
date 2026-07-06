@@ -29,7 +29,16 @@ jobs:
         # save Actions minutes, since the merge to main re-runs the full matrix.
         python: ${{ (github.event_name == 'pull_request') && fromJSON('["3.12"]') || fromJSON('["3.11", "3.12"]') }}
     steps:
+      # Harden-Runner (SEC-04): observe/audit egress before anything else runs.
+      # Recording in audit mode first (per the standard's rollout guidance) so the
+      # allowlist can be derived from real traffic before flipping to `block`,
+      # rather than guessing an allowlist and breaking the build.
+      - uses: step-security/harden-runner@5c7944e73c4c2a096b17a9cb74d65b6c2bbafbde  # v2.9.1
+        with:
+          egress-policy: audit
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
         with:
           python-version: ${{ matrix.python }}
@@ -57,7 +66,16 @@ jobs:
     name: i18n (gettext catalog gate)
     runs-on: ubuntu-latest
     steps:
+      # Harden-Runner (SEC-04): observe/audit egress before anything else runs.
+      # Recording in audit mode first (per the standard's rollout guidance) so the
+      # allowlist can be derived from real traffic before flipping to `block`,
+      # rather than guessing an allowlist and breaking the build.
+      - uses: step-security/harden-runner@5c7944e73c4c2a096b17a9cb74d65b6c2bbafbde  # v2.9.1
+        with:
+          egress-policy: audit
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
         with:
           python-version: "3.12"
@@ -80,7 +98,16 @@ jobs:
     name: no-outing audit (safety gate)
     runs-on: ubuntu-latest
     steps:
+      # Harden-Runner (SEC-04): observe/audit egress before anything else runs.
+      # Recording in audit mode first (per the standard's rollout guidance) so the
+      # allowlist can be derived from real traffic before flipping to `block`,
+      # rather than guessing an allowlist and breaking the build.
+      - uses: step-security/harden-runner@5c7944e73c4c2a096b17a9cb74d65b6c2bbafbde  # v2.9.1
+        with:
+          egress-policy: audit
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
         with:
           python-version: "3.12"
@@ -97,7 +124,16 @@ jobs:
     name: accessibility gate (WCAG 2.2 AA)
     runs-on: ubuntu-latest
     steps:
+      # Harden-Runner (SEC-04): observe/audit egress before anything else runs.
+      # Recording in audit mode first (per the standard's rollout guidance) so the
+      # allowlist can be derived from real traffic before flipping to `block`,
+      # rather than guessing an allowlist and breaking the build.
+      - uses: step-security/harden-runner@5c7944e73c4c2a096b17a9cb74d65b6c2bbafbde  # v2.9.1
+        with:
+          egress-policy: audit
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
         with:
           python-version: "3.12"
@@ -115,9 +151,17 @@ jobs:
     name: dependency & secret scan
     runs-on: ubuntu-latest
     steps:
+      # Harden-Runner (SEC-04): observe/audit egress before anything else runs.
+      # Recording in audit mode first (per the standard's rollout guidance) so the
+      # allowlist can be derived from real traffic before flipping to `block`,
+      # rather than guessing an allowlist and breaking the build.
+      - uses: step-security/harden-runner@5c7944e73c4c2a096b17a9cb74d65b6c2bbafbde  # v2.9.1
+        with:
+          egress-policy: audit
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           fetch-depth: 0
+          persist-credentials: false
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
         with:
           python-version: "3.12"
@@ -134,3 +178,31 @@ jobs:
           GL=8.30.1
           curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GL}/gitleaks_${GL}_linux_x64.tar.gz" | tar -xz -C /tmp gitleaks
           /tmp/gitleaks detect --source . --config .gitleaks.toml --no-banner --redact --exit-code 1
+
+  container:
+    name: container image CVE scan (Trivy)
+    runs-on: ubuntu-latest
+    steps:
+      # Harden-Runner (SEC-04): observe/audit egress before anything else runs.
+      # Recording in audit mode first (per the standard's rollout guidance) so the
+      # allowlist can be derived from real traffic before flipping to `block`,
+      # rather than guessing an allowlist and breaking the build.
+      - uses: step-security/harden-runner@5c7944e73c4c2a096b17a9cb74d65b6c2bbafbde  # v2.9.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Build the self-host image
+        run: docker build -f infra/Dockerfile -t ledger:ci-scan .
+      # SEC-28 / REL-18 (Tier-1 gate): block on any fixable CRITICAL/HIGH CVE in
+      # the image ledger tells communities to self-host with. `ignore-unfixed`
+      # keeps the gate meaningful (no vendor patch means no action a maintainer
+      # can take yet) rather than permanently red on upstream backlog.
+      - name: Scan for CRITICAL/HIGH CVEs (Trivy)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
+        with:
+          image-ref: ledger:ci-scan
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"

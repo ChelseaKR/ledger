@@ -203,13 +203,23 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
 
     # --- response helpers ---------------------------------------------------
 
-    def _send(self, status: int, body: bytes, content_type: str) -> None:
+    def _send(
+        self, status: int, body: bytes, content_type: str, *, lang: str | None = None
+    ) -> None:
         """Write a complete response with an explicit length and safe headers.
 
         Sets a conservative ``Content-Security-Policy`` and ``X-Content-Type-
         Options: nosniff`` so a browser will not execute inline script or sniff a
         served file into an active type (security, defense in depth). No header
         carries any request-derived value, so headers cannot leak identity.
+
+        ``lang`` marks a response whose content was negotiated from ``_lang()``
+        (I18N-13 / G11): it sets ``Content-Language`` to the served language and
+        ``Vary: Accept-Language`` so a cache (browser, CDN, reverse proxy) never
+        serves one reader's negotiated language to another. Machine-readable feeds
+        that are always the anonymous-public view regardless of viewer (OAI-PMH,
+        the sitemap, robots.txt, the Atom feed) pass no ``lang`` and get neither
+        header, since their content never varies with ``Accept-Language``.
         """
         self.send_response(status)
         self.send_header("Content-Type", content_type)
@@ -221,6 +231,9 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             "base-uri 'none'; form-action 'self'",
         )
         self.send_header("Referrer-Policy", "no-referrer")
+        if lang is not None:
+            self.send_header("Content-Language", lang)
+            self.send_header("Vary", "Accept-Language")
         # Persist an explicit ?lang= pick so the reader's choice survives navigation.
         # The cookie holds only the UI language code — no identity, no record id
         # (no-outing rule). Lax + HttpOnly: it is sent on top-level navigations and is
@@ -237,13 +250,13 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             self.wfile.write(body)
 
     def _send_html(self, status: int, page: str) -> None:
-        self._send(status, page.encode("utf-8"), "text/html; charset=utf-8")
+        self._send(status, page.encode("utf-8"), "text/html; charset=utf-8", lang=self._lang())
 
     def _send_json(self, status: int, obj: object) -> None:
         """Serialize ``obj`` as JSON. Only DisclosedRecord-derived data is passed in,
         so the JSON cannot contain an identity field (no-outing rule)."""
         body = json.dumps(obj, ensure_ascii=False, sort_keys=True).encode("utf-8")
-        self._send(status, body, "application/json; charset=utf-8")
+        self._send(status, body, "application/json; charset=utf-8", lang=self._lang())
 
     def _lang(self) -> str:
         """Resolve the response language: explicit choice, remembered choice, then header.
@@ -295,7 +308,13 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         """Handle HEAD identically to GET but without a body (handled in `_send`)."""
         self.do_GET()
 
-    def do_GET(self) -> None:
+    # Pre-existing complexity (one dispatcher routes every read-only path); surfaced
+    # 2026-07-05 when CQ-05's complexity gate was enabled. Waived, not re-muted:
+    # this function is the disclosure/no-outing choke point, so it is deliberately
+    # *not* refactored under audit time pressure — a split is tracked as a careful,
+    # fully-retested follow-up, not a same-day edit to the most safety-sensitive
+    # function in the repo (see ledger-REMEDIATION.md P3-2).
+    def do_GET(self) -> None:  # noqa: C901
         """Route a GET request to the matching read-only handler.
 
         Routing is a small, explicit dispatch (predictability). Unmatched paths

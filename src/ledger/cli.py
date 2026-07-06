@@ -120,7 +120,10 @@ def _cmd_init(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_ingest(args: argparse.Namespace) -> int:
+# Pre-existing complexity (one function branches over every CLI ingest option);
+# surfaced 2026-07-05 when CQ-05's complexity gate was enabled. Waived, not
+# re-muted: tracked for a follow-up split (see ledger-REMEDIATION.md P3-2).
+def _cmd_ingest(args: argparse.Namespace) -> int:  # noqa: C901
     """``ingest`` — build a record (and optional sealed identity) and store it.
 
     Public descriptive fields are published; sealed fields default to the

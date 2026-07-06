@@ -6,6 +6,15 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+> **Note (2026-07-05):** this project has **not yet shipped a tagged release** —
+> `git tag` returns nothing. The `0.1.0` heading below was prepared on 2026-06-16 as
+> a release candidate but the tag was never cut, so it is recorded here under
+> Unreleased rather than as a released version (a changelog claiming a release the
+> repo cannot produce is exactly the kind of unbacked claim this project's own
+> conformance audit exists to catch). It will move to a real `## [0.1.0] — YYYY-MM-DD`
+> section, with a matching signed annotated git tag, once the release workflow
+> (`docs/ROADMAP.md`, tracked as this repo's largest open gap) actually ships it.
+
 ### Added
 
 - **Disclosure-policy workflow.** First-class, accountable steward commands to set and
@@ -28,13 +37,12 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   anonymous surface (HTML, JSON record/list APIs, CSV export), while the withholding is
   still acknowledged honestly without exposing the embargo date to outsiders.
 
-## [0.1.0] — 2026-06-16
+### Prepared as 0.1.0 (2026-06-16) — first reference implementation, not yet tagged
 
-First reference implementation. A small collective can install ledger, self-host it
-on one inexpensive box with no cloud account, and run the full preservation +
-selective-disclosure cycle.
-
-### Added
+A small collective can install ledger, self-host it on one inexpensive box with no
+cloud account, and run the full preservation + selective-disclosure cycle. This was
+the intended `0.1.0` content; it ships as a real tagged release once the release
+workflow lands.
 
 - **Preservation core.** Content-addressed store (`cas`) with dual-algorithm
   fixity (`fixity`, SHA-256 + BLAKE2b); deterministic, byte-reproducible BagIt bags
@@ -60,5 +68,7 @@ selective-disclosure cycle.
   lint, strict typing, tests, the no-outing safety check, accessibility, CodeQL,
   `pip-audit`, and secret scanning.
 
-[Unreleased]: https://github.com/ChelseaKR/ledger/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/ChelseaKR/ledger/releases/tag/v0.1.0
+[Unreleased]: https://github.com/ChelseaKR/ledger/commits/main
+<!-- No v0.1.0 tag exists yet (see the note above), so there is no compare link or
+     release link to give until one is actually cut — a placeholder link here would
+     be exactly the kind of unbacked claim this changelog is now correcting. -->

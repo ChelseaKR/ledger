@@ -8,7 +8,7 @@ PIP  := $(PY) -m pip
 
 .DEFAULT_GOAL := help
 .PHONY: help venv install lint format type test cov audit accessibility acr demo serve \
-        i18n i18n-compile verify clean
+        i18n i18n-compile secret-scan container verify clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -41,8 +41,10 @@ cov: ## Run tests with coverage
 backup-test: ## Exercise the full back-up -> wipe -> restore disaster-recovery cycle
 	$(PY) -m pytest -m recovery
 
-audit: ## Dependency vulnerability scan
-	$(PY) -m pip_audit || true
+audit: ## Dependency vulnerability scan (blocking)
+	# SECURITY-AND-SUPPLY-CHAIN-STANDARD §4 forbids muting this gate by name; a
+	# finding must be fixed or explicitly triaged/waived, never `|| true`d away.
+	$(PY) -m pip_audit
 
 accessibility: ## Run the accessibility checks over the built web surface
 	$(PY) -m ledger.accessibility_check web
@@ -85,8 +87,34 @@ i18n-compile: ## Compile the committed PO catalogs to MO (run after editing a .p
 		src/ledger/locales/es/LC_MESSAGES/messages.po
 	@echo "i18n-compile: refreshed messages.mo for en, es."
 
+secret-scan: ## Secret scan (gitleaks) — mirrors ci.yml's supply-chain job locally
+	# CI-authoritative: CI pins and downloads gitleaks 8.30.1 itself
+	# (.github/workflows/ci.yml, supply-chain job) regardless of what is on this
+	# machine, so CI is the gate of record even if a local binary is missing or a
+	# different version. This target just lets a contributor catch a leak before
+	# pushing when gitleaks happens to be installed locally.
+	@command -v gitleaks >/dev/null 2>&1 || { \
+		echo "gitleaks not found locally; skipping (CI is authoritative — see ci.yml supply-chain job)"; \
+		exit 0; \
+	}
+	gitleaks detect --source . --config .gitleaks.toml --no-banner --redact --exit-code 1
+
+container: ## Build the self-host image and scan it for CRITICAL/HIGH CVEs (Trivy)
+	# Not part of `verify`: it needs a working Docker daemon, which not every
+	# contributor's environment has, and a Dockerfile-only change is rare enough
+	# that gating every `make verify` run on a container build/scan is the wrong
+	# trade-off. CI's `container` job (ci.yml) is the gate of record and runs
+	# unconditionally on every push/PR — this target just mirrors it locally.
+	docker build -f infra/Dockerfile -t ledger:local-scan .
+	trivy image --severity CRITICAL,HIGH --ignore-unfixed --exit-code 1 ledger:local-scan
+
 # The full gate. Determinism + reproducibility: same inputs, same result, every run.
-verify: lint type test i18n ## Run the complete merge gate (lint + type + test + i18n)
+# Matches CI's required-check set byte-for-byte (CICD-27): the `gate`, `i18n`,
+# `accessibility`, and `supply-chain` jobs in ci.yml run exactly these targets, so
+# green here means green in CI. (The `no-outing-audit` job is `test`'s own
+# `disclosure`-marked subset, run standalone in CI for visibility, not a distinct
+# local gate; `container` is intentionally excluded — see its own target comment.)
+verify: lint type test i18n accessibility audit secret-scan ## Run the complete merge gate (== CI's required checks)
 	@echo "verify: all gates green"
 
 clean: ## Remove caches and build artifacts (never touches an archive's data)

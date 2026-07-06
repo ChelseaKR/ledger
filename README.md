@@ -8,9 +8,10 @@
 > record can never out the person who made it. Open standards throughout. Governed by the community
 > that uses it, not by a platform or a funder.
 
-**Status:** reference implementation · independent personal open-source project · AGPL-3.0 ·
-unaffiliated with any employer or client; contains no proprietary or client material. Built for and
-with community archivists and mutual-aid organizers, not for a government or institutional customer.
+**Status:** Beta (pre-1.0 reference implementation) · independent personal open-source project ·
+AGPL-3.0 · unaffiliated with any employer or client; contains no proprietary or client material.
+Built for and with community archivists and mutual-aid organizers, not for a government or
+institutional customer.
 
 > **Maturity & safety.** This is a **pre-1.0 reference implementation.** The confidentiality
 > guarantees described below (no-outing, sealed disclosure, fixity) are enforced by merge-blocking
@@ -92,7 +93,8 @@ ledger/
 ├── infra/                       # optional self-host deploy (compose/CDK); no hosted dependency
 ├── tests/
 │   └── fixtures/                # tiny sample records (consented, synthetic) + one per access policy
-└── docs/                        # ARCHITECTURE, THREAT-MODEL, GOVERNANCE, ACCESSIBILITY, ADRs, audits/, accessibility/
+└── docs/                        # ARCHITECTURE, THREAT-MODEL, GOVERNANCE, ACCESSIBILITY, ADRs,
+                                  # ROADMAP (conformance gap tracker), accessibility/ (ACR)
 ```
 
 Records move through the OAIS pipeline as Submission, Archival, and Dissemination Information
@@ -144,12 +146,18 @@ on confidentiality, integrity, and durability, so those clusters carry weight.
 **Safety** — the design property is that holding a record cannot out its contributor; identity is
 vaulted, separated, and grant-gated, and the no-outing rule is tested with sentinels. **Confidentiality**
 — sealed records and fields never render without a grant; the identity vault is encrypted at rest.
-**Securability** — secrets via env or a keystore, never committed; least-privilege grants; signed
-releases. **Integrity** (data) — content addressing plus dual-algorithm BagIt manifests make tampering
-detectable, not deniable. **Autonomy** — a contributor controls their own disclosure and can revoke;
-the system enforces their decision, not a steward's preference. **Vulnerability** management — pip-audit,
-gitleaks, CodeQL in CI; pinned, hashed dependencies. **Accountability** and **auditability** — every
-preservation and access event is a PREMIS record with agent and outcome; committed `docs/audits/`.
+**Securability** — secrets via env or a keystore, never committed; least-privilege grants; releases
+will be cryptographically signed once the release pipeline ships (tracked in
+[`docs/ROADMAP.md`](docs/ROADMAP.md) — no release has shipped yet, signed or otherwise). **Integrity**
+(data) — content addressing plus dual-algorithm BagIt manifests make tampering detectable, not
+deniable. **Autonomy** — a contributor controls their own disclosure and can revoke; the system
+enforces their decision, not a steward's preference. **Vulnerability** management — pip-audit,
+gitleaks, CodeQL in CI, blocking with no muted gates; dependency pinning is a range today, a
+committed hash-pinned lockfile is tracked in `docs/ROADMAP.md`. **Accountability** and
+**auditability** — every preservation and access event is a PREMIS record with agent and outcome;
+audit-as-artifact documents committed today are [`docs/THREAT-MODEL.md`](docs/THREAT-MODEL.md) and
+the [Accessibility Conformance Report](docs/accessibility/ACR.md); a dedicated `docs/audits/` set
+(DPIA, bias review, residual-risk register) is tracked in `docs/ROADMAP.md`.
 
 ### Preservation integrity, durability, fixity
 **Durability** — replicated content-addressed copies across independent locations; no single point of
@@ -200,8 +208,9 @@ guided step, not a separate tool.
 ### Performance, scale, cost
 **Efficiency** — content addressing deduplicates identical media; fixity is incremental where possible.
 **Scalability** and **elasticity** — the store grows with added locations; read surfaces are stateless
-and scale horizontally. **Timeliness** — browse and verification latency budgets asserted in CI.
-**Affordability** — self-hostable on a single inexpensive box or a member's drive; no hosted dependency,
+and scale horizontally. **Timeliness** — no automated performance budget exists yet; browse and
+verification latency are not currently asserted in CI (tracked in `docs/ROADMAP.md`, P3-5). Until
+then, treat responsiveness as observed in `make demo`, not as a tested guarantee. **Affordability** — self-hostable on a single inexpensive box or a member's drive; no hosted dependency,
 so a broke collective can still run it. **Process capabilities** and **producibility** — `make verify`
 reproduces the full gate; one command builds the artifact.
 
@@ -277,6 +286,49 @@ or takedown decision is reviewable. The threat model in `docs/THREAT-MODEL.md` i
 contexts: seizure, subpoena, doxxing, and a malicious steward are explicit cases, and the no-outing
 guarantee is stated as a requirement the code must meet.
 
+## Standards conformance
+
+This repo references a shared, private portfolio of engineering standards rather than restating
+them; they are fetched at CI time (`.github/workflows/standards.yml`, pinned to a released tag) and
+never vendored into this repository. Per-repo *values* (measured coverage, ASVS level, ACR rows,
+DPIA status) live in [`docs/ROADMAP.md`](docs/ROADMAP.md) and
+[`docs/RESPONSIBLE-TECH-AUDITS.md`](docs/RESPONSIBLE-TECH-AUDITS.md), not here. The applicability
+reasoning and the one N/A decision below are recorded in
+[`docs/adr/0006-standards-applicability.md`](docs/adr/0006-standards-applicability.md).
+
+**Release-producing:** yes — intended as a PyPI package (`ledger-archive`, `pipx install`-able),
+pre-1.0, **no release has shipped yet** (no tag, no signed build, no SBOM — tracked below).
+
+| Standard | Applies | This repo's posture |
+|---|---|---|
+| Code Quality | Applies | `ruff` (incl. `C901` complexity, max 10) + `mypy --strict`; branch coverage floor 85% (measured 86%); src layout; CODEOWNERS. **Gap:** no `uv.lock`/PEP 735 groups yet, Python floor still `>=3.11` — [`docs/ROADMAP.md`](docs/ROADMAP.md) |
+| Security & Supply Chain | Applies — **ASVS L2** (touches PII/identity) | pip-audit + gitleaks + CodeQL all blocking in CI and in `make verify`, zero muted gates; SHA-pinned Actions with Renovate digest-pinning. **Gap:** no lockfile, container scan, Semgrep, TruffleHog, Harden-Runner, or SBOM/signing yet — [`docs/ROADMAP.md`](docs/ROADMAP.md) |
+| CI/CD | Applies | Single `ci.yml`, least-privilege tokens, SHA-pinned actions, `make verify` now reproduces CI's full required-check set (lint, type, test, i18n, accessibility, audit, secret-scan). **Gap:** no committed branch-protection/ruleset artifact (server-side settings are unverifiable from the repo alone) — ⛔ see `docs/ROADMAP.md`, requires the repo owner |
+| Release & Versioning | Applies — **mandatory** (published-library repo) | SemVer intent stated; Keep-a-Changelog `CHANGELOG.md`. **Gap — the repo's largest:** no tag-triggered release workflow, no PyPI Trusted Publishing, no SBOM/cosign/SLSA provenance; the CHANGELOG's `[0.1.0] — 2026-06-16` section describes prepared, not shipped, work (no git tag exists) — [`docs/ROADMAP.md`](docs/ROADMAP.md) |
+| Accessibility | Applies | WCAG 2.2 AA target; merge-blocking structural gate (`ledger.accessibility_check`); committed, dated, candid VPAT 2.5 ACR (`docs/accessibility/ACR.md`, 46 Supports / 6 Partially / 21 N/A). **Gap:** axe-core/Lighthouse/pa11y/Playwright not run in CI yet; no dated screen-reader/keyboard walkthrough artifact — [`docs/ROADMAP.md`](docs/ROADMAP.md) |
+| Observability | Applies — **Tier C** (library/CLI) | See `## Observability` below |
+| Internationalization | Applies | Full gettext catalog pipeline (EN/ES), five merge-blocking gates (POT-current, BCP-47, key-parity, completeness, `msgfmt --check`) — the repo's strongest standard |
+| AI Evaluation | **N/A** | No model inference in any user-facing or decision path (ingest, fixity, access policy, and disclosure are all deterministic). Reason and the re-trigger condition recorded in `docs/adr/0006-standards-applicability.md` |
+| Quality & Metrics | Applies | 528 tests green; metrics ledger + conformance gap tracker in `docs/ROADMAP.md`. **Gap:** no performance budgets, no DORA review artifact, no root `DEFINITION_OF_DONE.md` — `docs/ROADMAP.md` |
+| Documentation | Applies | This README + ADRs (`docs/adr/`) + `docs/ROADMAP.md` + CHANGELOG + CITATION.cff, kept current; dated currency stamps on THREAT-MODEL/ACCESSIBILITY/GOVERNANCE/ACR |
+| Responsible Tech | Applies | The no-outing sentinel suite is this standard's own named exemplar for misuse-resistance testing (RTF-02); threat model with per-adversary residual risk (`docs/THREAT-MODEL.md`); withhold-vs-403 disclosure design recorded in `docs/adr/0007-withhold-not-403.md`. **Gap:** no dated DPIA, bias/representational-harm review, or ethics sign-off artifact yet — the highest-priority open item in `docs/ROADMAP.md` |
+
+No standard is a bare `N/A` — the one that is (AI Evaluation) carries its reason above and in the
+linked ADR. Every "Gap" above is tracked, dated, and owned in
+[`docs/ROADMAP.md`](docs/ROADMAP.md#open-conformance-gaps) rather than asserted and left to go
+stale; re-verify this table against that tracker at the cadence stated there.
+
+## Observability
+
+**Observability: Tier C — OTel tracing out-of-scope (no network surface beyond the local browse
+server). Opt-in `--log-format json` only.** ledger exceeds Tier C in one respect and falls short in
+another, stated honestly rather than folded into a blanket claim: it already ships a `/healthz`
+endpoint returning JSON with a degraded-503 path (`server.py`), which Tier C does not require; it
+does **not** yet ship the opt-in `--log-format json` CLI flag the tier description names (tracked in
+`docs/ROADMAP.md`, P3-6) — today's structured-logging story is the standard library `logging` module
+with contributor-identity scrubbing enforced by construction and asserted by the no-outing test
+suite (OBS-11, unconditional regardless of tier).
+
 ## Build plan
 
 - **Phase 1 — preservation core.** Content-addressed store; BagIt write/validate; PREMIS + Dublin
@@ -295,11 +347,15 @@ guarantee is stated as a requirement the code must meet.
 
 pytest for every deterministic component (ingest, bagging, fixity, access, redaction); ruff + mypy
 strict in CI; reproducible, content-hashed bags and audit runs; `make verify` reproduces the full gate
-end to end. The repo ships **LICENSE (AGPL-3.0)**, **NOTICE** (independence statement: a personal
+end to end (lint, type, test, i18n, accessibility, dependency audit, secret scan — CI runs the same
+targets). The repo ships **LICENSE (AGPL-3.0)**, **NOTICE** (independence statement: a personal
 open-source project, unaffiliated with any employer or client, containing no proprietary or client
 material), **CODE_OF_CONDUCT**, **CONTRIBUTING**, **SECURITY**, **GOVERNANCE**, a versioned metadata
-schema with a deprecation policy, **semver**, **ADRs**, and committed `docs/audits/`. Conventional
-commits; pinned, **SLSA-friendly** GitHub Actions; **signed releases**; Dependabot.
+schema with a deprecation policy, **semver**, **ADRs**, and audit-as-artifact documents
+(`docs/THREAT-MODEL.md`, `docs/accessibility/ACR.md`; a fuller `docs/audits/` set is tracked in
+[`docs/ROADMAP.md`](docs/ROADMAP.md)). Conventional commits; pinned, **SLSA-friendly** GitHub Actions
+today; **no release has shipped yet** — no tag, no signing, no SBOM (see the Standards conformance
+table below and `docs/ROADMAP.md` for what's tracked); Dependabot + Renovate.
 
 **License choice.** **AGPL-3.0** is chosen deliberately over a permissive license. ledger handles
 disclosure decisions and contributor safety, and the network-use clause means anyone who runs a
@@ -310,7 +366,7 @@ the case AGPL exists for.
 
 ## Definition of done
 
-A small collective can `pipx install ledger`, self-host it on one inexpensive box with no cloud
+A small collective can `pipx install ledger-archive`, self-host it on one inexpensive box with no cloud
 account, ingest an oral history into a verified, replicated BagIt bag with PREMIS and Dublin Core
 metadata, seal the contributor's name and identity while publishing the story, confirm via the
 committed audit suite that no public surface or log reveals who contributed it, browse the archive
