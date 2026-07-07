@@ -219,6 +219,26 @@ def test_static_is_cacheable(site: tuple[str, str, str]) -> None:
     assert headers.get("etag")
 
 
+def test_static_rejects_traversal_and_unknown_names(site: tuple[str, str, str]) -> None:
+    """Static serving is a name allowlist: a traversal or unknown name 404s.
+
+    The request value is matched by name against the import-time ``_STATIC_FILES``
+    map and never joined into a path, so an encoded ``../`` escape misses the map
+    rather than reading outside ``web/static`` (BUG-2; the py/path-injection
+    alerts close because user input never reaches a path expression).
+    """
+    base, _pub, _comm = site
+    # Encoded slashes keep the client from normalizing the traversal away, so it
+    # reaches the handler as one segment — which is not a known static name.
+    status, _b, _h = _get(base, "/static/..%2f..%2fpyproject.toml")
+    assert status == 404
+    status, _b, _h = _get(base, "/static/does-not-exist.css")
+    assert status == 404
+    # The one real static file still serves.
+    status, _b, _h = _get(base, "/static/app.css")
+    assert status == 200
+
+
 # --- no-outing across every new surface -------------------------------------
 
 

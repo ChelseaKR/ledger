@@ -1,5 +1,7 @@
 # Threat model
 
+Last verified: 2026-07-05 · Recheck cadence: per release
+
 This document is written for hostile contexts. ledger holds records for people for
 whom exposure can be dangerous — someone not out, someone undocumented, someone who
 organizes where any of that is criminalized. For those people, a leak is not an

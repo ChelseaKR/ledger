@@ -1,5 +1,7 @@
 # Accessibility
 
+Last verified: 2026-07-05 · Recheck cadence: per release
+
 This document states ledger's accessibility commitment, what it covers, and how it
 is enforced. It is the prose companion to two machine artifacts: the automated gate
 in `src/ledger/accessibility_check.py` and the Accessibility Conformance Report

@@ -1,0 +1,21 @@
+# CODEOWNERS — required-reviewer routing (CODE-QUALITY-STANDARD CQ-39, CI-CD-STANDARD
+# CICD-17/18). This file has no effect on its own; it becomes load-bearing only once
+# branch protection / a repository ruleset requires review from the matched code
+# owner (see ledger-REMEDIATION.md P2-4 — that ruleset is a separate, server-side
+# artifact this file does not create).
+#
+# Solo-maintainer repo today: every path routes to the same owner. The workflow and
+# safety-critical paths are named explicitly anyway so the intent (these paths
+# always require the maintainer's own review, even if co-maintainers are added
+# later) is legible from the file itself, not just from there being one name in it.
+
+* @ChelseaKR
+
+# CI/CD and supply-chain surface: a compromised or careless workflow edit is a
+# direct path to exfiltrating secrets or weakening a merge gate.
+/.github/                 @ChelseaKR
+
+# The disclosure/no-outing choke point and the encrypted identity vault: the two
+# places where a bug is a safety incident, not just a defect.
+/src/ledger/access/       @ChelseaKR
+/src/ledger/identity.py   @ChelseaKR

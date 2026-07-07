@@ -103,6 +103,28 @@ _STATIC_CONTENT_TYPES: dict[str, str] = {
     ".txt": "text/plain; charset=utf-8",
 }
 
+
+def _load_static_files() -> dict[str, Path]:
+    """Build the served-static allowlist once, at import: name -> real path.
+
+    Only regular files directly under the canonical static root, with a known
+    suffix, are eligible. Requests then match by *name* against this map, so a
+    request value never becomes part of a filesystem path (no traversal is even
+    expressible). A missing static dir yields an empty map (every static request
+    404s) rather than an import-time crash (robustness)."""
+    if not _STATIC_ROOT.is_dir():
+        return {}
+    return {
+        entry.name: entry
+        for entry in _STATIC_ROOT.iterdir()
+        if entry.is_file() and entry.suffix.lower() in _STATIC_CONTENT_TYPES
+    }
+
+
+# Name -> path for every servable file under ``web/static``. Built at import so a
+# request value is only ever a dict key, never interpolated into a filesystem path.
+_STATIC_FILES: dict[str, Path] = _load_static_files()
+
 # Friendly labels for consent/objection request kinds, shared by the steward console
 # and the contributor status page so a steward can tell a subject's objection from a
 # contributor's own request at a glance (user research B3).
@@ -203,13 +225,23 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
 
     # --- response helpers ---------------------------------------------------
 
-    def _send(self, status: int, body: bytes, content_type: str) -> None:
+    def _send(
+        self, status: int, body: bytes, content_type: str, *, lang: str | None = None
+    ) -> None:
         """Write a complete response with an explicit length and safe headers.
 
         Sets a conservative ``Content-Security-Policy`` and ``X-Content-Type-
         Options: nosniff`` so a browser will not execute inline script or sniff a
         served file into an active type (security, defense in depth). No header
         carries any request-derived value, so headers cannot leak identity.
+
+        ``lang`` marks a response whose content was negotiated from ``_lang()``
+        (I18N-13 / G11): it sets ``Content-Language`` to the served language and
+        ``Vary: Accept-Language`` so a cache (browser, CDN, reverse proxy) never
+        serves one reader's negotiated language to another. Machine-readable feeds
+        that are always the anonymous-public view regardless of viewer (OAI-PMH,
+        the sitemap, robots.txt, the Atom feed) pass no ``lang`` and get neither
+        header, since their content never varies with ``Accept-Language``.
         """
         self.send_response(status)
         self.send_header("Content-Type", content_type)
@@ -221,29 +253,39 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             "base-uri 'none'; form-action 'self'",
         )
         self.send_header("Referrer-Policy", "no-referrer")
+        if lang is not None and lang in i18n.SUPPORTED:
+            # Write the tag from the constant map, never the value that came out
+            # of _lang(), so the "only ever a shipped language" guarantee is
+            # provable right here at the sink. _lang() already constrains lang to
+            # i18n.SUPPORTED, but that guard is invisible to static analysis
+            # through the getattr round-trip below, and one refactor away from
+            # being lost. Re-asserting membership + emitting the constant closes
+            # the CodeQL response-splitting/cookie-injection alerts honestly.
+            self.send_header("Content-Language", i18n.SUPPORTED_HEADER[lang])
+            self.send_header("Vary", "Accept-Language")
         # Persist an explicit ?lang= pick so the reader's choice survives navigation.
         # The cookie holds only the UI language code — no identity, no record id
         # (no-outing rule). Lax + HttpOnly: it is sent on top-level navigations and is
         # never exposed to script. No Secure flag, so it still works for a community
         # running ledger over plain HTTP on an inexpensive box (availability).
         chosen_lang = getattr(self, "_set_lang_cookie", None)
-        if chosen_lang is not None:
+        if chosen_lang is not None and chosen_lang in i18n.SUPPORTED:
             self.send_header(
                 "Set-Cookie",
-                f"lang={chosen_lang}; Path=/; Max-Age=31536000; SameSite=Lax; HttpOnly",
+                f"lang={i18n.SUPPORTED_HEADER[chosen_lang]}; Path=/; Max-Age=31536000; SameSite=Lax; HttpOnly",
             )
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(body)
 
     def _send_html(self, status: int, page: str) -> None:
-        self._send(status, page.encode("utf-8"), "text/html; charset=utf-8")
+        self._send(status, page.encode("utf-8"), "text/html; charset=utf-8", lang=self._lang())
 
     def _send_json(self, status: int, obj: object) -> None:
         """Serialize ``obj`` as JSON. Only DisclosedRecord-derived data is passed in,
         so the JSON cannot contain an identity field (no-outing rule)."""
         body = json.dumps(obj, ensure_ascii=False, sort_keys=True).encode("utf-8")
-        self._send(status, body, "application/json; charset=utf-8")
+        self._send(status, body, "application/json; charset=utf-8", lang=self._lang())
 
     def _lang(self) -> str:
         """Resolve the response language: explicit choice, remembered choice, then header.
@@ -295,7 +337,13 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         """Handle HEAD identically to GET but without a body (handled in `_send`)."""
         self.do_GET()
 
-    def do_GET(self) -> None:
+    # Pre-existing complexity (one dispatcher routes every read-only path); surfaced
+    # 2026-07-05 when CQ-05's complexity gate was enabled. Waived, not re-muted:
+    # this function is the disclosure/no-outing choke point, so it is deliberately
+    # *not* refactored under audit time pressure — a split is tracked as a careful,
+    # fully-retested follow-up, not a same-day edit to the most safety-sensitive
+    # function in the repo (see ledger-REMEDIATION.md P3-2).
+    def do_GET(self) -> None:  # noqa: C901
         """Route a GET request to the matching read-only handler.
 
         Routing is a small, explicit dispatch (predictability). Unmatched paths
@@ -1326,7 +1374,11 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         media_type = upload.sniff_media_type(data)
         if media_type is None:
             return i18n.t(lang, "err_file_type", types=", ".join(upload.ALLOWED_TYPES))
-        safe = _safe_filename(filename) or "upload"
+        # Path(...).name reduces the sanitized name to a single component, so the
+        # write target is provably a direct child of tmpdir (no traversal even if
+        # _safe_filename ever regresses). _safe_filename already strips separators;
+        # this makes that invariant explicit at the write sink.
+        safe = Path(_safe_filename(filename) or "upload").name or "upload"
         (tmpdir / safe).write_bytes(data)
         # The payload follows the record's sealed-pending default, so it is invisible
         # until a steward reviews it — exactly like the rest of the submission. The
@@ -1799,7 +1851,14 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Type", payload.media_type or "application/octet-stream")
         self.send_header("Content-Length", str(len(data)))
         self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header("Content-Disposition", f'inline; filename="{_safe_filename(filename)}"')
+        # RFC 6266: a percent-encoded filename* is a recognized-safe way to carry
+        # the (already CR/LF/quote-stripped) name, and it renders non-ASCII names
+        # correctly for a bilingual archive. Keep an ASCII filename= fallback.
+        safe_name = _safe_filename(filename)
+        self.send_header(
+            "Content-Disposition",
+            f"inline; filename=\"{safe_name}\"; filename*=UTF-8''{quote(safe_name, safe='')}",
+        )
         self.send_header("Content-Security-Policy", "default-src 'none'; sandbox")
         self.send_header("Referrer-Policy", "no-referrer")
         self.end_headers()
@@ -1945,27 +2004,18 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
     # --- static files (path-traversal safe) --------------------------------
 
     def _handle_static(self, rel: str) -> None:
-        """Serve a file from ``web/static``, refusing any escape from the root.
+        """Serve a file from the ``web/static`` allowlist, or 404.
 
-        The requested path is decoded, joined under the canonical static root, and
-        resolved; if the result is not *inside* that root (a ``../`` attempt, an
-        absolute path, or a symlink out), the request is refused with a 404 rather
-        than served (securability — no path traversal). Only files (never
-        directories) with a known suffix are served; an unknown suffix falls back
-        to ``application/octet-stream`` and is never treated as active content.
+        The decoded request value is matched by *name* against ``_STATIC_FILES``,
+        a map built once at import from the real files under the canonical static
+        root. Request input is only ever a dictionary key here, never part of a
+        path expression, so a ``../``, an absolute path, or a symlink name simply
+        misses the map and 404s — traversal is not expressible (securability). An
+        unknown suffix falls back to ``application/octet-stream`` and is never
+        treated as active content.
         """
-        candidate = _STATIC_ROOT / _decode_id(rel)
-        try:
-            # resolve() itself raises ValueError on an embedded NUL byte, so it must
-            # be inside the guard or a crafted path crashes the handler with no
-            # response (robustness, securability). relative_to() rejects any escape.
-            candidate = candidate.resolve()
-            candidate.relative_to(_STATIC_ROOT)
-        except ValueError:
-            # The path was malformed or escaped the static root — refuse, no detail.
-            self._handle_not_found()
-            return
-        if not candidate.is_file():
+        candidate = _STATIC_FILES.get(_decode_id(rel))
+        if candidate is None:
             self._handle_not_found()
             return
         content_type = _STATIC_CONTENT_TYPES.get(

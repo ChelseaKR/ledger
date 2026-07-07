@@ -1,0 +1,42 @@
+# .pre-commit-config.yaml — fast local gates a contributor runs before a commit
+# reaches CI (CODE-QUALITY-STANDARD CQ-12, SECURITY-AND-SUPPLY-CHAIN-STANDARD
+# SEC-17). CI (`.github/workflows/ci.yml`) remains the gate of record — these
+# hooks exist to catch the same lint/format/secret issues locally, before they
+# leave your machine, not to replace `make verify`. See CONTRIBUTING.md for setup.
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.9 # matches pyproject.toml's `ruff>=0.15` floor; bump both together
+    hooks:
+      - id: ruff-check
+        # Scoped to src/tests, same as `make lint` and CI (ci.yml runs
+        # `ruff check src tests`) — `tools/` and `infra/` are deliberately
+        # outside that boundary today, so this hook stays a faithful mirror of
+        # the actual gate instead of surfacing new findings pre-commit alone
+        # would introduce.
+        files: ^(src|tests)/
+        # No --fix here: mirror what CI actually runs (`ruff check`, no
+        # auto-fix) so a local pass means the same thing as a CI pass. Use
+        # `make format` to auto-fix.
+      - id: ruff-format
+        files: ^(src|tests)/
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1 # exact version CI's supply-chain job downloads and pins
+    hooks:
+      - id: gitleaks
+
+  # mypy strict is slow and needs this project's own venv (mypy_path=src,
+  # cryptography's bundled types) to resolve correctly — pre-commit's isolated
+  # per-hook environment for the official mirror does not see either without
+  # extra dependency wiring, so this "local" hook just calls the project's own
+  # mypy instead of duplicating that config. Runs at pre-push, not every commit,
+  # since a strict full-package check is too slow for the inner commit loop.
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy --strict (src/ledger)
+        entry: .venv/bin/mypy
+        language: system
+        types: [python]
+        pass_filenames: false
+        stages: [pre-push]

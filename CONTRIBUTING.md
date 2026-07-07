@@ -10,6 +10,18 @@ If you have not yet, read [`README.md`](README.md) for what the project is and w
 [`SECURITY.md`](SECURITY.md) for how to report a vulnerability. The
 [Code of Conduct](CODE_OF_CONDUCT.md) applies to every interaction.
 
+## Standards this repo is held to
+
+ledger is one repo in a personal portfolio governed by a shared set of engineering
+standards (code quality, security & supply chain, CI/CD, accessibility,
+observability, i18n, documentation, release & versioning, responsible tech, quality
+& metrics). Those standards are fetched at CI time (`.github/workflows/standards.yml`,
+pinned to a released tag) rather than vendored here. **Which** of them apply to
+ledger, and ledger's current posture against each, is declared in the
+[`## Standards conformance`](README.md#standards-conformance) table in the README —
+check it before assuming a gate exists or doesn't. Gaps tracked there are fair game
+for a contribution.
+
 ## Project independence
 
 ledger is an independent, personal open-source project. It is not affiliated with, sponsored by,
@@ -49,6 +61,19 @@ make install
 This creates a virtual environment in `.venv` and installs ledger plus the dev tooling
 (ruff, mypy, pytest, pip-audit) in editable mode. Run `make help` to see every target.
 
+Optionally, install the pre-commit hooks so lint/format/secret issues are caught before they
+leave your machine, not just in CI:
+
+```sh
+pipx install pre-commit  # or: pip install pre-commit
+pre-commit install               # ruff check + ruff format + gitleaks, on every commit
+pre-commit install --hook-type pre-push  # adds strict mypy, on push only (it's the slow one)
+```
+
+CI (`ci.yml`) is still the gate of record — these hooks are a convenience, not a replacement for
+`make verify`, and they intentionally scope to `src/`+`tests/` (ruff) or the whole repo (gitleaks),
+matching exactly what CI checks. See `.pre-commit-config.yaml` for the pinned hook versions.
+
 ## The merge gate
 
 A change merges when the full gate is green. Reproduce it locally with:
@@ -57,14 +82,20 @@ A change merges when the full gate is green. Reproduce it locally with:
 make verify
 ```
 
-`make verify` runs **lint + type + test** — the same `make` targets CI runs, on the same pinned
-toolchain, so green locally means green in CI.
+`make verify` runs **lint + type + test + i18n + accessibility + audit + secret-scan** — the same
+`make` targets CI's required checks run, on the same pinned toolchain, so green locally means green
+in CI (CI-CD-STANDARD CICD-27: local `make verify` and the CI required-check set are kept in parity
+by hand; if you add a CI job, add its target to `verify` in the same PR).
 
 | Gate | Command | What it checks |
 | --- | --- | --- |
 | Lint | `make lint` | ruff check + format-check: correctness, security (bandit rules), import hygiene |
 | Type | `make type` | mypy strict over `src/ledger` |
 | Test | `make test` | pytest: preservation, disclosure, and the no-outing audit |
+| i18n | `make i18n` | POT current, EN/ES key-parity + completeness, PO compiles, BCP-47 valid |
+| Accessibility | `make accessibility` | static checks (landmarks, labels, `lang`, alt text, contrast) |
+| Audit | `make audit` | pip-audit dependency vulnerability scan — blocking, never muted |
+| Secret scan | `make secret-scan` | gitleaks over full history if installed locally; CI is authoritative |
 
 Two gates are called out separately because they protect the project's core promises, and a
 regression in either must be unmistakable, not buried:
@@ -82,12 +113,12 @@ regression in either must be unmistakable, not buried:
   Accessibility Conformance Report (`docs/accessibility/ACR.md`). Accessibility is merge-blocking;
   a regression fails the build.
 
-Useful extras that are not part of the blocking gate but are good practice:
+Useful extras that are run individually above but are also handy standalone:
 
 ```sh
-make cov            # tests with a coverage report
-make audit          # pip-audit dependency scan
-make accessibility  # static a11y checks on the web surface
+make cov            # tests with a coverage report (--cov-fail-under=85; verify's `test` target
+                     # runs pytest without coverage for speed, so run this before relying on the
+                     # floor locally)
 make acr            # regenerate the Accessibility Conformance Report
 ```
 
@@ -180,11 +211,15 @@ the metadata schema may still change, but a breaking change is always flagged in
 [changelog](CHANGELOG.md). The metadata schema is versioned with a documented deprecation and
 migration path; a bag written by an older release stays readable.
 
-Releases are **signed** and tagged (`vX.Y.Z`), with pinned, hashed dependencies and SLSA-friendly,
-pinned GitHub Actions. Each release regenerates and re-commits the Accessibility Conformance Report,
-the same audit-as-artifact discipline applied to fixity, and every CI gate must be green for a tag
-to ship. Verify a release's signature before deploying it; never run an unsigned build of a
-safety-sensitive tool.
+**Current state (2026-07-05):** no tag or release has shipped yet — `v0.1.0` is declared in the
+changelog but not cut (see the README's Standards conformance table, Release & Versioning row, and
+`docs/adr/0006-standards-applicability.md`). The intended release posture, once the release
+workflow lands, is: tags `vX.Y.Z` signed and verified before a build runs, SHA-pinned SLSA-friendly
+GitHub Actions (already true today for CI), a CycloneDX SBOM and cosign/SLSA provenance attached to
+each release, and every CI gate green at the tagged commit before anything ships. Until that
+workflow exists, treat any build as unsigned and unverified provenance, and pin a specific commit
+if you deploy from source. GitHub Actions dependencies are pinned by SHA today regardless of
+release status.
 
 ## License
 

@@ -147,3 +147,53 @@ def test_switching_language_localizes_the_browse_chrome(base: str) -> None:
     assert "Buscar en el archivo" in body  # search label
     # And the English equivalents are gone on the Spanish page.
     assert "Records (list view)" not in body
+
+
+# --- I18N-13 / G11: Content-Language + Vary on every negotiated response ----
+
+
+def test_html_response_carries_content_language_and_vary(base: str) -> None:
+    """A negotiated HTML page declares its language and varies on the header.
+
+    Without ``Vary: Accept-Language`` a shared cache (browser, CDN, reverse proxy)
+    could serve one reader's negotiated language to the next reader who hits the
+    same URL with a different ``Accept-Language`` — a correctness bug, not just a
+    cosmetic one, for any deployment sitting behind a cache.
+    """
+    _status, _body, headers = _request(f"{base}/?lang=es", accept_language="en")
+    assert headers.get("Content-Language") == "es"
+    assert headers.get("Vary") == "Accept-Language"
+
+
+def test_json_response_carries_content_language_and_vary(base: str) -> None:
+    """The JSON API is negotiated exactly like the HTML surface (same `_send` path)."""
+    _status, _body, headers = _request(f"{base}/api/records?lang=en", accept_language="es")
+    assert headers.get("Content-Language") == "en"
+    assert headers.get("Vary") == "Accept-Language"
+
+
+def test_feed_endpoints_are_not_marked_content_language(base: str) -> None:
+    """Machine feeds are always the anonymous-public view; they never vary by language."""
+    _status, _body, headers = _request(f"{base}/sitemap.xml")
+    assert "Content-Language" not in headers
+    assert "Vary" not in headers
+
+
+def test_hostile_lang_query_cannot_inject_a_response_header(base: str) -> None:
+    """A CRLF/cookie payload in ``?lang=`` is never reflected into a header.
+
+    The served language is allowlist-constrained (``i18n.SUPPORTED``) and the
+    ``Content-Language``/``Set-Cookie`` values are written from a constant map, so
+    a header-splitting payload in the query is rejected and the response falls
+    back to a shipped language with no attacker-controlled header (BUG-1; this is
+    the visible-at-the-sink guarantee behind the CodeQL http-response-splitting
+    and cookie-injection alerts on PR #34).
+    """
+    status, _body, headers = _request(f"{base}/?lang=%0d%0aSet-Cookie:evil=1", accept_language="en")
+    assert status == 200
+    # If a language tag is emitted at all it is a shipped code, never the payload.
+    assert headers.get("Content-Language") in (None, "en", "es")
+    # Nothing from the query reached any response header (no split, no injection).
+    joined = "\n".join(f"{name}: {value}" for name, value in headers.items()).lower()
+    assert "evil" not in joined
+    assert "set-cookie:evil" not in joined.replace(" ", "")

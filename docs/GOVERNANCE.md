@@ -1,5 +1,7 @@
 # Governance
 
+Last verified: 2026-07-05 · Recheck cadence: per release
+
 ledger is community-governed. The central principle, repeated everywhere because it is
 load-bearing:
 

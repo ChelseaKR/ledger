@@ -24,6 +24,18 @@ The package never raises a contributor's identity to a read path: see
 
 from __future__ import annotations
 
+from importlib import metadata as _metadata
+
 __all__ = ["__version__"]
 
-__version__ = "0.1.0"
+# Single source of version truth (RELEASE-AND-VERSIONING-STANDARD REL-02): derive
+# from installed package metadata (itself built from `pyproject.toml`'s
+# `[project] version`) rather than hand-copying the version string a second time.
+# Before this, `pyproject.toml` and this file could silently drift out of sync.
+# The fallback only fires for an uninstalled checkout (e.g. running straight from a
+# source tree with no `pip install -e .`), which is not a supported way to run
+# ledger but should not raise on import.
+try:
+    __version__ = _metadata.version("ledger-archive")
+except _metadata.PackageNotFoundError:  # pragma: no cover - uninstalled checkout
+    __version__ = "0.0.0+unknown"

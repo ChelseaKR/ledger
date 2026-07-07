@@ -75,7 +75,10 @@ def _esc(value: object) -> str:
     return html.escape(str(value), quote=True)
 
 
-def parse_submission(form: dict[str, str], config: Config) -> Submission:
+# Pre-existing complexity (one function validates every submitted field); surfaced
+# 2026-07-05 when CQ-05's complexity gate was enabled. Waived, not re-muted:
+# tracked for a follow-up split (see ledger-REMEDIATION.md P3-2).
+def parse_submission(form: dict[str, str], config: Config) -> Submission:  # noqa: C901
     """Build a ``(record, identity)`` pair from a posted contribution form.
 
     Validates and bounds the inputs and constructs a record that is *sealed-pending*
