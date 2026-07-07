@@ -10,11 +10,21 @@ ordinary stewardship is never an outing risk (confidentiality).
 
 from __future__ import annotations
 
+import hmac
 import json
+import re
 from collections.abc import Iterable
+from hashlib import sha256
 from pathlib import Path
 
-from ledger.models import PUBLIC_GRANT, AccessPolicy, Grant
+from ledger.errors import LedgerError
+from ledger.models import PUBLIC_GRANT, AccessPolicy, Grant, parse_iso
+
+# A grant subject must be a plain, delimiter-free label so it survives round-tripping
+# through a ``subject:expiry:mac`` token unambiguously. Real subjects ("steward-1")
+# already satisfy this; a subject that does not is rejected at issue time rather than
+# minted into an unparseable token (correctness, fail-closed).
+_SUBJECT_RE = re.compile(r"\A[A-Za-z0-9._-]+\Z")
 
 
 def anonymous() -> Grant:
@@ -128,3 +138,73 @@ def load_grants(path: Path) -> dict[str, Grant]:
             expires_at=spec.get("expires_at"),
         )
     return grants
+
+
+# --- authenticated grant tokens ---------------------------------------------
+#
+# The old ``X-Ledger-Grant: <subject>`` header made the subject string itself the
+# whole credential: anyone who guessed or shoulder-surfed ``devon-steward`` held
+# steward access to sealed *content*. That is the sharpest gap in the archive's
+# threat model (doxxing, hostile observers). These helpers replace the bare subject
+# with an unforgeable, HMAC-signed token, reusing the very pattern the consent claim
+# token already uses (:func:`ledger.consent.issue_claim_token`): an HMAC-SHA256 over
+# a public identifier under a server-held secret, verified in constant time. Zero new
+# dependencies. Without the secret a token cannot be minted, so a guessed subject is
+# byte-for-byte the anonymous experience (no oracle).
+
+
+def _epoch(iso: str) -> int:
+    """Whole seconds since the Unix epoch for an ISO-8601 instant (UTC-aware)."""
+    return int(parse_iso(iso).timestamp())
+
+
+def issue_grant_token(subject: str, secret: bytes, *, expires_at: str | None = None) -> str:
+    """Mint the ``X-Ledger-Grant`` token a steward presents to authenticate ``subject``.
+
+    The token is ``<subject>:<expiry>:<hmac>`` where ``expiry`` is ``0`` (never
+    expires) or the token's expiry as whole epoch seconds, and ``hmac`` is
+    HMAC-SHA256 over ``<subject>:<expiry>`` under ``secret``. Because the MAC binds
+    both the subject and the expiry, neither can be altered without invalidating the
+    token. It is a *sealed* value (it authorises access), so — like a claim token —
+    it is never logged or placed in an error (no-outing rule).
+
+    ``expires_at`` (ISO-8601) bounds how long a captured token can be replayed. A
+    subject that is not a plain ``[A-Za-z0-9._-]`` label raises
+    :class:`~ledger.errors.LedgerError` rather than minting an ambiguous token.
+    """
+    if not _SUBJECT_RE.match(subject):
+        raise LedgerError("grant subject must be a plain [A-Za-z0-9._-] label to be tokenizable")
+    expiry = "0" if expires_at is None else str(_epoch(expires_at))
+    mac = hmac.new(secret, f"{subject}:{expiry}".encode(), sha256).hexdigest()
+    return f"{subject}:{expiry}:{mac}"
+
+
+def verify_grant_token(token: str, secret: bytes, *, now: str) -> str | None:
+    """Return the authenticated subject of ``token``, or ``None`` if it is not valid.
+
+    Returns ``None`` — never raising, never distinguishing *why* — for an empty
+    secret, a malformed token, a wrong/forged MAC, or an expired token, so every
+    rejection is byte-for-byte the anonymous experience and leaks no oracle. The MAC
+    is compared in constant time (:func:`hmac.compare_digest`) so a near-miss forgery
+    reveals nothing about how many bytes matched (safety). ``now`` (ISO-8601) is the
+    instant expiry is judged against; an unparseable ``now`` fails closed (expired).
+    """
+    if not secret:
+        # No configured secret means no token can be authenticated: deny by default.
+        return None
+    parts = token.split(":")
+    if len(parts) != 3:
+        return None
+    subject, expiry, mac = parts
+    if not _SUBJECT_RE.match(subject) or not expiry.isdigit():
+        return None
+    expected = hmac.new(secret, f"{subject}:{expiry}".encode(), sha256).hexdigest()
+    if not hmac.compare_digest(expected, mac):
+        return None
+    if expiry != "0":
+        try:
+            if _epoch(now) >= int(expiry):
+                return None
+        except (ValueError, TypeError, OverflowError):
+            return None
+    return subject

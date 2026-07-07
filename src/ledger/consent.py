@@ -43,6 +43,7 @@ from dataclasses import dataclass, field
 from hashlib import sha256
 from pathlib import Path
 
+from ledger._filelock import file_lock
 from ledger.errors import LedgerError
 from ledger.models import now_iso
 
@@ -184,12 +185,16 @@ class ConsentRequestStore:
         """Append ``req`` to the queue and persist atomically (append-only).
 
         Reads the current queue, appends, and rewrites the whole list under an
-        atomic rename. The message content is persisted but never logged
-        (no-outing rule).
+        atomic rename. The read-modify-write runs under a single-host advisory lock
+        so two concurrent requests (normal under the threaded server) cannot each
+        read the same queue and clobber one another — a dropped request here could be
+        a lost *withdrawal*, the worst failure this project has (consent integrity).
+        The message content is persisted but never logged (no-outing rule).
         """
-        requests = self._read()
-        requests.append(req)
-        self._write(requests)
+        with file_lock(self._path):
+            requests = self._read()
+            requests.append(req)
+            self._write(requests)
 
     def resolve(self, request_id: str, status: str) -> None:
         """Advance the request with ``request_id`` to ``status`` and persist.
@@ -204,27 +209,28 @@ class ConsentRequestStore:
             raise LedgerError(
                 "consent request can only be resolved to 'acknowledged' or 'resolved'"
             )
-        requests = self._read()
-        found = False
-        updated: list[ConsentRequest] = []
-        for req in requests:
-            if req.request_id == request_id:
-                found = True
-                updated.append(
-                    ConsentRequest(
-                        record_id=req.record_id,
-                        kind=req.kind,
-                        message=req.message,
-                        request_id=req.request_id,
-                        status=status,
-                        created_at=req.created_at,
+        with file_lock(self._path):
+            requests = self._read()
+            found = False
+            updated: list[ConsentRequest] = []
+            for req in requests:
+                if req.request_id == request_id:
+                    found = True
+                    updated.append(
+                        ConsentRequest(
+                            record_id=req.record_id,
+                            kind=req.kind,
+                            message=req.message,
+                            request_id=req.request_id,
+                            status=status,
+                            created_at=req.created_at,
+                        )
                     )
-                )
-            else:
-                updated.append(req)
-        if not found:
-            raise LedgerError(f"no consent request with id {request_id!r}")
-        self._write(updated)
+                else:
+                    updated.append(req)
+            if not found:
+                raise LedgerError(f"no consent request with id {request_id!r}")
+            self._write(updated)
 
     def _read(self) -> list[ConsentRequest]:
         """Load and parse the JSON list; a missing file is an empty queue."""
