@@ -177,3 +177,23 @@ def test_feed_endpoints_are_not_marked_content_language(base: str) -> None:
     _status, _body, headers = _request(f"{base}/sitemap.xml")
     assert "Content-Language" not in headers
     assert "Vary" not in headers
+
+
+def test_hostile_lang_query_cannot_inject_a_response_header(base: str) -> None:
+    """A CRLF/cookie payload in ``?lang=`` is never reflected into a header.
+
+    The served language is allowlist-constrained (``i18n.SUPPORTED``) and the
+    ``Content-Language``/``Set-Cookie`` values are written from a constant map, so
+    a header-splitting payload in the query is rejected and the response falls
+    back to a shipped language with no attacker-controlled header (BUG-1; this is
+    the visible-at-the-sink guarantee behind the CodeQL http-response-splitting
+    and cookie-injection alerts on PR #34).
+    """
+    status, _body, headers = _request(f"{base}/?lang=%0d%0aSet-Cookie:evil=1", accept_language="en")
+    assert status == 200
+    # If a language tag is emitted at all it is a shipped code, never the payload.
+    assert headers.get("Content-Language") in (None, "en", "es")
+    # Nothing from the query reached any response header (no split, no injection).
+    joined = "\n".join(f"{name}: {value}" for name, value in headers.items()).lower()
+    assert "evil" not in joined
+    assert "set-cookie:evil" not in joined.replace(" ", "")

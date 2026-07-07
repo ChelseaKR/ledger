@@ -56,6 +56,14 @@ DEFAULT_LANG = "en"
 # config may serve a subset; ``negotiate`` is told the available set explicitly.
 SUPPORTED: tuple[str, ...] = ("en", "es")
 
+# Code->code map used at response-header sinks (Content-Language, the lang cookie)
+# so a language tag written to a header provably originates from this constant set,
+# not from a request-derived value routed through the server's ``_lang()``. The
+# values equal the keys; the indirection is what makes the allowlist guarantee
+# visible to static analysis at the header write, and it is defense in depth if a
+# future refactor ever drops the upstream ``in SUPPORTED`` checks.
+SUPPORTED_HEADER: dict[str, str] = {code: code for code in SUPPORTED}
+
 # Human-readable language names, in the language's own script (autonym), so a
 # language picker reads naturally to a native speaker. Autonyms are invariant across
 # the UI language, so they are NOT gettext-translated — "Español" is always "Español".

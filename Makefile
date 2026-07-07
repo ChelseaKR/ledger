@@ -3,7 +3,11 @@
 # locally means green in CI (reproducibility, process capabilities).
 
 VENV ?= .venv
-PY   := $(VENV)/bin/python
+# Prefer the project venv, but fall back to python3 so `make <target>` works in
+# CI (which installs into the runner's system Python and never creates .venv).
+# `?=` also lets a caller override, e.g. `make i18n PY=python`. This closes the
+# i18n gate's `.venv/bin/python: No such file or directory` (exit 127) failure.
+PY   ?= $(if $(wildcard $(VENV)/bin/python),$(VENV)/bin/python,python3)
 PIP  := $(PY) -m pip
 
 .DEFAULT_GOAL := help
