@@ -161,6 +161,19 @@ Applicability decisions and the N/A for AI-Evaluation live in
 - **VEX:** none needed — `pip-audit` reports zero known vulnerabilities in the
   resolved dependency set as of this audit (2026-07-05); there is currently no
   unfixable HIGH/CRITICAL finding to document an exception for.
+- **Crypto-agility and post-quantum posture:** `docs/audits/crypto-agility-pq-posture.md`
+  is a committed harvest-now-decrypt-later analysis and algorithm-lifecycle
+  policy for the identity vault and sealed content — an honest inventory of
+  which primitives are quantum-exposed today (Grover-reduced symmetric margin
+  only; no public-key primitive exists in `identity.py` yet) versus which
+  future work (RM1 threshold custody) would introduce full Shor-algorithm
+  exposure and must be designed hybrid from the start. It states the concrete
+  conditions that gate hybrid post-quantum adoption (a stable `cryptography`
+  PQ KEM API, per ADR 0005's single-dependency ethos) and a versioned-envelope
+  policy (algorithm identifier as a field independent of key class) that the
+  companion envelope/key-hierarchy design must accommodate. No cryptographic
+  code changes ship with it — both remain pending external-cryptographer
+  review.
 - **Residual-risk register:** the per-adversary residual risk is stated inline in
   `docs/THREAT-MODEL.md` §4 (e.g., "a steward who never uses dual-control and is
   never audited can still act quietly for a time" for the malicious-steward case);
@@ -177,6 +190,7 @@ Applicability decisions and the N/A for AI-Evaluation live in
 - [`docs/accessibility/ACR.md`](accessibility/ACR.md) — VPAT 2.5 ACR, regenerable via `make acr` (dated 2026-07-05)
 - [`docs/GOVERNANCE.md`](GOVERNANCE.md) — stewardship, moderation, and dispute-resolution process (dated 2026-07-05)
 - [`docs/adr/0006-standards-applicability.md`](adr/0006-standards-applicability.md), [`docs/adr/0007-withhold-not-403.md`](adr/0007-withhold-not-403.md) — the two decisions this audit required
+- [`docs/audits/crypto-agility-pq-posture.md`](audits/crypto-agility-pq-posture.md) — harvest-now-decrypt-later analysis and algorithm-lifecycle policy for the identity vault and sealed content (EXP-13)
 - **Not yet created** (tracked in [`docs/ROADMAP.md`](ROADMAP.md#open-conformance-gaps)): `docs/audits/dpia.md`, `docs/audits/bias-representational-harm.md`, `docs/audits/ethics-consequence-scan.md`, `docs/audits/residual-risk-register.md`
 
 No LLM or model inference exists anywhere in ledger (ingest, fixity, access policy,
