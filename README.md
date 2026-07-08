@@ -309,7 +309,7 @@ pre-1.0, **no release has shipped yet** (no tag, no signed build, no SBOM — tr
 | Observability | Applies — **Tier C** (library/CLI) | See `## Observability` below |
 | Internationalization | Applies | Full gettext catalog pipeline (EN/ES), five merge-blocking gates (POT-current, BCP-47, key-parity, completeness, `msgfmt --check`) — the repo's strongest standard |
 | AI Evaluation | **N/A** | No model inference in any user-facing or decision path (ingest, fixity, access policy, and disclosure are all deterministic). Reason and the re-trigger condition recorded in `docs/adr/0006-standards-applicability.md` |
-| Quality & Metrics | Applies | 528 tests green; metrics ledger + conformance gap tracker in `docs/ROADMAP.md`. **Gap:** no performance budgets, no DORA review artifact, no root `DEFINITION_OF_DONE.md` — `docs/ROADMAP.md` |
+| Quality & Metrics | Applies | 528 tests green; metrics ledger + conformance gap tracker in `docs/ROADMAP.md`; dated DORA delivery-health review (`docs/DORA-DELIVERY-HEALTH-REVIEW.md`, QM-11) and root `DEFINITION_OF_DONE.md` (QM-18). **Gap:** no performance budgets in CI yet — `docs/ROADMAP.md` |
 | Documentation | Applies | This README + ADRs (`docs/adr/`) + `docs/ROADMAP.md` + CHANGELOG + CITATION.cff, kept current; dated currency stamps on THREAT-MODEL/ACCESSIBILITY/GOVERNANCE/ACR |
 | Responsible Tech | Applies | The no-outing sentinel suite is this standard's own named exemplar for misuse-resistance testing (RTF-02); threat model with per-adversary residual risk (`docs/THREAT-MODEL.md`); withhold-vs-403 disclosure design recorded in `docs/adr/0007-withhold-not-403.md`. **Gap:** no dated DPIA, bias/representational-harm review, or ethics sign-off artifact yet — the highest-priority open item in `docs/ROADMAP.md` |
 

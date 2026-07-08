@@ -42,7 +42,6 @@ tracked."
 | Responsible Tech | RTF-04 | No DPIA — the highest-priority artifact gap in the repo (L2 PII archive with no data-protection impact assessment) | Open | P2-2 |
 | Responsible Tech | RTF-01 | Ethics/consequence scan substance exists (README, THREAT-MODEL, GOVERNANCE) but no committed, dated, signed-off artifact | Open | P2-2 |
 | Quality & Metrics | QM-02 | No performance budgets/benchmarks in CI (README claim already removed pending this — see CHANGELOG) | Open | P3-5 |
-| Quality & Metrics | QM-11, QM-18 | No DORA delivery-health review artifact; no root `DEFINITION_OF_DONE.md` | Open | P2-5 |
 | Code Quality | CQ-01 | Python floor is `>=3.11`, not the `>=3.12` the standard's drift-remediation note names for ledger | Open | P1-2 |
 | Code Quality | CQ-47 | No mutation testing on safety modules (`access/`, `identity.py`, `fixity.py`) | Open | P3-3 |
 | Code Quality | CQ-05 (partial) | Complexity gate is now enforced (`ruff` C901, max 10); 7 pre-existing functions exceed it and are waived with dated `# noqa: C901` comments pending a deliberate, fully-retested split — not rushed under audit time pressure on safety-adjacent code | Open (waived) | See `# noqa: C901` sites in `accessibility_check.py`, `bag.py`, `cli.py`, `contribute.py`, `ingest.py`, `server.py` |
@@ -56,4 +55,8 @@ tracked."
 | Tier-1 mechanical score | 8/11 (pre-remediation); coverage floor + Makefile-mute items in this pass address 2 of the 3 failing checks | `STANDARDS/automation` Tier-1 check | 2026-07-05 |
 | `make verify` == CI required checks | Yes, as of this pass (lint, type, test, i18n, accessibility, audit, secret-scan) | manual trace of `ci.yml` jobs to `Makefile` targets | 2026-07-05 |
 
-DORA five-metric delivery-health review: not yet established (QM-11, tracked above).
+DORA five-metric delivery-health review: established 2026-07-07, reviewed quarterly —
+[`docs/DORA-DELIVERY-HEALTH-REVIEW.md`](DORA-DELIVERY-HEALTH-REVIEW.md) (QM-11). Deployment
+Frequency and Change Lead Time have real numbers from merged-PR history; Change Fail Rate,
+Failed-Deployment Recovery Time, and Deployment Rework Rate are recorded N/A pending the
+tag-triggered release workflow (REL-08, P1-6) that gives them something to measure.
