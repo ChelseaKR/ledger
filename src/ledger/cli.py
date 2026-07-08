@@ -54,6 +54,7 @@ from ledger.moderate import (
     set_payload_policy,
     takedown,
 )
+from ledger.oralhistory import apply_session_manifest, parse_session_manifest
 from ledger.replicate import verify_replicas
 from ledger.server import serve
 
@@ -716,6 +717,50 @@ def _cmd_handoff(args: argparse.Namespace) -> int:
     return 0 if manifest.all_fixity_ok else 1
 
 
+def _cmd_session_ingest(args: argparse.Namespace) -> int:
+    """``session ingest`` — apply an oral-history session manifest and ingest it.
+
+    EXP-09: reads a session-manifest JSON file (see
+    ``docs/oral-history/session-manifest-format.md``), validates that every
+    disclosing segment carries a spoken-consent timestamp, maps each segment onto
+    its own :class:`~ledger.models.Field` (and, for a segment naming a
+    ``payload_filename``, a pre-declared payload policy), and runs the result
+    through the one ingest path — exactly like ``ingest``, but session-shaped.
+    """
+    archive = _open_archive(Path(args.root))
+    manifest = parse_session_manifest(Path(args.manifest).read_text(encoding="utf-8"))
+
+    record = Record(
+        title=args.title,
+        default_policy=AccessPolicy.SEALED_UNTIL,
+        dublin_core=DublinCore(title=[args.title], publisher=[archive.config.archive_name]),
+        content_warnings=list(args.cw or []),
+    )
+    record = apply_session_manifest(record, manifest)
+
+    payload: dict[str, Path] = {}
+    for fname, path_str in _parse_pairs(args.file or []):
+        payload[fname] = Path(path_str)
+
+    identity: ContributorIdentity | None = None
+    if args.narrator_name or args.narrator_contact:
+        identity = ContributorIdentity(
+            name=args.narrator_name or "",
+            contact=args.narrator_contact or "",
+        )
+
+    now = args.now if args.now else now_iso()
+    aip = archive.ingest(payload, record, identity=identity, agent=args.actor, now=now)
+
+    print(f"record_id: {record.record_id}")
+    print(f"bag: {aip.bag.path}")
+    print(f"segments: {len(manifest.segments)}")
+    if record.identity_ref is not None:
+        # Print ONLY the opaque token; never the narrator's name or contact.
+        print(f"identity_ref: {record.identity_ref}")
+    return 0
+
+
 def _cmd_demo(args: argparse.Namespace) -> int:
     """``demo`` — run the self-contained, scripted no-outing proof end to end."""
     return demo.main()
@@ -917,6 +962,33 @@ def _build_parser() -> argparse.ArgumentParser:
     p_handoff.add_argument("--out", help="write the JSON manifest here (default: stdout)")
     p_handoff.add_argument("--now", help="ISO-8601 timestamp for a reproducible manifest")
     p_handoff.set_defaults(func=_cmd_handoff)
+
+    p_session = sub.add_parser("session", help="oral-history session kit")
+    session_sub = p_session.add_subparsers(
+        dest="session_command", required=True, metavar="SUBCOMMAND"
+    )
+    p_session_ingest = session_sub.add_parser(
+        "ingest", help="apply a session manifest (EXP-09) and ingest the result"
+    )
+    p_session_ingest.add_argument("--root", required=True)
+    p_session_ingest.add_argument("--title", required=True)
+    p_session_ingest.add_argument(
+        "--manifest", required=True, help="path to a session-manifest JSON file"
+    )
+    p_session_ingest.add_argument(
+        "--file",
+        action="append",
+        metavar="filename=path",
+        help="bytes for a segment's payload_filename (repeatable)",
+    )
+    p_session_ingest.add_argument("--cw", action="append", metavar="WARNING")
+    p_session_ingest.add_argument(
+        "--narrator-name", help="sealed into the vault; never printed back"
+    )
+    p_session_ingest.add_argument("--narrator-contact", help="sealed into the vault")
+    p_session_ingest.add_argument("--actor", default="ledger", help="ingest agent id")
+    p_session_ingest.add_argument("--now", help="ISO-8601 timestamp for reproducible ingest")
+    p_session_ingest.set_defaults(func=_cmd_session_ingest)
 
     p_demo = sub.add_parser("demo", help="run the scripted end-to-end no-outing proof")
     p_demo.set_defaults(func=_cmd_demo)
