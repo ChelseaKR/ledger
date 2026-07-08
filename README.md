@@ -303,9 +303,9 @@ pre-1.0, **no release has shipped yet** (no tag, no signed build, no SBOM — tr
 | Standard | Applies | This repo's posture |
 |---|---|---|
 | Code Quality | Applies | `ruff` (incl. `C901` complexity, max 10) + `mypy --strict`; branch coverage floor 85% (measured 86%); src layout; CODEOWNERS; Python floor `>=3.12`. **Gap:** no `uv.lock`/PEP 735 groups yet — [`docs/ROADMAP.md`](docs/ROADMAP.md) |
-| Security & Supply Chain | Applies — **ASVS L2** (touches PII/identity) | pip-audit + gitleaks + CodeQL all blocking in CI and in `make verify`, zero muted gates; SHA-pinned Actions with Renovate digest-pinning. **Gap:** no lockfile, container scan, Semgrep, TruffleHog, Harden-Runner, or SBOM/signing yet — [`docs/ROADMAP.md`](docs/ROADMAP.md) |
+| Security & Supply Chain | Applies — **ASVS L2** (touches PII/identity) | pip-audit + gitleaks + CodeQL all blocking in CI and in `make verify`, zero muted gates; SHA-pinned Actions with Renovate digest-pinning; tag-triggered release SBOM (CycloneDX) + cosign keyless signing + SLSA build-provenance attestations (`release.yml`); weekly OSSF Scorecard (`scorecard.yml`). **Gap:** no lockfile, container scan, Semgrep, TruffleHog, or Harden-Runner yet — [`docs/ROADMAP.md`](docs/ROADMAP.md) |
 | CI/CD | Applies | Single `ci.yml`, least-privilege tokens, SHA-pinned actions, `make verify` now reproduces CI's full required-check set (lint, type, test, i18n, accessibility, audit, secret-scan). **Gap:** no committed branch-protection/ruleset artifact (server-side settings are unverifiable from the repo alone) — ⛔ see `docs/ROADMAP.md`, requires the repo owner |
-| Release & Versioning | Applies — **mandatory** (published-library repo) | SemVer intent stated; Keep-a-Changelog `CHANGELOG.md`. **Gap — the repo's largest:** no tag-triggered release workflow, no PyPI Trusted Publishing, no SBOM/cosign/SLSA provenance; the CHANGELOG's `[0.1.0] — 2026-06-16` section describes prepared, not shipped, work (no git tag exists) — [`docs/ROADMAP.md`](docs/ROADMAP.md) |
+| Release & Versioning | Applies — **mandatory** (published-library repo) | SemVer intent stated; Keep-a-Changelog `CHANGELOG.md`; `.github/workflows/release.yml` builds sdist/wheel and produces SBOM/cosign signatures/SLSA provenance on `release: published`, not yet exercised against a real tag. **Gap:** no PyPI Trusted Publishing yet; the CHANGELOG's `[0.1.0] — 2026-06-16` section describes prepared, not shipped, work (no git tag exists) — [`docs/ROADMAP.md`](docs/ROADMAP.md) |
 | Accessibility | Applies | WCAG 2.2 AA target; merge-blocking structural gate (`ledger.accessibility_check`); committed, dated, candid VPAT 2.5 ACR (`docs/accessibility/ACR.md`, 46 Supports / 6 Partially / 21 N/A). **Gap:** axe-core/Lighthouse/pa11y/Playwright not run in CI yet; no dated screen-reader/keyboard walkthrough artifact — [`docs/ROADMAP.md`](docs/ROADMAP.md) |
 | Observability | Applies — **Tier C** (library/CLI) | See `## Observability` below |
 | Internationalization | Applies | Full gettext catalog pipeline (EN/ES), five merge-blocking gates (POT-current, BCP-47, key-parity, completeness, `msgfmt --check`) — the repo's strongest standard |
@@ -355,8 +355,11 @@ material), **CODE_OF_CONDUCT**, **CONTRIBUTING**, **SECURITY**, **GOVERNANCE**, 
 schema with a deprecation policy, **semver**, **ADRs**, and audit-as-artifact documents
 (`docs/THREAT-MODEL.md`, `docs/accessibility/ACR.md`; a fuller `docs/audits/` set is tracked in
 [`docs/ROADMAP.md`](docs/ROADMAP.md)). Conventional commits; pinned, **SLSA-friendly** GitHub Actions
-today; **no release has shipped yet** — no tag, no signing, no SBOM (see the Standards conformance
-table below and `docs/ROADMAP.md` for what's tracked); Dependabot + Renovate.
+today; **no release has shipped yet** — no tag has been cut — but the release pipeline itself is
+wired and waiting: `.github/workflows/release.yml` builds the distributable and produces an SBOM,
+cosign signatures, and SLSA v1.0 provenance the first time a GitHub Release is published, and
+`.github/workflows/scorecard.yml` runs an OSSF Scorecard check on every push to `main` (see the
+Standards conformance table below and `docs/ROADMAP.md` for what's tracked); Dependabot + Renovate.
 
 **License choice.** **AGPL-3.0** is chosen deliberately over a permissive license. ledger handles
 disclosure decisions and contributor safety, and the network-use clause means anyone who runs a

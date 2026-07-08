@@ -17,6 +17,9 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **OSSF Scorecard workflow (`.github/workflows/scorecard.yml`).** Runs an OpenSSF
+  Scorecard analysis on every push to `main` and weekly, uploading results to GitHub
+  code scanning (SARIF) and the public Scorecard API (SEC-35/36/37).
 - **Tag-triggered release workflow (`.github/workflows/release.yml`).** Pushing a
   `vX.Y.Z` tag now re-runs the full lint/type/test gate against the tagged commit,
   builds the sdist/wheel, fails closed if the tag doesn't match `pyproject.toml`'s

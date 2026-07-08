@@ -146,10 +146,13 @@ Applicability decisions and the N/A for AI-Evaluation live in
 - **Container scanning:** not yet enabled. `infra/Dockerfile` exists; base image is
   pinned by tag, not digest; no Trivy/Grype job runs against it. Tracked in
   [`docs/ROADMAP.md`](ROADMAP.md#open-conformance-gaps) (SEC-28).
-- **SBOM + signing:** not yet enabled — ledger **is** a release-producing repo
-  (PyPI, `ledger-archive`, mandatory per RELEASE-AND-VERSIONING-STANDARD §1), so
-  this is not `N/A`; it is the repo's largest tracked gap (no release workflow has
-  shipped at all yet). Tracked in `docs/ROADMAP.md` (REL-13..20, SEC-27/29).
+- **SBOM + signing:** enabled — `.github/workflows/release.yml` builds the sdist/
+  wheel, generates a CycloneDX + SPDX SBOM (Syft), signs every artifact with
+  cosign (keyless, Sigstore OIDC), and produces SLSA v1.0 build provenance,
+  attaching all of it to the GitHub Release. It triggers on `release: published`
+  and has not yet run against a real tag, since ledger has not cut one yet (see
+  CHANGELOG.md's "Unreleased" note and REL-03 in `docs/ROADMAP.md`). PyPI Trusted
+  Publishing is still open, tracked in `docs/ROADMAP.md` (REL-08, REL-20).
 - **Secret-management policy:** secrets (the identity-vault key, any deploy
   credential) are supplied via environment variable or an external keystore, never
   committed; `.gitleaks.toml` allowlists only literal placeholder test fixtures by
