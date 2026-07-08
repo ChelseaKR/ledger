@@ -33,7 +33,7 @@ jobs:
       # Recording in audit mode first (per the standard's rollout guidance) so the
       # allowlist can be derived from real traffic before flipping to `block`,
       # rather than guessing an allowlist and breaking the build.
-      - uses: step-security/harden-runner@5c7944e73c4c2a096b17a9cb74d65b6c2bbafbde  # v2.9.1
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
         with:
           egress-policy: audit
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
@@ -70,7 +70,7 @@ jobs:
       # Recording in audit mode first (per the standard's rollout guidance) so the
       # allowlist can be derived from real traffic before flipping to `block`,
       # rather than guessing an allowlist and breaking the build.
-      - uses: step-security/harden-runner@5c7944e73c4c2a096b17a9cb74d65b6c2bbafbde  # v2.9.1
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
         with:
           egress-policy: audit
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
@@ -102,7 +102,7 @@ jobs:
       # Recording in audit mode first (per the standard's rollout guidance) so the
       # allowlist can be derived from real traffic before flipping to `block`,
       # rather than guessing an allowlist and breaking the build.
-      - uses: step-security/harden-runner@5c7944e73c4c2a096b17a9cb74d65b6c2bbafbde  # v2.9.1
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
         with:
           egress-policy: audit
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
@@ -128,7 +128,7 @@ jobs:
       # Recording in audit mode first (per the standard's rollout guidance) so the
       # allowlist can be derived from real traffic before flipping to `block`,
       # rather than guessing an allowlist and breaking the build.
-      - uses: step-security/harden-runner@5c7944e73c4c2a096b17a9cb74d65b6c2bbafbde  # v2.9.1
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
         with:
           egress-policy: audit
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
@@ -155,7 +155,7 @@ jobs:
       # Recording in audit mode first (per the standard's rollout guidance) so the
       # allowlist can be derived from real traffic before flipping to `block`,
       # rather than guessing an allowlist and breaking the build.
-      - uses: step-security/harden-runner@5c7944e73c4c2a096b17a9cb74d65b6c2bbafbde  # v2.9.1
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
         with:
           egress-policy: audit
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
@@ -187,7 +187,7 @@ jobs:
       # Recording in audit mode first (per the standard's rollout guidance) so the
       # allowlist can be derived from real traffic before flipping to `block`,
       # rather than guessing an allowlist and breaking the build.
-      - uses: step-security/harden-runner@5c7944e73c4c2a096b17a9cb74d65b6c2bbafbde  # v2.9.1
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
         with:
           egress-policy: audit
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
