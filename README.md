@@ -212,9 +212,10 @@ guided step, not a separate tool.
 ### Performance, scale, cost
 **Efficiency** — content addressing deduplicates identical media; fixity is incremental where possible.
 **Scalability** and **elasticity** — the store grows with added locations; read surfaces are stateless
-and scale horizontally. **Timeliness** — no automated performance budget exists yet; browse and
-verification latency are not currently asserted in CI (tracked in `docs/ROADMAP.md`, P3-5). Until
-then, treat responsiveness as observed in `make demo`, not as a tested guarantee. **Affordability** — self-hostable on a single inexpensive box or a member's drive; no hosted dependency,
+and scale horizontally. **Timeliness** — a CI `perf` job (`tools/perf_budget.py`, `make perf`) asserts
+time budgets over CAS put/get, streaming fixity hashing, a full ingest, and a browse listing on every
+push and PR, so an accidental linear scan or a dropped streaming read fails the build instead of
+shipping quietly. **Affordability** — self-hostable on a single inexpensive box or a member's drive; no hosted dependency,
 so a broke collective can still run it. **Process capabilities** and **producibility** — `make verify`
 reproduces the full gate; one command builds the artifact.
 
@@ -317,7 +318,7 @@ project owner can do (tracked below).
 | Observability | Applies — **Tier C** (library/CLI) | See `## Observability` below |
 | Internationalization | Applies | Full gettext catalog pipeline (EN/ES), five merge-blocking gates (POT-current, BCP-47, key-parity, completeness, `msgfmt --check`) — the repo's strongest standard |
 | AI Evaluation | **N/A** | No model inference in any user-facing or decision path (ingest, fixity, access policy, and disclosure are all deterministic). Reason and the re-trigger condition recorded in `docs/adr/0006-standards-applicability.md` |
-| Quality & Metrics | Applies | 528 tests green; metrics ledger + conformance gap tracker in `docs/ROADMAP.md`; dated DORA delivery-health review (`docs/DORA-DELIVERY-HEALTH-REVIEW.md`, QM-11) and root `DEFINITION_OF_DONE.md` (QM-18). **Gap:** no performance budgets in CI yet — `docs/ROADMAP.md` |
+| Quality & Metrics | Applies | CI `perf` job enforces performance budgets (`tools/perf_budget.py`); metrics ledger + conformance gap tracker in `docs/ROADMAP.md`; dated DORA delivery-health review (`docs/DORA-DELIVERY-HEALTH-REVIEW.md`, QM-11) and root `DEFINITION_OF_DONE.md` (QM-18) |
 | Documentation | Applies | This README + ADRs (`docs/adr/`) + `docs/ROADMAP.md` + CHANGELOG + CITATION.cff, kept current; dated currency stamps on THREAT-MODEL/ACCESSIBILITY/GOVERNANCE/ACR |
 | Responsible Tech | Applies | The no-outing sentinel suite is this standard's own named exemplar for misuse-resistance testing (RTF-02); review-ready drafts for the [ethics scan](docs/audits/ethics-consequence-scan.md), [DPIA](docs/audits/dpia.md), and [bias / representational-harm review](docs/audits/bias-representational-harm.md). **Gap:** accountable-owner review/sign-off remains open in `docs/ROADMAP.md` |
 

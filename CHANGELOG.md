@@ -90,6 +90,14 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   from an on-disk JSON file) had zero existing tests; `tests/test_grants_load.py` closes
   that gap, raising `grants.py` from 55% to 91.3% mutation score. See
   `docs/MUTATION-TESTING.md` for the full baseline and how to read survivors.
+- **Performance budgets in CI (QM-02).** A new `perf` CI job (`tools/perf_budget.py`,
+  `make perf`) runs on every push and PR, asserting a time budget over the
+  operations a steward actually waits on — content-addressed store put/get,
+  streaming dual-algorithm fixity hashing, a full ingest, and a browse listing.
+  Budgets are set with wide headroom over a locally-measured median so ordinary
+  CI runner noise doesn't fail the build; a failure means a real, order-of-
+  magnitude regression (e.g. an accidental linear scan or a dropped streaming
+  read). Closes `docs/ROADMAP.md` QM-02.
 - **Disclosure-policy workflow.** First-class, accountable steward commands to set and
   apply a disclosure policy on an already-archived item, enforced by the core engine and
   honoured by the reading-room:
