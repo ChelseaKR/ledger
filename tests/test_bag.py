@@ -180,3 +180,24 @@ def test_write_bag_rejects_empty_algorithm_set(
     """Asking for a bag with no hash algorithm raises rather than producing one."""
     with pytest.raises(BagValidationError):
         write_bag(tmp_path / "bag", payload_sources, algos=())
+
+
+@pytest.mark.preservation
+def test_write_bag_streams_payload_across_chunk_boundary(
+    tmp_path: Path, write_file: Callable[[str, bytes], Path]
+) -> None:
+    """A payload larger than one copy window (FIX-03) still lands byte-identical.
+
+    ``write_bag`` copies payload via ``shutil.copyfileobj`` in fixed-size windows
+    (see :data:`~ledger.fixity.CHUNK_SIZE`) instead of reading the whole source into
+    RAM first. A source several times that window size, whose copied bytes then hash
+    to the digest recorded in the manifest and pass full bag validation, proves the
+    chunked copy loop is correct end to end — not just that it doesn't crash.
+    """
+    big = b"\x00\x01\x02\x03" * (1024 * 1024)  # 4 MiB, several 1 MiB copy windows
+    source = write_file("sources/big.bin", big)
+    bag = write_bag(tmp_path / "bag", {"big.bin": source})
+    copied = bag.payload_dir / "big.bin"
+    assert copied.read_bytes() == big
+    assert hash_bytes(big, HashAlgo.SHA256) in (bag.path / "manifest-sha256.txt").read_text()
+    validate_bag(bag.path)  # raises on any mismatch
