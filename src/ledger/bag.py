@@ -28,7 +28,7 @@ from pathlib import Path, PurePosixPath
 
 from ledger.errors import BagValidationError
 from ledger.fixity import AuditReport, hash_file, hash_file_multi, verify_file
-from ledger.models import HashAlgo
+from ledger.models import FixityResult, HashAlgo
 
 _BAGIT_VERSION = "1.0"
 _TAG_FILE_ENCODING = "UTF-8"
@@ -242,12 +242,70 @@ def _algo_of_manifest(manifest_path: Path) -> HashAlgo:
         raise BagValidationError(f"unknown manifest algorithm: {manifest_path.name}") from exc
 
 
-# Pre-existing complexity (one function walks the full RFC 8493 structural +
-# fixity check); surfaced 2026-07-05 when CQ-05's complexity gate was enabled.
-# Waived, not re-muted: this is preservation-integrity code, so a split is tracked
-# as a deliberate, well-tested follow-up rather than rushed under audit time
-# pressure (see ledger-REMEDIATION.md P3-2).
-def validate_bag(bag_dir: Path) -> AuditReport:  # noqa: C901
+def _verify_payload_manifests(bag_dir: Path, manifest_paths: Sequence[Path]) -> list[FixityResult]:
+    """Verify every payload file against every payload manifest.
+
+    Raises :class:`~ledger.errors.BagValidationError` if a manifest entry escapes
+    ``data/``, points at a file absent on disk, or if a payload file on disk is
+    absent from any one manifest (completeness is enforced per manifest — a single
+    weakened algorithm cannot hide a file). Returns the per-file fixity results.
+    """
+    data_dir = bag_dir / "data"
+    data_root = data_dir.resolve()
+    on_disk = {
+        f"{_DATA_PREFIX}{p.relative_to(data_dir).as_posix()}"
+        for p in data_dir.rglob("*")
+        if p.is_file()
+    }
+
+    results = []
+    for manifest_path in manifest_paths:
+        algo = _algo_of_manifest(manifest_path)
+        entries = _parse_manifest(manifest_path)
+        for rel in sorted(entries):
+            _reject_unsafe_relpath(rel, context=manifest_path.name)
+            if not rel.startswith(_DATA_PREFIX):
+                raise BagValidationError(f"payload manifest entry outside data/: {rel}")
+            target = bag_dir / rel
+            if not target.resolve().is_relative_to(data_root):
+                raise BagValidationError(f"manifest entry escapes data/: {rel}")
+            if not target.exists():
+                raise BagValidationError(f"file in {manifest_path.name} absent on disk: {rel}")
+            results.append(verify_file(target, algo, entries[rel]))
+        # Completeness is checked against THIS manifest: a file missing from even one
+        # manifest is a defect (a single weakened algorithm cannot hide a file).
+        missing = on_disk - set(entries)
+        if missing:
+            raise BagValidationError(
+                f"payload file absent from {manifest_path.name}: {sorted(missing)[0]}"
+            )
+    return results
+
+
+def _verify_tag_manifests(bag_dir: Path) -> list[FixityResult]:
+    """Verify every tag file (bagit/bag-info/manifests/extras) against every tag manifest.
+
+    Raises :class:`~ledger.errors.BagValidationError` if a tag manifest entry
+    escapes the bag root or points at a file absent on disk. Returns the per-file
+    fixity results.
+    """
+    bag_root = bag_dir.resolve()
+    results = []
+    for tagmanifest_path in sorted(bag_dir.glob("tagmanifest-*.txt")):
+        algo = _algo_of_manifest(tagmanifest_path)
+        for rel in sorted(_parse_manifest(tagmanifest_path)):
+            _reject_unsafe_relpath(rel, context=tagmanifest_path.name)
+            target = bag_dir / rel
+            if not target.resolve().is_relative_to(bag_root):
+                raise BagValidationError(f"tag manifest entry escapes bag: {rel}")
+            if not target.exists():
+                raise BagValidationError(f"tag file in {tagmanifest_path.name} absent: {rel}")
+        for rel, digest in _parse_manifest(tagmanifest_path).items():
+            results.append(verify_file(bag_dir / rel, algo, digest))
+    return results
+
+
+def validate_bag(bag_dir: Path) -> AuditReport:
     """Validate the bag at ``bag_dir`` against RFC 8493 structure and manifests.
 
     Structural failures raise :class:`~ledger.errors.BagValidationError`:
@@ -275,49 +333,6 @@ def validate_bag(bag_dir: Path) -> AuditReport:  # noqa: C901
     if not manifest_paths:
         raise BagValidationError(f"no payload manifest found: {bag_dir}")
 
-    data_dir = bag_dir / "data"
-    data_root = data_dir.resolve()
-    on_disk = {
-        f"{_DATA_PREFIX}{p.relative_to(data_dir).as_posix()}"
-        for p in data_dir.rglob("*")
-        if p.is_file()
-    }
-
-    results = []
-    # --- payload manifests: verify entries + per-manifest completeness ---------
-    for manifest_path in manifest_paths:
-        algo = _algo_of_manifest(manifest_path)
-        entries = _parse_manifest(manifest_path)
-        for rel in sorted(entries):
-            _reject_unsafe_relpath(rel, context=manifest_path.name)
-            if not rel.startswith(_DATA_PREFIX):
-                raise BagValidationError(f"payload manifest entry outside data/: {rel}")
-            target = bag_dir / rel
-            if not target.resolve().is_relative_to(data_root):
-                raise BagValidationError(f"manifest entry escapes data/: {rel}")
-            if not target.exists():
-                raise BagValidationError(f"file in {manifest_path.name} absent on disk: {rel}")
-            results.append(verify_file(target, algo, entries[rel]))
-        # Completeness is checked against THIS manifest: a file missing from even one
-        # manifest is a defect (a single weakened algorithm cannot hide a file).
-        missing = on_disk - set(entries)
-        if missing:
-            raise BagValidationError(
-                f"payload file absent from {manifest_path.name}: {sorted(missing)[0]}"
-            )
-
-    # --- tag manifests: verify the tag files (bagit/bag-info/manifests/extras) ---
-    bag_root = bag_dir.resolve()
-    for tagmanifest_path in sorted(bag_dir.glob("tagmanifest-*.txt")):
-        algo = _algo_of_manifest(tagmanifest_path)
-        for rel in sorted(_parse_manifest(tagmanifest_path)):
-            _reject_unsafe_relpath(rel, context=tagmanifest_path.name)
-            target = bag_dir / rel
-            if not target.resolve().is_relative_to(bag_root):
-                raise BagValidationError(f"tag manifest entry escapes bag: {rel}")
-            if not target.exists():
-                raise BagValidationError(f"tag file in {tagmanifest_path.name} absent: {rel}")
-        for rel, digest in _parse_manifest(tagmanifest_path).items():
-            results.append(verify_file(bag_dir / rel, algo, digest))
-
+    results = _verify_payload_manifests(bag_dir, manifest_paths)
+    results += _verify_tag_manifests(bag_dir)
     return AuditReport(results=results)

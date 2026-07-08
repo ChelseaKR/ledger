@@ -45,7 +45,7 @@ tracked."
 | Quality & Metrics | QM-11, QM-18 | No DORA delivery-health review artifact; no root `DEFINITION_OF_DONE.md` | Open | P2-5 |
 | Code Quality | CQ-01 | Python floor is `>=3.11`, not the `>=3.12` the standard's drift-remediation note names for ledger | Open | P1-2 |
 | Code Quality | CQ-47 | No mutation testing on safety modules (`access/`, `identity.py`, `fixity.py`) | Open | P3-3 |
-| Code Quality | CQ-05 (partial) | Complexity gate is now enforced (`ruff` C901, max 10); 7 pre-existing functions exceed it and are waived with dated `# noqa: C901` comments pending a deliberate, fully-retested split — not rushed under audit time pressure on safety-adjacent code | Open (waived) | See `# noqa: C901` sites in `accessibility_check.py`, `bag.py`, `cli.py`, `contribute.py`, `ingest.py`, `server.py` |
+| Code Quality | CQ-05 | Complexity gate is enforced (`ruff` C901, max 10). The 7 functions that exceeded it — including `server.py:do_GET`, the no-outing dispatch point — were split into smaller, single-purpose helpers in a deliberate, fully-retested follow-up (full suite + `make accessibility`, which exercises the rendered sample pages, both green); no more `# noqa: C901` waivers remain in `src/ledger` | Closed | Split in `accessibility_check.py`, `bag.py`, `cli.py`, `contribute.py`, `ingest.py`, `server.py` |
 
 ## Metrics (QUALITY-AND-METRICS-STANDARD, CICD-29)
 

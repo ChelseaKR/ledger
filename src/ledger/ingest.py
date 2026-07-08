@@ -31,7 +31,7 @@ import tempfile
 from pathlib import Path
 
 from ledger.access import disclose, is_listable
-from ledger.bag import validate_bag, write_bag
+from ledger.bag import Bag, validate_bag, write_bag
 from ledger.cas import ContentStore
 from ledger.config import Config
 from ledger.errors import BagValidationError, LedgerError, ObjectNotFound
@@ -236,12 +236,249 @@ def _assert_identity_free(text: str, identity: ContributorIdentity | None, where
 # --- the ingest pipeline ----------------------------------------------------
 
 
-# Pre-existing complexity (one function walks the full SIP -> fixity -> bag ->
-# PREMIS/DC -> store pipeline); surfaced 2026-07-05 when CQ-05's complexity gate
-# was enabled. Waived, not re-muted: this is preservation-core code, so a split is
-# tracked as a deliberate, well-tested follow-up rather than rushed under audit
-# time pressure (see ledger-REMEDIATION.md P3-2).
-def ingest_sip(  # noqa: C901
+class _StagedPayloads:
+    """The per-payload results of :func:`_stage_payloads`, gathered for one SIP."""
+
+    def __init__(self) -> None:
+        self.entries: list[PayloadFile] = []
+        self.fixity_events: list[PremisEvent] = []
+        # PREMIS format-identification events + the IANA media types identified, so
+        # the archive models OAIS Preservation Planning (format obsolescence), not
+        # only bit-fixity (RM4; NDSA Levels; DPC Handbook).
+        self.format_events: list[PremisEvent] = []
+        self.identified_media_types: list[str] = []
+        # The sources actually stored + bagged (ciphertext for absolute-SEALED files).
+        self.bag_payload: dict[str, Path] = {}
+        self.sealed_tmp: Path | None = None
+
+
+def _stage_one_payload(
+    filename: str,
+    source: Path,
+    existing: PayloadFile | None,
+    *,
+    default_policy: AccessPolicy,
+    store: ContentStore,
+    vault: IdentityVault | None,
+    agent: str,
+    now: str,
+    staged: _StagedPayloads,
+) -> None:
+    """Hash, format-identify, and store one payload file; append its results to ``staged``.
+
+    Mutates ``staged`` in place (rather than returning a tuple of accumulators)
+    so ``_stage_payloads`` stays a plain per-file loop over a shared accumulator,
+    matching how the caller already threads ``sealed_tmp`` across iterations.
+    """
+    transcript = existing.transcript if existing is not None else ""
+    # Identify the format from the clear source bytes (content-based, before any
+    # at-rest encryption). A confident content signature beats a filename guess.
+    fmt = identify_file(source)
+    staged.identified_media_types.append(fmt.media_type)
+    if existing is not None:
+        media_type = existing.media_type
+    else:
+        # Prefer a content-based media type; else infer from the filename so the
+        # Files list and API report something meaningful instead of octet-stream
+        # (correctness, usability).
+        guessed, _ = mimetypes.guess_type(filename)
+        media_type = fmt.media_type if fmt.basis == "signature" else (guessed or fmt.media_type)
+    policy = existing.policy if existing is not None else default_policy
+    # An absolute-SEALED payload FILE is encrypted at rest: the content store and
+    # the bag hold ciphertext, never the clear bytes, so a stolen disk or hostile
+    # replica reveals nothing (user research P2-4, payload tier). It is never
+    # served on any read path, so it is only encrypted, never decrypted.
+    if policy is AccessPolicy.SEALED:
+        if vault is None:
+            raise LedgerError(
+                "a 'sealed' (absolute) payload requires a vault key for at-rest encryption"
+            )
+        if staged.sealed_tmp is None:
+            staged.sealed_tmp = Path(tempfile.mkdtemp(prefix="ledger-sealed-"))
+        store_source = staged.sealed_tmp / filename
+        store_source.parent.mkdir(parents=True, exist_ok=True)
+        store_source.write_bytes(vault.encrypt_bytes(source.read_bytes()))
+    else:
+        store_source = source
+    digests = hash_file_multi(store_source, (HashAlgo.SHA256, HashAlgo.BLAKE2B))
+    address = store.put_file(store_source)
+    size = store_source.stat().st_size
+    staged.bag_payload[filename] = store_source
+    staged.entries.append(
+        PayloadFile(
+            filename=filename,
+            address=address,
+            media_type=media_type,
+            size_bytes=size,
+            policy=policy,
+            transcript=transcript,
+        )
+    )
+    # A fixity check per payload: the stored address re-derived from the bytes,
+    # cross-checked by the independent BLAKE2b digest (integrity, redundancy).
+    staged.fixity_events.append(
+        PremisEvent(
+            event_type=PremisEventType.FIXITY_CHECK,
+            agent=agent,
+            outcome="success",
+            detail=f"sha256+blake2b verified ({digests[HashAlgo.BLAKE2B][:12]}…)",
+            linked_object=str(address),
+            event_datetime=now,
+        )
+    )
+    # A format-identification event per payload (OAIS Preservation Planning): the
+    # identified format, its PRONOM PUID where known, how it was identified, and —
+    # for an obsolescent/proprietary format — the migration recommendation. The
+    # detail carries only format metadata, never identity or content (no-outing).
+    staged.format_events.append(
+        PremisEvent(
+            event_type=PremisEventType.FORMAT_IDENTIFICATION,
+            agent=agent,
+            outcome="at-risk" if fmt.at_risk else "success",
+            detail=fmt.summary(),
+            linked_object=str(address),
+            event_datetime=now,
+        )
+    )
+
+
+def _stage_payloads(
+    sip: SIP,
+    record: Record,
+    store: ContentStore,
+    vault: IdentityVault | None,
+    *,
+    agent: str,
+    now: str,
+) -> _StagedPayloads:
+    """Hash, format-identify, and store every payload file in ``sip`` (ingest step 1)."""
+    declared = {p.filename: p for p in record.payloads}
+    staged = _StagedPayloads()
+    for filename in sorted(sip.payload):
+        _stage_one_payload(
+            filename,
+            sip.payload[filename],
+            declared.get(filename),
+            default_policy=record.default_policy,
+            store=store,
+            vault=vault,
+            agent=agent,
+            now=now,
+            staged=staged,
+        )
+    return staged
+
+
+def _backfill_dublin_core(record: Record, identified_media_types: list[str]) -> None:
+    """Fill in ``dc:date``/``dc:format`` from ingest-derived facts when absent."""
+    # Minimum-metadata profile: backfill dc:date from a 4-digit year in the title
+    # when no date was given, so a record is at least roughly datable for scholarship
+    # and search (user research P2-3) without inventing precision.
+    if not record.dublin_core.date:
+        year = re.search(r"\b(1[89]\d{2}|20\d{2})\b", record.title)
+        if year:
+            record.dublin_core.date = [year.group(1)]
+    # Backfill dc:format with the identified IANA media types when none was given, so
+    # the format is discoverable in the catalogue and the preservation risk is legible
+    # (RM4; Dublin Core `format` is the standard home for the media type). Sorted +
+    # de-duplicated for a deterministic sidecar.
+    if not record.dublin_core.format and identified_media_types:
+        record.dublin_core.format = sorted(set(identified_media_types))
+
+
+def _seal_sealed_fields(record: Record, vault: IdentityVault | None) -> None:
+    """Encrypt any absolute-SEALED field value at rest (requires a vault)."""
+    # Absolute-SEALED fields are encrypted AT REST so a stolen disk or hostile
+    # replica reveals nothing, not even to a steward (user research P2-4). Such a
+    # field is never disclosed on any read path, so it is only ever encrypted, never
+    # decrypted here. It requires the vault, like an identity.
+    if not any(fld.policy is AccessPolicy.SEALED for fld in record.fields):
+        return
+    if vault is None:
+        raise LedgerError("a 'sealed' (absolute) field requires a vault key for at-rest encryption")
+    for fld in record.fields:
+        if fld.policy is AccessPolicy.SEALED and not fld.value.startswith("enc:"):
+            fld.value = vault.encrypt_text(fld.value)
+
+
+def _write_bag_artifacts(
+    sip: SIP,
+    record: Record,
+    staged: _StagedPayloads,
+    *,
+    bag_dir: Path,
+    agent: str,
+    now: str,
+    sealed_ref: str | None,
+    vault: IdentityVault | None,
+) -> Bag:
+    """Build the bag-info/record/DC/PREMIS artifacts, verify no-outing, and write the bag.
+
+    On any failure, revokes ``sealed_ref`` (if sealed) and removes a partial
+    ``bag_dir`` before re-raising, so a failed ingest never orphans an identity
+    or leaves a half-written bag on disk (consent, fail-closed).
+    """
+    try:
+        # Build every clear-text artifact IN MEMORY first.
+        bag_info = {
+            "Source-Organization": record.dublin_core.publisher[0]
+            if record.dublin_core.publisher
+            else "ledger archive",
+            "Bagging-Date": now,
+            "External-Identifier": record.record_id,
+        }
+        bag_info_text = "Payload-Oxum: …\n" + "".join(f"{k}: {v}\n" for k, v in bag_info.items())
+        record_json = serialize_record(record)
+        dc_json = dublincore_to_json(record.dublin_core)
+
+        premis = PremisLog()
+        premis.record(
+            PremisEvent(
+                event_type=PremisEventType.INGESTION,
+                agent=agent,
+                outcome="success",
+                detail=f"ingested {len(staged.entries)} payload file(s) for {record.record_id}",
+                linked_object=record.record_id,
+                event_datetime=now,
+            )
+        )
+        for event in staged.fixity_events:
+            premis.record(event)
+        for event in staged.format_events:
+            premis.record(event)
+        premis_json = premis.to_json()
+
+        # Defense in depth: scan every artifact for the identity BEFORE a single
+        # byte is written to disk, so a coding-error leak fails closed and leaves
+        # nothing behind (safety — the guarantee must fail CLOSED).
+        _assert_identity_free(bag_info_text, sip.identity, "bag-info.txt")
+        _assert_identity_free(record_json, sip.identity, "record manifest")
+        _assert_identity_free(dc_json, sip.identity, "dublin core")
+        _assert_identity_free(premis_json, sip.identity, "premis log")
+
+        # Write the bag with the metadata as tag files, so their integrity is
+        # covered by the bag's own tag manifest (tampering with a record's policy
+        # or identity_ref then fails validation).
+        return write_bag(
+            bag_dir,
+            staged.bag_payload,
+            bag_info=bag_info,
+            extra_tag_files={
+                _RECORD_FILENAME: record_json.encode("utf-8"),
+                _DC_FILENAME: dc_json.encode("utf-8"),
+                _PREMIS_FILENAME: premis_json.encode("utf-8"),
+            },
+        )
+    except BaseException:
+        # Any failure after sealing must not orphan the identity or leave a partial
+        # bag on disk (consent, fail-closed). Revoke then clean up, then re-raise.
+        if sealed_ref is not None and vault is not None:
+            vault.revoke(sealed_ref)
+        shutil.rmtree(bag_dir, ignore_errors=True)
+        raise
+
+
+def ingest_sip(
     sip: SIP,
     store: ContentStore,
     vault: IdentityVault | None,
@@ -286,120 +523,13 @@ def ingest_sip(  # noqa: C901
 
     # 1. Fixity + store. Preserve any per-file policy already declared on the
     #    record; otherwise default to the record's narrowest policy.
-    declared = {p.filename: p for p in record.payloads}
-    payload_entries: list[PayloadFile] = []
-    fixity_events: list[PremisEvent] = []
-    # PREMIS format-identification events + the IANA media types identified, so the
-    # archive models OAIS Preservation Planning (format obsolescence), not only
-    # bit-fixity (RM4; NDSA Levels; DPC Handbook).
-    format_events: list[PremisEvent] = []
-    identified_media_types: list[str] = []
-    # The sources actually stored + bagged (ciphertext for absolute-SEALED files).
-    bag_payload: dict[str, Path] = {}
-    sealed_tmp: Path | None = None
-    for filename in sorted(sip.payload):
-        source = sip.payload[filename]
-        existing = declared.get(filename)
-        transcript = existing.transcript if existing is not None else ""
-        # Identify the format from the clear source bytes (content-based, before any
-        # at-rest encryption). A confident content signature beats a filename guess.
-        fmt = identify_file(source)
-        identified_media_types.append(fmt.media_type)
-        if existing is not None:
-            media_type = existing.media_type
-        else:
-            # Prefer a content-based media type; else infer from the filename so the
-            # Files list and API report something meaningful instead of octet-stream
-            # (correctness, usability).
-            guessed, _ = mimetypes.guess_type(filename)
-            media_type = fmt.media_type if fmt.basis == "signature" else (guessed or fmt.media_type)
-        policy = existing.policy if existing is not None else record.default_policy
-        # An absolute-SEALED payload FILE is encrypted at rest: the content store and
-        # the bag hold ciphertext, never the clear bytes, so a stolen disk or hostile
-        # replica reveals nothing (user research P2-4, payload tier). It is never
-        # served on any read path, so it is only encrypted, never decrypted.
-        if policy is AccessPolicy.SEALED:
-            if vault is None:
-                raise LedgerError(
-                    "a 'sealed' (absolute) payload requires a vault key for at-rest encryption"
-                )
-            if sealed_tmp is None:
-                sealed_tmp = Path(tempfile.mkdtemp(prefix="ledger-sealed-"))
-            store_source = sealed_tmp / filename
-            store_source.parent.mkdir(parents=True, exist_ok=True)
-            store_source.write_bytes(vault.encrypt_bytes(source.read_bytes()))
-        else:
-            store_source = source
-        digests = hash_file_multi(store_source, (HashAlgo.SHA256, HashAlgo.BLAKE2B))
-        address = store.put_file(store_source)
-        size = store_source.stat().st_size
-        bag_payload[filename] = store_source
-        payload_entries.append(
-            PayloadFile(
-                filename=filename,
-                address=address,
-                media_type=media_type,
-                size_bytes=size,
-                policy=policy,
-                transcript=transcript,
-            )
-        )
-        # A fixity check per payload: the stored address re-derived from the bytes,
-        # cross-checked by the independent BLAKE2b digest (integrity, redundancy).
-        fixity_events.append(
-            PremisEvent(
-                event_type=PremisEventType.FIXITY_CHECK,
-                agent=agent,
-                outcome="success",
-                detail=f"sha256+blake2b verified ({digests[HashAlgo.BLAKE2B][:12]}…)",
-                linked_object=str(address),
-                event_datetime=now,
-            )
-        )
-        # A format-identification event per payload (OAIS Preservation Planning): the
-        # identified format, its PRONOM PUID where known, how it was identified, and —
-        # for an obsolescent/proprietary format — the migration recommendation. The
-        # detail carries only format metadata, never identity or content (no-outing).
-        format_events.append(
-            PremisEvent(
-                event_type=PremisEventType.FORMAT_IDENTIFICATION,
-                agent=agent,
-                outcome="at-risk" if fmt.at_risk else "success",
-                detail=fmt.summary(),
-                linked_object=str(address),
-                event_datetime=now,
-            )
-        )
-    record.payloads = payload_entries
+    staged = _stage_payloads(sip, record, store, vault, agent=agent, now=now)
+    record.payloads = staged.entries
     # Stamp the manifest with the injected ingest instant so a golden ingest is
     # byte-reproducible rather than carrying the wall-clock construction time.
     record.created_at = now
-    # Minimum-metadata profile: backfill dc:date from a 4-digit year in the title
-    # when no date was given, so a record is at least roughly datable for scholarship
-    # and search (user research P2-3) without inventing precision.
-    if not record.dublin_core.date:
-        year = re.search(r"\b(1[89]\d{2}|20\d{2})\b", record.title)
-        if year:
-            record.dublin_core.date = [year.group(1)]
-    # Backfill dc:format with the identified IANA media types when none was given, so
-    # the format is discoverable in the catalogue and the preservation risk is legible
-    # (RM4; Dublin Core `format` is the standard home for the media type). Sorted +
-    # de-duplicated for a deterministic sidecar.
-    if not record.dublin_core.format and identified_media_types:
-        record.dublin_core.format = sorted(set(identified_media_types))
-
-    # Absolute-SEALED fields are encrypted AT REST so a stolen disk or hostile
-    # replica reveals nothing, not even to a steward (user research P2-4). Such a
-    # field is never disclosed on any read path, so it is only ever encrypted, never
-    # decrypted here. It requires the vault, like an identity.
-    if any(fld.policy is AccessPolicy.SEALED for fld in record.fields):
-        if vault is None:
-            raise LedgerError(
-                "a 'sealed' (absolute) field requires a vault key for at-rest encryption"
-            )
-        for fld in record.fields:
-            if fld.policy is AccessPolicy.SEALED and not fld.value.startswith("enc:"):
-                fld.value = vault.encrypt_text(fld.value)
+    _backfill_dublin_core(record, staged.identified_media_types)
+    _seal_sealed_fields(record, vault)
 
     # 2. Refuse a collision BEFORE sealing any identity, so a failed ingest cannot
     #    leave an orphaned, unreachable identity in the vault (#correctness, consent).
@@ -416,68 +546,22 @@ def ingest_sip(  # noqa: C901
         record.identity_ref = sealed_ref
 
     try:
-        # Build every clear-text artifact IN MEMORY first.
-        bag_info = {
-            "Source-Organization": record.dublin_core.publisher[0]
-            if record.dublin_core.publisher
-            else "ledger archive",
-            "Bagging-Date": now,
-            "External-Identifier": record.record_id,
-        }
-        bag_info_text = "Payload-Oxum: …\n" + "".join(f"{k}: {v}\n" for k, v in bag_info.items())
-        record_json = serialize_record(record)
-        dc_json = dublincore_to_json(record.dublin_core)
-
-        premis = PremisLog()
-        premis.record(
-            PremisEvent(
-                event_type=PremisEventType.INGESTION,
-                agent=agent,
-                outcome="success",
-                detail=f"ingested {len(payload_entries)} payload file(s) for {record.record_id}",
-                linked_object=record.record_id,
-                event_datetime=now,
-            )
+        # 4-5. Build every clear-text artifact, verify no-outing, and write the bag.
+        bag = _write_bag_artifacts(
+            sip,
+            record,
+            staged,
+            bag_dir=bag_dir,
+            agent=agent,
+            now=now,
+            sealed_ref=sealed_ref,
+            vault=vault,
         )
-        for event in fixity_events:
-            premis.record(event)
-        for event in format_events:
-            premis.record(event)
-        premis_json = premis.to_json()
-
-        # 4. Defense in depth: scan every artifact for the identity BEFORE a single
-        #    byte is written to disk, so a coding-error leak fails closed and leaves
-        #    nothing behind (safety — the guarantee must fail CLOSED).
-        _assert_identity_free(bag_info_text, sip.identity, "bag-info.txt")
-        _assert_identity_free(record_json, sip.identity, "record manifest")
-        _assert_identity_free(dc_json, sip.identity, "dublin core")
-        _assert_identity_free(premis_json, sip.identity, "premis log")
-
-        # 5. Write the bag with the metadata as tag files, so their integrity is
-        #    covered by the bag's own tag manifest (tampering with a record's policy
-        #    or identity_ref then fails validation).
-        bag = write_bag(
-            bag_dir,
-            bag_payload,
-            bag_info=bag_info,
-            extra_tag_files={
-                _RECORD_FILENAME: record_json.encode("utf-8"),
-                _DC_FILENAME: dc_json.encode("utf-8"),
-                _PREMIS_FILENAME: premis_json.encode("utf-8"),
-            },
-        )
-    except BaseException:
-        # Any failure after sealing must not orphan the identity or leave a partial
-        # bag on disk (consent, fail-closed). Revoke then clean up, then re-raise.
-        if sealed_ref is not None and vault is not None:
-            vault.revoke(sealed_ref)
-        shutil.rmtree(bag_dir, ignore_errors=True)
-        raise
     finally:
         # The encrypted-payload temp files have been copied into the bag and store;
         # remove the clear staging area in all cases.
-        if sealed_tmp is not None:
-            shutil.rmtree(sealed_tmp, ignore_errors=True)
+        if staged.sealed_tmp is not None:
+            shutil.rmtree(staged.sealed_tmp, ignore_errors=True)
 
     return AIP(
         bag=bag,

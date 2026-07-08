@@ -75,18 +75,12 @@ def _esc(value: object) -> str:
     return html.escape(str(value), quote=True)
 
 
-# Pre-existing complexity (one function validates every submitted field); surfaced
-# 2026-07-05 when CQ-05's complexity gate was enabled. Waived, not re-muted:
-# tracked for a follow-up split (see ledger-REMEDIATION.md P3-2).
-def parse_submission(form: dict[str, str], config: Config) -> Submission:  # noqa: C901
-    """Build a ``(record, identity)`` pair from a posted contribution form.
+def _extract_core_fields(form: dict[str, str]) -> tuple[str, str, str]:
+    """Extract and bound the required title/account plus optional summary.
 
-    Validates and bounds the inputs and constructs a record that is *sealed-pending*
-    by default — invisible to the public until a steward reviews it. Content
-    warnings are filtered against the archive's controlled vocabulary, so a crafted
-    form cannot inject an arbitrary tag. Raises :class:`~ledger.errors.ValidationError`
-    with a content-free, *localizable* reason code on invalid input — it never echoes a
-    submitted value (no-outing rule).
+    Raises :class:`~ledger.errors.ValidationError` (content-free, localizable
+    reason code — no-outing rule) if the title or account is missing, or any of
+    the three is too long.
     """
     title = (form.get("title") or "").strip()
     account = (form.get("account") or "").strip()
@@ -97,20 +91,20 @@ def parse_submission(form: dict[str, str], config: Config) -> Submission:  # noq
     summary = (form.get("summary") or "").strip()
     if len(title) > _MAX_TITLE or len(account) > _MAX_ACCOUNT or len(summary) > _MAX_SUMMARY:
         raise ValidationError("the submission is too long", code="err_submission_too_long")
+    return title, account, summary
 
-    visibility = (form.get("visibility") or _DEFAULT_VISIBILITY).strip()
-    field_policy = _VISIBILITY_TO_POLICY.get(visibility, AccessPolicy.SEALED_UNTIL)
 
-    # Only values in the archive's controlled vocabulary are kept, in vocabulary
-    # order, so the set is deterministic and a crafted key cannot inject a tag.
-    warnings = [w for w in config.content_warnings if form.get(f"cw_{w}")]
+def _build_dublin_core(
+    form: dict[str, str], *, title: str, summary: str, config: Config
+) -> DublinCore:
+    """Build the optional descriptive Dublin Core block from the posted form.
 
-    # Optional descriptive Dublin Core, so a contributed record is findable by topic,
-    # browsable by facet (subject/type/language), datable for scholarship, and richer
-    # in the feed/OAI — not just a bare title (user research P1-4/P2-3). Subjects are
-    # comma-separated into a list; the rest are single values. Like the summary, these
-    # are record-level descriptive metadata disclosed to whoever may list the record,
-    # so they carry no contributor identity and follow the record's own visibility.
+    Subjects, type, date, and language make a contributed record findable by
+    topic, browsable by facet, and datable for scholarship (user research
+    P1-4/P2-3). This is record-level descriptive metadata, disclosed to whoever
+    may list the record, so it carries no contributor identity. Raises
+    :class:`~ledger.errors.ValidationError` if any value is too long.
+    """
     subjects = [s.strip() for s in (form.get("subject") or "").split(",") if s.strip()]
     dc_type = (form.get("type") or "").strip()
     dc_date = (form.get("date") or "").strip()
@@ -141,6 +135,41 @@ def parse_submission(form: dict[str, str], config: Config) -> Submission:  # noq
         dublin_core.date = [dc_date]
     if dc_language:
         dublin_core.language = [dc_language]
+    return dublin_core
+
+
+def _parse_contributor_identity(form: dict[str, str]) -> ContributorIdentity | None:
+    """Parse the optional sealed contributor name/contact from the posted form.
+
+    Raises :class:`~ledger.errors.ValidationError` if either is too long.
+    """
+    name = (form.get("contributor_name") or "").strip()
+    contact = (form.get("contributor_contact") or "").strip()
+    if len(name) > _MAX_CONTACT or len(contact) > _MAX_CONTACT:
+        raise ValidationError("the contact details are too long", code="err_contact_too_long")
+    return ContributorIdentity(name=name, contact=contact) if (name or contact) else None
+
+
+def parse_submission(form: dict[str, str], config: Config) -> Submission:
+    """Build a ``(record, identity)`` pair from a posted contribution form.
+
+    Validates and bounds the inputs and constructs a record that is *sealed-pending*
+    by default — invisible to the public until a steward reviews it. Content
+    warnings are filtered against the archive's controlled vocabulary, so a crafted
+    form cannot inject an arbitrary tag. Raises :class:`~ledger.errors.ValidationError`
+    with a content-free, *localizable* reason code on invalid input — it never echoes a
+    submitted value (no-outing rule).
+    """
+    title, account, summary = _extract_core_fields(form)
+
+    visibility = (form.get("visibility") or _DEFAULT_VISIBILITY).strip()
+    field_policy = _VISIBILITY_TO_POLICY.get(visibility, AccessPolicy.SEALED_UNTIL)
+
+    # Only values in the archive's controlled vocabulary are kept, in vocabulary
+    # order, so the set is deterministic and a crafted key cannot inject a tag.
+    warnings = [w for w in config.content_warnings if form.get(f"cw_{w}")]
+
+    dublin_core = _build_dublin_core(form, title=title, summary=summary, config=config)
 
     record = Record(
         title=title,
@@ -150,11 +179,7 @@ def parse_submission(form: dict[str, str], config: Config) -> Submission:  # noq
         content_warnings=warnings,
     )
 
-    name = (form.get("contributor_name") or "").strip()
-    contact = (form.get("contributor_contact") or "").strip()
-    if len(name) > _MAX_CONTACT or len(contact) > _MAX_CONTACT:
-        raise ValidationError("the contact details are too long", code="err_contact_too_long")
-    identity = ContributorIdentity(name=name, contact=contact) if (name or contact) else None
+    identity = _parse_contributor_identity(form)
     return Submission(record=record, identity=identity)
 
 

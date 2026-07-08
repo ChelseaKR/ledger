@@ -120,20 +120,14 @@ def _cmd_init(args: argparse.Namespace) -> int:
     return 0
 
 
-# Pre-existing complexity (one function branches over every CLI ingest option);
-# surfaced 2026-07-05 when CQ-05's complexity gate was enabled. Waived, not
-# re-muted: tracked for a follow-up split (see ledger-REMEDIATION.md P3-2).
-def _cmd_ingest(args: argparse.Namespace) -> int:  # noqa: C901
-    """``ingest`` — build a record (and optional sealed identity) and store it.
+def _build_ingest_record(args: argparse.Namespace, archive: Archive) -> Record:
+    """Build the :class:`~ledger.models.Record` for ``ingest`` from CLI args.
 
     Public descriptive fields are published; sealed fields default to the
-    narrowest policy. If a content warning is given it is attached as structured
-    metadata. A contributor name/contact, when supplied, is sealed into the vault
-    and *only* the resulting opaque ``identity_ref`` is printed — the name is
-    never echoed (no-outing rule).
+    narrowest policy. A pre-declared transcript payload lets the one ingest path
+    preserve the transcript (it recomputes the address/size) so audio/video is
+    accessible to a Deaf or hard-of-hearing reader (user research H3).
     """
-    archive = _open_archive(Path(args.root))
-
     fields: list[Field] = []
     for name, value in _parse_pairs(args.public_field or []):
         fields.append(Field(name=name, value=value, policy=AccessPolicy.PUBLIC))
@@ -150,11 +144,6 @@ def _cmd_ingest(args: argparse.Namespace) -> int:  # noqa: C901
         fields=fields,
         content_warnings=list(args.cw or []),
     )
-
-    payload: dict[str, Path] = {}
-    for file_arg in args.files or []:
-        source = Path(file_arg)
-        payload[source.name] = source
 
     # A transcript/caption makes audio or video accessible to a Deaf or hard-of-
     # hearing reader (user research H3). Pre-declare the payload carrying it so the
@@ -177,23 +166,30 @@ def _cmd_ingest(args: argparse.Namespace) -> int:  # noqa: C901
     if predeclared:
         record.payloads = predeclared
 
-    identity: ContributorIdentity | None = None
-    # Seal whenever ANY contributor material is supplied, so a contact given without
-    # a name is never silently dropped (data loss of sensitive input -> safety).
-    if args.contributor_name or args.contributor_contact:
-        identity = ContributorIdentity(
-            name=args.contributor_name or "",
-            contact=args.contributor_contact or "",
-        )
+    return record
 
-    now = args.now if args.now else now_iso()
-    aip = archive.ingest(payload, record, identity=identity, agent=args.actor, now=now)
 
-    print(f"record_id: {record.record_id}")
-    print(f"bag: {aip.bag.path}")
-    if record.identity_ref is not None:
-        # Print ONLY the opaque token; never the contributor's name or contact.
-        print(f"identity_ref: {record.identity_ref}")
+def _build_ingest_identity(args: argparse.Namespace) -> ContributorIdentity | None:
+    """Build the optional sealed identity for ``ingest`` from CLI args.
+
+    Seals whenever ANY contributor material is supplied, so a contact given
+    without a name is never silently dropped (data loss of sensitive input ->
+    safety).
+    """
+    if not (args.contributor_name or args.contributor_contact):
+        return None
+    return ContributorIdentity(
+        name=args.contributor_name or "",
+        contact=args.contributor_contact or "",
+    )
+
+
+def _print_ingest_advisories(record: Record, args: argparse.Namespace) -> None:
+    """Print the post-ingest accessibility and preservation-planning advisories.
+
+    Nudges, never blocks: a missing transcript or an at-risk format is printed to
+    stderr so a steward can follow up, but the ingest itself already succeeded.
+    """
     # Accessibility advisory: audio/video without a transcript is unusable to a Deaf
     # or hard-of-hearing reader. Nudge, do not block (user research H3 / WCAG 1.2).
     for p in record.payloads:
@@ -215,6 +211,36 @@ def _cmd_ingest(args: argparse.Namespace) -> int:  # noqa: C901
                 f"{fmt.recommendation}",
                 file=sys.stderr,
             )
+
+
+def _cmd_ingest(args: argparse.Namespace) -> int:
+    """``ingest`` — build a record (and optional sealed identity) and store it.
+
+    Public descriptive fields are published; sealed fields default to the
+    narrowest policy. If a content warning is given it is attached as structured
+    metadata. A contributor name/contact, when supplied, is sealed into the vault
+    and *only* the resulting opaque ``identity_ref`` is printed — the name is
+    never echoed (no-outing rule).
+    """
+    archive = _open_archive(Path(args.root))
+    record = _build_ingest_record(args, archive)
+
+    payload: dict[str, Path] = {}
+    for file_arg in args.files or []:
+        source = Path(file_arg)
+        payload[source.name] = source
+
+    identity = _build_ingest_identity(args)
+
+    now = args.now if args.now else now_iso()
+    aip = archive.ingest(payload, record, identity=identity, agent=args.actor, now=now)
+
+    print(f"record_id: {record.record_id}")
+    print(f"bag: {aip.bag.path}")
+    if record.identity_ref is not None:
+        # Print ONLY the opaque token; never the contributor's name or contact.
+        print(f"identity_ref: {record.identity_ref}")
+    _print_ingest_advisories(record, args)
     return 0
 
 

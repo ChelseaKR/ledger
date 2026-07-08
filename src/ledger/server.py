@@ -41,6 +41,7 @@ import json
 import os
 import tempfile
 import time
+from collections.abc import Callable
 from email import policy as email_policy
 from email.parser import BytesParser
 from pathlib import Path
@@ -337,83 +338,90 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         """Handle HEAD identically to GET but without a body (handled in `_send`)."""
         self.do_GET()
 
-    # Pre-existing complexity (one dispatcher routes every read-only path); surfaced
-    # 2026-07-05 when CQ-05's complexity gate was enabled. Waived, not re-muted:
-    # this function is the disclosure/no-outing choke point, so it is deliberately
-    # *not* refactored under audit time pressure — a split is tracked as a careful,
-    # fully-retested follow-up, not a same-day edit to the most safety-sensitive
-    # function in the repo (see ledger-REMEDIATION.md P3-2).
-    def do_GET(self) -> None:  # noqa: C901
+    def _route_exact_get(self, path: str, params: dict[str, list[str]]) -> bool:
+        """Dispatch a GET whose path matches one of the fixed, literal routes.
+
+        Returns ``True`` if ``path`` was handled. Table-driven rather than a
+        chain of ``elif``s, but the *route table itself* is exhaustive and
+        explicit — no fallback, no pattern matching — so it is exactly as
+        predictable and auditable as the chain it replaces (no-outing rule:
+        every route here still resolves to one specific, reviewed handler).
+        """
+        routes: dict[str, Callable[[], None]] = {
+            "/": lambda: self._handle_browse(params),
+            "/search": lambda: self._handle_search(params),
+            "/healthz": self._handle_healthz,
+            "/status": self._handle_status,
+            "/consent-status": lambda: self._handle_consent_status(params),
+            "/about": self._handle_about,
+            "/overview": self._handle_overview,
+            "/governance": self._handle_governance,
+            "/how-it-works": self._handle_how_it_works,
+            "/proof": self._handle_proof,
+            "/oai": lambda: self._handle_oai(params),
+            "/sitemap.xml": self._handle_sitemap,
+            "/robots.txt": self._handle_robots,
+            "/feed.atom": self._handle_feed,
+            "/steward": self._handle_steward_console,
+            "/steward/audit": self._handle_steward_audit,
+            "/contribute": self._handle_contribute_form,
+            "/withdraw": self._handle_withdraw_form,
+            "/edit": self._handle_edit_form,
+            "/api/records": self._handle_api_records,
+            "/api/search": lambda: self._handle_api_search(params),
+            "/api/search.csv": lambda: self._handle_api_search_csv(params),
+        }
+        handler = routes.get(path)
+        if handler is None:
+            return False
+        handler()
+        return True
+
+    def _route_prefix_get(self, path: str, params: dict[str, list[str]]) -> bool:
+        """Dispatch a GET whose path is matched by prefix/suffix (record sub-paths,
+        the API record lookup, and static assets).
+
+        Returns ``True`` if ``path`` was handled. Kept as an explicit ``elif``
+        chain (rather than a table) because, unlike the exact routes, the match
+        conditions here are genuinely ordered and overlapping (e.g. every
+        ``/record/{id}/...`` sub-path must be checked before the general
+        ``/record/{id}`` fallthrough) — collapsing that ordering into a table
+        would obscure it, not simplify it.
+        """
+        if path.startswith("/record/") and "/file/" in path:
+            rid, _, name = path[len("/record/") :].partition("/file/")
+            self._handle_file(rid, name)
+        elif path.startswith("/record/") and path.endswith("/consent"):
+            self._handle_consent_form(path[len("/record/") : -len("/consent")])
+        elif path.startswith("/record/") and path.endswith("/object"):
+            self._handle_object_form(path[len("/record/") : -len("/object")])
+        elif path.startswith("/record/"):
+            self._handle_record(path[len("/record/") :], params)
+        elif path.startswith("/api/record/"):
+            self._handle_api_record(path[len("/api/record/") :])
+        elif path.startswith("/static/"):
+            self._handle_static(path[len("/static/") :])
+        else:
+            return False
+        return True
+
+    def do_GET(self) -> None:
         """Route a GET request to the matching read-only handler.
 
-        Routing is a small, explicit dispatch (predictability). Unmatched paths
-        get a 404; any :class:`~ledger.errors.LedgerError` is rendered as a safe
-        error page or JSON error whose message names no protected content
-        (no-outing rule).
+        Routing is a small, explicit dispatch (predictability), split across
+        :meth:`_route_exact_get` (the fixed literal routes) and
+        :meth:`_route_prefix_get` (the record/API/static sub-path routes) in the
+        same relative order as before the split — an unmatched path still falls
+        through to :meth:`_handle_not_found`. Any :class:`~ledger.errors.LedgerError`
+        is rendered as a safe error page or JSON error whose message names no
+        protected content (no-outing rule).
         """
         self._t0 = time.monotonic()
         parts = urlsplit(self.path)
         path = parts.path
         params = parse_qs(parts.query)
         try:
-            if path == "/":
-                self._handle_browse(params)
-            elif path == "/search":
-                self._handle_search(params)
-            elif path == "/healthz":
-                self._handle_healthz()
-            elif path == "/status":
-                self._handle_status()
-            elif path == "/consent-status":
-                self._handle_consent_status(params)
-            elif path == "/about":
-                self._handle_about()
-            elif path == "/overview":
-                self._handle_overview()
-            elif path == "/governance":
-                self._handle_governance()
-            elif path == "/how-it-works":
-                self._handle_how_it_works()
-            elif path == "/proof":
-                self._handle_proof()
-            elif path == "/oai":
-                self._handle_oai(params)
-            elif path == "/sitemap.xml":
-                self._handle_sitemap()
-            elif path == "/robots.txt":
-                self._handle_robots()
-            elif path == "/feed.atom":
-                self._handle_feed()
-            elif path == "/steward":
-                self._handle_steward_console()
-            elif path == "/steward/audit":
-                self._handle_steward_audit()
-            elif path == "/contribute":
-                self._handle_contribute_form()
-            elif path == "/withdraw":
-                self._handle_withdraw_form()
-            elif path == "/edit":
-                self._handle_edit_form()
-            elif path.startswith("/record/") and "/file/" in path:
-                rid, _, name = path[len("/record/") :].partition("/file/")
-                self._handle_file(rid, name)
-            elif path.startswith("/record/") and path.endswith("/consent"):
-                self._handle_consent_form(path[len("/record/") : -len("/consent")])
-            elif path.startswith("/record/") and path.endswith("/object"):
-                self._handle_object_form(path[len("/record/") : -len("/object")])
-            elif path.startswith("/record/"):
-                self._handle_record(path[len("/record/") :], params)
-            elif path == "/api/records":
-                self._handle_api_records()
-            elif path == "/api/search":
-                self._handle_api_search(params)
-            elif path == "/api/search.csv":
-                self._handle_api_search_csv(params)
-            elif path.startswith("/api/record/"):
-                self._handle_api_record(path[len("/api/record/") :])
-            elif path.startswith("/static/"):
-                self._handle_static(path[len("/static/") :])
-            else:
+            if not self._route_exact_get(path, params) and not self._route_prefix_get(path, params):
                 self._handle_not_found()
         except BrokenPipeError:  # pragma: no cover - client disconnected
             pass

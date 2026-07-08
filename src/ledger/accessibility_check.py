@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import re
 import sys
+from collections.abc import Callable
 from html.parser import HTMLParser
 from pathlib import Path
 
@@ -153,14 +154,8 @@ class _Accessibility(HTMLParser):
 
     # --- streaming callbacks ------------------------------------------------
 
-    # Pre-existing complexity (many checks fan out from one dispatch point); surfaced
-    # 2026-07-05 when CQ-05's complexity gate was enabled. Waived, not re-muted:
-    # tracked for a follow-up split rather than refactored under audit time
-    # pressure on safety-adjacent code (see ledger-REMEDIATION.md P3-2).
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:  # noqa: C901
-        """Record the facts each opening tag contributes to the checks."""
-        attr = {name: (value or "") for name, value in attrs}
-
+    def _handle_landmark_tag(self, tag: str, attr: dict[str, str]) -> None:
+        """Record page-structure facts: lang, title, headings, main, skip link."""
         if tag == "html":
             self.saw_html = True
             self.html_lang = attr.get("lang")
@@ -174,7 +169,10 @@ class _Accessibility(HTMLParser):
             text_href = attr.get("href", "").casefold()
             if any(hint in text_href for hint in _SKIP_HINTS):
                 self.skip_link = True
-        elif tag == "img" and "alt" not in attr:
+
+    def _handle_form_tag(self, tag: str, attr: dict[str, str]) -> None:
+        """Record image-alt and input/label-association facts."""
+        if tag == "img" and "alt" not in attr:
             self.img_missing_alt += 1
         elif tag == "input":
             # hidden/submit/button/reset/image inputs are not user-editable fields
@@ -191,7 +189,10 @@ class _Accessibility(HTMLParser):
             target = attr.get("for")
             if target:
                 self.label_targets.add(target)
-        elif tag == "table":
+
+    def _handle_table_tag(self, tag: str, attr: dict[str, str]) -> None:
+        """Record per-table caption/scoped-header facts while a table is open."""
+        if tag == "table":
             self._table_depth += 1
             self.table_count += 1
             self._current_table_has_caption = False
@@ -200,6 +201,14 @@ class _Accessibility(HTMLParser):
             self._current_table_has_caption = True
         elif tag == "th" and self._table_depth > 0 and attr.get("scope"):
             self._current_table_has_scoped_th = True
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        """Record the facts each opening tag contributes to the checks."""
+        attr = {name: (value or "") for name, value in attrs}
+
+        self._handle_landmark_tag(tag, attr)
+        self._handle_form_tag(tag, attr)
+        self._handle_table_tag(tag, attr)
 
         tabindex = attr.get("tabindex")
         if tabindex is not None and _to_int(tabindex) > 0:
@@ -244,10 +253,50 @@ def _to_int(value: str) -> int:
         return 0
 
 
-# Pre-existing complexity (one function surveys every WCAG structural check);
-# surfaced 2026-07-05 when CQ-05's complexity gate was enabled. Waived, not
-# re-muted: tracked for a follow-up split (see ledger-REMEDIATION.md P3-2).
-def check_html(markup: str, *, label: str) -> list[str]:  # noqa: C901
+def _check_landmarks(scanner: _Accessibility, fail: Callable[[str], None]) -> None:
+    """Page-structure checks: lang, title, heading count, main, skip link."""
+    if scanner.saw_html and not (scanner.html_lang and scanner.html_lang.strip()):
+        fail("<html> is missing a non-empty lang attribute (WCAG 3.1.1)")
+    if not scanner.title_text.strip():
+        fail("missing a non-empty <title> (WCAG 2.4.2)")
+    if scanner.h1_count == 0:
+        fail("missing an <h1> (WCAG 1.3.1)")
+    elif scanner.h1_count > 1:
+        fail(f"has {scanner.h1_count} <h1> elements; exactly one is required (WCAG 1.3.1)")
+    if not scanner.saw_main:
+        fail("missing a <main> landmark (WCAG 1.3.1)")
+    if not scanner.skip_link:
+        fail("missing a skip-to-content link (WCAG 2.4.1)")
+
+
+def _check_form_labelling(scanner: _Accessibility, fail: Callable[[str], None]) -> None:
+    """Form-accessibility checks: image alt text and input/label association."""
+    if scanner.img_missing_alt:
+        fail(f"{scanner.img_missing_alt} <img> element(s) lack an alt attribute (WCAG 1.1.1)")
+    if scanner.inputs_without_id:
+        fail(
+            f"{scanner.inputs_without_id} <input>(s) have no id, so no <label for> "
+            "can be associated (WCAG 1.3.1)"
+        )
+    unlabelled = scanner.input_ids - scanner.label_targets
+    if unlabelled:
+        fail(f"{len(unlabelled)} <input>(s) have no associated <label for> (WCAG 1.3.1, 4.1.2)")
+
+
+def _check_tables_and_focus(scanner: _Accessibility, fail: Callable[[str], None]) -> None:
+    """Table-structure and focus-order checks."""
+    if scanner.tables_missing_caption:
+        fail(f"{scanner.tables_missing_caption} <table>(s) lack a <caption> (WCAG 1.3.1)")
+    if scanner.tables_missing_scope:
+        fail(f"{scanner.tables_missing_scope} <table>(s) lack any <th scope> (WCAG 1.3.1)")
+    if scanner.bad_tabindex:
+        fail(
+            f"{scanner.bad_tabindex} element(s) use a positive tabindex, which "
+            "breaks focus order (WCAG 2.4.3)"
+        )
+
+
+def check_html(markup: str, *, label: str) -> list[str]:
     """Return a list of human-readable accessibility problems found in ``markup``.
 
     ``label`` names the source (a file path or a route) so each problem points the
@@ -263,40 +312,9 @@ def check_html(markup: str, *, label: str) -> list[str]:  # noqa: C901
     def fail(message: str) -> None:
         problems.append(f"{label}: {message}")
 
-    if scanner.saw_html and not (scanner.html_lang and scanner.html_lang.strip()):
-        fail("<html> is missing a non-empty lang attribute (WCAG 3.1.1)")
-    if not scanner.title_text.strip():
-        fail("missing a non-empty <title> (WCAG 2.4.2)")
-    if scanner.h1_count == 0:
-        fail("missing an <h1> (WCAG 1.3.1)")
-    elif scanner.h1_count > 1:
-        fail(f"has {scanner.h1_count} <h1> elements; exactly one is required (WCAG 1.3.1)")
-    if not scanner.saw_main:
-        fail("missing a <main> landmark (WCAG 1.3.1)")
-    if not scanner.skip_link:
-        fail("missing a skip-to-content link (WCAG 2.4.1)")
-    if scanner.img_missing_alt:
-        fail(f"{scanner.img_missing_alt} <img> element(s) lack an alt attribute (WCAG 1.1.1)")
-
-    if scanner.inputs_without_id:
-        fail(
-            f"{scanner.inputs_without_id} <input>(s) have no id, so no <label for> "
-            "can be associated (WCAG 1.3.1)"
-        )
-    unlabelled = scanner.input_ids - scanner.label_targets
-    if unlabelled:
-        fail(f"{len(unlabelled)} <input>(s) have no associated <label for> (WCAG 1.3.1, 4.1.2)")
-
-    if scanner.tables_missing_caption:
-        fail(f"{scanner.tables_missing_caption} <table>(s) lack a <caption> (WCAG 1.3.1)")
-    if scanner.tables_missing_scope:
-        fail(f"{scanner.tables_missing_scope} <table>(s) lack any <th scope> (WCAG 1.3.1)")
-
-    if scanner.bad_tabindex:
-        fail(
-            f"{scanner.bad_tabindex} element(s) use a positive tabindex, which "
-            "breaks focus order (WCAG 2.4.3)"
-        )
+    _check_landmarks(scanner, fail)
+    _check_form_labelling(scanner, fail)
+    _check_tables_and_focus(scanner, fail)
 
     return problems
 
