@@ -16,7 +16,7 @@ import html
 from collections.abc import Iterable
 from urllib.parse import parse_qsl, quote, urlencode, urlsplit
 
-from ledger import i18n, pagination, search
+from ledger import i18n, pagination, search, transparency
 from ledger.metadata.pid import is_pid
 from ledger.models import AccessPolicy, DisclosedRecord, Grant, PayloadFile, Record
 
@@ -1014,6 +1014,118 @@ def _nav_html(lang: str = "en", *, contribute: bool = False, current_path: str =
         f'      <a href="/search">{_esc(i18n.t(lang, "nav_search"))}</a>\n'
         f'      <a href="/overview">{_esc(i18n.t(lang, "nav_overview"))}</a>\n'
         f'      <a href="/about">{_esc(i18n.t(lang, "nav_about"))}</a>\n'
+        f'      <a href="/transparency">{_esc(i18n.t(lang, "nav_transparency"))}</a>\n'
         f'      <a href="/status">{_esc(i18n.t(lang, "nav_status"))}</a>\n'
         f"{contribute_link}{switch}    "
+    )
+
+
+# --- legal-process transparency (EXP-10, warrant canary) --------------------
+
+
+def transparency_unattested_main_html(heading: str, extra_paragraph: str) -> str:
+    """``<main>`` HTML for an unconfigured or never-attested ``/transparency`` page.
+
+    Never fabricates a statement: the two states that reach this — the feature
+    disabled, or enabled but not yet attested — are shown as exactly that, not a
+    synthesized "all clear" (the same honesty discipline as a stale attestation
+    never being rendered as current).
+    """
+    intro = (
+        "This page shows the archive's most recent, dated statement about legal "
+        "demands received for records or contributor identities, re-attested on a "
+        "schedule. A missing or stale attestation is itself meaningful — see "
+        "'How to read this page' below."
+    )
+    return (
+        f"    <h1>{_esc(heading)}</h1>\n"
+        f"    <p>{_esc(intro)}</p>\n"
+        f"    <p>{_esc(extra_paragraph)}</p>"
+    )
+
+
+def transparency_main_html(
+    *,
+    heading: str,
+    latest: transparency.Attestation,
+    entries: list[transparency.Attestation],
+    cadence_days: int,
+) -> str:
+    """``<main>`` HTML for an attested ``/transparency`` page.
+
+    Pure function of an already-loaded attestation log (I/O — reading the log file
+    — stays in :mod:`ledger.server`), so it is exercised directly by
+    ``ledger.accessibility_check`` alongside the site's other sample pages, not
+    only through a live request.
+    """
+    stale = transparency.is_stale(latest, cadence_days)
+    since = transparency.days_since(latest.attested_date)
+    chain_ok = transparency.verify_chain(entries)
+
+    intro = (
+        "This page shows the archive's most recent, dated statement about legal "
+        "demands received for records or contributor identities, re-attested on a "
+        "schedule. A missing or stale attestation is itself meaningful — see "
+        "'How to read this page' below."
+    )
+    status_html = (
+        f'    <p class="warning" role="status">Last attested {_esc(str(since))} day(s) '
+        f"ago — this is beyond the archive's {cadence_days}-day re-attestation "
+        "cadence. Treat this statement as STALE, not current.</p>\n"
+        if stale
+        else f"    <p>Last attested {_esc(str(since))} day(s) ago, within the "
+        f"archive's {cadence_days}-day cadence.</p>\n"
+    )
+    counsel_html = (
+        "    <p>This statement's wording has been reviewed by counsel"
+        + (f": {_esc(latest.counsel_review_note)}" if latest.counsel_review_note else ".")
+        + "</p>\n"
+        if latest.counsel_reviewed
+        else '    <p class="warning" role="status">This statement has <strong>not</strong> '
+        "been reviewed by counsel. Its wording is a placeholder and carries no "
+        "asserted legal effect (see docs/TRANSPARENCY.md).</p>\n"
+    )
+    counts = latest.demand_counts
+    if counts:
+        rows = "".join(
+            f"      <tr><td>{_esc(kind)}</td><td>{count}</td></tr>\n"
+            for kind, count in sorted(counts.items())
+        )
+        counts_html = (
+            "    <table>\n"
+            "      <caption>Legal demands received, by type, as of this attestation"
+            "</caption>\n"
+            '      <thead><tr><th scope="col">Type</th><th scope="col">Count</th></tr>'
+            "</thead>\n"
+            f"      <tbody>\n{rows}      </tbody>\n"
+            "    </table>\n"
+        )
+    else:
+        counts_html = "    <p>No legal demands recorded as of this attestation.</p>\n"
+    chain_html = (
+        f"    <p>{len(entries)} attestation(s) on file; hash-chain "
+        f"{'verified intact' if chain_ok else 'FAILED VERIFICATION — contact the stewards'}.</p>\n"
+    )
+
+    return (
+        f"    <h1>{_esc(heading)}</h1>\n"
+        f"    <p>{_esc(intro)}</p>\n"
+        f"    <h2>Current statement (as of {_esc(latest.attested_date)})</h2>\n"
+        + status_html
+        + f"    <p>{_esc(latest.statement_text)}</p>\n"
+        + f"    <p>Attested by: {_esc(latest.attested_by)}.</p>\n"
+        + counsel_html
+        + counts_html
+        + "    <h2>Verifying this page</h2>\n"
+        + chain_html
+        + "    <p>Each attestation is chained to the one before it by a SHA-256 "
+        "digest, so an edited, reordered, or deleted past entry is detectable "
+        "from the log file alone — see docs/TRANSPARENCY.md for how to check it "
+        "yourself.</p>\n"
+        + "    <h2>How to read this page</h2>\n"
+        + "    <p>A stale or missing attestation is not proof of anything by "
+        "itself, but it removes the reassurance a fresh one gives — a steward "
+        "unable to re-attest (a gag order, a compromise, a lapse) and a steward "
+        "with nothing to report look identical only until the date goes stale. "
+        "Compare this page over time rather than trusting a single visit.</p>"
     )

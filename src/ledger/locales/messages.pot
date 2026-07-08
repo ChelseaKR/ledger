@@ -667,6 +667,9 @@ msgstr ""
 msgid "Transcript"
 msgstr ""
 
+msgid "Transparency"
+msgstr ""
+
 msgid "Type"
 msgstr ""
 

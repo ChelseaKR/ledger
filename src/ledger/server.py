@@ -55,7 +55,18 @@ from pathlib import Path
 from typing import BinaryIO
 from urllib.parse import parse_qs, quote, urlsplit
 
-from ledger import consent, contribute, export, i18n, oai, pagination, review, search, upload
+from ledger import (
+    consent,
+    contribute,
+    export,
+    i18n,
+    oai,
+    pagination,
+    review,
+    search,
+    transparency,
+    upload,
+)
 from ledger.access import anonymous, disclose, is_listable
 from ledger.access.grants import load_grants, load_revocations, verify_grant_token
 from ledger.attestation import HealthAttestation, latest_attestation_path
@@ -95,6 +106,8 @@ from ledger.render import (
     _overview_main_html,
     _page,
     _record_main_html,
+    transparency_main_html,
+    transparency_unattested_main_html,
 )
 from ledger.tombstones import PRIMARY_LOCATION, TombstoneStore
 
@@ -489,6 +502,8 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
                 self._handle_proof()
             elif path == "/proof/attestation.json":
                 self._handle_proof_attestation()
+            elif path == "/transparency":
+                self._handle_transparency()
             elif path == "/oai":
                 self._handle_oai(params)
             elif path == "/sitemap.xml":
@@ -2338,6 +2353,61 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             )
             return
         self._send_json(200, attestation.to_dict())
+
+    def _handle_transparency(self) -> None:
+        """``GET /transparency`` — the legal-process transparency page (EXP-10).
+
+        Renders the archive's most recent, dated, hash-chained legal-demand
+        attestation, staleness shown honestly (never a stale attestation displayed
+        as current — a canary's entire point is that silence or lapse is itself the
+        signal). Off by default: ``config.transparency_log_path`` is empty unless a
+        steward has opted in and re-attested at least once, and this page never
+        fabricates a statement — an unconfigured or never-attested archive is shown
+        exactly that, not a synthesized "all clear."
+
+        The canary's *wording* is a legal instrument whose safety and effect vary by
+        jurisdiction; per ``docs/TRANSPARENCY.md`` (EXP-10), ledger ships the
+        mechanism only — a steward supplies counsel-reviewed statement text via
+        ``ledger transparency attest``,
+        and each attestation records whether that review happened.
+        """
+        lang = self._lang()
+        cfg = self._archive().config
+        heading = "Legal-process transparency"
+        log_path = cfg.transparency_log_path.strip()
+        if not log_path:
+            main_html = transparency_unattested_main_html(
+                heading,
+                "This archive has not configured legal-process transparency "
+                "attestations. It publishes no statement here, positive or negative — "
+                "absence of the feature is not evidence of anything.",
+            )
+            self._send_html(
+                200, _page(heading, lang=lang, main_html=main_html, nav_html=self._nav())
+            )
+            return
+
+        log = transparency.TransparencyLog(Path(log_path))
+        entries = log.all()
+        latest = log.latest()
+        if latest is None:
+            main_html = transparency_unattested_main_html(
+                heading,
+                "This archive has enabled legal-process transparency but has not yet "
+                "published a first attestation.",
+            )
+            self._send_html(
+                200, _page(heading, lang=lang, main_html=main_html, nav_html=self._nav())
+            )
+            return
+
+        main_html = transparency_main_html(
+            heading=heading,
+            latest=latest,
+            entries=entries,
+            cadence_days=cfg.transparency_cadence_days,
+        )
+        self._send_html(200, _page(heading, lang=lang, main_html=main_html, nav_html=self._nav()))
 
     # --- content retrieval (user research P0-4 / C4) -----------------------
 

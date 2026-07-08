@@ -38,6 +38,7 @@ from ledger import (
     preservation,
     redact_suggest,
     succession,
+    transparency,
 )
 from ledger import backup as backup_mod
 from ledger.access.grants import (
@@ -1283,6 +1284,80 @@ def _cmd_redact_suggest(args: argparse.Namespace) -> int:
     return 0
 
 
+def _transparency_log(args: argparse.Namespace) -> transparency.TransparencyLog:
+    """The ``TransparencyLog`` at ``--log``, or configured on the archive at ``--root``."""
+    if getattr(args, "log", None):
+        return transparency.TransparencyLog(Path(args.log))
+    config = _load_config(Path(args.root))
+    if not config.transparency_log_path:
+        raise LedgerError(
+            "no transparency log configured; pass --log or set "
+            "transparency_log_path in the archive config"
+        )
+    return transparency.TransparencyLog(Path(config.transparency_log_path))
+
+
+def _cmd_transparency_attest(args: argparse.Namespace) -> int:
+    """``transparency attest`` — re-attest the archive's legal-demand posture.
+
+    Appends one hash-chained entry (see :mod:`ledger.transparency`) and prints its
+    digest. Deliberately does **not** ship default statement wording: ``--statement``
+    is required, so a steward must consciously supply text (counsel-reviewed, per
+    ``docs/TRANSPARENCY.md``, before it is meant for real use) rather than the CLI
+    silently reusing stale or placeholder copy across attestations.
+    """
+    log = _transparency_log(args)
+    counts: dict[str, int] = {}
+    for name, value in _parse_pairs(args.count or []):
+        try:
+            counts[name] = int(value)
+        except ValueError as exc:
+            raise LedgerError(f"--count {name}={value!r} is not an integer") from exc
+    now = args.now if args.now else now_iso()
+    entry = log.append(
+        attested_date=now[:10],
+        attested_by=args.by,
+        statement_text=args.statement,
+        demand_counts=counts,
+        counsel_reviewed=args.counsel_reviewed,
+        counsel_review_note=args.counsel_note or "",
+        signature=args.signature or "",
+    )
+    print(f"attested {entry.attested_date} by {entry.attested_by}; digest {entry.digest}")
+    if not entry.counsel_reviewed:
+        print(
+            "warning: counsel_reviewed is false — do not present this attestation's "
+            "wording as having legal effect",
+            file=sys.stderr,
+        )
+    return 0
+
+
+def _cmd_transparency_show(args: argparse.Namespace) -> int:
+    """``transparency show`` — print the latest attestation and chain-verify the log."""
+    log = _transparency_log(args)
+    entries = log.all()
+    if not entries:
+        print("no attestations on file")
+        return 1
+    latest = entries[-1]
+    chain_ok = transparency.verify_chain(entries)
+    since = transparency.days_since(latest.attested_date)
+    print(
+        json.dumps(
+            {
+                "latest": latest.to_dict(),
+                "attestation_count": len(entries),
+                "chain_verified": chain_ok,
+                "days_since_attestation": since,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0 if chain_ok else 2
+
+
 # --- parser construction ----------------------------------------------------
 
 
@@ -1682,6 +1757,46 @@ def _build_parser() -> argparse.ArgumentParser:
         "--file", help="path to a text file to scan (default: read stdin)"
     )
     p_redact_suggest.set_defaults(func=_cmd_redact_suggest)
+
+    p_transparency = sub.add_parser(
+        "transparency", help="legal-process transparency attestations (EXP-10, warrant canary)"
+    )
+    transparency_sub = p_transparency.add_subparsers(
+        dest="transparency_command", required=True, metavar="SUBCOMMAND"
+    )
+    p_ts_attest = transparency_sub.add_parser(
+        "attest", help="append a new, hash-chained attestation"
+    )
+    p_ts_attest.add_argument("--root", default=".", help="archive root (used if --log is omitted)")
+    p_ts_attest.add_argument("--log", help="path to the transparency log file")
+    p_ts_attest.add_argument("--by", required=True, help="steward id performing the attestation")
+    p_ts_attest.add_argument(
+        "--statement",
+        required=True,
+        help="the (counsel-reviewed, for real use) statement text",
+    )
+    p_ts_attest.add_argument(
+        "--count",
+        action="append",
+        metavar="TYPE=N",
+        help=f"a demand count, e.g. subpoena=1; repeatable; types: {sorted(transparency.DEMAND_TYPES)}",
+    )
+    p_ts_attest.add_argument(
+        "--counsel-reviewed", action="store_true", help="mark this wording as counsel-reviewed"
+    )
+    p_ts_attest.add_argument("--counsel-note", help="dated note on the counsel review")
+    p_ts_attest.add_argument(
+        "--signature", help="opaque out-of-band signature over the statement (e.g. ssh-keygen -Y)"
+    )
+    p_ts_attest.add_argument("--now", help="ISO-8601 timestamp (date portion is what is recorded)")
+    p_ts_attest.set_defaults(func=_cmd_transparency_attest)
+
+    p_ts_show = transparency_sub.add_parser(
+        "show", help="print the latest attestation and verify the hash chain"
+    )
+    p_ts_show.add_argument("--root", default=".", help="archive root (used if --log is omitted)")
+    p_ts_show.add_argument("--log", help="path to the transparency log file")
+    p_ts_show.set_defaults(func=_cmd_transparency_show)
 
     return parser
 

@@ -321,7 +321,9 @@ def _render_sample_pages() -> dict[str, str]:
             _browse_main_html,
             _page,
             _record_main_html,
+            transparency_main_html,
         )
+        from ledger.transparency import TransparencyLog
 
         root = Path(mkdtemp(prefix="ledger-a11y-"))
         config = Config.default("a11y-sample", root)
@@ -341,6 +343,20 @@ def _render_sample_pages() -> dict[str, str]:
         disclosed = archive.browse(anonymous(), now="2026-01-01T00:00:00Z")
         one = archive.disclose(record.record_id, anonymous(), now="2026-01-01T00:00:00Z")
 
+        transparency_log = TransparencyLog(root / "transparency.json")
+        latest_attestation = transparency_log.append(
+            attested_date="2026-01-01",
+            attested_by="a11y-sample",
+            statement_text="Sample statement used only to render the accessibility surface.",
+            demand_counts={"subpoena": 0},
+        )
+        transparency_html = transparency_main_html(
+            heading="Legal-process transparency",
+            latest=latest_attestation,
+            entries=transparency_log.all(),
+            cadence_days=90,
+        )
+
         return {
             "rendered:/": _page(
                 "Browse", lang="en", main_html=_browse_main_html(disclosed, heading="Browse")
@@ -350,6 +366,9 @@ def _render_sample_pages() -> dict[str, str]:
             ),
             "rendered:/contribute": _page(
                 "Contribute", lang="en", main_html=contribute.render_contribute_main(config)
+            ),
+            "rendered:/transparency": _page(
+                "Legal-process transparency", lang="en", main_html=transparency_html
             ),
         }
     except Exception:
