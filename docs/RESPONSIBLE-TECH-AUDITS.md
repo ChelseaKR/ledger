@@ -39,10 +39,10 @@ Applicability decisions and the N/A for AI-Evaluation live in
   0004/0005) — there is no hosted dependency to fail closed *or* open.
 - **Accountable owner:** Chelsea Kelly-Reif (RTF-01).
 - **Signed off:** 2026-07-05 — Chelsea Kelly-Reif.
-- **Gap:** this section, `docs/THREAT-MODEL.md`, and `docs/GOVERNANCE.md` are the
-  substantive ethics review; a distinct, committed, dated `docs/audits/` artifact
-  (RTF-01's letter) does not exist yet — tracked in
-  [`docs/ROADMAP.md`](ROADMAP.md#open-conformance-gaps).
+- **Draft artifact:** this section, `docs/THREAT-MODEL.md`, and `docs/GOVERNANCE.md`
+  supply the source material; a review-ready draft is committed at
+  [`docs/audits/ethics-consequence-scan.md`](audits/ethics-consequence-scan.md)
+  (2026-07-07). It is not a human sign-off; RTF-01 remains open.
 
 ## B. Bias & fairness
 
@@ -191,7 +191,8 @@ Applicability decisions and the N/A for AI-Evaluation live in
 - [`docs/GOVERNANCE.md`](GOVERNANCE.md) — stewardship, moderation, and dispute-resolution process (dated 2026-07-05)
 - [`docs/adr/0006-standards-applicability.md`](adr/0006-standards-applicability.md), [`docs/adr/0007-withhold-not-403.md`](adr/0007-withhold-not-403.md) — the two decisions this audit required
 - [`docs/audits/crypto-agility-pq-posture.md`](audits/crypto-agility-pq-posture.md) — harvest-now-decrypt-later analysis and algorithm-lifecycle policy for the identity vault and sealed content (EXP-13)
-- **Not yet created** (tracked in [`docs/ROADMAP.md`](ROADMAP.md#open-conformance-gaps)): `docs/audits/dpia.md`, `docs/audits/bias-representational-harm.md`, `docs/audits/ethics-consequence-scan.md`, `docs/audits/residual-risk-register.md`
+- [`docs/audits/ethics-consequence-scan.md`](audits/ethics-consequence-scan.md) — review-ready draft; human sign-off pending (RTF-01)
+- **Not yet created** (tracked in [`docs/ROADMAP.md`](ROADMAP.md#open-conformance-gaps)): `docs/audits/dpia.md`, `docs/audits/bias-representational-harm.md`, `docs/audits/residual-risk-register.md`
 
 No LLM or model inference exists anywhere in ledger (ingest, fixity, access policy,
 and disclosure are deterministic), so AI-Evaluation is **N/A** — see
