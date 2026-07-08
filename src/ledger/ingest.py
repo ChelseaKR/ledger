@@ -31,6 +31,7 @@ import shutil
 import tempfile
 from pathlib import Path
 
+from ledger import catalog_index
 from ledger.access import disclose, is_listable
 from ledger.attest import attested_conditions
 from ledger.bag import atomic_write_text, refresh_tag_manifests, validate_bag, write_bag
@@ -581,6 +582,7 @@ class Archive:
         self.bags_dir = self.store_root / "bags"
         self.records_dir = self.store_root / "records"
         self.logs_dir = self.store_root / "logs"
+        self.index_path = catalog_index.index_path(self.store_root)
         self.vault_path = Path(config.vault_path)
         self._vault: IdentityVault | None = None
 
@@ -680,7 +682,11 @@ class Archive:
         sip = SIP(record=record, payload=dict(payload), identity=identity)
         aip = ingest_sip(sip, self.store, vault, bags_dir=self.bags_dir, agent=agent, now=stamp)
 
-        # Mirror the bag's identity-free manifest into records/ for quick reads.
+        # Mirror the bag's identity-free manifest into records/ for quick reads. The
+        # catalog index (FIX-04) needs no explicit update here: it self-syncs against
+        # records/ (by mtime+size) the next time anything reads it, so a newly
+        # ingested record shows up in the very next browse/search with no extra step
+        # and no way to drift out of sync (see ledger.catalog_index).
         record_copy = self.records_dir / f"{record.record_id}.json"
         shutil.copyfile(aip.record_path, record_copy)
         return aip
@@ -983,6 +989,10 @@ class Archive:
         versions = self._versions_path(record_id)
         if versions.exists():
             versions.unlink()
+        # The catalog index (FIX-04) notices the fast-lookup file is gone the next
+        # time it self-syncs and drops the cached row then -- no explicit call
+        # needed here (see ledger.catalog_index), so a removed record cannot linger
+        # in browse/search results.
         for location in self.config.locations:
             replica = Path(location.path) / record_id
             if replica.exists() and replica != bag_dir:
@@ -1022,22 +1032,28 @@ class Archive:
         )
 
     def _all_records(self) -> list[Record]:
-        """Load every stored record manifest from the fast-lookup directory.
+        """Load every stored record manifest via the catalog index (FIX-04).
+
+        This used to glob and JSON-parse every ``records/*.json`` file on *every*
+        call, which every browse, search, OAI, sitemap, and CSV request made at
+        least once -- seconds of CPU per page at a few thousand records.
+        :func:`ledger.catalog_index.sync_and_read` now does the equivalent of that
+        same scan by *file metadata* (one cheap ``stat`` per record) and only
+        re-reads and re-parses a record whose ``(mtime, size)`` changed since the
+        last read, serving everything else from the sqlite cache. The result is
+        therefore always exactly what a direct scan of ``records/`` would return
+        right now -- the index is a cache, never a second source of truth, and
+        :meth:`~ledger.ingest.Archive.disclose` remains the only disclosure gate
+        anything downstream of this passes through.
 
         Sorted by ``(created_at, record_id)`` so a listing is stable across runs
         and machines (predictability, reproducibility).
         """
-        if not self.records_dir.exists():
-            return []
+        texts = catalog_index.sync_and_read(self.index_path, self.records_dir)
         records: list[Record] = []
-        for path in self.records_dir.glob("*.json"):
-            # The append-only version indexes live under records/ with the same
-            # extension; they are not manifests, so skip them (they would only be
-            # skipped later as unparseable, but this is explicit and cheaper).
-            if path.name.endswith(_VERSIONS_SUFFIX):
-                continue
+        for text in texts:
             try:
-                records.append(deserialize_record(path.read_text(encoding="utf-8")))
+                records.append(deserialize_record(text))
             except (LedgerError, ValueError, OSError):
                 # One unreadable manifest must not take down the whole browse/audit
                 # path; skip it so the rest of the archive stays available
@@ -1045,6 +1061,21 @@ class Archive:
                 continue
         records.sort(key=lambda r: (r.created_at, r.record_id))
         return records
+
+    def reindex(self) -> int:
+        """Force a from-scratch rebuild of the catalog index from ``records/``.
+
+        FIX-04's explicit, deterministic rebuild path (``ledger reindex``): mostly
+        an operability convenience -- :meth:`_all_records` already self-syncs the
+        index against ``records/`` on every read, so this is never required for
+        correctness -- but it is useful to warm a cold index ahead of a first
+        request, to compact after heavy churn, or as an explicit "trust nothing,
+        re-derive everything" step. ``rm -rf store/index`` followed by this is
+        reproducible: the same ``records/`` always yields the same cached content,
+        because every cached manifest is copied verbatim from its source file
+        rather than re-derived. Returns the number of records indexed.
+        """
+        return catalog_index.rebuild(self.index_path, self.records_dir)
 
     def browse(self, grant: Grant, now: str | None = None) -> list[DisclosedRecord]:
         """List, as safe disclosed records, everything ``grant`` may see at ``now``.
