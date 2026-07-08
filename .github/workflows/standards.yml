@@ -26,7 +26,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # Harden-Runner (SEC-04): audit mode first, see ci.yml for the rollout note.
-      - uses: step-security/harden-runner@5c7944e73c4c2a096b17a9cb74d65b6c2bbafbde # v2.9.1
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
           egress-policy: audit
       - name: Check out this repo
