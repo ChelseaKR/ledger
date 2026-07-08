@@ -45,3 +45,10 @@ secrets/
 
 # runtime-fetched portfolio-standards (never commit)
 .standards/
+
+# Mutation testing (mutmut) — advisory only (CQ-47); its working copy and stats
+# are regenerated every `make mutation` run and never committed.
+mutants/
+.mutmut-cache
+mutmut-stats.json
+mutmut-cicd-stats.json

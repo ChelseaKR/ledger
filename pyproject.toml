@@ -56,6 +56,11 @@ Issues = "https://github.com/ChelseaKR/ledger/issues"
 print = [
     "segno>=1.5,<2",
 ]
+# CQ-47 mutation tooling is deliberately opt-in; it does not inflate the normal
+# contributor/CI dependency group or the runtime dependency surface.
+mutation = [
+    "mutmut>=3.6",
+]
 
 # Deployability/installability: `pipx install ledger-archive` then `ledger ...`.
 [project.scripts]
@@ -139,3 +144,29 @@ skip_covered = false
 # a future refactor cannot silently erode the disclosure/no-outing test suite this
 # README calls its enforcement mechanism.
 fail_under = 85
+
+# Mutation testing (CODE-QUALITY-STANDARD CQ-47) — advisory only, never a merge
+# gate. Line/branch coverage proves a line *ran*; it does not prove a test would
+# *notice* if that line were wrong. For ledger's safety-critical surface — grants,
+# access policy, redaction, contributor identity, fixity — that gap is exactly
+# where a no-outing or corruption bug would hide. mutmut systematically injects
+# small faults ("mutants") and reports which ones the existing suite fails to
+# catch ("survivors"). Run with `make mutation`; see docs/MUTATION-TESTING.md for
+# scope, baseline, and how to read survivors.
+[tool.mutmut]
+# Copy the whole package so imports resolve (access/ imports ledger.models,
+# identity.py imports ledger.errors/ledger.models, ...), but generate mutants for
+# the three safety-critical modules named in CQ-47 only.
+source_paths = ["src"]
+only_mutate = [
+    "src/ledger/access/*.py",
+    "src/ledger/identity.py",
+    "src/ledger/fixity.py",
+]
+# Kill oracle: the pytest markers that already exist for exactly this purpose
+# (pyproject [tool.pytest.ini_options].markers) — `disclosure` covers
+# access-policy/grant/no-outing guarantees (grants, policy, redaction, identity),
+# `preservation` covers fixity/bagging/content-addressing guarantees. Reusing the
+# markers keeps the kill-oracle selection self-maintaining as tests are added or
+# moved, instead of a hand-enumerated file list that silently drifts.
+pytest_add_cli_args_test_selection = ["-m", "disclosure or preservation"]
