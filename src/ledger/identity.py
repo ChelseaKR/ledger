@@ -31,7 +31,17 @@ Design choices and the quality attributes they serve:
    that gate any future algorithm change, including hybrid post-quantum
    encryption. Read that document, and the companion envelope/key-hierarchy
    design it cross-references, before changing the encryption construction in
-   this module or adding a new algorithm to it.
+   this module or adding a new algorithm to it. The companion sealing-layer
+   design also records that this vault's single Fernet key currently protects two
+   different asset classes
+   (identity ciphertext, via :meth:`add`/:meth:`resolve`; sealed-content
+   ciphertext, via :meth:`encrypt_text`/:meth:`encrypt_bytes`), and
+   :meth:`encrypt_text`'s ``"enc:"`` string prefix is an in-band, unversioned type
+   marker. Both are open design questions pending an external cryptography
+   review before RM2 broadens at-rest encryption on top of them — see
+   ``docs/audits/crypto-design-review-sealing-layer.md`` (FIX-11). Do not add a
+   fourth use of this key, or a second in-band string-prefix convention, without
+   reading ``docs/audits/crypto-design-review-sealing-layer.md`` first.
 """
 
 from __future__ import annotations
