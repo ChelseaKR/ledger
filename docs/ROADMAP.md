@@ -40,7 +40,7 @@ tracked."
 | Accessibility | A11Y-01–03, 07, 09 | axe-core / Lighthouse / pa11y / Playwright keyboard+reflow specs not run in CI (structural checker + manual review substitute today) | Open | P3-7 |
 | Accessibility | A11Y-11, 12, 16, 18 | No dated screen-reader/keyboard walkthrough artifact or `docs/a11y/STATEMENT.md` | Open | P2-3 |
 | Responsible Tech | RTF-03 | No dated bias / representational-harm review artifact | Open | P2-2 |
-| Responsible Tech | RTF-04 | No DPIA — the highest-priority artifact gap in the repo (L2 PII archive with no data-protection impact assessment) | Open | P2-2 |
+| Responsible Tech | RTF-04 | DPIA draft exists; accountable-owner review is pending | Open — [`docs/audits/dpia.md`](audits/dpia.md), draft dated 2026-07-07 | P2-2 |
 | Quality & Metrics | QM-02 | No performance budgets/benchmarks in CI (README claim already removed pending this — see CHANGELOG) | Open | P3-5 |
 | Code Quality | CQ-47 | No mutation testing on safety modules (`access/`, `identity.py`, `fixity.py`) | Open | P3-3 |
 | Code Quality | CQ-05 (partial) | Complexity gate is now enforced (`ruff` C901, max 10); 7 pre-existing functions exceed it and are waived with dated `# noqa: C901` comments pending a deliberate, fully-retested split — not rushed under audit time pressure on safety-adjacent code | Open (waived) | See `# noqa: C901` sites in `accessibility_check.py`, `bag.py`, `cli.py`, `contribute.py`, `ingest.py`, `server.py` |

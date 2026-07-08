@@ -157,9 +157,10 @@ enforces their decision, not a steward's preference. **Vulnerability** managemen
 gitleaks, CodeQL in CI, blocking with no muted gates; dependency pinning is a range today, a
 committed hash-pinned lockfile is tracked in `docs/ROADMAP.md`. **Accountability** and
 **auditability** — every preservation and access event is a PREMIS record with agent and outcome;
-audit-as-artifact documents committed today are [`docs/THREAT-MODEL.md`](docs/THREAT-MODEL.md) and
-the [Accessibility Conformance Report](docs/accessibility/ACR.md); a dedicated `docs/audits/` set
-(DPIA, bias review, residual-risk register) is tracked in `docs/ROADMAP.md`.
+audit-as-artifact documents committed today are [`docs/THREAT-MODEL.md`](docs/THREAT-MODEL.md), the
+[Accessibility Conformance Report](docs/accessibility/ACR.md), and the
+[Data Protection Impact Assessment](docs/audits/dpia.md); the remaining `docs/audits/` items (bias
+review, ethics-consequence scan, residual-risk register) are tracked in `docs/ROADMAP.md`.
 
 ### Preservation integrity, durability, fixity
 **Durability** — replicated content-addressed copies across independent locations; no single point of
@@ -317,7 +318,7 @@ project owner can do (tracked below).
 | AI Evaluation | **N/A** | No model inference in any user-facing or decision path (ingest, fixity, access policy, and disclosure are all deterministic). Reason and the re-trigger condition recorded in `docs/adr/0006-standards-applicability.md` |
 | Quality & Metrics | Applies | 528 tests green; metrics ledger + conformance gap tracker in `docs/ROADMAP.md`; dated DORA delivery-health review (`docs/DORA-DELIVERY-HEALTH-REVIEW.md`, QM-11) and root `DEFINITION_OF_DONE.md` (QM-18). **Gap:** no performance budgets in CI yet — `docs/ROADMAP.md` |
 | Documentation | Applies | This README + ADRs (`docs/adr/`) + `docs/ROADMAP.md` + CHANGELOG + CITATION.cff, kept current; dated currency stamps on THREAT-MODEL/ACCESSIBILITY/GOVERNANCE/ACR |
-| Responsible Tech | Applies | The no-outing sentinel suite is this standard's own named exemplar for misuse-resistance testing (RTF-02); threat model with per-adversary residual risk (`docs/THREAT-MODEL.md`); withhold-vs-403 disclosure design recorded in `docs/adr/0007-withhold-not-403.md`; review-ready ethics/consequence-scan draft at `docs/audits/ethics-consequence-scan.md`. **Gap:** accountable-owner sign-off, a dated DPIA, and a bias/representational-harm review remain open in `docs/ROADMAP.md` |
+| Responsible Tech | Applies | The no-outing sentinel suite is this standard's own named exemplar for misuse-resistance testing (RTF-02); threat model with per-adversary residual risk (`docs/THREAT-MODEL.md`); review-ready drafts for the [ethics scan](docs/audits/ethics-consequence-scan.md) and [DPIA](docs/audits/dpia.md). **Gap:** accountable-owner review/sign-off and a bias/representational-harm review remain open in `docs/ROADMAP.md` |
 
 No standard is a bare `N/A` — the one that is (AI Evaluation) carries its reason above and in the
 linked ADR. Every "Gap" above is tracked, dated, and owned in
