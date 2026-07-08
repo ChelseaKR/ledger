@@ -78,6 +78,18 @@ msgid ""
 " publicly visible."
 msgstr ""
 
+msgid ""
+"An automatic, offline check did not find an obvious name, address, phone "
+"number, email, handle, or date in your account."
+msgstr ""
+
+#, python-brace-format
+msgid ""
+"An automatic, offline check found {count} possible identifying detail(s) "
+"below. Nothing is changed — review each one and edit your account "
+"yourself if you want it removed."
+msgstr ""
+
 msgid "Apply dates"
 msgstr ""
 
@@ -409,6 +421,27 @@ msgstr ""
 msgid "Police violence — describes harm or force by police"
 msgstr ""
 
+msgid "Possible address"
+msgstr ""
+
+msgid "Possible date"
+msgstr ""
+
+msgid "Possible email address"
+msgstr ""
+
+msgid "Possible handle or username"
+msgstr ""
+
+msgid "Possible identifying details in your account"
+msgstr ""
+
+msgid "Possible name"
+msgstr ""
+
+msgid "Possible phone number"
+msgstr ""
+
 msgid "Preview what a stranger sees"
 msgstr ""
 
@@ -597,6 +630,12 @@ msgid "The takedown is confirmed at every storage location."
 msgstr ""
 
 msgid "There are no public records yet."
+msgstr ""
+
+msgid ""
+"This check looks for common patterns only. It finds some identifying "
+"details, not all of them — please still read your account yourself before"
+" it is shared."
 msgstr ""
 
 msgid ""
@@ -811,6 +850,10 @@ msgid_plural ""
 "community member or steward, sign in to see what is withheld and why."
 msgstr[0] ""
 msgstr[1] ""
+
+#, python-brace-format
+msgid "{count} found"
+msgstr ""
 
 #, python-brace-format
 msgid "{count} public record(s)."

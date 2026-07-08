@@ -79,6 +79,23 @@ msgstr ""
 "los tipos y los idiomas que abarcan. Cada cifra cuenta únicamente lo que "
 "es públicamente visible."
 
+msgid ""
+"An automatic, offline check did not find an obvious name, address, phone "
+"number, email, handle, or date in your account."
+msgstr ""
+"Una comprobación automática y sin conexión no encontró ningún nombre, "
+"dirección, número de teléfono, correo electrónico, usuario o fecha "
+"evidente en tu relato."
+
+msgid ""
+"An automatic, offline check found {count} possible identifying detail(s) "
+"below. Nothing is changed — review each one and edit your account "
+"yourself if you want it removed."
+msgstr ""
+"Una comprobación automática y sin conexión encontró {count} posible(s) "
+"dato(s) identificativo(s) a continuación. Nada se ha modificado: revisa "
+"cada uno y edita tu relato tú mismo/a si quieres quitarlo."
+
 msgid "Apply dates"
 msgstr "Aplicar fechas"
 
@@ -417,6 +434,27 @@ msgstr "Identificador persistente"
 msgid "Police violence — describes harm or force by police"
 msgstr "Violencia policial — describe daño o fuerza por parte de la policía"
 
+msgid "Possible address"
+msgstr "Posible dirección"
+
+msgid "Possible date"
+msgstr "Posible fecha"
+
+msgid "Possible email address"
+msgstr "Posible correo electrónico"
+
+msgid "Possible handle or username"
+msgstr "Posible usuario o alias"
+
+msgid "Possible identifying details in your account"
+msgstr "Posibles datos identificativos en tu relato"
+
+msgid "Possible name"
+msgstr "Posible nombre"
+
+msgid "Possible phone number"
+msgstr "Posible número de teléfono"
+
 msgid "Preview what a stranger sees"
 msgstr "Previsualizar lo que ve un desconocido"
 
@@ -591,6 +629,15 @@ msgstr "La retirada está confirmada en todas las ubicaciones de almacenamiento.
 
 msgid "There are no public records yet."
 msgstr "Aún no hay registros públicos."
+
+msgid ""
+"This check looks for common patterns only. It finds some identifying "
+"details, not all of them — please still read your account yourself before"
+" it is shared."
+msgstr ""
+"Esta comprobación solo busca patrones comunes. Encuentra algunos datos "
+"identificativos, no todos — por favor, lee igualmente tu relato tú "
+"mismo/a antes de compartirlo."
 
 msgid ""
 "This record carries the following content warnings. Review them before "
@@ -812,6 +859,10 @@ msgstr[1] ""
 "{count} detalles están restringidos con su acceso actual. Si es miembro "
 "de la comunidad o persona responsable, inicie sesión para ver qué se "
 "retiene y por qué."
+
+#, python-brace-format
+msgid "{count} found"
+msgstr "{count} encontrado(s)"
 
 #, python-brace-format
 msgid "{count} public record(s)."

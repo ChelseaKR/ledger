@@ -98,6 +98,17 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   CI runner noise doesn't fail the build; a failure means a real, order-of-
   magnitude regression (e.g. an accidental linear scan or a dropped streaming
   read). Closes `docs/ROADMAP.md` QM-02.
+- **Offline redaction assistant (EXP-07).** `ledger.redact_suggest` is a fully local,
+  regex/wordlist detector for likely names, addresses, phone numbers, emails, handles,
+  and dates. It runs over a contributor's account text on the contribute-form preview
+  (`contribute.render_redaction_suggestions`) and from `ledger redact-suggest --file`,
+  and only ever *suggests* — it never edits, drops, or applies anything. A steward or
+  contributor who wants a flagged detail hidden still uses the existing per-field
+  sealing (`ledger seal`/`ledger redact`) or edits their own text. No network call, no
+  subprocess, no model download; recall on a small synthetic corpus is measured and
+  asserted in-repo (`tests/test_redact_suggest.py`), and every surface carries the
+  honest caveat that this finds *some* identifying detail, not all of it — addressing
+  the residual self-disclosure risk noted in the threat model (§4.3).
 - **Disclosure-policy workflow.** First-class, accountable steward commands to set and
   apply a disclosure policy on an already-archived item, enforced by the core engine and
   honoured by the reading-room:

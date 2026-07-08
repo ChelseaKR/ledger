@@ -29,7 +29,16 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from ledger import acr_gen, attest, checkup, demo, dualcontrol, preservation, succession
+from ledger import (
+    acr_gen,
+    attest,
+    checkup,
+    demo,
+    dualcontrol,
+    preservation,
+    redact_suggest,
+    succession,
+)
 from ledger import backup as backup_mod
 from ledger.access.grants import (
     anonymous,
@@ -1250,6 +1259,30 @@ def _cmd_acr(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_redact_suggest(args: argparse.Namespace) -> int:
+    """``redact-suggest`` — offline scan of a text file for likely-identifying detail.
+
+    Entirely local (EXP-07): reads ``--file`` (or stdin), runs
+    :func:`ledger.redact_suggest.suggest`, and prints each candidate span with its
+    kind, position, and matched text as JSON — never a decision. It never writes
+    to the archive and never applies a redaction; a steward who wants one still
+    runs ``ledger seal``/``ledger redact`` themselves. The scanned text is read
+    only into memory for this one process and is never logged or stored by this
+    command."""
+    text = Path(args.file).read_text(encoding="utf-8") if args.file else sys.stdin.read()
+    suggestions = redact_suggest.suggest(text)
+    result = {
+        "caveat": redact_suggest.CAVEAT,
+        "count": len(suggestions),
+        "suggestions": [
+            {"kind": s.kind.value, "start": s.start, "end": s.end, "text": s.text}
+            for s in suggestions
+        ],
+    }
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+    return 0
+
+
 # --- parser construction ----------------------------------------------------
 
 
@@ -1640,6 +1673,15 @@ def _build_parser() -> argparse.ArgumentParser:
 
     p_acr = sub.add_parser("acr", help="print the Accessibility Conformance Report")
     p_acr.set_defaults(func=_cmd_acr)
+
+    p_redact_suggest = sub.add_parser(
+        "redact-suggest",
+        help="offline scan of text for likely names/addresses/phones/dates (suggests only)",
+    )
+    p_redact_suggest.add_argument(
+        "--file", help="path to a text file to scan (default: read stdin)"
+    )
+    p_redact_suggest.set_defaults(func=_cmd_redact_suggest)
 
     return parser
 
