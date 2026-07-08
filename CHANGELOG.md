@@ -17,6 +17,19 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Mutual preservation aid: encrypted replica exchange (EXP-15).** A second, opt-in
+  transport in `ledger.replicate` for community instances to hold *each other's*
+  bags as redundancy without either side trusting the other with plaintext:
+  `seal_bag`/`unseal_bag` encrypt a whole bag with a Fernet key that never leaves
+  the owning instance ("key stays home"); `replicate_sealed_bag` writes the
+  ciphertext blob — never the bag — to a partner `StorageLocation` and verifies it
+  landed intact by digest; `attest_sealed_replica`/`verify_sealed_attestation`
+  implement the scheduled fixity attestation exchange, letting a partner prove
+  which bytes it holds without ever decrypting them; `recover_sealed_bag` is the
+  recovery drill, pulling a blob back, decrypting locally, and running the same
+  `validate_bag` used by every other replica. Closes the threat-model residual that
+  a hostile or compromised replica host can read what it stores. See
+  [`docs/MUTUAL-AID.md`](docs/MUTUAL-AID.md) for the operational runbook.
 - **Disclosure-policy workflow.** First-class, accountable steward commands to set and
   apply a disclosure policy on an already-archived item, enforced by the core engine and
   honoured by the reading-room:
