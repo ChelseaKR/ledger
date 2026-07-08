@@ -18,7 +18,7 @@ from collections.abc import Iterable
 from hashlib import sha256
 from pathlib import Path
 
-from ledger.models import PUBLIC_GRANT, AccessPolicy, Grant
+from ledger.models import PUBLIC_GRANT, AccessPolicy, Grant, parse_iso
 
 
 def anonymous() -> Grant:
@@ -197,8 +197,9 @@ def verify_grant_token(token: str, secret: bytes, *, now: str) -> str | None:
     is a simple gate. The MAC is compared in constant time
     (:func:`hmac.compare_digest`) so a near-miss forgery leaks no timing signal
     about how many bytes matched (safety). ``now`` is an ISO-8601 UTC string and is
-    compared lexically against the token's expiry — valid because both are the same
-    zero-padded ``Z`` form (one time representation).
+    compared against the token's expiry as parsed :class:`~datetime.datetime`
+    instants (:func:`ledger.models.parse_iso`), not lexically -- two differently
+    formatted but equivalent ISO-8601 timestamps must expire identically.
     """
     if not secret:
         return None
@@ -214,8 +215,12 @@ def verify_grant_token(token: str, secret: bytes, *, now: str) -> str | None:
     expected = _grant_mac(subject, expires_at, secret)
     if not hmac.compare_digest(expected, mac):
         return None
-    if expires_at and now >= expires_at:
-        return None
+    if expires_at:
+        try:
+            if parse_iso(now) >= parse_iso(expires_at):
+                return None
+        except ValueError:
+            return None
     return subject
 
 
