@@ -14,8 +14,22 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 > conformance audit exists to catch). It will move to a real `## [0.1.0] — YYYY-MM-DD`
 > section, with a matching signed annotated git tag, once the release workflow
 > (`docs/ROADMAP.md`, tracked as this repo's largest open gap) actually ships it.
+>
+> **Update (2026-07-07):** the release workflow itself now exists
+> (`.github/workflows/release.yml`) — it just hasn't run yet. The tag and the PyPI
+> Trusted Publisher registration are still open, tracked in `docs/ROADMAP.md`.
 
 ### Added
+
+- **Tag-triggered release workflow.** `.github/workflows/release.yml` runs on
+  `push: tags: v*`: re-verifies lint/type/test against the tagged commit, builds the
+  sdist and wheel, checks the tag matches `pyproject.toml`'s version, generates a
+  CycloneDX SBOM of the shipped dependency closure, cosign-signs (keyless) the
+  sdist/wheel/SBOM, records GitHub-native SLSA build-provenance and SBOM
+  attestations, then publishes to PyPI over Trusted Publishing (OIDC — no stored
+  API token) and mirrors every artifact onto a GitHub Release. The PyPI Trusted
+  Publisher registration and the first tag are one-time manual steps for the
+  project owner (see the workflow's header comment and `docs/ROADMAP.md`).
 
 - **Disclosure-policy workflow.** First-class, accountable steward commands to set and
   apply a disclosure policy on an already-archived item, enforced by the core engine and

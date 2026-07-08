@@ -1,0 +1,295 @@
+name: release
+
+# Reproducibility/agility (REL-08): a signed annotated tag matching `v<semver>` is
+# the *only* thing that ships a release — nobody publishes by running a script on
+# a laptop. Least privilege (securability): the workflow holds `contents: read` by
+# default; each job widens only the token/OIDC scope it actually needs, and the
+# PyPI publish step never sees a long-lived API token at all (PyPI Trusted
+# Publishing, REL-13 — OIDC-issued, workflow-scoped, expires in minutes).
+#
+# One-time manual setup this workflow depends on (tracked in docs/ROADMAP.md,
+# REL-03/REL-13 — only the PyPI project owner can do these, so they cannot be
+# automated here):
+#   1. Register `ledger-archive` as a PyPI project (first publish of a
+#      never-before-published name still requires a one-time manual `Add a new
+#      pending publisher` on pypi.org, or an initial manual upload).
+#   2. Add a Trusted Publisher on pypi.org for this project pointing at
+#      `ChelseaKR/ledger`, workflow `release.yml`, environment `pypi`.
+#   3. Create a GitHub Environment named `pypi` in repo Settings (recommended by
+#      PyPI's Trusted Publishing guide so publish approval/URL is scoped and
+#      auditable) — see `docs/adr/` if a protection-rule ADR is warranted.
+# Until those exist, `publish-pypi` below will fail with an OIDC/audience error;
+# every other job (build, SBOM, cosign signing, SLSA provenance, GitHub Release)
+# works with no additional setup.
+on:
+  push:
+    tags:
+      # SemVer release tags only (`v1.2.3`, `v1.2.3rc1`). A stray non-release tag
+      # (e.g. an accessibility or docs snapshot tag) never triggers a publish.
+      - "v[0-9]+.[0-9]+.[0-9]+*"
+
+permissions:
+  contents: read
+
+concurrency:
+  # One release in flight per tag; never cancel a partially-published release
+  # out from under itself.
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: verify (lint · type · test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: step-security/harden-runner@5c7944e73c4c2a096b17a9cb74d65b6c2bbafbde  # v2.9.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+      # No `cache: pip` here: this workflow ends in a real publish (PyPI +
+      # GitHub Release), and Actions' pip cache is fillable by any workflow
+      # run in the repo — restoring it into the job that ships artifacts is a
+      # cache-poisoning vector a build-only CI job doesn't have to worry about.
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+      # A tag is a promise of a working release; re-run the exact merge gate
+      # against the tagged commit rather than trusting that main was green when
+      # the tag was cut (branch protection can lapse, a tag can point anywhere).
+      - name: Lint (ruff)
+        run: |
+          ruff check src tests
+          ruff format --check src tests
+      - name: Type check (mypy strict)
+        run: mypy
+      - name: Test with coverage
+        run: pytest --cov --cov-report=term-missing
+
+  build:
+    name: build sdist + wheel
+    needs: verify
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: step-security/harden-runner@5c7944e73c4c2a096b17a9cb74d65b6c2bbafbde  # v2.9.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
+        with:
+          python-version: "3.12"
+      - name: Install build backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install build
+      - name: Build sdist and wheel (hatchling)
+        run: python -m build
+      # Integrity: a tag that doesn't match the package's own declared version is
+      # almost always a cut-from-the-wrong-commit mistake, not an intentional
+      # release — fail loudly instead of publishing a mislabeled artifact.
+      - name: Tag must match package version
+        id: version
+        run: |
+          set -euo pipefail
+          PKG_VERSION="$(python -c 'import importlib.metadata as m; print(m.version("ledger-archive"))' 2>/dev/null || \
+            python -c 'import tomllib,sys; print(tomllib.load(open("pyproject.toml","rb"))["project"]["version"])')"
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          echo "package version: $PKG_VERSION"
+          echo "tag version:     $TAG_VERSION"
+          if [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::Tag v$TAG_VERSION does not match pyproject.toml version $PKG_VERSION"
+            exit 1
+          fi
+          echo "version=$PKG_VERSION" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  sbom:
+    name: SBOM (CycloneDX)
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write        # actions/attest-sbom mints a Sigstore-backed attestation
+      attestations: write
+    steps:
+      - uses: step-security/harden-runner@5c7944e73c4c2a096b17a9cb74d65b6c2bbafbde  # v2.9.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: dist
+          path: dist
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
+        with:
+          python-version: "3.12"
+      # Install exactly what ships (the built wheel, no dev extras) into an
+      # isolated tree so the SBOM reflects the *shipped* dependency closure
+      # (cryptography + transitive), not the dev toolchain sitting alongside it.
+      - name: Materialize the shipped dependency closure
+        run: |
+          python -m pip install --upgrade pip
+          pip install --target sbom-root dist/*.whl
+      - name: Generate CycloneDX SBOM (syft)
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610  # v0.24.0
+        with:
+          path: sbom-root
+          format: cyclonedx-json
+          output-file: sbom.cyclonedx.json
+          upload-artifact: false
+      # SLSA/SEC-35-37: bind the SBOM to the exact release artifacts with a
+      # GitHub-native, Sigstore-backed attestation (verifiable with
+      # `gh attestation verify`), independent of the cosign detached signatures
+      # produced in the sign job.
+      - name: Attest SBOM -> dist artifacts
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e  # v4.1.0
+        with:
+          subject-path: "dist/*"
+          sbom-path: sbom.cyclonedx.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: sbom
+          path: sbom.cyclonedx.json
+          if-no-files-found: error
+
+  provenance:
+    name: SLSA build provenance
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: step-security/harden-runner@5c7944e73c4c2a096b17a9cb74d65b6c2bbafbde  # v2.9.1
+        with:
+          egress-policy: audit
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: dist
+          path: dist
+      # GitHub-native SLSA v1 build provenance (REL-17/REL-20): records the
+      # workflow, commit, and trigger that produced these exact artifact
+      # digests, signed keylessly via Sigstore and stored in the transparency
+      # log — verifiable with `gh attestation verify dist/<file> -R ChelseaKR/ledger`.
+      - name: Attest build provenance -> dist artifacts
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373  # v4.1.1
+        with:
+          subject-path: "dist/*"
+
+  sign:
+    name: cosign sign (keyless)
+    needs: [build, sbom]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write   # cosign's keyless signing exchanges this OIDC token for a short-lived Fulcio cert
+    steps:
+      - uses: step-security/harden-runner@5c7944e73c4c2a096b17a9cb74d65b6c2bbafbde  # v2.9.1
+        with:
+          egress-policy: audit
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: dist
+          path: dist
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: sbom
+          path: sbom
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
+      # Detached, keyless (no long-lived signing key to steward or rotate)
+      # signatures over the sdist, wheel, and SBOM, recorded in the public
+      # Rekor transparency log — same trust model as SLSA/SBOM attestations
+      # above, published in the format (`.sig`/`.pem`/`.crt`) most tools that
+      # already speak plain cosign (not GitHub attestations) expect.
+      - name: Sign release artifacts
+        run: |
+          set -euo pipefail
+          mkdir -p signatures
+          for f in dist/*.tar.gz dist/*.whl sbom/sbom.cyclonedx.json; do
+            base="$(basename "$f")"
+            cosign sign-blob --yes \
+              --output-signature "signatures/${base}.sig" \
+              --output-certificate "signatures/${base}.pem" \
+              "$f"
+          done
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: signatures
+          path: signatures/
+          if-no-files-found: error
+
+  publish-pypi:
+    name: publish to PyPI (Trusted Publishing)
+    needs: [build, sbom, provenance, sign]
+    runs-on: ubuntu-latest
+    environment:
+      # PyPI's Trusted Publishing guide recommends scoping the publish to a
+      # GitHub Environment so it's independently auditable/protectable
+      # (required reviewers, wait timer) from the repo's Settings — the
+      # environment itself must be created once by the repo owner; see the
+      # header comment above.
+      name: pypi
+      url: https://pypi.org/project/ledger-archive/${{ needs.build.outputs.version }}/
+    permissions:
+      id-token: write   # OIDC token exchanged for a short-lived PyPI API token — no stored secret, REL-13
+    steps:
+      - uses: step-security/harden-runner@5c7944e73c4c2a096b17a9cb74d65b6c2bbafbde  # v2.9.1
+        with:
+          egress-policy: audit
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: dist
+          path: dist
+      - uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b  # v1.14.0
+        with:
+          packages-dir: dist
+          print-hash: true
+
+  github-release:
+    name: publish GitHub Release
+    needs: [build, sbom, provenance, sign, publish-pypi]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: step-security/harden-runner@5c7944e73c4c2a096b17a9cb74d65b6c2bbafbde  # v2.9.1
+        with:
+          egress-policy: audit
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: dist
+          path: release-assets
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: sbom
+          path: release-assets
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: signatures
+          path: release-assets
+      # Accountability/auditability: every asset a consumer needs to verify the
+      # release end to end (the sdist/wheel PyPI got, the SBOM, the cosign
+      # detached signatures) ships as GitHub Release assets too, alongside the
+      # GitHub-native attest-sbom/attest-build-provenance attestations recorded
+      # above (`gh attestation verify`).
+      - uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b  # v3.0.1
+        with:
+          files: release-assets/*
+          generate_release_notes: true
+          fail_on_unmatched_files: true
