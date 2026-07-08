@@ -33,7 +33,7 @@ tracked."
 | Security & Supply Chain | SEC-17 | No pre-commit hooks | Open | P1-4 |
 | Security & Supply Chain | SEC-27, SEC-29, SEC-35/36/37 | No SBOM, signing, provenance, or OSSF Scorecard workflow | Open | release workflow (P1-6) |
 | CI/CD | CICD-12, CQ-37/38/39/40/43, SEC-15 | No committed branch-protection/ruleset export; server-side settings unverifiable offline | Open | P2-4 — **⛔ requires the repo owner to export/enable via `gh api repos/ChelseaKR/ledger/rulesets` themselves** (write-effect GitHub API call, out of scope for an automated pass) |
-| CI/CD | CICD-19, CICD-20 | No zizmor workflow-linter job; CodeQL doesn't analyze `language: actions` | Open | P1-3 |
+| CI/CD | CICD-19, CICD-20 | No zizmor workflow-linter job; CodeQL doesn't analyze `language: actions` | Closed — `workflow-lint` job (zizmor) in `ci.yml`, `actions` added to the CodeQL language matrix in `codeql.yml` | P1-3 |
 | Release & Versioning | REL-08, REL-13–17, REL-20 | No tag-triggered release workflow, no PyPI Trusted Publishing, no SBOM/cosign/SLSA on release | Open | P1-6 (flagship gap, effort: L) |
 | Release & Versioning | REL-03 | CHANGELOG declares `0.1.0` "released" 2026-06-16; no matching git tag exists | Open — claim corrected in CHANGELOG.md pending real cut (P2-6) |  |
 | Accessibility | A11Y-01–03, 07, 09 | axe-core / Lighthouse / pa11y / Playwright keyboard+reflow specs not run in CI (structural checker + manual review substitute today) | Open | P3-7 |

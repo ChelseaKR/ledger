@@ -45,6 +45,9 @@ dev = [
     "ruff>=0.15",
     "mypy>=1.18",
     "pip-audit>=2.7",
+    # Static analysis of the workflow YAML itself (CICD-19); see the
+    # workflow-lint job in .github/workflows/ci.yml.
+    "zizmor>=1.9",
     # i18n message-catalog tooling (INTERNATIONALIZATION-STANDARD §3/§4). Babel
     # provides `pybabel extract` and the CLDR-backed `Locale.parse` used by the
     # i18n gates. Pure Python (no PyICU/native ICU build), so ledger keeps its

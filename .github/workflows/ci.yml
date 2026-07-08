@@ -179,6 +179,41 @@ jobs:
           curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GL}/gitleaks_${GL}_linux_x64.tar.gz" | tar -xz -C /tmp gitleaks
           /tmp/gitleaks detect --source . --config .gitleaks.toml --no-banner --redact --exit-code 1
 
+  workflow-lint:
+    name: workflow linter (zizmor)
+    runs-on: ubuntu-latest
+    steps:
+      # Harden-Runner (SEC-04): observe/audit egress before anything else runs.
+      # Recording in audit mode first (per the standard's rollout guidance) so the
+      # allowlist can be derived from real traffic before flipping to `block`,
+      # rather than guessing an allowlist and breaking the build.
+      - uses: step-security/harden-runner@5c7944e73c4c2a096b17a9cb74d65b6c2bbafbde  # v2.9.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+      # CICD-19: static analysis of the workflow YAML itself — injection via
+      # untrusted `${{ }}` expansion into `run:` blocks, missing
+      # `persist-credentials: false`, overbroad `permissions:`, and similar
+      # workflow-authoring mistakes that neither CodeQL's actions-language
+      # analysis (structural/data-flow, added in codeql.yml — CICD-20) nor
+      # ruff's Python-source scanning cover. Run without `--gh-token`
+      # (offline audits only): the two online-only audits it skips
+      # (known-vulnerable-actions, ref-version-mismatch) both boil down to
+      # "is this pinned action's SHA current", which Dependabot
+      # (.github/dependabot.yml) already tracks and opens PRs for — this job
+      # is about catching authoring mistakes, not duplicating that gate.
+      - name: Workflow static analysis (zizmor)
+        run: zizmor .github/workflows
+
   container:
     name: container image CVE scan (Trivy)
     runs-on: ubuntu-latest
