@@ -313,3 +313,141 @@ def test_non_steward_cannot_review(server: tuple[Archive, str]) -> None:
     # Still pending, still sealed.
     assert SubmissionQueue(archive.logs_dir / "submission-queue.json").contains(rid)
     assert archive.browse(anonymous()) == []
+
+
+# --- in-UI moderation actions (warn / takedown) + version history -----------
+
+
+def test_console_offers_moderation_actions_on_each_row(server: tuple[Archive, str]) -> None:
+    """A steward sees warn/takedown forms and a history link on each submission row."""
+    archive, base = server
+    _submit(base)
+    rid = archive._all_records()[0].record_id
+    body = _req(base, "/steward", steward=True)[1]
+    assert f'action="/steward/records/{rid}/warn"' in body
+    assert f'action="/steward/records/{rid}/takedown"' in body
+    assert f'href="/record/{rid}/history"' in body
+    assert "Add content warning" in body and "Take down" in body
+
+
+@pytest.mark.disclosure
+def test_steward_warn_records_the_action_in_the_audit_log(server: tuple[Archive, str]) -> None:
+    """An in-UI content warning persists and shows up on the audit page."""
+    archive, base = server
+    _submit(base)
+    rid = archive._all_records()[0].record_id
+
+    status, _ = _req(
+        base,
+        f"/steward/records/{rid}/warn",
+        data={"warning": "outing", "reason": "reader safety"},
+        steward=True,
+    )
+    assert status == 303
+    # The warning is now structured metadata on the record.
+    assert "outing" in archive.get(rid).content_warnings
+    # The audit page (which reads the PREMIS log) shows the moderation action.
+    audit = _req(base, "/steward/audit", steward=True)[1]
+    assert "moderation" in audit
+    assert "content warning added: outing" in audit
+
+
+def test_steward_warn_is_steward_gated(server: tuple[Archive, str]) -> None:
+    """A non-steward warn POST 404s and records nothing."""
+    archive, base = server
+    _submit(base)
+    rid = archive._all_records()[0].record_id
+    status, _ = _req(base, f"/steward/records/{rid}/warn", data={"warning": "x", "reason": "y"})
+    assert status == 404
+    assert archive.get(rid).content_warnings == []
+
+
+def test_steward_warn_rejects_an_empty_reason(server: tuple[Archive, str]) -> None:
+    """A warn with no rationale is refused (400) and records nothing."""
+    archive, base = server
+    _submit(base)
+    rid = archive._all_records()[0].record_id
+    status, _ = _req(
+        base, f"/steward/records/{rid}/warn", data={"warning": "outing", "reason": ""}, steward=True
+    )
+    assert status == 400
+    assert archive.get(rid).content_warnings == []
+
+
+@pytest.mark.disclosure
+def test_steward_takedown_removes_copies_and_audits(server: tuple[Archive, str]) -> None:
+    """An in-UI takedown removes every copy and records the decision on the audit page."""
+    from ledger.errors import ObjectNotFound
+
+    archive, base = server
+    _submit(base)
+    rid = archive._all_records()[0].record_id
+    assert (archive.bags_dir / rid).exists()
+
+    status, _ = _req(
+        base,
+        f"/steward/records/{rid}/takedown",
+        data={"reason": "contributor withdrew consent"},
+        steward=True,
+    )
+    assert status == 303
+    # Every stored copy is gone.
+    assert not (archive.bags_dir / rid).exists()
+    with pytest.raises(ObjectNotFound):
+        archive.get(rid)
+    # The takedown decision outlives the data, on the audit page.
+    audit = _req(base, "/steward/audit", steward=True)[1]
+    assert "deletion" in audit
+    assert "record taken down" in audit
+
+
+def test_steward_takedown_is_steward_gated(server: tuple[Archive, str]) -> None:
+    """A non-steward takedown POST 404s and removes nothing."""
+    archive, base = server
+    _submit(base)
+    rid = archive._all_records()[0].record_id
+    status, _ = _req(base, f"/steward/records/{rid}/takedown", data={"reason": "nope"})
+    assert status == 404
+    assert (archive.bags_dir / rid).exists()
+
+
+def test_steward_takedown_rejects_an_empty_reason(server: tuple[Archive, str]) -> None:
+    """A takedown with no rationale is refused before any copy is touched."""
+    archive, base = server
+    _submit(base)
+    rid = archive._all_records()[0].record_id
+    status, _ = _req(base, f"/steward/records/{rid}/takedown", data={"reason": ""}, steward=True)
+    assert status == 400
+    assert (archive.bags_dir / rid).exists()
+
+
+def test_history_page_shows_current_vs_previous(server: tuple[Archive, str]) -> None:
+    """After a change, the history page compares the current record with the prior one."""
+    archive, base = server
+    _submit(base)
+    rid = archive._all_records()[0].record_id
+
+    # Before any change: no earlier versions.
+    body = _req(base, f"/record/{rid}/history", steward=True)[1]
+    assert "No earlier versions." in body
+
+    # A warning creates one prior version.
+    _req(
+        base,
+        f"/steward/records/{rid}/warn",
+        data={"warning": "outing", "reason": "reader safety"},
+        steward=True,
+    )
+    body = _req(base, f"/record/{rid}/history", steward=True)[1]
+    assert "Saved versions" in body
+    assert "Previous version" in body and "Current" in body
+    # The content-warnings row changed between prior (none) and current (outing).
+    assert "changed" in body
+
+
+def test_history_page_is_steward_gated(server: tuple[Archive, str]) -> None:
+    """A non-steward gets a neutral 404 for the version-history page."""
+    archive, base = server
+    _submit(base)
+    rid = archive._all_records()[0].record_id
+    assert _req(base, f"/record/{rid}/history")[0] == 404
