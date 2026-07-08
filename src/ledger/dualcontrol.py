@@ -34,7 +34,11 @@ __all__ = ["ACTIONS", "ActionProposal", "ProposalStore"]
 
 # The high-stakes actions dual-control governs. Kept a closed set so a typo'd action
 # is rejected at the boundary rather than silently creating an ungoverned proposal.
-ACTIONS: frozenset[str] = frozenset({"takedown", "unseal", "publish"})
+# ``attest`` records that a named SEALED_CONDITIONAL condition has been met (e.g. a
+# contributor's death, a group's dissolution); like the others it must be proposed
+# and approved by distinct stewards so no one steward can declare such a thing alone
+# (see :mod:`ledger.attest`).
+ACTIONS: frozenset[str] = frozenset({"takedown", "unseal", "publish", "attest"})
 
 _OPEN = "open"
 _EXECUTED = "executed"
