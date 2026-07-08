@@ -180,6 +180,14 @@ class Config:
     # docs/TRANSPARENCY.md), not something ledger can turn on safely by default.
     transparency_log_path: str = ""
     transparency_cadence_days: int = 90
+    # EXP-14 reading-room enclave: the minimum cell size an aggregate research query
+    # may answer with a real (non-suppressed) count. A per-collection floor, not a
+    # per-query one — a query may ask for a *higher* k, never a lower one, so no
+    # steward can weaken the community's privacy floor by proposing a small k
+    # (fail-closed). 25 is a conservative starting default pending per-collection
+    # governance opt-in (documented risk: aggregation leaks are subtle).
+    reading_room_k_floor: int = 25
+    reading_room_enabled: bool = False
     schema_version: int = CONFIG_SCHEMA_VERSION
 
     def validate(self) -> None:
@@ -220,6 +228,12 @@ class Config:
             raise ConfigError("objection_response_days must not be negative")
         if self.transparency_cadence_days < 1:
             raise ConfigError("transparency_cadence_days must be at least 1")
+        if self.reading_room_k_floor < 2:
+            raise ConfigError("reading_room_k_floor must be at least 2")
+        if type(self.reading_room_enabled) is not bool:
+            raise ConfigError("reading_room_enabled must be a boolean")
+        if self.reading_room_enabled and self.dual_control_threshold < 2:
+            raise ConfigError("reading_room_enabled requires dual_control_threshold of at least 2")
         for location in self.locations:
             location.validate()
 
@@ -280,6 +294,8 @@ class Config:
             "attestation_signing_key": self.attestation_signing_key,
             "transparency_log_path": self.transparency_log_path,
             "transparency_cadence_days": self.transparency_cadence_days,
+            "reading_room_k_floor": self.reading_room_k_floor,
+            "reading_room_enabled": self.reading_room_enabled,
         }
 
     def save(self, path: Path) -> None:
@@ -368,6 +384,10 @@ class Config:
             attestation_signing_key=str(migrated.get("attestation_signing_key", "")),
             transparency_log_path=str(migrated.get("transparency_log_path", "")),
             transparency_cadence_days=int(str(migrated.get("transparency_cadence_days", 90))),
+            reading_room_k_floor=int(str(migrated.get("reading_room_k_floor", 25))),
+            reading_room_enabled=_as_bool(
+                migrated.get("reading_room_enabled", False), "reading_room_enabled"
+            ),
             schema_version=CONFIG_SCHEMA_VERSION,
         )
         config.validate()
@@ -480,3 +500,10 @@ def _as_dict_list(value: object, field_name: str) -> list[dict[str, object]]:
             raise ConfigError(f"{field_name} must be a list of mappings; got {type(item).__name__}")
         result.append(dict(item))
     return result
+
+
+def _as_bool(value: object, field_name: str) -> bool:
+    """Require a real JSON/TOML boolean; strings such as ``"false"`` are unsafe."""
+    if type(value) is not bool:
+        raise ConfigError(f"{field_name} must be a boolean")
+    return value

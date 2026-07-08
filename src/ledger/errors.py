@@ -114,3 +114,14 @@ class CaptionParseError(LedgerError):
     text is contributor-supplied prose, potentially about the same sensitive
     material a transcript field would carry).
     """
+
+
+class AggregationRefused(LedgerError):
+    """A reading-room aggregate query (EXP-14) was refused to protect k-anonymity.
+
+    Raised when answering would fall below the archive's k-anonymity floor even
+    after cell suppression, or when two queries' matching-record sets differ by
+    fewer than the k-floor (a differencing attack). Fail-closed: the caller gets
+    no partial answer, and the refusal itself — never the underlying counts or
+    record ids — is what gets logged.
+    """

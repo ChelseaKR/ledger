@@ -87,6 +87,13 @@ from ledger.moderate import (
 )
 from ledger.oralhistory import apply_session_manifest, parse_session_manifest
 from ledger.print_edition import build_print_edition
+from ledger.reading_room_enclave import (
+    AGGREGATE_QUERY_ACTION,
+    MATCH_FIELDS,
+    QUERY_DIMENSIONS,
+    AggregateQuery,
+    ReadingRoomEnclave,
+)
 from ledger.replicate import verify_replicas
 from ledger.server import serve
 
@@ -777,6 +784,17 @@ def _execute_proposal(
             f"{proposal.approved_count()} steward(s) — retrieve via an identity_unseal "
             "grant; the CLI never prints an identity"
         )
+    if proposal.action == AGGREGATE_QUERY_ACTION:
+        enclave = ReadingRoomEnclave(archive)
+        result = enclave.execute(proposal.proposal_id, actor=actor, now=now)
+        cells = ", ".join(
+            f"{b.label}={b.count if b.count is not None else 'suppressed'}" for b in result.buckets
+        )
+        total = result.total if result.total is not None else "suppressed"
+        return (
+            f"reading-room query {proposal.proposal_id} answered (k={result.k_floor}, "
+            f"total={total}, {result.suppressed_buckets} bucket(s) suppressed): [{cells}]"
+        )
     raise LedgerError(f"unknown proposal action: {proposal.action}")
 
 
@@ -815,14 +833,19 @@ def _cmd_takedown(args: argparse.Namespace) -> int:
 # :func:`_execute_proposal`). ``attest`` is deliberately excluded: it has its own
 # ``ledger attest`` flow with a fixed 2-of-N quorum and a separate store, so it is
 # never filed through the general dual-control path where it could not be executed.
-_PROPOSABLE_ACTIONS: frozenset[str] = dualcontrol.ACTIONS - {"attest"}
+_PROPOSABLE_ACTIONS: frozenset[str] = dualcontrol.ACTIONS - {
+    "attest",
+    AGGREGATE_QUERY_ACTION,
+}
 
 
 def _cmd_propose(args: argparse.Namespace) -> int:
     """``propose`` — propose a high-stakes action for dual-control approval."""
     if args.action not in _PROPOSABLE_ACTIONS:
         raise LedgerError(
-            f"unknown action {args.action!r}; expected one of {sorted(_PROPOSABLE_ACTIONS)}"
+            f"unknown action {args.action!r}; expected one of "
+            f"{sorted(_PROPOSABLE_ACTIONS)} "
+            f"(use 'ledger query-propose' for {AGGREGATE_QUERY_ACTION!r})"
         )
     archive = _open_archive(Path(args.root))
     now = args.now if args.now else now_iso()
@@ -847,6 +870,37 @@ def _cmd_propose(args: argparse.Namespace) -> int:
         else:
             print(_execute_proposal(archive, prop, actor=args.actor, now=now))
             store.mark(prop.proposal_id, "executed")
+    return 0
+
+
+def _cmd_query_propose(args: argparse.Namespace) -> int:
+    """``query-propose`` — propose a reading-room aggregate query (EXP-14).
+
+    Always goes through dual-control (:mod:`ledger.dualcontrol`), even at the
+    default ``dual_control_threshold`` of 1: an aggregate query is never
+    interactive and never self-executing, so the proposer still runs ``ledger
+    approve`` (as a second steward, once the community sets the threshold above
+    1) before it answers. Prints the proposal id; a second steward runs
+    ``ledger approve --id <proposal-id> --actor <steward-id>`` to approve and
+    (once the threshold is met) execute it."""
+    archive = _open_archive(Path(args.root))
+    now = args.now if args.now else now_iso()
+    query = AggregateQuery(
+        dimension=args.dimension,
+        reason=args.reason,
+        match_field=args.match_field,
+        match_term=args.match_term,
+    )
+    enclave = ReadingRoomEnclave(archive)
+    prop = enclave.propose(query, proposer=args.actor, now=now)
+    threshold = archive.config.dual_control_threshold
+    print(
+        f"reading-room query PROPOSED ({query.signature()}); proposal {prop.proposal_id}; "
+        f"{prop.approved_count()}/{threshold} approval(s). Another steward runs: "
+        f"ledger approve --root {args.root} --id {prop.proposal_id} --actor <steward-id>"
+    )
+    if prop.is_ready(threshold):
+        print(_execute_proposal(archive, prop, actor=args.actor, now=now))
     return 0
 
 
@@ -1604,6 +1658,29 @@ def _build_parser() -> argparse.ArgumentParser:
     p_propose.add_argument("--reason", required=True, help="rationale (required, auditable)")
     p_propose.add_argument("--now", help="ISO-8601 timestamp")
     p_propose.set_defaults(func=_cmd_propose)
+
+    p_query_propose = sub.add_parser(
+        "query-propose", help="propose a reading-room aggregate query (EXP-14, dual-control)"
+    )
+    p_query_propose.add_argument("--root", required=True)
+    p_query_propose.add_argument(
+        "--dimension",
+        required=True,
+        choices=sorted(QUERY_DIMENSIONS),
+        help="Dublin-Core-derived count dimension",
+    )
+    p_query_propose.add_argument(
+        "--match-field",
+        choices=sorted(MATCH_FIELDS),
+        help="optional Dublin Core field to filter on (with --match-term)",
+    )
+    p_query_propose.add_argument(
+        "--match-term", help="case-insensitive substring the --match-field must contain"
+    )
+    p_query_propose.add_argument("--actor", required=True, help="proposing steward id")
+    p_query_propose.add_argument("--reason", required=True, help="rationale (required, auditable)")
+    p_query_propose.add_argument("--now", help="ISO-8601 timestamp")
+    p_query_propose.set_defaults(func=_cmd_query_propose)
 
     p_approve = sub.add_parser("approve", help="approve a pending dual-control proposal")
     p_approve.add_argument("--root", required=True)
