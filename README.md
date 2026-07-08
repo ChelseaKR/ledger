@@ -221,7 +221,10 @@ strict. **Extensibility** and **flexibility** — new storage backends and metad
 **Modularity**, **composability**, **orthogonality** — ingest, store, metadata, access, replicate, and
 moderate are independent layers. **Simplicity** — plain files and one disclosure-decision point; no
 hidden coupling between preservation and access. **Reusability** — the BagIt/PREMIS packaging and the
-fixity auditor are usable on their own. **Analyzability** — typed, documented, with a threat model and
+fixity auditor are usable on their own: they ship as
+[`ledger-preservation-core`](packages/ledger-preservation-core/), an independently installable,
+independently tested library with no dependency on ledger's application layer (EXP-05,
+[`docs/ideation/03-expansions.md`](docs/ideation/03-expansions.md)). **Analyzability** — typed, documented, with a threat model and
 architecture doc. **Configurability**, **customizability**, **tailorability** — one config controls
 storage locations, default policies, and warnings. **Upgradability** — pinned deps with a documented
 bump path; versioned metadata schemas with migrations.

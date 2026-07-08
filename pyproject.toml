@@ -28,14 +28,19 @@ classifiers = [
     "Topic :: Sociology :: History",
 ]
 
-# Affordability/self-sustainability: exactly one runtime dependency, and a free,
-# widely-audited one. The preservation core (CAS, BagIt, PREMIS, Dublin Core,
-# fixity, the browse server) is pure standard library so a community can run ledger
-# on a single inexpensive box with no paid service and no heavy dependency tree.
-# `cryptography` is used solely by the encrypted identity vault, where rolling our
-# own would be the opposite of safety.
+# Affordability/self-sustainability: `cryptography` (used solely by the encrypted
+# identity vault, where rolling our own would be the opposite of safety) is the
+# only *third-party* runtime dependency. `ledger-preservation-core` (EXP-05,
+# docs/ideation/03-expansions.md) is ledger's own preservation layer — CAS,
+# BagIt, PREMIS, Dublin Core, fixity — extracted to packages/ledger-preservation-
+# core as an independently installable, independently tested, pure-stdlib
+# library with ledger as its first consumer. It is not yet published to PyPI:
+# install it (editable) BEFORE this package (`make install`, and every CI
+# workflow step, does exactly that) so this requirement resolves against the
+# already-installed local package rather than an index lookup.
 dependencies = [
     "cryptography>=42,<50",
+    "ledger-preservation-core>=0.1.0,<0.2",
 ]
 
 [project.optional-dependencies]

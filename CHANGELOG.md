@@ -17,6 +17,21 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`ledger-preservation-core` extracted as a standalone library (EXP-05).**
+  `bag.py`, `fixity.py`, `cas.py`, `metadata/premis.py`, `metadata/dublincore.py`,
+  and `preservation.py` now ship as `packages/ledger-preservation-core`: an
+  independently installable, independently tested, dependency-free package with
+  ledger as its first consumer. `ledger.bag`, `ledger.fixity`, `ledger.cas`,
+  `ledger.preservation`, `ledger.metadata.premis`, and `ledger.metadata.dublincore`
+  are now thin re-export shims over the library — every existing import and every
+  behavior is unchanged; only `ledger.errors`' preservation-layer exceptions
+  (`BagValidationError`, `ObjectNotFound`, `StoreError`) now root at the library's
+  own `LedgerPreservationError` rather than at `ledger.errors.LedgerError`, so the
+  few call sites that caught `LedgerError` broadly around bag/store operations
+  (`ledger.cli`, `ledger.ingest`, `ledger.server`) now catch
+  `(LedgerError, LedgerPreservationError)`. See
+  `packages/ledger-preservation-core/README.md` and
+  `docs/ideation/03-expansions.md`.
 - **Disclosure-policy workflow.** First-class, accountable steward commands to set and
   apply a disclosure policy on an already-archived item, enforced by the core engine and
   honoured by the reading-room:

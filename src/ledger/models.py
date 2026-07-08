@@ -15,87 +15,59 @@ The single most important invariant lives here in the type system:
 If you are tempted to add a `contributor_name` field to `Record`, stop: that is the
 exact coupling this design forbids. Identity flows through `ledger.identity` under
 an explicit grant, never through the record.
+
+EXP-05 (docs/ideation/03-expansions.md): the preservation-layer value objects
+below (time helpers, hashing/addressing, and PREMIS/Dublin Core metadata) are
+defined in the standalone :mod:`ledger_preservation_core` library — which has no
+concept of a `Record`, an access policy, or identity — and re-exported here
+unchanged, so every existing ``from ledger.models import ...`` keeps working and
+every object is the identical class (not a copy) whether imported from
+``ledger.models`` or from ``ledger_preservation_core.models`` directly.
 """
 
 from __future__ import annotations
 
-import json
 import uuid
 from dataclasses import dataclass, field, replace
-from datetime import UTC, datetime
 from enum import StrEnum
 
-# --- time -------------------------------------------------------------------
-# Timeliness/traceability: every event is stamped in UTC ISO-8601. Determinism:
-# callers that need reproducible output (golden bags, tests) pass an explicit
-# timestamp rather than relying on the wall clock.
+from ledger_preservation_core.models import (
+    DC_ELEMENTS,
+    ContentAddress,
+    DublinCore,
+    FixityResult,
+    HashAlgo,
+    PremisEvent,
+    PremisEventType,
+    canonical_json,
+    now_iso,
+    parse_iso,
+)
+
+__all__ = [
+    "DC_ELEMENTS",
+    "PUBLIC_GRANT",
+    "AccessPolicy",
+    "ContentAddress",
+    "DisclosedRecord",
+    "DublinCore",
+    "Field",
+    "FixityResult",
+    "Grant",
+    "HashAlgo",
+    "PayloadFile",
+    "PremisEvent",
+    "PremisEventType",
+    "Record",
+    "Redaction",
+    "canonical_json",
+    "now_iso",
+    "parse_iso",
+    "with_redaction",
+]
 
 
-def now_iso() -> str:
-    """Current instant as a UTC ISO-8601 string with a trailing ``Z``."""
-    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-def parse_iso(value: str) -> datetime:
-    """Parse an ISO-8601 timestamp (accepts a trailing ``Z``) to an aware datetime."""
-    return datetime.fromisoformat(value.replace("Z", "+00:00"))
-
-
-def canonical_json(obj: object) -> str:
-    """Deterministic JSON: sorted keys, compact, UTF-8 safe.
-
-    Reproducibility: identical input yields a byte-identical string, so metadata
-    sidecars and audit records hash the same on every machine and every run.
-    """
-    return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-
-
-# --- hashing & addressing ---------------------------------------------------
-
-
-class HashAlgo(StrEnum):
-    """Fixity algorithms. SHA-256 is the addressing algorithm; BLAKE2b is the
-    independent second manifest, so a single weakened algorithm cannot hide
-    tampering (integrity, redundancy)."""
-
-    SHA256 = "sha256"
-    BLAKE2B = "blake2b"
-
-
-@dataclass(frozen=True)
-class ContentAddress:
-    """A name derived from content. A changed byte is a different address, so
-    drift is detectable rather than silent (integrity, inspectability)."""
-
-    algo: HashAlgo
-    digest: str
-
-    def __str__(self) -> str:
-        return f"{self.algo.value}:{self.digest}"
-
-    @classmethod
-    def parse(cls, value: str) -> ContentAddress:
-        algo, _, digest = value.partition(":")
-        if not digest:
-            raise ValueError(f"not a content address: {value!r}")
-        return cls(HashAlgo(algo), digest)
-
-
-@dataclass(frozen=True)
-class FixityResult:
-    """The outcome of comparing a stored object to its manifest entry."""
-
-    path: str
-    algo: HashAlgo
-    expected: str
-    actual: str
-
-    @property
-    def ok(self) -> bool:
-        return self.expected == self.actual
-
-
-# --- access policy ----------------------------------------------------------
+# --- access policy ------------------------------------------------------------
 
 
 class AccessPolicy(StrEnum):
@@ -126,109 +98,6 @@ class AccessPolicy(StrEnum):
             AccessPolicy.SEALED_CONDITIONAL,
             AccessPolicy.SEALED,
         )
-
-
-# --- preservation metadata --------------------------------------------------
-
-
-class PremisEventType(StrEnum):
-    """PREMIS event vocabulary used across the archive (accountability,
-    auditability). Every meaningful action is one of these."""
-
-    INGESTION = "ingestion"
-    FIXITY_CHECK = "fixity check"
-    FORMAT_IDENTIFICATION = "format identification"
-    REPLICATION = "replication"
-    REDACTION = "redaction"
-    POLICY_CHANGE = "access-policy change"
-    CONSENT_CHANGE = "consent change"
-    CORRECTION = "correction"
-    TAKEDOWN = "deletion"
-    QUARANTINE = "quarantine"
-    VALIDATION = "validation"
-    MODERATION = "moderation"
-    REKEY = "key rotation"
-
-
-@dataclass(frozen=True)
-class PremisEvent:
-    """A single auditable event with its agent and outcome (provability)."""
-
-    event_type: PremisEventType
-    agent: str
-    outcome: str  # "success" | "failure"
-    detail: str = ""
-    linked_object: str | None = None  # content address, record id, or bag id
-    event_datetime: str = field(default_factory=now_iso)
-
-    def to_dict(self) -> dict[str, str]:
-        d = {
-            "eventType": self.event_type.value,
-            "eventDateTime": self.event_datetime,
-            "linkingAgentIdentifier": self.agent,
-            "eventOutcome": self.outcome,
-            "eventDetail": self.detail,
-        }
-        if self.linked_object is not None:
-            d["linkingObjectIdentifier"] = self.linked_object
-        return d
-
-
-# The fifteen Dublin Core Metadata Element Set elements (ISO 15836). Every element
-# is repeatable, so each is a list; empty lists are dropped on serialization. None
-# of these elements is permitted to carry contributor-identifying free text — the
-# `creator` of an archived record is the *community/collection*, not the (possibly
-# closeted) person who contributed it. Identity lives only in the vault.
-DC_ELEMENTS: tuple[str, ...] = (
-    "title",
-    "creator",
-    "subject",
-    "description",
-    "publisher",
-    "contributor",
-    "date",
-    "type",
-    "format",
-    "identifier",
-    "source",
-    "language",
-    "relation",
-    "coverage",
-    "rights",
-)
-
-
-@dataclass
-class DublinCore:
-    title: list[str] = field(default_factory=list)
-    creator: list[str] = field(default_factory=list)
-    subject: list[str] = field(default_factory=list)
-    description: list[str] = field(default_factory=list)
-    publisher: list[str] = field(default_factory=list)
-    contributor: list[str] = field(default_factory=list)
-    date: list[str] = field(default_factory=list)
-    type: list[str] = field(default_factory=list)
-    format: list[str] = field(default_factory=list)
-    identifier: list[str] = field(default_factory=list)
-    source: list[str] = field(default_factory=list)
-    language: list[str] = field(default_factory=list)
-    relation: list[str] = field(default_factory=list)
-    coverage: list[str] = field(default_factory=list)
-    rights: list[str] = field(default_factory=list)
-
-    def to_dict(self) -> dict[str, list[str]]:
-        """Drop empty elements for compact, deterministic serialization."""
-        out: dict[str, list[str]] = {}
-        for name in DC_ELEMENTS:
-            values = getattr(self, name)
-            if values:
-                out[name] = list(values)
-        return out
-
-    @classmethod
-    def from_dict(cls, data: dict[str, list[str]]) -> DublinCore:
-        known = {k: list(v) for k, v in data.items() if k in DC_ELEMENTS}
-        return cls(**known)
 
 
 # --- record (description + access + payload manifest) -----------------------
@@ -366,7 +235,7 @@ class DisclosedRecord:
         return out
 
 
-# --- grants & viewers -------------------------------------------------------
+# --- grants & viewers ---------------------------------------------------------
 
 
 @dataclass(frozen=True)

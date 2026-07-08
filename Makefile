@@ -23,6 +23,10 @@ venv: ## Create the virtual environment
 	$(PIP) install --upgrade pip
 
 install: venv ## Install ledger plus dev tooling
+	# ledger-preservation-core (EXP-05) is a local workspace package, not yet on
+	# PyPI: install it first so ledger's own install resolves the requirement
+	# against the already-installed local package instead of an index lookup.
+	$(PIP) install -e packages/ledger-preservation-core
 	$(PIP) install -e ".[dev]"
 
 lint: ## Static analysis (ruff): correctness, security, import hygiene

@@ -10,13 +10,57 @@ the hierarchy and are part of ledger's threat model:
 2. **Failures are surfaced, never swallowed.** A fixity mismatch or an unreachable
    replica raises (or is recorded as a labelled preservation event); it is never
    silently treated as success (failure transparency).
+
+EXP-05 (docs/ideation/03-expansions.md): the preservation-layer errors
+(:class:`StoreError`, :class:`ObjectNotFound`, :class:`BagValidationError`) now
+live in the standalone :mod:`ledger_preservation_core` library and are
+re-exported here unchanged, so ``from ledger.errors import BagValidationError``
+keeps working exactly as before. Because they root at
+:class:`~ledger_preservation_core.errors.LedgerPreservationError` rather than at
+:class:`LedgerError` (that library has no knowledge of ledger), any call site that
+needs to catch *both* app-level and preservation-core errors broadly — the CLI's
+top-level handler, and the server's and ingest's defensive blocks around bag/store
+operations — catches the tuple ``(LedgerError, LedgerPreservationError)``; see
+``ledger.cli``, ``ledger.server``, and ``ledger.ingest``. A narrow
+``except BagValidationError`` (or any other single re-exported class) is
+unaffected and needs no change.
 """
 
 from __future__ import annotations
 
+from ledger_preservation_core.errors import (
+    BagValidationError,
+    LedgerPreservationError,
+    ObjectNotFound,
+    StoreError,
+)
+
+__all__ = [
+    "AccessDenied",
+    "BagValidationError",
+    "ConfigError",
+    "ConsentError",
+    "FixityError",
+    "IdentityVaultError",
+    "LedgerError",
+    "LedgerPreservationError",
+    "ModerationError",
+    "ObjectNotFound",
+    "PolicyError",
+    "QuarantineError",
+    "ReplicationError",
+    "StoreError",
+    "ValidationError",
+]
+
 
 class LedgerError(Exception):
-    """Base class for every error ledger raises deliberately."""
+    """Base class for every application-level error ledger raises deliberately.
+
+    See the module docstring: the preservation-core errors re-exported above are
+    NOT subclasses of this class. A caller that needs to catch every error ledger
+    *or* its preservation-core dependency can raise must catch both bases.
+    """
 
 
 class ConfigError(LedgerError):
@@ -43,14 +87,9 @@ class ValidationError(LedgerError):
 
 
 # --- preservation -----------------------------------------------------------
-
-
-class StoreError(LedgerError):
-    """The content-addressed store could not satisfy a request."""
-
-
-class ObjectNotFound(StoreError):
-    """No object exists at the given content address."""
+#
+# StoreError, ObjectNotFound, and BagValidationError are defined in
+# ledger_preservation_core.errors (EXP-05 extraction) and re-exported above.
 
 
 class FixityError(LedgerError):
@@ -59,10 +98,6 @@ class FixityError(LedgerError):
 
 class QuarantineError(FixityError):
     """A copy failed fixity and has been quarantined; it must not be served."""
-
-
-class BagValidationError(LedgerError):
-    """A BagIt bag is malformed or fails manifest validation (RFC 8493)."""
 
 
 class ReplicationError(LedgerError):

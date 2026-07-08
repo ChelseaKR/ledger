@@ -36,6 +36,13 @@ RUN groupadd --gid 10001 ledger \
 
 WORKDIR /app
 
+# Install ledger-preservation-core (EXP-05) first: it is a local workspace
+# package, not yet on PyPI, so ledger's own install below must resolve that
+# requirement against this already-installed copy rather than an index lookup.
+COPY packages/ledger-preservation-core ./packages/ledger-preservation-core
+RUN pip install ./packages/ledger-preservation-core \
+    && rm -rf /root/.cache
+
 # Install the package itself. We copy the project metadata and sources and do a
 # regular (non-editable) install so the `ledger` console script lands on PATH and
 # the image does not depend on the source tree staying mounted. The build context

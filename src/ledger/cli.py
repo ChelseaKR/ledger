@@ -28,6 +28,8 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
+from ledger_preservation_core.errors import LedgerPreservationError
+
 from ledger import acr_gen, demo, dualcontrol, preservation, succession
 from ledger.access.grants import anonymous, community_member, steward
 from ledger.access.redaction import redact_field, redact_payload
@@ -492,7 +494,7 @@ def _perform_takedown(
     # revoke can still be reported once the bag (and the ref) are gone.
     try:
         had_identity = archive.get(record_id).identity_ref is not None
-    except LedgerError:
+    except (LedgerError, LedgerPreservationError):
         had_identity = False
 
     archive.log_takedown(event)
@@ -941,7 +943,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         result: int = args.func(args)
         return result
-    except LedgerError as exc:
+    except (LedgerError, LedgerPreservationError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
     except (OSError, ValueError) as exc:

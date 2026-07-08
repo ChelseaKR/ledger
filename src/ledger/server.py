@@ -46,6 +46,8 @@ from email.parser import BytesParser
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlsplit
 
+from ledger_preservation_core.errors import LedgerPreservationError
+
 from ledger import consent, contribute, export, i18n, oai, pagination, review, search, upload
 from ledger.access import anonymous, disclose, is_listable
 from ledger.access.grants import load_grants
@@ -1321,7 +1323,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
                     agent="contribution",
                     now=stamp,
                 )
-            except LedgerError:
+            except (LedgerError, LedgerPreservationError):
                 # Name nothing the contributor submitted; just decline cleanly.
                 self._handle_contribute_form(
                     error=i18n.t(self._lang(), "err_save_failed"),
@@ -1555,7 +1557,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         if authorized:
             try:
                 record = archive.get(reference)
-            except LedgerError:
+            except (LedgerError, LedgerPreservationError):
                 record = None
         if record is None:
             self._handle_edit_form(error=i18n.t(self._lang(), "err_edit_failed"), values=form)
@@ -1634,7 +1636,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             return
         try:
             reports = archive.audit_fixity()
-        except LedgerError:
+        except (LedgerError, LedgerPreservationError):
             self._send_json(503, {"status": "degraded", "all_verified": False, "ready": True})
             return
         passed = sum(1 for _name, r in reports if r.ok)
@@ -1686,7 +1688,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
                 detail = "Every stored record passed its most recent integrity check."
             else:
                 detail = "One or more records did not pass their integrity check."
-        except LedgerError:
+        except (LedgerError, LedgerPreservationError):
             headline, detail = "Status check failed.", "An integrity check could not be completed."
         main_html = (
             f"    <h1>Archive status</h1>\n"

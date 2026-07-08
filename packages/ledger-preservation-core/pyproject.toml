@@ -1,0 +1,94 @@
+# pyproject.toml — ledger-preservation-core: an independently installable,
+# independently tested digital-preservation toolkit, extracted from ledger
+# (EXP-05, docs/ideation/03-expansions.md). Stdlib-only, no ledger-app coupling
+# (no access policy, identity vault, consent, or moderation types here) so any
+# project can depend on BagIt packaging, fixity auditing, content-addressed
+# storage, PREMIS event logging, Dublin Core, and format identification without
+# pulling in an archive application.
+[build-system]
+requires = ["hatchling>=1.21"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ledger-preservation-core"
+version = "0.1.0"
+description = "A dependency-free BagIt (RFC 8493) + PREMIS + Dublin Core digital-preservation toolkit: content-addressed storage, streaming fixity, hash-chained tamper-evident event logs, and format identification."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "AGPL-3.0-or-later"
+license-files = ["LICENSE"]
+authors = [{ name = "Chelsea Kelly-Reif" }]
+keywords = [
+    "digital-preservation", "bagit", "premis", "dublin-core", "fixity",
+    "content-addressed-storage", "checksum", "oais",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: System :: Archiving",
+    "Topic :: System :: Archiving :: Backup",
+]
+
+# Zero runtime dependencies, deliberately: this is pure standard library so any
+# consumer (ledger included) gets preservation-grade export/verification with no
+# added dependency-tree or supply-chain surface (affordability, minimal computing).
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-cov>=5",
+    "ruff>=0.15",
+    "mypy>=1.18",
+]
+
+[project.urls]
+Homepage = "https://github.com/ChelseaKR/ledger/tree/main/packages/ledger-preservation-core"
+Source = "https://github.com/ChelseaKR/ledger/tree/main/packages/ledger-preservation-core"
+Issues = "https://github.com/ChelseaKR/ledger/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ledger_preservation_core"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S", "SIM", "RUF", "C901"]
+ignore = ["E501"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unreachable = true
+warn_redundant_casts = true
+mypy_path = "src"
+files = ["src/ledger_preservation_core"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+addopts = "-ra --strict-markers --strict-config --import-mode=importlib"
+markers = [
+    "preservation: fixity, bagging, and content-addressing guarantees",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["ledger_preservation_core"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+fail_under = 85

@@ -30,6 +30,8 @@ import shutil
 import tempfile
 from pathlib import Path
 
+from ledger_preservation_core.errors import LedgerPreservationError
+
 from ledger.access import disclose, is_listable
 from ledger.bag import validate_bag, write_bag
 from ledger.cas import ContentStore
@@ -709,7 +711,7 @@ class Archive:
         identity_ref: str | None = None
         try:
             identity_ref = self.get(record_id).identity_ref
-        except LedgerError:
+        except (LedgerError, LedgerPreservationError):
             identity_ref = None
 
         revoked = False
@@ -717,7 +719,7 @@ class Archive:
             try:
                 self._open_vault(None).revoke(identity_ref)
                 revoked = True
-            except LedgerError:
+            except (LedgerError, LedgerPreservationError):
                 revoked = False
 
         removed = 0
@@ -903,7 +905,7 @@ class Archive:
         if key is not None and self.vault_path.exists():
             try:
                 IdentityVault.open(self.vault_path, key)
-            except LedgerError:
+            except (LedgerError, LedgerPreservationError):
                 return (False, "vault-unopenable")
         return (True, "")
 
