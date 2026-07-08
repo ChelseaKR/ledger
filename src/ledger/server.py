@@ -1645,6 +1645,12 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             "status": status,
             "all_verified": failed == 0,
             "ready": True,
+            # A single opaque commitment over every PREMIS chain head (FIX-06):
+            # safe for anyone, since — unlike the per-bag counts below — it
+            # reveals neither how many bags exist nor which ones they are
+            # (no-outing / P2-2), but changes the instant any recorded history is
+            # rewritten. A community member can note it over time and cross-check.
+            "chain_head": archive.chain_head_summary(),
         }
         if grant.is_steward:
             body["fixity"] = {
@@ -1804,6 +1810,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
 
     def _handle_proof(self) -> None:
         """``GET /proof`` — explain the verifiable no-outing guarantee (show, don't tell)."""
+        chain_head = self._archive().chain_head_summary()
         self._info_page(
             "Our promise, proven",
             "We prove the promise, we don't just state it",
@@ -1816,6 +1823,12 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
                 "The project's audit ingests a sentinel identity and then checks that it appears "
                 "on no page, in no data file, in no backup, and in no log — and that a sealed "
                 "record cannot even be confirmed to exist by an outsider.",
+                "The same discipline applies to the record of what happened here: every "
+                "preservation and moderation event is hash-chained, so editing history after "
+                "the fact — even by someone with direct access to the disk — changes this "
+                "archive's chain head. Anyone who has previously noted the value below can "
+                "confirm it has only ever moved forward: chain head "
+                f"{chain_head} (also published, for stewards, at /healthz).",
             ],
         )
 

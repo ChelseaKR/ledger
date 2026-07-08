@@ -8,10 +8,12 @@ the Dublin Core JSON and ``oai_dc`` XML round-trips. The deterministic checks le
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
 
+from ledger.chain import GENESIS_HASH
 from ledger.metadata.dublincore import (
     from_json,
     read_sidecar,
@@ -103,6 +105,90 @@ def test_premis_log_optional_linked_object_round_trips() -> None:
     )
     restored = PremisLog.from_json(PremisLog([event]).to_json())
     assert restored.events[0].linked_object is None
+
+
+# --- FIX-06: hash-chained, tamper-evident PREMIS log ------------------------
+
+
+@pytest.mark.preservation
+def test_empty_premis_log_head_is_genesis() -> None:
+    """A fresh log's head is the well-known genesis sentinel."""
+    assert PremisLog().head == GENESIS_HASH
+
+
+@pytest.mark.preservation
+def test_premis_log_head_changes_as_events_are_recorded() -> None:
+    """Each recorded event moves the chain head (it is not a static digest)."""
+    log = PremisLog()
+    heads = [log.head]
+    for event in _sample_events():
+        log.record(event)
+        heads.append(log.head)
+    assert len(set(heads)) == len(heads), "every head after a record() must be distinct"
+
+
+@pytest.mark.preservation
+def test_premis_log_verify_chain_ok_on_untouched_log() -> None:
+    """A log built only through ``record`` verifies clean, end to end."""
+    log = PremisLog()
+    for event in _sample_events():
+        log.record(event)
+    result = log.verify_chain()
+    assert result.ok
+    assert result.broken_at is None
+    assert result.head == log.head
+
+
+@pytest.mark.preservation
+def test_premis_log_chain_round_trips_through_json(tmp_path: Path) -> None:
+    """Chain links survive a write/read round trip, and the head is unchanged."""
+    log = PremisLog()
+    for event in _sample_events():
+        log.record(event)
+    path = tmp_path / "premis.json"
+    log.write(path)
+    restored = PremisLog.read(path)
+    assert restored.events == log.events
+    assert restored.head == log.head
+    assert restored.verify_chain().ok
+
+
+@pytest.mark.preservation
+def test_editing_a_premis_entry_on_disk_breaks_the_chain(tmp_path: Path) -> None:
+    """Editing one recorded event's bytes directly on disk is caught on read.
+
+    This is the raw-disk-attacker scenario FIX-06 exists for: nothing here goes
+    through :meth:`PremisLog.record`, only a direct edit of the persisted JSON —
+    exactly what "append-only" cannot itself prevent (threat model §4.4).
+    """
+    log = PremisLog()
+    for event in _sample_events():
+        log.record(event)
+    path = tmp_path / "premis.json"
+    log.write(path)
+
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    raw["entries"][0]["eventDetail"] = "rewritten after the fact"
+    path.write_text(json.dumps(raw), encoding="utf-8")
+
+    tampered = PremisLog.read(path)
+    result = tampered.verify_chain()
+    assert not result.ok
+    assert result.broken_at is not None
+
+
+@pytest.mark.preservation
+def test_legacy_bare_array_premis_log_migrates_and_verifies() -> None:
+    """A pre-FIX-06 log (a bare JSON array, no ``prevHash``) still loads and
+    chain-verifies, adopted into the chained format from this read forward
+    (evolvability — see the documented migration risk in the module docstring).
+    """
+    events = _sample_events()
+    legacy_json = json.dumps([e.to_dict() for e in events])
+    migrated = PremisLog.from_json(legacy_json)
+    assert migrated.events == events
+    assert migrated.verify_chain().ok
+    assert migrated.head != GENESIS_HASH
 
 
 @pytest.mark.preservation
