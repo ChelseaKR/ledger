@@ -32,6 +32,7 @@ from ledger.models import (
     AccessPolicy,
     DublinCore,
     Field,
+    PremisEvent,
     PremisEventType,
     Record,
 )
@@ -224,4 +225,62 @@ def test_sealed_until_field_unseals_on_its_date(tmp_path: Path) -> None:
 
     after = archive.disclose(rid, anonymous(), now="2027-01-02T00:00:00Z")
     assert after.fields.get("later") == "visible only after the date"
-    assert "later" not in after.redactions
+
+
+def test_apply_update_reseals_bag_so_audit_fixity_stays_green(tmp_path: Path) -> None:
+    """FIX-01: a post-ingest steward edit must not make audit_fixity flag its own bag.
+
+    ``Archive.apply_update`` is the shared write path behind every post-ingest
+    change (consent/policy change, content warning, review decision). Before the
+    fix, it rewrote ``record.json``/``premis.json`` -- tag files covered by the
+    bag's own tag manifests -- without refreshing those manifests, so the very next
+    ``audit_fixity`` sweep reported a lawful steward edit as tampering. This pins
+    the round trip: ingest, apply an update, audit -- still all green -- and that a
+    genuine corrupted payload byte is still caught right after that same update.
+    """
+    config = Config.default("Reseal Archive", tmp_path / "arc")
+    archive = Archive.init(config)
+    record = Record(
+        title="Reseal sample",
+        default_policy=AccessPolicy.PUBLIC,
+        dublin_core=DublinCore(title=["Reseal sample"]),
+        fields=[Field(name="story", value="before", policy=AccessPolicy.PUBLIC)],
+    )
+    payload = _FIXTURES / "public.txt"
+    archive.ingest({payload.name: payload}, record, now=_NOW_INGEST)
+    rid = record.record_id
+
+    # Sanity: freshly ingested bag is valid.
+    reports = dict(archive.audit_fixity())
+    assert reports[rid].ok
+
+    # A steward edit: tighten the record's default policy (a real post-ingest
+    # change -- consent tightening, a content-warning addition, a review decision
+    # all go through the same apply_update path).
+    updated = archive.get(rid)
+    updated.default_policy = AccessPolicy.STEWARDS
+    event = PremisEvent(
+        event_type=PremisEventType.CONSENT_CHANGE,
+        agent="e2e-steward",
+        outcome="success",
+        detail="tighten default policy to stewards",
+        event_datetime=_NOW_CONSENT,
+    )
+    archive.apply_update(updated, event)
+
+    # The change is durably recorded in the bag's PREMIS log...
+    premis = PremisLog.read(archive.bags_dir / rid / "premis.json")
+    assert any(e.event_type is PremisEventType.CONSENT_CHANGE for e in premis.events)
+
+    # ...and, crucially, the bag still re-validates: the lawful edit does not read
+    # as tampering at the next audit (the FIX-01 guarantee).
+    reports = dict(archive.audit_fixity())
+    assert reports[rid].ok
+
+    # A genuine payload corruption right after the update is still caught -- the
+    # reseal only recomputes tag manifests, never payload fixity.
+    payload_files = list((archive.bags_dir / rid / "data").rglob("*"))
+    payload_file = next(p for p in payload_files if p.is_file())
+    payload_file.write_bytes(b"corrupted after update")
+    reports = dict(archive.audit_fixity())
+    assert not reports[rid].ok

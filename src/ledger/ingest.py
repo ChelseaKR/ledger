@@ -31,7 +31,7 @@ import tempfile
 from pathlib import Path
 
 from ledger.access import disclose, is_listable
-from ledger.bag import validate_bag, write_bag
+from ledger.bag import refresh_tag_manifests, validate_bag, write_bag
 from ledger.cas import ContentStore
 from ledger.config import Config
 from ledger.errors import BagValidationError, LedgerError, ObjectNotFound
@@ -653,20 +653,38 @@ class Archive:
         auditable (accountability, traceability). All writes go through the
         identity-refusing :func:`serialize_record`, so a persisted manifest can never
         carry an in-memory identity (no-outing rule).
+
+        Because ``record.json`` and ``premis.json`` are *tag* files covered by the
+        bag's tag manifests, rewriting them would leave the tag manifests stale and
+        the bag failing its own :func:`~ledger.bag.validate_bag` check — a lawful
+        change reading as tampering at the next audit. The bag is therefore resealed
+        via :func:`~ledger.bag.refresh_tag_manifests`, which recomputes only the tag
+        manifests (the payload manifests, the real content fixity, are untouched), so
+        an updated bag re-validates while genuine content rot is still caught
+        (integrity, failure transparency).
         """
         manifest = serialize_record(record)
         fast = self.records_dir / f"{record.record_id}.json"
         fast.write_text(manifest, encoding="utf-8", newline="\n")
 
         bag_dir = self.bags_dir / record.record_id
+        resealed = False
         in_bag = bag_dir / _RECORD_FILENAME
         if in_bag.exists():
             in_bag.write_text(manifest, encoding="utf-8", newline="\n")
+            resealed = True
         premis_path = bag_dir / _PREMIS_FILENAME
         if premis_path.exists():
             log = PremisLog.read(premis_path)
             log.record(event)
             log.write(premis_path)
+            resealed = True
+
+        # Reseal: recompute the tag manifests so the rewritten tag files re-validate.
+        # Guarded by the presence of a tag manifest so a records-only update (no bag
+        # on disk) stays a no-op rather than raising (robustness).
+        if resealed and next(bag_dir.glob("tagmanifest-*.txt"), None) is not None:
+            refresh_tag_manifests(bag_dir)
 
     def log_takedown(self, event: PremisEvent) -> None:
         """Append a takedown/withdrawal decision to the archive-level takedowns log.

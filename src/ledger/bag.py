@@ -208,6 +208,48 @@ def write_bag(
     return Bag(path=bag_dir)
 
 
+def refresh_tag_manifests(bag_dir: Path) -> Bag:
+    """Recompute every ``tagmanifest-<algo>.txt`` from the bag's current tag files.
+
+    A lawful post-ingest change rewrites a *tag* file inside a sealed bag — the
+    record manifest after a consent/policy change, ``premis.json`` after a new
+    event, the Dublin Core sidecar after an edit. Those files are covered by the tag
+    manifests, so once their bytes change the stale tag manifests no longer match and
+    :func:`validate_bag` reports the bag's own tag files as failing — making a
+    legitimate steward action indistinguishable from tampering at the next audit
+    (the core integrity claim, silently broken for every archive that ever changes a
+    record). This reseals the bag by recomputing the tag-manifest digests over the
+    current tag files so the bag re-validates.
+
+    Only the *tag* manifests are touched. The payload manifests (``manifest-*.txt``)
+    — the real content fixity — are left exactly as written at ingest, so a byte
+    flipped in a payload file, or a payload manifest edited by hand, is still caught
+    (integrity: this reseals metadata revisions, it does not paper over content rot).
+
+    The set of tag files and the set of algorithms are read from the bag itself
+    (every top-level file that is not a tag manifest, hashed under each algorithm an
+    existing tag manifest declares), so a refreshed bag is byte-identical to one
+    :func:`write_bag` would have emitted for the same tag-file contents
+    (reproducibility). Raises :class:`~ledger.errors.BagValidationError` if the bag
+    has no tag manifest to refresh.
+    """
+    bag_dir = Path(bag_dir)
+    tagmanifest_paths = sorted(bag_dir.glob("tagmanifest-*.txt"))
+    if not tagmanifest_paths:
+        raise BagValidationError(f"no tag manifest to refresh: {bag_dir}")
+
+    # Tag files are every top-level file except the tag manifests themselves (a tag
+    # manifest never lists itself, per RFC 8493). Sorted for a deterministic manifest.
+    tag_files = sorted(
+        p.name for p in bag_dir.iterdir() if p.is_file() and not p.name.startswith("tagmanifest-")
+    )
+    for tagmanifest_path in tagmanifest_paths:
+        algo = _algo_of_manifest(tagmanifest_path)
+        tag_entries = {name: hash_file(bag_dir / name, algo) for name in tag_files}
+        _write_text(tagmanifest_path, _manifest_body(tag_entries))
+    return Bag(path=bag_dir)
+
+
 def _parse_manifest(path: Path) -> dict[str, str]:
     """Parse a BagIt manifest into ``{path: hex_digest}``.
 
