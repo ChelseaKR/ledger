@@ -39,8 +39,12 @@ type: ## Strict type checking (mypy)
 test: ## Run the test suite (preservation + disclosure + no-outing audit)
 	$(PY) -m pytest
 
-cov: ## Run tests with coverage
+cov: ## Run tests with coverage (95% floor on the access/consent/dual-control core)
 	$(PY) -m pytest --cov --cov-report=term-missing
+	# Per-module floor (CODE-QUALITY-STANDARD, security/crypto-critical paths): the
+	# access-policy, consent, and dual-control modules must hold >=95% branch
+	# coverage, above the 85% baseline. Scoped re-report over the .coverage data.
+	$(PY) -m coverage report --include="src/ledger/access/*,src/ledger/consent.py,src/ledger/dualcontrol.py" --fail-under=95
 
 backup-test: ## Exercise the full back-up -> wipe -> restore disaster-recovery cycle
 	$(PY) -m pytest -m recovery
