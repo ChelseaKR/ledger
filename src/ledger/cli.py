@@ -33,6 +33,7 @@ from ledger.access.grants import anonymous, community_member, steward
 from ledger.access.redaction import redact_field, redact_payload
 from ledger.config import Config, StorageLocation
 from ledger.errors import LedgerError
+from ledger.export_drive import build_export_drive
 from ledger.identity import ContributorIdentity
 from ledger.ingest import Archive
 from ledger.models import (
@@ -54,6 +55,7 @@ from ledger.moderate import (
     set_payload_policy,
     takedown,
 )
+from ledger.print_edition import build_print_edition
 from ledger.replicate import verify_replicas
 from ledger.server import serve
 
@@ -716,6 +718,63 @@ def _cmd_handoff(args: argparse.Namespace) -> int:
     return 0 if manifest.all_fixity_ok else 1
 
 
+def _cmd_export_drive(args: argparse.Namespace) -> int:
+    """``export-drive`` — build a self-verifying offline courier package (EXP-08).
+
+    Disclosure-filtered like every other read path: ``--as`` picks the viewer
+    (default: anonymous/PUBLIC, the narrowest — least privilege), and only what
+    that grant may see is re-bagged onto the package. Exits non-zero if any
+    freshly written bag fails its own validation, so a bad package is never
+    reported as ready to hand to a courier.
+    """
+    archive = _open_archive(Path(args.root))
+    grant = _grant_for(args.as_subject)
+    now = args.now if args.now else now_iso()
+    result = build_export_drive(
+        archive,
+        Path(args.out),
+        grant=grant,
+        archive_name=archive.config.archive_name,
+        base_url=args.base_url or "",
+        now=now,
+    )
+    status = "all bags verified" if result.all_bags_valid else "BAG VALIDATION FAILED"
+    print(
+        f"export-drive: {result.records_packaged} record(s), {result.files_packaged} file(s) "
+        f"packaged to {result.out_dir} for viewer {grant.subject!r}; {status}"
+    )
+    return 0 if result.all_bags_valid else 1
+
+
+def _cmd_print_edition(args: argparse.Namespace) -> int:
+    """``print-edition`` — render an accessible, zine-style HTML booklet (EXP-08).
+
+    PUBLIC-only by construction: always uses the anonymous grant, regardless of
+    who runs the command, because a printed page cannot later be redacted. Each
+    entry carries a visible SHA-256 fixity line plus, when the optional
+    ``segno`` package is installed (``pip install ledger-archive[print]``), a
+    scannable QR code encoding the same string. See the module docstring in
+    :mod:`ledger.print_edition` for why this renders HTML, not a bespoke PDF.
+    """
+    archive = _open_archive(Path(args.root))
+    now = args.now if args.now else now_iso()
+    record_ids = args.id if args.id else None
+    result = build_print_edition(
+        archive,
+        Path(args.out),
+        record_ids=record_ids,
+        archive_name=archive.config.archive_name,
+        base_url=args.base_url or "",
+        lang=args.lang,
+        now=now,
+    )
+    qr_note = (
+        "with QR codes" if result.qr_codes_rendered else "text-only fixity (segno not installed)"
+    )
+    print(f"print-edition: {result.records_included} record(s) -> {result.out_path} ({qr_note})")
+    return 0
+
+
 def _cmd_demo(args: argparse.Namespace) -> int:
     """``demo`` — run the self-contained, scripted no-outing proof end to end."""
     return demo.main()
@@ -917,6 +976,31 @@ def _build_parser() -> argparse.ArgumentParser:
     p_handoff.add_argument("--out", help="write the JSON manifest here (default: stdout)")
     p_handoff.add_argument("--now", help="ISO-8601 timestamp for a reproducible manifest")
     p_handoff.set_defaults(func=_cmd_handoff)
+
+    p_export_drive = sub.add_parser(
+        "export-drive", help="build a self-verifying offline courier package (sneakernet)"
+    )
+    p_export_drive.add_argument("--root", required=True)
+    p_export_drive.add_argument("--out", required=True, help="output directory (must not exist)")
+    p_export_drive.add_argument(
+        "--as", dest="as_subject", help="viewer subject to disclose for (default: anonymous)"
+    )
+    p_export_drive.add_argument("--base-url", help="public base URL for the manifest.csv links")
+    p_export_drive.add_argument("--now", help="ISO-8601 timestamp")
+    p_export_drive.set_defaults(func=_cmd_export_drive)
+
+    p_print_edition = sub.add_parser(
+        "print-edition", help="render a zine-style accessible HTML booklet of PUBLIC records"
+    )
+    p_print_edition.add_argument("--root", required=True)
+    p_print_edition.add_argument("--out", required=True, help="output HTML file path")
+    p_print_edition.add_argument(
+        "--id", action="append", help="record id to include (repeatable; default: all PUBLIC)"
+    )
+    p_print_edition.add_argument("--base-url", help="public base URL for fixity verify strings")
+    p_print_edition.add_argument("--lang", default="en", help="booklet language tag")
+    p_print_edition.add_argument("--now", help="ISO-8601 timestamp")
+    p_print_edition.set_defaults(func=_cmd_print_edition)
 
     p_demo = sub.add_parser("demo", help="run the scripted end-to-end no-outing proof")
     p_demo.set_defaults(func=_cmd_demo)

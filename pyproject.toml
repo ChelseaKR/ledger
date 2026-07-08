@@ -51,6 +51,14 @@ dev = [
     # "run on one inexpensive box, no heavy dependency tree" property.
     "babel>=2.16",
 ]
+# Opt-in only (EXP-08): `ledger print-edition` renders its accessible HTML booklet
+# and the always-present plain-text fixity digest with no extra dependency at all;
+# this extra adds the scannable QR-code image alongside that text. `segno` is a
+# pure-Python, zero-dependency QR/SVG generator, so installing it keeps the "no
+# heavy dependency tree" property even for the machines that opt in.
+print = [
+    "segno>=1.5,<2",
+]
 
 [project.urls]
 Homepage = "https://github.com/ChelseaKR/ledger"
