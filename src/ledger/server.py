@@ -51,11 +51,9 @@ import tempfile
 import threading
 import time
 from datetime import UTC, datetime, timedelta
-from email import policy as email_policy
-from email.parser import BytesParser
 from pathlib import Path
 from typing import BinaryIO
-from urllib.parse import parse_qs, quote, unquote, urlsplit
+from urllib.parse import parse_qs, quote, urlsplit
 
 from ledger import consent, contribute, export, i18n, oai, pagination, review, search, upload
 from ledger.access import anonymous, disclose, is_listable
@@ -83,6 +81,9 @@ from ledger.models import (
     now_iso,
 )
 from ledger.moderate import add_content_warning, change_consent, execute_takedown, takedown
+from ledger.parsing import cookie_value, parse_multipart, parse_urlencoded_multi
+from ledger.parsing import decode_id as _decode_id
+from ledger.parsing import safe_filename as _safe_filename
 from ledger.render import (
     _browse_main_html,
     _error_main_html,
@@ -435,12 +436,10 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         """Return the value of cookie ``name`` from the request, or ``""``.
 
         A small, dependency-free parse of the ``Cookie`` header; only the language
-        preference cookie is read here, and it carries no identity (no-outing rule)."""
-        for part in self.headers.get("Cookie", "").split(";"):
-            key, _, value = part.strip().partition("=")
-            if key == name:
-                return value.strip()
-        return ""
+        preference cookie is read here, and it carries no identity (no-outing rule).
+        The actual parsing lives in :func:`ledger.parsing.cookie_value` (FIX-09),
+        fuzzed independently of this handler."""
+        return cookie_value(self.headers.get("Cookie", ""), name)
 
     # --- routing ------------------------------------------------------------
 
@@ -581,7 +580,10 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         """Read a urlencoded POST body keeping *all* values per key.
 
         Same bounds as :meth:`_read_form`; used where a field repeats (e.g. a set of
-        checkboxes posting the same name), which the flat reader would collapse."""
+        checkboxes posting the same name), which the flat reader would collapse.
+        Bounding the read is this method's job (I/O policy); the decoding itself is
+        :func:`ledger.parsing.parse_urlencoded_multi` (FIX-09), fuzzed independently
+        of this handler."""
         try:
             length = int(self.headers.get("Content-Length", "0"))
         except ValueError:
@@ -589,7 +591,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         if length <= 0 or length > 64 * 1024:
             return {}
         raw = self.rfile.read(length).decode("utf-8", "replace")
-        return parse_qs(raw)
+        return parse_urlencoded_multi(raw)
 
     def _read_contribution(self) -> tuple[dict[str, str], tuple[str, bytes] | None]:
         """Read a contribution POST body as ``(fields, upload)``.
@@ -620,42 +622,22 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         if length > 64 * 1024:
             return {}, None
         raw = self.rfile.read(length).decode("utf-8", "replace")
-        return {k: v[0] for k, v in parse_qs(raw).items() if v}, None
+        return {k: v[0] for k, v in parse_urlencoded_multi(raw).items() if v}, None
 
     def _parse_multipart(
         self, length: int, content_type: str
     ) -> tuple[dict[str, str], tuple[str, bytes] | None]:
         """Parse a bounded ``multipart/form-data`` body into ``(fields, upload)``.
 
-        Reads exactly ``length`` bytes (already capped by the caller) and parses them
-        with the stdlib email parser by prepending the request's ``Content-Type`` as a
-        MIME header — no third-party multipart library. Each text part becomes a
-        ``fields`` entry; the first part carrying a filename becomes the single
-        ``upload``. The filename is kept only to suggest a stored name and is sanitised
-        elsewhere; the bytes are never trusted on type until sniffed."""
+        Reads exactly ``length`` bytes (already capped by the caller); the actual
+        MIME parsing is :func:`ledger.parsing.parse_multipart` (FIX-09), a pure
+        function fuzzed independently of this handler in
+        ``tests/test_parsing_fuzz.py``. Each text part becomes a ``fields`` entry;
+        the first part carrying a filename becomes the single ``upload``. The
+        filename is kept only to suggest a stored name and is sanitised elsewhere;
+        the bytes are never trusted on type until sniffed."""
         raw = self.rfile.read(length)
-        header = (
-            b"Content-Type: "
-            + content_type.encode("latin-1", "replace")
-            + b"\r\nMIME-Version: 1.0\r\n\r\n"
-        )
-        message = BytesParser(policy=email_policy.default).parsebytes(header + raw)
-        fields: dict[str, str] = {}
-        attached: tuple[str, bytes] | None = None
-        if message.is_multipart():
-            for part in message.iter_parts():
-                name = part.get_param("name", header="content-disposition")
-                if name is None:
-                    continue
-                decoded = part.get_payload(decode=True)
-                data = decoded if isinstance(decoded, bytes) else b""
-                filename = part.get_filename()
-                if filename:
-                    if attached is None and data:
-                        attached = (filename, data)
-                else:
-                    fields[str(name)] = data.decode("utf-8", "replace")
-        return fields, attached
+        return parse_multipart(raw, content_type)
 
     def _consent_store(self) -> consent.ConsentRequestStore:
         return consent.ConsentRequestStore(self._archive().logs_dir / "consent-requests.json")
@@ -2555,8 +2537,6 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
 
 
 # --- module-level render helpers (shared by routes) -------------------------
-
-
 class _UnsatisfiableRange(ValueError):
     """A syntactically valid ``Range`` header names bytes ``size`` doesn't have."""
 
@@ -2613,28 +2593,12 @@ def _parse_range(header: str | None, size: int) -> tuple[int, int] | None:
     return _parse_bounded_range(start_s, end_s, size)
 
 
-def _safe_filename(name: str) -> str:
-    """A filename safe to place in a ``Content-Disposition`` header.
-
-    Strips path separators, quotes, and control characters so a crafted payload
-    filename cannot inject a header or escape the field (securability). A name that
-    survives as empty or as only dots (``.``/``..``) is replaced with a safe default:
-    as a path component such a name points at a directory, so writing the upload to
-    ``tmpdir / name`` would raise instead of storing a file (robustness)."""
-    cleaned = "".join(c for c in name if c.isprintable() and c not in '"\\/\r\n')
-    if not cleaned.strip("."):
-        return "file"
-    return cleaned
-
-
-def _decode_id(raw: str) -> str:
-    """Percent-decode a single path segment for matching against record ids.
-
-    Path traversal is handled separately in :meth:`_handle_static`; for record
-    ids the value is only ever used as a dictionary/file lookup key by the
-    disclosure-gated archive, never interpolated into a path here.
-    """
-    return unquote(raw)
+#
+# `_safe_filename` and `_decode_id` are re-exported aliases of the pure parsers
+# in `ledger.parsing` (FIX-09) so every existing call site in this module keeps
+# working unchanged; the implementations and their property tests now live with
+# the rest of the hand-rolled parsers in `ledger/parsing.py` /
+# `tests/test_parsing_fuzz.py`.
 
 
 # Named subjects a contributor may declare per submission (RM12/EXP-04). Bounded so a
