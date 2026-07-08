@@ -202,9 +202,16 @@ class Config:
             if not condition or not condition.strip():
                 raise ConfigError("conditions must not contain an empty entry")
         if self.lockdown is not None:
-            # A malformed duress policy (e.g. shred with no replica to verify) is
-            # refused at load time, not at the dangerous moment it is triggered.
-            self.lockdown.validate()
+            # A malformed duress policy (e.g. shred with no replica to verify, or a
+            # "replica" that is actually this archive's own location) is refused at
+            # load time, not at the dangerous moment it is triggered.
+            self.lockdown.validate(
+                archive_locations=(
+                    Path(self.store_root).parent,
+                    Path(self.store_root),
+                    Path(self.vault_path),
+                )
+            )
         for location in self.locations:
             location.validate()
 

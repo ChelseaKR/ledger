@@ -85,12 +85,22 @@ class LockdownConfig:
     required_replica_locations: list[str] = field(default_factory=list)
     min_verified_replicas: int = 1
 
-    def validate(self) -> None:
+    def validate(self, *, archive_locations: tuple[str | Path, ...] = ()) -> None:
         """Raise :class:`LedgerError` if the lockdown policy is self-contradictory.
 
         Correctness: a ``shred_vault`` posture with no replica to verify against, or a
         replica threshold that can never be met, is caught here rather than at the
         dangerous moment a steward triggers a duress shred.
+
+        ``archive_locations`` are the live archive's own on-box paths (its root,
+        ``store_root``, ``vault_path``, ...) when known to the caller. A
+        ``required_replica_locations`` entry that resolves to one of them is not an
+        off-box replica at all — it is the archive pointing at itself — so
+        ``min_verified_replicas`` could be satisfied while providing *no* real
+        redundancy (a duress shred could proceed having "verified" nothing but the
+        copy it is about to destroy). Checked unconditionally, not just when
+        ``shred_vault`` is on, since a self-referential replica is equally useless
+        for stand-up's restore path.
         """
         if self.min_verified_replicas < 1:
             raise ConfigError("lockdown.min_verified_replicas must be at least 1")
@@ -105,6 +115,15 @@ class LockdownConfig:
                     "lockdown.min_verified_replicas exceeds the number of configured "
                     "required_replica_locations; the shred could never be authorized"
                 )
+        if archive_locations and self.required_replica_locations:
+            live = {Path(loc).expanduser().resolve() for loc in archive_locations}
+            for location in self.required_replica_locations:
+                if Path(location).expanduser().resolve() in live:
+                    raise ConfigError(
+                        f"lockdown.required_replica_locations entry {location!r} is the "
+                        "live archive's own location, not an off-box replica — this "
+                        "provides no real redundancy; point it at a genuinely separate copy"
+                    )
 
     def to_dict(self) -> dict[str, object]:
         """Serialize to a plain JSON-/TOML-ready mapping (deterministic order)."""
@@ -261,7 +280,9 @@ def _lockdown_config(archive: Archive) -> LockdownConfig:
     """The archive's configured lockdown policy, or the safe (no-shred) default."""
     configured = getattr(archive.config, "lockdown", None)
     if isinstance(configured, LockdownConfig):
-        configured.validate()
+        configured.validate(
+            archive_locations=(archive.store_root.parent, archive.store_root, archive.vault_path)
+        )
         return configured
     return LockdownConfig()
 

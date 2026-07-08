@@ -32,6 +32,7 @@ import pytest
 from ledger import cli, dualcontrol
 from ledger.access.grants import build_grant, steward
 from ledger.config import Config
+from ledger.errors import ConfigError
 from ledger.identity import ContributorIdentity
 from ledger.ingest import Archive
 from ledger.lockdown import LockdownConfig, is_locked_down, lockdown_flag_path
@@ -259,3 +260,37 @@ def test_dry_run_mutates_nothing(tmp_path: Path) -> None:
     assert not lockdown_flag_path(archive).exists()
     assert _premis_event_types(root) == []
     assert _proposal_store(root).open_proposals() == []
+
+
+def test_replica_matching_the_live_archive_is_rejected(tmp_path: Path) -> None:
+    """A required replica that IS the archive's own location gives no redundancy.
+
+    Configuring ``required_replica_locations`` to point back at the archive itself
+    would let ``min_verified_replicas`` be satisfied by "verifying" the very copy a
+    duress shred is about to destroy — the archive would trust itself as its own
+    off-box backup. This must be refused at config-validation time, not discovered
+    only after a shred with nothing left to restore from.
+    """
+    root = tmp_path / "arc"
+    config = Config.default("Duress Community Archive", root)
+    config.lockdown = LockdownConfig(
+        stop_disclosure=True,
+        shred_vault=True,
+        required_replica_locations=[str(root)],  # same root as the live archive
+        min_verified_replicas=1,
+    )
+    with pytest.raises(ConfigError, match="live archive's own location"):
+        config.validate()
+
+    # Also caught right before Archive.init() would stand the archive up.
+    with pytest.raises(ConfigError, match="live archive's own location"):
+        Archive.init(config)
+
+    # A genuinely distinct location is unaffected.
+    config.lockdown = LockdownConfig(
+        stop_disclosure=True,
+        shred_vault=True,
+        required_replica_locations=[str(tmp_path / "replica")],
+        min_verified_replicas=1,
+    )
+    config.validate()
