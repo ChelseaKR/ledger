@@ -427,7 +427,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         except BrokenPipeError:  # pragma: no cover - client disconnected
             pass
 
-    def do_POST(self) -> None:
+    def do_POST(self) -> None:  # noqa: C901
         """Route a POST: the contributor consent form and steward request actions.
 
         These are the only writes the site accepts. Consent submission is open (a
