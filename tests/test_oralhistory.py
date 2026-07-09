@@ -78,9 +78,7 @@ def test_segment_rejects_negative_start() -> None:
 
 def test_manifest_requires_at_least_one_segment() -> None:
     with pytest.raises(LedgerError, match="no segments"):
-        SessionManifest(
-            session_id="s1", recorded_at=_NOW, facilitator="steward", segments=()
-        )
+        SessionManifest(session_id="s1", recorded_at=_NOW, facilitator="steward", segments=())
 
 
 def test_manifest_rejects_duplicate_segment_ids() -> None:
@@ -186,9 +184,7 @@ def test_validate_rejects_disclosing_segment_with_no_consent_timestamp() -> None
 
 def test_validate_allows_indefinitely_sealed_segment_with_no_consent_timestamp() -> None:
     manifest = _manifest(
-        _segment(
-            policy=AccessPolicy.SEALED_UNTIL, unseal_at=None, spoken_consent_at=None
-        )
+        _segment(policy=AccessPolicy.SEALED_UNTIL, unseal_at=None, spoken_consent_at=None)
     )
     validate_session_manifest(manifest)  # must not raise
 
@@ -211,9 +207,7 @@ def test_validate_rejects_date_bound_sealed_until_with_no_consent_timestamp() ->
 
 
 def test_validate_rejects_sealed_conditional_without_condition() -> None:
-    manifest = _manifest(
-        _segment(policy=AccessPolicy.SEALED_CONDITIONAL, unseal_condition=None)
-    )
+    manifest = _manifest(_segment(policy=AccessPolicy.SEALED_CONDITIONAL, unseal_condition=None))
     with pytest.raises(LedgerError, match="unseal_condition"):
         validate_session_manifest(manifest)
 

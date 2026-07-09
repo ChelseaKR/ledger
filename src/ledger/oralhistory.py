@@ -114,9 +114,7 @@ class SessionSegment:
         if not self.segment_id.strip():
             raise LedgerError("a session segment requires a non-empty segment_id")
         if self.end_seconds < self.start_seconds:
-            raise LedgerError(
-                f"segment {self.segment_id!r} has end_seconds before start_seconds"
-            )
+            raise LedgerError(f"segment {self.segment_id!r} has end_seconds before start_seconds")
         if self.start_seconds < 0:
             raise LedgerError(f"segment {self.segment_id!r} has a negative start_seconds")
 
@@ -213,8 +211,7 @@ class SessionManifest:
         for seg in self.segments:
             if seg.segment_id in seen:
                 raise LedgerError(
-                    f"session {self.session_id!r} has a duplicate segment_id "
-                    f"{seg.segment_id!r}"
+                    f"session {self.session_id!r} has a duplicate segment_id {seg.segment_id!r}"
                 )
             seen.add(seg.segment_id)
 
@@ -235,9 +232,7 @@ class SessionManifest:
         if not isinstance(raw_segments, list):
             raise LedgerError("session manifest 'segments' must be a JSON array")
         segments = tuple(
-            SessionSegment.from_dict(item)
-            for item in raw_segments
-            if isinstance(item, Mapping)
+            SessionSegment.from_dict(item) for item in raw_segments if isinstance(item, Mapping)
         )
         narrator_ref = data.get("narrator_ref")
         return cls(
@@ -287,8 +282,7 @@ def validate_session_manifest(manifest: SessionManifest) -> None:
             seg.unseal_condition and seg.unseal_condition.strip()
         ):
             raise LedgerError(
-                f"segment {seg.segment_id!r} is sealed-conditional but names no "
-                "unseal_condition"
+                f"segment {seg.segment_id!r} is sealed-conditional but names no unseal_condition"
             )
         if (
             seg.policy is AccessPolicy.SEALED_UNTIL
@@ -363,8 +357,7 @@ def apply_session_manifest(record: Record, manifest: SessionManifest) -> Record:
             )
         )
         consent_detail = (
-            f"spoken consent captured at {seg.spoken_consent_at} for policy "
-            f"{seg.policy.value!r}"
+            f"spoken consent captured at {seg.spoken_consent_at} for policy {seg.policy.value!r}"
             if seg.spoken_consent_at
             else f"no spoken consent recorded (policy {seg.policy.value!r} never discloses)"
         )
