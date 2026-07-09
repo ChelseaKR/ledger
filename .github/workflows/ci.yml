@@ -24,16 +24,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Compatibility: the full supported interpreter range runs on pushes to main
-        # and on manual dispatch; pull requests exercise only the canonical version to
-        # save Actions minutes, since the merge to main re-runs the full matrix.
-        python: ${{ (github.event_name == 'pull_request') && fromJSON('["3.12"]') || fromJSON('["3.11", "3.12"]') }}
+        # Compatibility: 3.12 is the floor (CODE-QUALITY-STANDARD CQ-01) and, for
+        # now, the ceiling too, so the matrix is a single interpreter.
+        python: ["3.12"]
     steps:
       # Harden-Runner (SEC-04): observe/audit egress before anything else runs.
       # Recording in audit mode first (per the standard's rollout guidance) so the
       # allowlist can be derived from real traffic before flipping to `block`,
       # rather than guessing an allowlist and breaking the build.
-      - uses: step-security/harden-runner@5c7944e73c4c2a096b17a9cb74d65b6c2bbafbde  # v2.9.1
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
         with:
           egress-policy: audit
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
@@ -55,8 +54,12 @@ jobs:
         run: mypy
       - name: Test with coverage
         run: pytest --cov --cov-report=term-missing --cov-report=xml
+      # Per-module floor (CODE-QUALITY-STANDARD, security/crypto-critical paths):
+      # the access-policy, consent, and dual-control modules must hold >=95%
+      # branch coverage, above the 85% baseline. Mirrors `make cov`.
+      - name: Per-module coverage floor (access/consent/dual-control >=95%)
+        run: coverage report --include="src/ledger/access/*,src/ledger/consent.py,src/ledger/dualcontrol.py" --fail-under=95
       - name: Upload coverage
-        if: matrix.python == '3.12'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: coverage
@@ -70,7 +73,7 @@ jobs:
       # Recording in audit mode first (per the standard's rollout guidance) so the
       # allowlist can be derived from real traffic before flipping to `block`,
       # rather than guessing an allowlist and breaking the build.
-      - uses: step-security/harden-runner@5c7944e73c4c2a096b17a9cb74d65b6c2bbafbde  # v2.9.1
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
         with:
           egress-policy: audit
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
@@ -102,7 +105,7 @@ jobs:
       # Recording in audit mode first (per the standard's rollout guidance) so the
       # allowlist can be derived from real traffic before flipping to `block`,
       # rather than guessing an allowlist and breaking the build.
-      - uses: step-security/harden-runner@5c7944e73c4c2a096b17a9cb74d65b6c2bbafbde  # v2.9.1
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
         with:
           egress-policy: audit
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
@@ -128,7 +131,7 @@ jobs:
       # Recording in audit mode first (per the standard's rollout guidance) so the
       # allowlist can be derived from real traffic before flipping to `block`,
       # rather than guessing an allowlist and breaking the build.
-      - uses: step-security/harden-runner@5c7944e73c4c2a096b17a9cb74d65b6c2bbafbde  # v2.9.1
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
         with:
           egress-policy: audit
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
@@ -155,7 +158,7 @@ jobs:
       # Recording in audit mode first (per the standard's rollout guidance) so the
       # allowlist can be derived from real traffic before flipping to `block`,
       # rather than guessing an allowlist and breaking the build.
-      - uses: step-security/harden-runner@5c7944e73c4c2a096b17a9cb74d65b6c2bbafbde  # v2.9.1
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
         with:
           egress-policy: audit
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
@@ -187,7 +190,7 @@ jobs:
       # Recording in audit mode first (per the standard's rollout guidance) so the
       # allowlist can be derived from real traffic before flipping to `block`,
       # rather than guessing an allowlist and breaking the build.
-      - uses: step-security/harden-runner@5c7944e73c4c2a096b17a9cb74d65b6c2bbafbde  # v2.9.1
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
         with:
           egress-policy: audit
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0

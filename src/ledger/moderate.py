@@ -23,8 +23,9 @@ import json
 import secrets
 from dataclasses import dataclass, field, replace
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from ledger.errors import ModerationError
+from ledger.errors import LedgerError, ModerationError
 from ledger.models import (
     AccessPolicy,
     PremisEvent,
@@ -33,6 +34,9 @@ from ledger.models import (
     canonical_json,
     now_iso,
 )
+
+if TYPE_CHECKING:
+    from ledger.ingest import Archive
 
 # The vocabulary of accountable actions. Kept small and documented so the audit
 # trail is predictable and the meaning of each entry is unambiguous.
@@ -407,6 +411,41 @@ def takedown(
         at=now,
     )
     return event, action
+
+
+def execute_takedown(
+    archive: Archive,
+    record_id: str,
+    *,
+    actor: str,
+    reason: str,
+    now: str,
+) -> tuple[ModerationAction, int, bool, bool]:
+    """Record an accountable takedown decision, then remove every stored copy.
+
+    The one shared takedown *effect* behind the CLI ``ledger takedown`` command and
+    the in-UI steward console: the accountable decision (:func:`takedown`) is durably
+    persisted FIRST — its audit trail of *why* must outlive the data — then every
+    stored copy is removed and any sealed identity revoked through the single removal
+    primitive (:meth:`Archive.remove_all_copies`). Factoring it here lets both callers
+    execute byte-identical behaviour without the server importing the CLI (which would
+    be circular), and keeps the "record before you remove" ordering in exactly one
+    place (accountability, separation of concerns).
+
+    A non-empty ``reason`` is required (enforced by :func:`takedown`). Returns
+    ``(action, copies_removed, identity_revoked, had_identity)`` so a caller can report
+    counts and warn about a rare failed vault revoke without naming anything
+    (no-outing rule)."""
+    event, action = takedown(record_id, actor=actor, reason=reason, now=now)
+    # Whether there is a sealed identity to revoke, checked BEFORE removal so a failed
+    # revoke can still be reported once the bag (and the ref) are gone.
+    try:
+        had_identity = archive.get(record_id).identity_ref is not None
+    except LedgerError:
+        had_identity = False
+    archive.log_takedown(event)
+    removed, revoked = archive.remove_all_copies(record_id)
+    return action, removed, revoked, had_identity
 
 
 def appeal(
