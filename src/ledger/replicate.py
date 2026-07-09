@@ -24,14 +24,36 @@ No-outing: this module moves and validates opaque bag *directories*. It places
 only bag directory names, storage-location names, and bag paths into events and
 exception messages — never a contributor identity, a sealed field, or any payload
 byte. Bag bytes are copied, never read into a log, a metric, or an error.
+
+Mutual preservation aid (EXP-15, ``docs/ideation/03-expansions.md``): a second,
+opt-in transport for community instances that want to hold *each other's* bags as
+redundancy without either side having to trust the other with plaintext. A
+:func:`seal_bag` encrypts a whole bag into a single authenticated ciphertext blob
+with a key that never leaves the owning instance ("key stays home"); the blob —
+not the bag — is what a partner location holds. :func:`replicate_sealed_bag`
+writes that blob to a partner :class:`~ledger.config.StorageLocation` and verifies
+it landed intact by re-reading and re-hashing the ciphertext (verify-on-arrival,
+adapted: the partner cannot validate BagIt structure it cannot decrypt, so arrival
+integrity is checked by digest instead). :func:`attest_sealed_replica` lets either
+side — most usefully the *holding* partner, on a schedule — prove which bytes they
+currently hold without ever decrypting them, closing the §4.5 threat-model residual
+that a hostile or compromised replica host can read what it stores. Recovery is a
+drill, not blind trust: :func:`recover_sealed_bag` pulls the blob back, decrypts it
+locally, and runs the same :func:`validate_bag` used everywhere else, so "does the
+partner's copy actually work" is answered by evidence rather than assumption.
 """
 
 from __future__ import annotations
 
+import hashlib
+import io
 import shutil
+import tarfile
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
+
+from cryptography.fernet import Fernet, InvalidToken
 
 from ledger.bag import validate_bag
 from ledger.config import StorageLocation
@@ -40,6 +62,7 @@ from ledger.fixity import AuditReport
 from ledger.models import PremisEvent, PremisEventType
 
 _QUARANTINE_DIR = "quarantine"
+_SEALED_SUFFIX = ".sealed"
 
 
 def _rejected(message: str, event: PremisEvent) -> ReplicationError:
@@ -345,3 +368,288 @@ def heal(
             )
         )
     return events
+
+
+# --- mutual preservation aid: encrypted replica exchange (EXP-15) -----------
+#
+# A second, opt-in transport alongside the plaintext one above. See the module
+# docstring for the shape; in short: seal at home, ship ciphertext, attest by
+# digest, recover by decrypting locally and running the same validate_bag used
+# everywhere else in the archive.
+
+
+def _sealed_path(location_path: str, bag_name: str) -> Path:
+    """The on-disk path a sealed (ciphertext) blob of ``bag_name`` occupies."""
+    return Path(location_path) / f"{bag_name}{_SEALED_SUFFIX}"
+
+
+def _tar_bag(bag_dir: Path) -> bytes:
+    """Pack a bag directory's files into an in-memory tar, deterministically.
+
+    Sorted member order and zeroed mtime/uid/gid/uname make the plaintext tar
+    byte-identical across runs on unchanged content, so sealing the same bag with
+    the same key twice is reproducible rather than differing on incidental
+    filesystem metadata.
+    """
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w") as tar:
+        for path in sorted(p for p in bag_dir.rglob("*") if p.is_file()):
+            arcname = str(path.relative_to(bag_dir.parent))
+            info = tar.gettarinfo(path, arcname=arcname)
+            info.mtime = 0
+            info.uid = 0
+            info.gid = 0
+            info.uname = ""
+            info.gname = ""
+            with path.open("rb") as handle:
+                tar.addfile(info, handle)
+    return buffer.getvalue()
+
+
+def _untar_bag(data: bytes, dest_parent: Path) -> Path:
+    """Unpack a tar produced by :func:`_tar_bag` under ``dest_parent``.
+
+    Every member must extract inside ``dest_parent`` — a member whose name tries
+    to escape via ``../`` or an absolute path is rejected before anything is
+    written to disk (integrity). Fernet authentication already rules out a
+    tampered blob reaching here, but this guards the unseal path regardless of
+    where the bytes came from.
+    """
+    dest_parent.mkdir(parents=True, exist_ok=True)
+    resolved_root = dest_parent.resolve()
+    with tarfile.open(fileobj=io.BytesIO(data), mode="r") as tar:
+        members = tar.getmembers()
+        bag_names: set[str] = set()
+        for member in members:
+            member_path = (dest_parent / member.name).resolve()
+            if member_path != resolved_root and resolved_root not in member_path.parents:
+                raise ReplicationError(
+                    f"sealed archive member {member.name!r} would extract outside destination"
+                )
+            bag_names.add(member.name.split("/", 1)[0])
+        tar.extractall(dest_parent, members=members, filter="data")
+    if len(bag_names) != 1:
+        raise ReplicationError("sealed archive does not contain exactly one bag directory")
+    return dest_parent / next(iter(bag_names))
+
+
+@dataclass(frozen=True)
+class SealedBag:
+    """The result of sealing one bag: its ciphertext plus the digest to expect back.
+
+    ``sealed_sha256`` is what a later :func:`attest_sealed_replica` must reproduce
+    for the exchange to be considered healthy. The owning instance is expected to
+    keep this digest — never the ciphertext, and never the key — alongside its own
+    records.
+    """
+
+    bag: str
+    ciphertext: bytes
+    sealed_sha256: str
+
+
+@dataclass(frozen=True)
+class SealedFixityAttestation:
+    """A digest-only claim about the ciphertext a location currently holds.
+
+    ``sealed_sha256`` is computed straight off the bytes on disk at ``location`` —
+    never decrypted, never even attempted — so a partner instance that has *never*
+    held the key can produce this attestation about its own storage. Compared
+    against the digest recorded at seal time (:class:`SealedBag.sealed_sha256`),
+    it proves the partner still holds exactly what was sent: this is the
+    "scheduled fixity attestation exchange" from the EXP-15 pitch (inspectability,
+    no-outing — the attestation never touches plaintext).
+    """
+
+    location: str
+    bag: str
+    sealed_sha256: str
+    exists: bool
+    checked_at: str
+
+
+def seal_bag(bag_dir: Path, key: bytes) -> SealedBag:
+    """Encrypt the whole bag at ``bag_dir`` into one authenticated ciphertext blob.
+
+    Key stays home (confidentiality): ``key`` is a Fernet key the *owning*
+    instance generates and keeps. It is never written into the blob, never sent to
+    a partner, and this function neither logs nor returns it. The returned
+    :class:`SealedBag.sealed_sha256` is the only thing a partner needs to prove,
+    later, that they still hold the right bytes (see :func:`attest_sealed_replica`).
+
+    Raises :class:`~ledger.errors.ReplicationError` if the key is malformed —
+    never proceeds with an unusable key.
+    """
+    try:
+        fernet = Fernet(key)
+    except (ValueError, TypeError) as exc:
+        raise ReplicationError("invalid mutual-aid seal key") from exc
+    plaintext = _tar_bag(bag_dir)
+    ciphertext = fernet.encrypt(plaintext)
+    digest = hashlib.sha256(ciphertext).hexdigest()
+    return SealedBag(bag=bag_dir.name, ciphertext=ciphertext, sealed_sha256=digest)
+
+
+def unseal_bag(ciphertext: bytes, key: bytes, dest_parent: Path) -> Path:
+    """Decrypt a blob produced by :func:`seal_bag` and unpack it under ``dest_parent``.
+
+    Authenticated decryption (integrity): Fernet rejects any ciphertext that was
+    truncated, corrupted, or tampered with in transit or at rest — a bad blob
+    raises :class:`~ledger.errors.ReplicationError` rather than silently yielding
+    garbage bytes that might be mistaken for a bag. Returns the path of the
+    recovered bag directory, ready for :func:`~ledger.bag.validate_bag`.
+    """
+    try:
+        fernet = Fernet(key)
+    except (ValueError, TypeError) as exc:
+        raise ReplicationError("invalid mutual-aid seal key") from exc
+    try:
+        plaintext = fernet.decrypt(ciphertext)
+    except InvalidToken as exc:
+        raise ReplicationError(
+            "sealed replica failed authentication on unseal (wrong key or tampered ciphertext)"
+        ) from exc
+    return _untar_bag(plaintext, dest_parent)
+
+
+def replicate_sealed_bag(
+    bag_dir: Path,
+    location: StorageLocation,
+    key: bytes,
+    *,
+    agent: str,
+    now: str,
+) -> tuple[PremisEvent, str]:
+    """Seal the bag at ``bag_dir`` and hold the ciphertext at a partner ``location``.
+
+    Distinct from :func:`replicate_bag`: ``location`` receives only ciphertext, so
+    a partner instance can hold this replica as redundancy without ever being able
+    to read its contents — closing the §4.5 threat-model residual that a hostile
+    or compromised replica host can read what it stores. Verify-on-arrival is
+    adapted for ciphertext: the blob is re-read from disk and re-hashed
+    immediately after writing, so a write truncated or corrupted by the storage
+    medium is caught here rather than at the next scheduled attestation.
+
+    Returns the recorded event and the ciphertext's SHA-256 digest. The caller
+    (steward tooling, a cron job) is responsible for keeping that digest — never
+    the key or the ciphertext — alongside their own records, so it can later be
+    checked against attestations from the partner.
+    """
+    sealed = seal_bag(bag_dir, key)
+    dest = _sealed_path(location.path, sealed.bag)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    tmp = dest.with_suffix(dest.suffix + ".tmp")
+    tmp.write_bytes(sealed.ciphertext)
+    tmp.replace(dest)
+
+    on_disk_digest = hashlib.sha256(dest.read_bytes()).hexdigest()
+    if on_disk_digest != sealed.sealed_sha256:
+        # Arrived torn: same quarantine discipline as the plaintext path, but the
+        # "bag" here is a single opaque blob rather than a directory.
+        quarantine_root = Path(location.path) / _QUARANTINE_DIR
+        quarantine_root.mkdir(parents=True, exist_ok=True)
+        quarantine_target = quarantine_root / dest.name
+        if quarantine_target.exists():
+            quarantine_target.unlink()
+        dest.replace(quarantine_target)
+        event = PremisEvent(
+            event_type=PremisEventType.QUARANTINE,
+            agent=agent,
+            outcome="failure",
+            detail=(
+                f"sealed replica of bag {sealed.bag!r} at location {location.name!r} "
+                f"arrived with a mismatched digest; quarantined to {quarantine_target}"
+            ),
+            linked_object=sealed.bag,
+            event_datetime=now,
+        )
+        raise _rejected(
+            f"sealed replica of bag {sealed.bag!r} rejected at location {location.name!r}",
+            event,
+        )
+
+    event = PremisEvent(
+        event_type=PremisEventType.REPLICATION,
+        agent=agent,
+        outcome="success",
+        detail=(
+            f"bag {sealed.bag!r} sealed and replicated to location {location.name!r} "
+            f"as an encrypted blob ({len(sealed.ciphertext)} byte(s)); partner cannot "
+            "read the contents"
+        ),
+        linked_object=sealed.bag,
+        event_datetime=now,
+    )
+    return event, sealed.sealed_sha256
+
+
+def attest_sealed_replica(
+    location: StorageLocation,
+    bag_name: str,
+    *,
+    now: str,
+) -> SealedFixityAttestation:
+    """Report the SHA-256 of the ciphertext blob a partner ``location`` holds.
+
+    Never decrypts, never requests the key: this is exactly what a partner
+    instance runs on a schedule to prove, to the owner, which bytes it currently
+    holds — the "scheduled fixity attestation exchange" from the EXP-15 pitch.
+    ``exists=False`` (with an empty digest) reports a missing blob rather than
+    raising, matching :func:`verify_replicas`'s degradability rule: an
+    unreachable or empty partner must not blind either side to its status.
+    """
+    path = _sealed_path(location.path, bag_name)
+    if not path.exists():
+        return SealedFixityAttestation(
+            location=location.name,
+            bag=bag_name,
+            sealed_sha256="",
+            exists=False,
+            checked_at=now,
+        )
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    return SealedFixityAttestation(
+        location=location.name,
+        bag=bag_name,
+        sealed_sha256=digest,
+        exists=True,
+        checked_at=now,
+    )
+
+
+def verify_sealed_attestation(expected_sha256: str, attestation: SealedFixityAttestation) -> bool:
+    """True only if ``attestation`` reports the exact digest recorded at seal time.
+
+    The owning instance calls this after requesting an attestation from a partner
+    (or after checking its own copy): a mismatch means the partner's copy has
+    drifted, been substituted, or gone missing, and :func:`recover_sealed_bag`
+    should be run — as, or before, a real loss makes it necessary.
+    """
+    return attestation.exists and attestation.sealed_sha256 == expected_sha256
+
+
+def recover_sealed_bag(
+    location: StorageLocation,
+    bag_name: str,
+    key: bytes,
+    dest_parent: Path,
+) -> AuditReport:
+    """Recovery drill: pull the sealed blob back from ``location``, decrypt it
+    locally, and validate it as a bag.
+
+    This is the proof the EXP-15 pitch asks for — "a full recovery drill from a
+    partner's copy" — exercised the way a real recovery would be: read whatever
+    ciphertext the partner is holding, decrypt with the key that never left home,
+    and run it through the exact :func:`~ledger.bag.validate_bag` used everywhere
+    else in the archive. Raises :class:`~ledger.errors.ReplicationError` if no
+    sealed blob is present at ``location`` (nothing to recover) or if it fails
+    authentication (see :func:`unseal_bag`).
+    """
+    path = _sealed_path(location.path, bag_name)
+    if not path.exists():
+        raise ReplicationError(
+            f"no sealed replica of bag {bag_name!r} at location {location.name!r} to recover"
+        )
+    ciphertext = path.read_bytes()
+    bag_dir = unseal_bag(ciphertext, key, dest_parent)
+    return validate_bag(bag_dir)
