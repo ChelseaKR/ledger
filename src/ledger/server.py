@@ -26,10 +26,15 @@ confidentiality — the no-outing rule, confirmed in depth below):
 * The static handler resolves and bounds every path under ``web/static`` so a
   ``../`` cannot escape the document root (securability — no path traversal).
 
-Grant resolution is deny-by-default: requests are anonymous unless an
-``X-Ledger-Grant: <subject>`` header names a *pre-provisioned* subject in the
-grants file. An unknown subject falls back to anonymous; the header is never
-trusted beyond looking up an existing grant (least privilege, securability).
+Grant resolution is deny-by-default *and* authenticated: requests are anonymous
+unless the ``X-Ledger-Grant`` header carries a valid HMAC token
+(``<subject>:<expiry>:<hmac>``, minted by :func:`ledger.access.grants.issue_grant_token`
+under the server's grant secret) whose subject names a *pre-provisioned* grant in
+the grants file. The subject string alone confers nothing — a guessed or
+shoulder-surfed subject, a forged MAC, an expired token, or a request made when no
+grant secret is configured all fall back, byte-for-byte, to the anonymous public
+(least privilege, securability; no oracle). This closes the old gap where the
+subject string *was* the whole credential.
 """
 
 from __future__ import annotations

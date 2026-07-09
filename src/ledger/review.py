@@ -21,6 +21,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
+from ledger._filelock import file_lock
+
 __all__ = ["PendingSubmission", "SubmissionQueue"]
 
 
@@ -54,17 +56,28 @@ class SubmissionQueue:
         return self._read()
 
     def add(self, record_id: str, *, now: str) -> None:
-        """Enqueue ``record_id`` for review; idempotent (a re-add is a no-op)."""
-        items = self._read()
-        if any(item.record_id == record_id for item in items):
-            return
-        items.append(PendingSubmission(record_id=record_id, submitted_at=now))
-        self._write(items)
+        """Enqueue ``record_id`` for review; idempotent (a re-add is a no-op).
+
+        The read-modify-write runs under a single-host advisory lock so two
+        concurrent submissions (normal under the threaded server) cannot each read
+        the same queue and clobber one another (no lost review item).
+        """
+        with file_lock(self._path):
+            items = self._read()
+            if any(item.record_id == record_id for item in items):
+                return
+            items.append(PendingSubmission(record_id=record_id, submitted_at=now))
+            self._write(items)
 
     def remove(self, record_id: str) -> None:
-        """Drop ``record_id`` from the queue once a steward has decided. Idempotent."""
-        items = [item for item in self._read() if item.record_id != record_id]
-        self._write(items)
+        """Drop ``record_id`` from the queue once a steward has decided. Idempotent.
+
+        Locked like :meth:`add` so a removal cannot race a concurrent add and be
+        lost (a re-appearing, already-decided submission is a stewardship defect).
+        """
+        with file_lock(self._path):
+            items = [item for item in self._read() if item.record_id != record_id]
+            self._write(items)
 
     def contains(self, record_id: str) -> bool:
         """Whether ``record_id`` is currently awaiting review."""
