@@ -28,7 +28,7 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from ledger import acr_gen, demo, dualcontrol, preservation, succession
+from ledger import acr_gen, attest, demo, dualcontrol, preservation, succession
 from ledger.access.grants import anonymous, community_member, steward
 from ledger.access.redaction import redact_field, redact_payload
 from ledger.config import Config, StorageLocation
@@ -50,9 +50,9 @@ from ledger.models import (
 from ledger.moderate import (
     add_content_warning,
     change_consent,
+    execute_takedown,
     set_field_policy,
     set_payload_policy,
-    takedown,
 )
 from ledger.oralhistory import apply_session_manifest, parse_session_manifest
 from ledger.replicate import verify_replicas
@@ -485,20 +485,12 @@ def _perform_takedown(
     contributor identity revoked through the one shared removal effect
     (:meth:`Archive.remove_all_copies`). Only the record id and counts appear in the
     summary (no-outing rule). Factored so both the direct path and an approved
-    dual-control proposal execute the identical effect.
+    dual-control proposal execute the identical effect, which is itself shared with
+    the in-UI steward console via :func:`ledger.moderate.execute_takedown`.
     """
-    event, action = takedown(record_id, actor=actor, reason=reason, now=now)
-
-    # Whether there is a sealed identity to revoke, checked BEFORE removal so a failed
-    # revoke can still be reported once the bag (and the ref) are gone.
-    try:
-        had_identity = archive.get(record_id).identity_ref is not None
-    except LedgerError:
-        had_identity = False
-
-    archive.log_takedown(event)
-
-    removed, revoked = archive.remove_all_copies(record_id)
+    action, removed, revoked, had_identity = execute_takedown(
+        archive, record_id, actor=actor, reason=reason, now=now
+    )
     if had_identity and not revoked:  # pragma: no cover - vault failure is rare
         print(
             "warning: could not revoke identity from the vault; "
@@ -570,11 +562,18 @@ def _cmd_takedown(args: argparse.Namespace) -> int:
     return 0
 
 
+# Actions the generic ``propose``/``approve`` path can *execute* (see
+# :func:`_execute_proposal`). ``attest`` is deliberately excluded: it has its own
+# ``ledger attest`` flow with a fixed 2-of-N quorum and a separate store, so it is
+# never filed through the general dual-control path where it could not be executed.
+_PROPOSABLE_ACTIONS: frozenset[str] = dualcontrol.ACTIONS - {"attest"}
+
+
 def _cmd_propose(args: argparse.Namespace) -> int:
     """``propose`` — propose a high-stakes action for dual-control approval."""
-    if args.action not in dualcontrol.ACTIONS:
+    if args.action not in _PROPOSABLE_ACTIONS:
         raise LedgerError(
-            f"unknown action {args.action!r}; expected one of {sorted(dualcontrol.ACTIONS)}"
+            f"unknown action {args.action!r}; expected one of {sorted(_PROPOSABLE_ACTIONS)}"
         )
     archive = _open_archive(Path(args.root))
     now = args.now if args.now else now_iso()
@@ -621,6 +620,70 @@ def _cmd_proposals(args: argparse.Namespace) -> int:
     for p in open_props:
         print(f"{p.proposal_id}\t{p.action}\t{p.target}\t{p.approved_count()}/{threshold}")
     print(f"({len(open_props)} open proposal(s); threshold {threshold})")
+    return 0
+
+
+def _attest_store(archive: Archive) -> attest.AttestStore:
+    """The condition-attestation store for ``archive`` (under ``logs/``)."""
+    return attest.AttestStore(archive.logs_dir)
+
+
+def _cmd_attest_propose(args: argparse.Namespace) -> int:
+    """``attest propose`` — propose that a SEALED_CONDITIONAL condition has been met.
+
+    Validates the condition against the archive's controlled vocabulary
+    (``config.conditions``) so a typo can never invent an ungoverned condition, then
+    files a 2-of-N proposal: a *second, distinct* steward must ``attest approve`` it
+    before it opens anything. One steward alone changes nothing (no one may declare a
+    contributor dead by themselves)."""
+    archive = _open_archive(Path(args.root))
+    if args.condition not in archive.config.conditions:
+        raise LedgerError(
+            f"unknown condition {args.condition!r}; expected one of "
+            f"{sorted(archive.config.conditions)} (edit config.conditions to add one)"
+        )
+    now = args.now if args.now else now_iso()
+    prop = _attest_store(archive).propose(
+        args.condition, args.actor, reason=args.reason or "", now=now
+    )
+    print(
+        f"attestation PROPOSED for {args.condition!r} (proposal {prop.proposal_id}); "
+        f"needs {attest.ATTEST_THRESHOLD} distinct stewards "
+        f"({prop.approved_count()}/{attest.ATTEST_THRESHOLD}). "
+        f"Another steward runs: ledger attest approve --root {args.root} "
+        f"--id {prop.proposal_id} --actor <steward-id>"
+    )
+    return 0
+
+
+def _cmd_attest_approve(args: argparse.Namespace) -> int:
+    """``attest approve`` — approve a pending attestation; record it at the quorum.
+
+    Counts only *distinct* stewards, so one steward approving twice never reaches the
+    2-of-N quorum. On the approval that reaches quorum the condition is written into
+    the durable attested-conditions set and a PREMIS ``POLICY_CHANGE`` event recorded,
+    and every ``SEALED_CONDITIONAL`` field waiting on that condition opens on the next
+    read."""
+    archive = _open_archive(Path(args.root))
+    now = args.now if args.now else now_iso()
+    prop, attested_now = _attest_store(archive).approve(args.id, args.actor, now=now)
+    print(
+        f"approved attestation {prop.proposal_id} "
+        f"({prop.approved_count()}/{attest.ATTEST_THRESHOLD})"
+    )
+    if attested_now:
+        print(f"condition {prop.target!r} is now attested-met; fields sealed on it now disclose")
+    return 0
+
+
+def _cmd_attest_list(args: argparse.Namespace) -> int:
+    """``attest list`` — show open attestation proposals and attested conditions."""
+    store = _attest_store(_open_archive(Path(args.root)))
+    open_props = store.open_proposals()
+    for p in open_props:
+        print(f"{p.proposal_id}\t{p.target}\t{p.approved_count()}/{attest.ATTEST_THRESHOLD}")
+    met = sorted(store.attested())
+    print(f"({len(open_props)} open proposal(s); attested-met: {', '.join(met) or 'none'})")
     return 0
 
 
@@ -698,7 +761,15 @@ def _cmd_handoff(args: argparse.Namespace) -> int:
     """
     archive = _open_archive(Path(args.root))
     now = args.now if args.now else now_iso()
-    manifest = succession.build_handoff(archive, now=now, successor=args.successor)
+    manifest = succession.build_handoff(
+        archive, now=now, successor=args.successor, attest_steward=args.attest_steward
+    )
+    if args.attest_steward:
+        print(
+            "filed a 'group-dissolved' attestation proposal; a second steward must "
+            "'ledger attest approve' it before any conditional seal opens",
+            file=sys.stderr,
+        )
     manifest_json = manifest.to_json()
     if args.out:
         out_path = Path(args.out)
@@ -911,7 +982,10 @@ def _build_parser() -> argparse.ArgumentParser:
     p_propose = sub.add_parser("propose", help="propose a high-stakes action (dual-control)")
     p_propose.add_argument("--root", required=True)
     p_propose.add_argument(
-        "--action", required=True, choices=sorted(dualcontrol.ACTIONS), help="action to propose"
+        "--action",
+        required=True,
+        choices=sorted(_PROPOSABLE_ACTIONS),
+        help="action to propose",
     )
     p_propose.add_argument(
         "--id", required=True, help="target record id (or identity ref for unseal)"
@@ -931,6 +1005,33 @@ def _build_parser() -> argparse.ArgumentParser:
     p_proposals = sub.add_parser("proposals", help="list open dual-control proposals")
     p_proposals.add_argument("--root", required=True)
     p_proposals.set_defaults(func=_cmd_proposals)
+
+    p_attest = sub.add_parser(
+        "attest", help="attest a SEALED_CONDITIONAL condition (2-of-N stewards)"
+    )
+    attest_sub = p_attest.add_subparsers(dest="attest_command", required=True, metavar="SUBCOMMAND")
+    p_att_propose = attest_sub.add_parser("propose", help="propose that a condition has been met")
+    p_att_propose.add_argument("--root", required=True)
+    p_att_propose.add_argument("condition", help="condition name (from config.conditions)")
+    p_att_propose.add_argument("--actor", required=True, help="proposing steward id")
+    p_att_propose.add_argument("--reason", help="rationale (auditable; not persisted verbatim)")
+    p_att_propose.add_argument("--now", help="ISO-8601 timestamp")
+    p_att_propose.set_defaults(func=_cmd_attest_propose)
+
+    p_att_approve = attest_sub.add_parser(
+        "approve", help="approve a pending attestation; records it at 2-of-N"
+    )
+    p_att_approve.add_argument("--root", required=True)
+    p_att_approve.add_argument("--id", required=True, help="attestation proposal id")
+    p_att_approve.add_argument("--actor", required=True, help="approving steward id")
+    p_att_approve.add_argument("--now", help="ISO-8601 timestamp")
+    p_att_approve.set_defaults(func=_cmd_attest_approve)
+
+    p_att_list = attest_sub.add_parser(
+        "list", help="list open attestations and attested-met conditions"
+    )
+    p_att_list.add_argument("--root", required=True)
+    p_att_list.set_defaults(func=_cmd_attest_list)
 
     p_replicas = sub.add_parser("replicas", help="report a bag's replica health")
     p_replicas.add_argument("--root", required=True)
@@ -959,6 +1060,11 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p_handoff.add_argument("--root", required=True)
     p_handoff.add_argument("--successor", help="name of the collective/person taking over")
+    p_handoff.add_argument(
+        "--attest-steward",
+        help="steward id filing a 'group-dissolved' attestation proposal at hand-off "
+        "(still needs a second steward's approval before any seal opens)",
+    )
     p_handoff.add_argument("--out", help="write the JSON manifest here (default: stdout)")
     p_handoff.add_argument("--now", help="ISO-8601 timestamp for a reproducible manifest")
     p_handoff.set_defaults(func=_cmd_handoff)

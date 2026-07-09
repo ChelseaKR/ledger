@@ -43,7 +43,6 @@ tracked."
 | Responsible Tech | RTF-01 | Ethics/consequence scan substance exists (README, THREAT-MODEL, GOVERNANCE) but no committed, dated, signed-off artifact | Open | P2-2 |
 | Quality & Metrics | QM-02 | No performance budgets/benchmarks in CI (README claim already removed pending this — see CHANGELOG) | Open | P3-5 |
 | Quality & Metrics | QM-11, QM-18 | No DORA delivery-health review artifact; no root `DEFINITION_OF_DONE.md` | Open | P2-5 |
-| Code Quality | CQ-01 | Python floor is `>=3.11`, not the `>=3.12` the standard's drift-remediation note names for ledger | Open | P1-2 |
 | Code Quality | CQ-47 | No mutation testing on safety modules (`access/`, `identity.py`, `fixity.py`) | Open | P3-3 |
 | Code Quality | CQ-05 (partial) | Complexity gate is now enforced (`ruff` C901, max 10); 7 pre-existing functions exceed it and are waived with dated `# noqa: C901` comments pending a deliberate, fully-retested split — not rushed under audit time pressure on safety-adjacent code | Open (waived) | See `# noqa: C901` sites in `accessibility_check.py`, `bag.py`, `cli.py`, `contribute.py`, `ingest.py`, `server.py` |
 

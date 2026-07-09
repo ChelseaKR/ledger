@@ -3,7 +3,10 @@
 Covers replicating a bag and verifying every replica is healthy, the heal cycle that
 restores a corrupted replica from a copy that still validates, and the degradability
 rule that an unreachable location is *reported* (``ok=False``) rather than raising —
-one offline mirror must not blind the steward to the others.
+one offline mirror must not blind the steward to the others. Also covers the EXP-15
+mutual preservation aid transport: sealing a bag into an encrypted blob, replicating
+that blob to a partner location, attesting to it by digest without decrypting, and
+running a full recovery drill.
 """
 
 from __future__ import annotations
@@ -12,12 +15,23 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
+from cryptography.fernet import Fernet
 
 from ledger.bag import Bag, write_bag
 from ledger.config import StorageLocation
 from ledger.errors import FixityError, ReplicationError
 from ledger.models import PremisEvent, PremisEventType
-from ledger.replicate import heal, replicate_bag, verify_replicas
+from ledger.replicate import (
+    attest_sealed_replica,
+    heal,
+    recover_sealed_bag,
+    replicate_bag,
+    replicate_sealed_bag,
+    seal_bag,
+    unseal_bag,
+    verify_replicas,
+    verify_sealed_attestation,
+)
 
 _NOW = "2026-01-01T00:00:00Z"
 _AGENT = "ledger.replicate"
@@ -255,3 +269,226 @@ def test_structurally_partial_replica_is_not_promoted(tmp_path: Path, source_bag
 
     after = verify_replicas(source_bag.name, [good, partial])
     assert all(status.ok for status in after)
+
+
+# --- mutual preservation aid: encrypted replica exchange (EXP-15) -----------
+
+
+@pytest.mark.preservation
+def test_seal_then_unseal_round_trips_to_a_valid_bag(tmp_path: Path, source_bag: Bag) -> None:
+    """Sealing a bag then unsealing it with the same key recovers a validating bag."""
+    key = Fernet.generate_key()
+    sealed = seal_bag(source_bag.path, key)
+    assert sealed.bag == source_bag.name
+    assert sealed.sealed_sha256
+
+    dest_parent = tmp_path / "recovered"
+    bag_dir = unseal_bag(sealed.ciphertext, key, dest_parent)
+    assert bag_dir.name == source_bag.name
+    assert (bag_dir / "bagit.txt").exists()
+    assert (bag_dir / "data" / "photo.jpg").read_bytes() == (
+        source_bag.payload_dir / "photo.jpg"
+    ).read_bytes()
+
+
+@pytest.mark.preservation
+def test_seal_is_confidential_partner_cannot_read_plaintext(
+    tmp_path: Path, source_bag: Bag
+) -> None:
+    """The sealed blob is opaque ciphertext: no payload byte appears verbatim.
+
+    No-outing / confidentiality: a partner holding only the ciphertext (never the
+    key) cannot recover the plaintext photo bytes by inspecting the blob.
+    """
+    key = Fernet.generate_key()
+    sealed = seal_bag(source_bag.path, key)
+    payload = (source_bag.payload_dir / "photo.jpg").read_bytes()
+    assert payload not in sealed.ciphertext
+
+
+@pytest.mark.preservation
+def test_unseal_wrong_key_fails_authentication(tmp_path: Path, source_bag: Bag) -> None:
+    """Unsealing with the wrong key raises rather than yielding garbage bytes."""
+    key = Fernet.generate_key()
+    wrong_key = Fernet.generate_key()
+    sealed = seal_bag(source_bag.path, key)
+
+    with pytest.raises(ReplicationError, match="authentication"):
+        unseal_bag(sealed.ciphertext, wrong_key, tmp_path / "recovered")
+
+
+@pytest.mark.preservation
+def test_replicate_sealed_bag_then_attest_matches_digest(tmp_path: Path, source_bag: Bag) -> None:
+    """Replicating a sealed bag to a partner, then attesting, reproduces the digest.
+
+    Models the scheduled fixity attestation exchange: the partner (who never
+    receives the key) computes a digest purely from the ciphertext bytes on disk,
+    and it matches what the owner recorded when it sealed the bag.
+    """
+    key = Fernet.generate_key()
+    partner = _location(tmp_path, "partner-a")
+
+    event, sealed_sha256 = replicate_sealed_bag(
+        source_bag.path, partner, key, agent=_AGENT, now=_NOW
+    )
+    assert event.event_type is PremisEventType.REPLICATION
+    assert event.outcome == "success"
+
+    attestation = attest_sealed_replica(partner, source_bag.name, now=_NOW)
+    assert attestation.exists
+    assert attestation.location == "partner-a"
+    assert verify_sealed_attestation(sealed_sha256, attestation)
+
+
+@pytest.mark.preservation
+def test_attest_missing_sealed_replica_reports_not_raises(tmp_path: Path) -> None:
+    """Attesting a location that never received a sealed blob degrades, not raises.
+
+    Degradability/availability, matching :func:`verify_replicas`: an unreachable or
+    never-populated partner must not blind either side to the exchange's status.
+    """
+    partner = _location(tmp_path, "partner-offline")
+    attestation = attest_sealed_replica(partner, "bag-001", now=_NOW)
+    assert not attestation.exists
+    assert attestation.sealed_sha256 == ""
+    assert not verify_sealed_attestation("deadbeef", attestation)
+
+
+@pytest.mark.preservation
+def test_attest_detects_drifted_or_substituted_ciphertext(tmp_path: Path, source_bag: Bag) -> None:
+    """A partner's ciphertext that has drifted no longer matches the sealed digest."""
+    key = Fernet.generate_key()
+    partner = _location(tmp_path, "partner-drift")
+    _, sealed_sha256 = replicate_sealed_bag(source_bag.path, partner, key, agent=_AGENT, now=_NOW)
+
+    # Simulate the partner's copy silently drifting (bit flip, substitution, etc.).
+    blob_path = Path(partner.path) / f"{source_bag.name}.sealed"
+    raw = bytearray(blob_path.read_bytes())
+    raw[0] ^= 0x01
+    blob_path.write_bytes(bytes(raw))
+
+    attestation = attest_sealed_replica(partner, source_bag.name, now=_NOW)
+    assert attestation.exists
+    assert not verify_sealed_attestation(sealed_sha256, attestation)
+
+
+@pytest.mark.preservation
+def test_recover_sealed_bag_full_drill_validates(tmp_path: Path, source_bag: Bag) -> None:
+    """The EXP-15 "Excellent" bar: a full recovery drill from a partner's copy.
+
+    Pulls the sealed blob back from the partner, decrypts locally with the key
+    that never left home, and validates it as a real bag via the same
+    :func:`~ledger.bag.validate_bag` path used everywhere else.
+    """
+    key = Fernet.generate_key()
+    partner = _location(tmp_path, "partner-recover")
+    replicate_sealed_bag(source_bag.path, partner, key, agent=_AGENT, now=_NOW)
+
+    report = recover_sealed_bag(partner, source_bag.name, key, tmp_path / "drill")
+    assert report.ok
+    assert report.checked > 0
+
+
+@pytest.mark.preservation
+def test_recover_sealed_bag_missing_raises(tmp_path: Path) -> None:
+    """Recovering from a partner that never held a sealed blob raises, not silently no-ops."""
+    key = Fernet.generate_key()
+    partner = _location(tmp_path, "partner-empty")
+
+    with pytest.raises(ReplicationError, match="no sealed replica"):
+        recover_sealed_bag(partner, "bag-001", key, tmp_path / "drill")
+
+
+@pytest.mark.preservation
+def test_seal_bag_rejects_a_malformed_key(tmp_path: Path, source_bag: Bag) -> None:
+    """Sealing with a malformed (non-Fernet) key raises rather than proceeding."""
+    with pytest.raises(ReplicationError, match="invalid mutual-aid seal key"):
+        seal_bag(source_bag.path, b"not-a-real-fernet-key")
+
+
+@pytest.mark.preservation
+def test_unseal_bag_rejects_a_malformed_key(tmp_path: Path, source_bag: Bag) -> None:
+    """Unsealing with a malformed (non-Fernet) key raises rather than proceeding."""
+    sealed = seal_bag(source_bag.path, Fernet.generate_key())
+    with pytest.raises(ReplicationError, match="invalid mutual-aid seal key"):
+        unseal_bag(sealed.ciphertext, b"not-a-real-fernet-key", tmp_path / "recovered")
+
+
+@pytest.mark.preservation
+def test_replicate_sealed_bag_quarantines_a_mismatched_write(
+    tmp_path: Path, source_bag: Bag, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A digest recorded at seal time that disagrees with what landed on disk is
+    quarantined rather than trusted (verify-on-arrival, adapted for ciphertext).
+
+    Simulates an on-disk write that diverged from what was sealed (e.g. storage
+    medium corruption) by having ``seal_bag`` report a digest that does not match
+    the ciphertext it actually returns.
+    """
+    from ledger import replicate as replicate_module
+
+    real_seal_bag = replicate_module.seal_bag
+
+    def _lying_seal_bag(bag_dir: Path, key: bytes) -> replicate_module.SealedBag:
+        sealed = real_seal_bag(bag_dir, key)
+        return replicate_module.SealedBag(
+            bag=sealed.bag, ciphertext=sealed.ciphertext, sealed_sha256="0" * 64
+        )
+
+    monkeypatch.setattr(replicate_module, "seal_bag", _lying_seal_bag)
+
+    partner = _location(tmp_path, "partner-torn")
+    with pytest.raises(ReplicationError) as excinfo:
+        replicate_sealed_bag(
+            source_bag.path, partner, Fernet.generate_key(), agent=_AGENT, now=_NOW
+        )
+
+    event = excinfo.value.args[1]
+    assert event.event_type is PremisEventType.QUARANTINE
+    assert event.outcome == "failure"
+    assert (Path(partner.path) / "quarantine" / f"{source_bag.name}.sealed").exists()
+    assert not (Path(partner.path) / f"{source_bag.name}.sealed").exists()
+
+
+@pytest.mark.preservation
+def test_untar_bag_rejects_path_traversal(tmp_path: Path) -> None:
+    """A crafted archive whose member escapes the destination is rejected.
+
+    Defense in depth: Fernet authentication already rules out a tampered blob
+    reaching this point in the real seal/unseal flow, but the guard holds
+    regardless of how the bytes arrived here.
+    """
+    import io
+    import tarfile
+
+    from ledger.replicate import _untar_bag
+
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w") as tar:
+        info = tarfile.TarInfo(name="../escape/evil.txt")
+        payload = b"nope"
+        info.size = len(payload)
+        tar.addfile(info, io.BytesIO(payload))
+
+    with pytest.raises(ReplicationError, match="escape"):
+        _untar_bag(buffer.getvalue(), tmp_path / "dest")
+
+
+@pytest.mark.preservation
+def test_untar_bag_rejects_more_than_one_bag_directory(tmp_path: Path) -> None:
+    """A crafted archive with two top-level directories is rejected as ambiguous."""
+    import io
+    import tarfile
+
+    from ledger.replicate import _untar_bag
+
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w") as tar:
+        for name in ("bag-a/data/x.txt", "bag-b/data/y.txt"):
+            info = tarfile.TarInfo(name=name)
+            payload = b"hi"
+            info.size = len(payload)
+            tar.addfile(info, io.BytesIO(payload))
+
+    with pytest.raises(ReplicationError, match="exactly one bag directory"):
+        _untar_bag(buffer.getvalue(), tmp_path / "dest")

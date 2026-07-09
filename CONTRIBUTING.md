@@ -52,7 +52,7 @@ no-outing audit). A pull request that violates it will be closed and, if needed,
 
 ## Getting set up
 
-ledger targets Python 3.11+ and a single runtime dependency. One command installs everything:
+ledger targets Python 3.12+ and a single runtime dependency. One command installs everything:
 
 ```sh
 make install

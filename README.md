@@ -177,7 +177,7 @@ leaked, rather than asserted.
 conventional commits, SPDX headers. **Interoperability** — bags and sidecar metadata are readable by
 other preservation tools; the JSON API is documented. **Interchangeability** — storage backends swap
 behind the CAS interface without touching records. **Compatibility** — runs on Linux/macOS, Python
-3.11+, and commodity storage. **Composability** and **inspectability** — bags, manifests, and metadata
+3.12+, and commodity storage. **Composability** and **inspectability** — bags, manifests, and metadata
 are plain files a person can open and verify. **Portability** and **distributability** — a community can export the
 whole archive, hand a peer a self-contained set of bags, and host it elsewhere; nothing is trapped in
 a proprietary format and replicas are distributable by design.
@@ -301,7 +301,7 @@ pre-1.0, **no release has shipped yet** (no tag, no signed build, no SBOM — tr
 
 | Standard | Applies | This repo's posture |
 |---|---|---|
-| Code Quality | Applies | `ruff` (incl. `C901` complexity, max 10) + `mypy --strict`; branch coverage floor 85% (measured 86%); src layout; CODEOWNERS. **Gap:** no `uv.lock`/PEP 735 groups yet, Python floor still `>=3.11` — [`docs/ROADMAP.md`](docs/ROADMAP.md) |
+| Code Quality | Applies | `ruff` (incl. `C901` complexity, max 10) + `mypy --strict`; branch coverage floor 85% (measured 86%); src layout; CODEOWNERS; Python floor `>=3.12`. **Gap:** no `uv.lock`/PEP 735 groups yet — [`docs/ROADMAP.md`](docs/ROADMAP.md) |
 | Security & Supply Chain | Applies — **ASVS L2** (touches PII/identity) | pip-audit + gitleaks + CodeQL all blocking in CI and in `make verify`, zero muted gates; SHA-pinned Actions with Renovate digest-pinning. **Gap:** no lockfile, container scan, Semgrep, TruffleHog, Harden-Runner, or SBOM/signing yet — [`docs/ROADMAP.md`](docs/ROADMAP.md) |
 | CI/CD | Applies | Single `ci.yml`, least-privilege tokens, SHA-pinned actions, `make verify` now reproduces CI's full required-check set (lint, type, test, i18n, accessibility, audit, secret-scan). **Gap:** no committed branch-protection/ruleset artifact (server-side settings are unverifiable from the repo alone) — ⛔ see `docs/ROADMAP.md`, requires the repo owner |
 | Release & Versioning | Applies — **mandatory** (published-library repo) | SemVer intent stated; Keep-a-Changelog `CHANGELOG.md`. **Gap — the repo's largest:** no tag-triggered release workflow, no PyPI Trusted Publishing, no SBOM/cosign/SLSA provenance; the CHANGELOG's `[0.1.0] — 2026-06-16` section describes prepared, not shipped, work (no git tag exists) — [`docs/ROADMAP.md`](docs/ROADMAP.md) |
