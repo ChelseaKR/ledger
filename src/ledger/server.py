@@ -47,6 +47,7 @@ import http.server
 import json
 import os
 import tempfile
+import threading
 import time
 from email import policy as email_policy
 from email.parser import BytesParser
@@ -101,6 +102,15 @@ _STATIC_ROOT: Path = (_WEB_ROOT / "static").resolve()
 # subject only as a *lookup key* into a pre-provisioned grants file; an unsigned or
 # forged header confers nothing (deny by default, least privilege).
 _GRANT_HEADER: str = "X-Ledger-Grant"
+
+# Serializes the grant-use audit log's read-modify-write. `log_grant_use` reads the
+# whole PREMIS log and writes it back; under the threaded server two concurrent
+# privileged requests could interleave and *lose* an audit line (the on-disk write
+# is atomic, which prevents corruption but not lost updates). A process-wide lock
+# is correct here — the log is per-archive but appends are quick, and a lock is a
+# synchronization primitive, not a per-archive dependency, so it does not violate
+# the attach-dependencies-to-the-server doctrine below.
+_GRANT_LOG_LOCK = threading.Lock()
 
 # A conservative allowlist of static file suffixes to content types. Anything not
 # listed is served as ``application/octet-stream`` rather than guessed, so the
@@ -205,7 +215,9 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         * a forged, malformed, or expired token (:func:`verify_grant_token` returns
           ``None``) -> anonymous;
         * a subject on the revocation list -> anonymous, even with a still-valid MAC
-          (immediate retraction without rotating the secret);
+          (immediate retraction without rotating the secret) — and a revocation list
+          that exists but cannot be read counts as revoking *everyone*, because
+          silently un-revoking on a corrupt file would be a fail-open (fail closed);
         * a subject with no pre-provisioned grant -> anonymous (a valid token authors
           nothing by itself; the grant is what a steward provisioned ahead of time).
 
@@ -230,13 +242,16 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         subject = verify_grant_token(token, self._grant_secret(), now=now_iso())
         if subject is None:
             return anonymous()
-        if subject in self._revocations():
+        revocations = self._revocations()
+        if revocations is None or subject in revocations:
             return anonymous()
         grant = self._grants().get(subject)
         if grant is None:
             return anonymous()
-        # A grant-use audit write must never fail the read it is recording.
-        with contextlib.suppress(OSError, LedgerError):  # pragma: no cover - defensive
+        # A grant-use audit write must never fail the read it is recording; the lock
+        # serializes the log's read-modify-write so concurrent privileged requests
+        # on the threaded server never interleave and lose an audit line.
+        with contextlib.suppress(OSError, LedgerError), _GRANT_LOG_LOCK:
             self._archive().log_grant_use(subject, self._route_class())
         return grant
 
@@ -277,10 +292,25 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         deployment forgot to configure one (deny by default, fail closed)."""
         return os.environ.get("LEDGER_GRANT_SECRET", "").encode("utf-8")
 
-    def _revocations(self) -> set[str]:
-        """The set of revoked grant subjects bound to the server (empty when none)."""
-        revocations = getattr(self.server, "revocations", None)
-        return revocations if isinstance(revocations, set) else set()
+    def _revocations(self) -> set[str] | None:
+        """The current revoked-subject set, re-read from disk on every call.
+
+        Re-reading (rather than caching a set at startup) is what makes
+        ``ledger grant revoke`` an *immediate* retraction: the very next
+        authenticated request consults the updated file, with no server restart.
+        The file is tiny and only authenticated requests reach this point, so the
+        re-read costs one small file open on exactly the requests that must be
+        checked. A missing file is the empty set (nothing revoked); a file that
+        exists but cannot be read or parsed returns ``None`` so the caller fails
+        *closed* (anonymous) instead of silently un-revoking every subject.
+        """
+        path = getattr(self.server, "revocations_path", None)
+        if not isinstance(path, Path):
+            return set()
+        try:
+            return load_revocations(path)
+        except (OSError, ValueError):  # unreadable/malformed list -> deny, never trust
+            return None
 
     def _allow_contributions(self) -> bool:
         """Whether the contributor submission surface is enabled on this server.
@@ -2357,11 +2387,13 @@ def make_server(
     ``grants_path`` (an absent file yields no grants, so everyone is anonymous —
     deny by default) and attached to the server, where the handler reads it.
 
-    The revocation list is loaded from ``revocations_path`` when given, else from a
-    ``revocations.json`` sitting beside the grants file, so a steward who revokes a
-    subject with the CLI and restarts the server has that retraction take effect
-    (an absent file yields an empty set — nothing revoked). It too is attached to
-    the server for the handler to read.
+    The revocation list lives at ``revocations_path`` when given, else at a
+    ``revocations.json`` sitting beside the grants file. Its *path* — not a
+    snapshot of its contents — is attached to the server, and the handler re-reads
+    it on each authenticated request, so ``ledger grant revoke`` takes effect
+    immediately with no restart (an absent file yields an empty set — nothing
+    revoked). It is still read once here so a malformed file fails the server at
+    startup rather than surfacing later as silent denials (fail fast).
 
     Dependencies are attached to the server instance rather than to module
     globals, so several archives can be served from one process without
@@ -2370,7 +2402,8 @@ def make_server(
     grants = load_grants(grants_path) if grants_path is not None else {}
     if revocations_path is None and grants_path is not None:
         revocations_path = grants_path.parent / "revocations.json"
-    revocations = load_revocations(revocations_path) if revocations_path is not None else set()
+    if revocations_path is not None:
+        load_revocations(revocations_path)  # fail fast on an unreadable/malformed list
     # Threaded so the per-request response-time floor (which equalizes the timing of
     # a not-found vs a not-authorized record) never serializes other requests
     # (availability, responsiveness) — and so the site serves several readers at once.
@@ -2378,7 +2411,7 @@ def make_server(
     # Attach the dependencies the handler reads per request.
     httpd.archive = archive  # type: ignore[attr-defined]
     httpd.grants = grants  # type: ignore[attr-defined]
-    httpd.revocations = revocations  # type: ignore[attr-defined]
+    httpd.revocations_path = revocations_path  # type: ignore[attr-defined]
     httpd.allow_contributions = allow_contributions  # type: ignore[attr-defined]
     return httpd
 

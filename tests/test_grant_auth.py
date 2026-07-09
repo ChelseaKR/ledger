@@ -198,9 +198,95 @@ def test_revoked_subject_is_anonymous(tmp_path: Path, monkeypatch: pytest.Monkey
     with _running(httpd) as base:
         # Revoked: the valid MAC is ignored.
         assert _authenticated(base, rid, token) is False
-        # Un-revoke (as `grant revoke`'s inverse would) and the same token works again.
-        httpd.revocations = set()  # type: ignore[attr-defined]
+        # Un-revoke on disk (as `grant unrevoke` would) — the same token works
+        # again on the very next request, with no server restart.
+        revocations_path.write_text(json.dumps([]), encoding="utf-8")
         assert _authenticated(base, rid, token) is True
+
+
+def test_revocation_takes_effect_without_restart(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`ledger grant revoke` while the server is running retracts on the next request.
+
+    Revocation is the emergency brake for a leaked or compelled token; it is only
+    an *immediate* retraction if the server consults the file per request rather
+    than caching a set at startup — this is the regression test for exactly that.
+    """
+    monkeypatch.setenv("LEDGER_GRANT_SECRET", _SECRET.decode())
+    archive, rid = _build_archive(tmp_path)
+    grants_path = _write_grants(tmp_path)
+    # No revocations file exists yet — the default beside the grants file is used.
+    httpd = make_server(archive, host="127.0.0.1", port=0, grants_path=grants_path)
+    token = issue_grant_token(_SUBJECT, _SECRET, expires_at=_FUTURE)
+    with _running(httpd) as base:
+        assert _authenticated(base, rid, token) is True
+        # Revoke while the server is live (what `grant revoke --revocations` writes).
+        (tmp_path / "revocations.json").write_text(json.dumps([_SUBJECT]), encoding="utf-8")
+        assert _authenticated(base, rid, token) is False
+
+
+def test_unreadable_revocation_list_fails_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A revocation list that turns to garbage revokes everyone, not no one.
+
+    If the file exists but cannot be parsed, the safe reading is "cannot determine
+    who is revoked" — so every token collapses to anonymous (fail closed), rather
+    than silently un-revoking every subject (fail open).
+    """
+    monkeypatch.setenv("LEDGER_GRANT_SECRET", _SECRET.decode())
+    archive, rid = _build_archive(tmp_path)
+    grants_path = _write_grants(tmp_path)
+    revocations_path = tmp_path / "revocations.json"
+    revocations_path.write_text("[]", encoding="utf-8")
+    httpd = make_server(
+        archive,
+        host="127.0.0.1",
+        port=0,
+        grants_path=grants_path,
+        revocations_path=revocations_path,
+    )
+    token = issue_grant_token(_SUBJECT, _SECRET, expires_at=_FUTURE)
+    with _running(httpd) as base:
+        assert _authenticated(base, rid, token) is True
+        revocations_path.write_text("{ not json", encoding="utf-8")
+        assert _authenticated(base, rid, token) is False
+
+
+def test_concurrent_grant_uses_all_audited(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """N concurrent authenticated requests leave exactly N grant-use audit lines.
+
+    The grant-use log is a read-modify-write of one JSON file; without
+    serialization the threaded server could interleave two appends and lose an
+    audit line. Lost audit lines are unaccounted privileged access — the exact
+    thing the log exists to prevent.
+    """
+    monkeypatch.setenv("LEDGER_GRANT_SECRET", _SECRET.decode())
+    archive, rid = _build_archive(tmp_path)
+    httpd = make_server(archive, host="127.0.0.1", port=0, grants_path=_write_grants(tmp_path))
+    token = issue_grant_token(_SUBJECT, _SECRET, expires_at=_FUTURE)
+    request_count = 8
+    errors: list[BaseException] = []
+
+    def _hit(base: str) -> None:
+        try:
+            assert _authenticated(base, rid, token) is True
+        except BaseException as exc:  # surfaced to the main thread below
+            errors.append(exc)
+
+    with _running(httpd) as base:
+        threads = [
+            threading.Thread(target=_hit, args=(base,), daemon=True) for _ in range(request_count)
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=30)
+    assert not errors
+    log_path = archive.logs_dir / "grant-uses.premis.json"
+    events = json.loads(log_path.read_text(encoding="utf-8"))
+    assert len(events) == request_count
 
 
 def test_no_secret_configured_rejects_every_token(
