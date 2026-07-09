@@ -24,10 +24,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Compatibility: the full supported interpreter range runs on pushes to main
-        # and on manual dispatch; pull requests exercise only the canonical version to
-        # save Actions minutes, since the merge to main re-runs the full matrix.
-        python: ${{ (github.event_name == 'pull_request') && fromJSON('["3.12"]') || fromJSON('["3.11", "3.12"]') }}
+        # Compatibility: 3.12 is the floor (CODE-QUALITY-STANDARD CQ-01) and, for
+        # now, the ceiling too, so the matrix is a single interpreter.
+        python: ["3.12"]
     steps:
       # Harden-Runner (SEC-04): observe/audit egress before anything else runs.
       # Recording in audit mode first (per the standard's rollout guidance) so the
@@ -61,7 +60,6 @@ jobs:
       - name: Per-module coverage floor (access/consent/dual-control >=95%)
         run: coverage report --include="src/ledger/access/*,src/ledger/consent.py,src/ledger/dualcontrol.py" --fail-under=95
       - name: Upload coverage
-        if: matrix.python == '3.12'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: coverage
