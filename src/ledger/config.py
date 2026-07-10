@@ -30,6 +30,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from ledger.errors import ConfigError
+from ledger.lockdown import LockdownConfig
 from ledger.models import AccessPolicy
 
 # Current on-disk schema version. Bumped whenever the serialized shape changes; the
@@ -155,6 +156,11 @@ class Config:
     # default) is single-steward — no change to existing behaviour; a community sets
     # 2+ to require co-approval, so no one steward can act alone (user research D1).
     dual_control_threshold: int = 1
+    # Duress posture (EXP-02). Optional: when absent, lockdown falls back to a safe
+    # default that stops disclosure but NEVER shreds the vault (shredding is opt-in
+    # and requires configured off-box replicas). A steward sets this to arm the
+    # one-command lockdown for their threat model (safety: default to narrowest).
+    lockdown: LockdownConfig | None = None
     schema_version: int = CONFIG_SCHEMA_VERSION
 
     def validate(self) -> None:
@@ -189,14 +195,38 @@ class Config:
             raise ConfigError(f"unknown default_policy: {self.default_policy!r}")
         if self.dual_control_threshold < 1:
             raise ConfigError("dual_control_threshold must be at least 1")
-        # A blank or whitespace-only condition would be un-attestable and could shadow
-        # a real one; reject it at load so the vocabulary stays a clean, name-checkable
-        # set (correctness — same care the rest of the config takes with its lists).
+        self._validate_conditions()
+        self._validate_lockdown()
+        for location in self.locations:
+            location.validate()
+
+    def _validate_conditions(self) -> None:
+        """Raise :class:`ConfigError` if any SEALED_CONDITIONAL condition is blank.
+
+        A blank or whitespace-only condition would be un-attestable and could shadow
+        a real one; reject it at load so the vocabulary stays a clean, name-checkable
+        set (correctness — same care the rest of the config takes with its lists).
+        """
         for condition in self.conditions:
             if not condition or not condition.strip():
                 raise ConfigError("conditions must not contain an empty entry")
-        for location in self.locations:
-            location.validate()
+
+    def _validate_lockdown(self) -> None:
+        """Raise :class:`ConfigError` if the duress-posture policy is malformed.
+
+        A malformed duress policy (e.g. shred with no replica to verify, or a
+        "replica" that is actually this archive's own location) is refused at
+        load time, not at the dangerous moment it is triggered.
+        """
+        if self.lockdown is None:
+            return
+        self.lockdown.validate(
+            archive_locations=(
+                Path(self.store_root).parent,
+                Path(self.store_root),
+                Path(self.vault_path),
+            )
+        )
 
     def to_dict(self) -> dict[str, object]:
         """Serialize to a JSON-ready mapping with a deterministic field order.
@@ -220,6 +250,9 @@ class Config:
             "consent_response_time": self.consent_response_time,
             "contact": self.contact,
             "dual_control_threshold": self.dual_control_threshold,
+            # Omitted entirely when unset, so an archive that has not armed a duress
+            # posture writes no lockdown block (least surprise, smallest config).
+            **({"lockdown": self.lockdown.to_dict()} if self.lockdown is not None else {}),
         }
 
     def save(self, path: Path) -> None:
@@ -280,6 +313,14 @@ class Config:
             for item in _as_dict_list(migrated.get("locations", []), "locations")
         ]
 
+        raw_lockdown = migrated.get("lockdown")
+        if raw_lockdown is None:
+            lockdown = None
+        elif isinstance(raw_lockdown, dict):
+            lockdown = LockdownConfig.from_dict(raw_lockdown)
+        else:
+            raise ConfigError("lockdown must be a mapping")
+
         config = cls(
             archive_name=str(migrated.get("archive_name", "")),
             store_root=str(migrated.get("store_root", "")),
@@ -295,6 +336,7 @@ class Config:
             consent_response_time=str(migrated.get("consent_response_time", "")),
             contact=str(migrated.get("contact", "")),
             dual_control_threshold=int(str(migrated.get("dual_control_threshold", 1))),
+            lockdown=lockdown,
             schema_version=CONFIG_SCHEMA_VERSION,
         )
         config.validate()
