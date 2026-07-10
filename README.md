@@ -90,7 +90,7 @@ ledger/
 │   ├── server.py                # accessible archive browse/search + JSON API (read-gated)
 │   └── config.py                # storage locations, policies, prompts as versioned files
 ├── web/                         # framework-free WCAG 2.2 AA archive UI (browse + list/table view)
-├── infra/                       # optional self-host deploy (compose/CDK); no hosted dependency
+├── infra/                       # optional self-host deploy (compose/Terraform); no hosted dependency
 ├── tests/
 │   └── fixtures/                # tiny sample records (consented, synthetic) + one per access policy
 └── docs/                        # ARCHITECTURE, THREAT-MODEL, GOVERNANCE, ACCESSIBILITY, ADRs,
@@ -197,7 +197,7 @@ in a file, answer a short disclosure prompt, done; no preservation jargon requir
 **Learnability**, **familiarity**, **intuitiveness** — the contribute flow reads like filling out a
 short form, not configuring a repository. **Understandability** — content warnings and access state are
 shown plainly before a record renders. **Interactivity** and **responsiveness** — browse and search
-respond quickly; large media stream rather than block. **Discoverability** — faceted browse over Dublin
+respond quickly over the read-gated API. **Discoverability** — faceted browse over Dublin
 Core; a clear "how to contribute" path. **Demonstrability** — `make demo` walks a scripted ingest,
 seal, grant, and verified-replica cycle. **Seamlessness** — the same archive reads the same whether
 self-hosted on a laptop or a community server. **Localizability** — all interface strings in per-language
@@ -229,8 +229,9 @@ bump path; versioned metadata schemas with migrations.
 ### Operability, serviceability, sustainability
 **Operability** and **manageability** — a steward's runbook (add a location, run an audit, process a
 takedown); a health and fixity-status endpoint. **Administrability** — config-over-code; governance is
-documented policy, not a hidden admin console. **Observability** — structured logs and metrics on
-ingest, replication, and audits, scrubbed of contributor identity by construction. **Debuggability** —
+documented policy, not a hidden admin console. **Observability** — a scrubbed request log (method + status + query-stripped path only)
+and identity-free PREMIS events for ingest, replication, and audits, scrubbed of
+contributor identity by construction. **Debuggability** —
 a record dumps its bag and event history under a steward flag, still access-checked. **Serviceability /
 supportability** — issue templates and a redaction-safe bug-capture path that never asks for sealed
 content. **Deployability** and **installability** — `pipx install`, a container image, one-command
