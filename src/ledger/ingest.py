@@ -911,6 +911,25 @@ class Archive:
         )
         log.write(log_path)
 
+    def _revoke_identity_if_present(self, record_id: str) -> bool:
+        """Revoke ``record_id``'s sealed identity from the vault, if it has one.
+
+        Returns whether an identity was actually revoked. Best-effort: a missing
+        record or vault failure just means nothing to revoke, not an error — the
+        caller (a destructive removal) must proceed regardless (no-outing rule:
+        removal itself never depends on identity being resolvable)."""
+        try:
+            identity_ref = self.get(record_id).identity_ref
+        except LedgerError:
+            return False
+        if identity_ref is None:
+            return False
+        try:
+            self._open_vault(None).revoke(identity_ref)
+            return True
+        except LedgerError:
+            return False
+
     def remove_all_copies(self, record_id: str, *, now: str | None = None) -> tuple[int, bool]:
         """Physically remove every stored copy of ``record_id`` and revoke its identity.
 
@@ -946,19 +965,7 @@ class Archive:
         ):
             raise LedgerError("invalid record id")
         stamp = now if now is not None else now_iso()
-        identity_ref: str | None = None
-        try:
-            identity_ref = self.get(record_id).identity_ref
-        except LedgerError:
-            identity_ref = None
-
-        revoked = False
-        if identity_ref is not None:
-            try:
-                self._open_vault(None).revoke(identity_ref)
-                revoked = True
-            except LedgerError:
-                revoked = False
+        revoked = self._revoke_identity_if_present(record_id)
 
         removed = 0
         cleared_locations: list[str] = []

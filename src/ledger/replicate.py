@@ -114,7 +114,7 @@ def apply_tombstones(
     agent: str = _TOMBSTONE_AGENT,
     now: str | None = None,
 ) -> list[PremisEvent]:
-    """Apply every pending takedown tombstone to each *reachable* location.
+    """Enforce every takedown tombstone at each *reachable* location.
 
     This is the reattach propagation sweep: a replica that was offline when a record
     was taken down still holds the stale copy, and the tombstone remembers that the
@@ -126,9 +126,10 @@ def apply_tombstones(
 
     Degradability: a location whose directory is absent is treated as unreachable and
     skipped, leaving its tombstones pending — one offline mirror must not be recorded
-    as confirmed. A reachable location that simply never held a tombstoned bag is
-    confirmed without a receipt (there is nothing to remove and nothing to resurrect),
-    which prevents an already-clean location from staying pending forever.
+    as confirmed. Every sweep also re-checks previously confirmed tombstones. This is
+    essential because a restored backup or remounted stale disk can make a deleted
+    bag reappear after its first receipt; confirmation is historical evidence, not
+    permission to stop enforcing deletion.
 
     Integrity/no-outing: a stored id that is not a safe path component is skipped
     rather than deleted (it can never be a real id), and receipts carry only the
@@ -143,7 +144,8 @@ def apply_tombstones(
         if not root.exists():
             # Unreachable/offline: leave every tombstone pending here.
             continue
-        for record_id in store.pending_for(location.name):
+        for tombstone in store.all():
+            record_id = tombstone.record_id
             if not _is_safe_component(record_id):
                 continue
             replica = root / record_id

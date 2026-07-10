@@ -15,6 +15,7 @@ location names and opaque record ids.
 
 from __future__ import annotations
 
+import shutil
 import threading
 import urllib.error
 import urllib.request
@@ -185,6 +186,26 @@ def test_verify_replicas_applies_pending_tombstone(tmp_path: Path) -> None:
     assert all(not s.ok for s in statuses)
     assert not (Path(offline.path) / rid).exists()
     assert not store.pending_for("mirror-c")
+
+
+def test_confirmed_tombstone_deletes_a_copy_that_reappears(tmp_path: Path) -> None:
+    """A restore or stale remount cannot resurrect an already-confirmed takedown."""
+    archive, mirrors = _archive_with_three_mirrors(tmp_path)
+    rid = _ingest_and_replicate(archive, mirrors, tmp_path)
+    stale_source = tmp_path / "stale-copy"
+    shutil.copytree(Path(mirrors[0].path) / rid, stale_source)
+    archive.remove_all_copies(rid, now=_NOW)
+    store = TombstoneStore(archive.logs_dir)
+    assert not store.pending_for("mirror-a")
+
+    # A backup restore recreates bytes after the location already confirmed removal.
+    resurrected = Path(mirrors[0].path) / rid
+    shutil.copytree(stale_source, resurrected)
+    assert resurrected.exists()
+
+    statuses = verify_replicas(rid, mirrors, tombstones=store, agent=_AGENT, now=_LATER)
+    assert not resurrected.exists()
+    assert all(not status.ok for status in statuses)
 
 
 # --- integration: /consent-status never overstates completion ----------------
