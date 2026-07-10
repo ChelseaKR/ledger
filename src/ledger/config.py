@@ -195,25 +195,38 @@ class Config:
             raise ConfigError(f"unknown default_policy: {self.default_policy!r}")
         if self.dual_control_threshold < 1:
             raise ConfigError("dual_control_threshold must be at least 1")
-        # A blank or whitespace-only condition would be un-attestable and could shadow
-        # a real one; reject it at load so the vocabulary stays a clean, name-checkable
-        # set (correctness — same care the rest of the config takes with its lists).
+        self._validate_conditions()
+        self._validate_lockdown()
+        for location in self.locations:
+            location.validate()
+
+    def _validate_conditions(self) -> None:
+        """Raise :class:`ConfigError` if any SEALED_CONDITIONAL condition is blank.
+
+        A blank or whitespace-only condition would be un-attestable and could shadow
+        a real one; reject it at load so the vocabulary stays a clean, name-checkable
+        set (correctness — same care the rest of the config takes with its lists).
+        """
         for condition in self.conditions:
             if not condition or not condition.strip():
                 raise ConfigError("conditions must not contain an empty entry")
-        if self.lockdown is not None:
-            # A malformed duress policy (e.g. shred with no replica to verify, or a
-            # "replica" that is actually this archive's own location) is refused at
-            # load time, not at the dangerous moment it is triggered.
-            self.lockdown.validate(
-                archive_locations=(
-                    Path(self.store_root).parent,
-                    Path(self.store_root),
-                    Path(self.vault_path),
-                )
+
+    def _validate_lockdown(self) -> None:
+        """Raise :class:`ConfigError` if the duress-posture policy is malformed.
+
+        A malformed duress policy (e.g. shred with no replica to verify, or a
+        "replica" that is actually this archive's own location) is refused at
+        load time, not at the dangerous moment it is triggered.
+        """
+        if self.lockdown is None:
+            return
+        self.lockdown.validate(
+            archive_locations=(
+                Path(self.store_root).parent,
+                Path(self.store_root),
+                Path(self.vault_path),
             )
-        for location in self.locations:
-            location.validate()
+        )
 
     def to_dict(self) -> dict[str, object]:
         """Serialize to a JSON-ready mapping with a deterministic field order.
