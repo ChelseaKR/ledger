@@ -42,7 +42,7 @@ jobs:
     name: verify (lint · type · test)
     runs-on: ubuntu-latest
     steps:
-      - uses: step-security/harden-runner@5c7944e73c4c2a096b17a9cb74d65b6c2bbafbde  # v2.9.1
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
         with:
           egress-policy: audit
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
@@ -78,7 +78,7 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
-      - uses: step-security/harden-runner@5c7944e73c4c2a096b17a9cb74d65b6c2bbafbde  # v2.9.1
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
         with:
           egress-policy: audit
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
@@ -100,8 +100,11 @@ jobs:
         id: version
         run: |
           set -euo pipefail
-          PKG_VERSION="$(python -c 'import importlib.metadata as m; print(m.version("ledger-archive"))' 2>/dev/null || \
-            python -c 'import tomllib,sys; print(tomllib.load(open("pyproject.toml","rb"))["project"]["version"])')"
+          # This job only installs the `build` frontend, not the package itself, so
+          # the version comes straight from pyproject.toml (the single source of
+          # version truth, per RELEASE-AND-VERSIONING-STANDARD §2) rather than
+          # `importlib.metadata`, which has nothing installed to introspect here.
+          PKG_VERSION="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml","rb"))["project"]["version"])')"
           TAG_VERSION="${GITHUB_REF_NAME#v}"
           echo "package version: $PKG_VERSION"
           echo "tag version:     $TAG_VERSION"
@@ -125,7 +128,7 @@ jobs:
       id-token: write        # actions/attest-sbom mints a Sigstore-backed attestation
       attestations: write     # actions/attest-sbom writes the SBOM attestation record
     steps:
-      - uses: step-security/harden-runner@5c7944e73c4c2a096b17a9cb74d65b6c2bbafbde  # v2.9.1
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
         with:
           egress-policy: audit
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
@@ -176,7 +179,7 @@ jobs:
       id-token: write         # exchanged for a Sigstore signing identity (OIDC, keyless)
       attestations: write     # actions/attest-build-provenance writes the SLSA provenance record
     steps:
-      - uses: step-security/harden-runner@5c7944e73c4c2a096b17a9cb74d65b6c2bbafbde  # v2.9.1
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
         with:
           egress-policy: audit
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
@@ -200,7 +203,7 @@ jobs:
       contents: read
       id-token: write   # cosign's keyless signing exchanges this OIDC token for a short-lived Fulcio cert
     steps:
-      - uses: step-security/harden-runner@5c7944e73c4c2a096b17a9cb74d65b6c2bbafbde  # v2.9.1
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
         with:
           egress-policy: audit
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
@@ -249,7 +252,7 @@ jobs:
     permissions:
       id-token: write   # OIDC token exchanged for a short-lived PyPI API token — no stored secret, REL-13
     steps:
-      - uses: step-security/harden-runner@5c7944e73c4c2a096b17a9cb74d65b6c2bbafbde  # v2.9.1
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
         with:
           egress-policy: audit
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
@@ -268,7 +271,7 @@ jobs:
     permissions:
       contents: write   # softprops/action-gh-release creates the GitHub Release + uploads assets
     steps:
-      - uses: step-security/harden-runner@5c7944e73c4c2a096b17a9cb74d65b6c2bbafbde  # v2.9.1
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
         with:
           egress-policy: audit
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
