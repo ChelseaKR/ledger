@@ -35,14 +35,11 @@ import secrets
 import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import Protocol
 
 from ledger.errors import ConfigError, LedgerError
 from ledger.metadata.premis import PremisLog
 from ledger.models import PremisEvent, PremisEventType
-
-if TYPE_CHECKING:  # pragma: no cover - typing only, avoids an import cycle
-    from ledger.ingest import Archive
 
 __all__ = [
     "BackupVerification",
@@ -66,6 +63,31 @@ _CONFIG_FILENAME = "config.json"
 # Overwrite the vault in fixed-size chunks so shredding a large vault never pulls it
 # all into memory (efficiency, minimal computing).
 _SHRED_CHUNK = 65536
+
+
+class ArchiveLike(Protocol):
+    """The slice of :class:`ledger.ingest.Archive` this module needs.
+
+    A structural (``Protocol``) type instead of importing ``Archive`` directly:
+    ``ledger.config`` imports this module for ``LockdownConfig``, and
+    ``ledger.ingest`` imports ``ledger.config`` for ``Config``, so a real import of
+    ``Archive`` here — even TYPE_CHECKING-guarded — completes a
+    config -> lockdown -> ingest -> config cycle. Duck-typing the handful of
+    attributes actually used breaks the cycle without weakening the type hints
+    (``execute_lockdown``/``verify_backup_location`` still import the concrete
+    ``Archive`` locally, function-scoped, where a real instance is constructed).
+    ``config`` is a read-only property typed ``object``: every read of it here goes
+    through ``getattr(archive.config, "lockdown", None)``, never a direct attribute
+    access, so it never needs ``Config``'s own type — and a property (unlike a plain
+    attribute) is covariant, so ``Archive.config: Config`` still satisfies it.
+    """
+
+    logs_dir: Path
+    store_root: Path
+    vault_path: Path
+
+    @property
+    def config(self) -> object: ...
 
 
 @dataclass(frozen=True)
@@ -261,12 +283,12 @@ class LockdownResult:
         return f"{self.action} executed — " + "; ".join(bits)
 
 
-def lockdown_flag_path(archive: Archive) -> Path:
+def lockdown_flag_path(archive: ArchiveLike) -> Path:
     """Where the lockdown marker lives for ``archive`` (its ``logs/`` state dir)."""
     return archive.logs_dir / _FLAG_FILENAME
 
 
-def is_locked_down(archive: Archive) -> bool:
+def is_locked_down(archive: ArchiveLike) -> bool:
     """Whether ``archive`` is currently in lockdown (the marker is present).
 
     Cheap and side-effect-free so the server can call it on every request; a missing
@@ -276,7 +298,7 @@ def is_locked_down(archive: Archive) -> bool:
     return lockdown_flag_path(archive).exists()
 
 
-def _lockdown_config(archive: Archive) -> LockdownConfig:
+def _lockdown_config(archive: ArchiveLike) -> LockdownConfig:
     """The archive's configured lockdown policy, or the safe (no-shred) default."""
     configured = getattr(archive.config, "lockdown", None)
     if isinstance(configured, LockdownConfig):
@@ -288,7 +310,7 @@ def _lockdown_config(archive: Archive) -> LockdownConfig:
 
 
 def _record_event(
-    archive: Archive,
+    archive: ArchiveLike,
     *,
     event_type: PremisEventType,
     actor: str,
@@ -350,7 +372,7 @@ def _shred_file(path: Path) -> None:
     path.unlink()
 
 
-def plan_lockdown(archive: Archive) -> list[str]:
+def plan_lockdown(archive: ArchiveLike) -> list[str]:
     """The human-readable steps a lockdown *would* perform (dry-run, no side effects).
 
     Reads the archive's lockdown policy and reports, in order, what stopping
@@ -388,7 +410,7 @@ def plan_lockdown(archive: Archive) -> list[str]:
     return steps
 
 
-def _recovery_runbook(archive: Archive, config: LockdownConfig, *, vault_shredded: bool) -> str:
+def _recovery_runbook(archive: ArchiveLike, config: LockdownConfig, *, vault_shredded: bool) -> str:
     """The plain-language stand-up guidance printed after an executed lockdown."""
     lines = [
         "RECOVERY RUNBOOK — to stand this archive back up once it is safe:",
@@ -406,7 +428,7 @@ def _recovery_runbook(archive: Archive, config: LockdownConfig, *, vault_shredde
     return "\n".join(lines)
 
 
-def execute_lockdown(archive: Archive, *, actor: str, now: str) -> LockdownResult:
+def execute_lockdown(archive: ArchiveLike, *, actor: str, now: str) -> LockdownResult:
     """Execute the duress posture: stop disclosure, then conditionally shred the vault.
 
     Order is deliberate and fail-safe. The disclosure freeze is applied *first* (write
@@ -493,7 +515,7 @@ def execute_lockdown(archive: Archive, *, actor: str, now: str) -> LockdownResul
     )
 
 
-def execute_stand_up(archive: Archive, *, actor: str, now: str) -> LockdownResult:
+def execute_stand_up(archive: ArchiveLike, *, actor: str, now: str) -> LockdownResult:
     """Lift the duress posture: restore the vault from a verified replica, drop the flag.
 
     The exact inverse of :func:`execute_lockdown`. If the local vault was shredded, it
