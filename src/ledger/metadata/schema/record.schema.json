@@ -141,7 +141,39 @@
         },
         "media_type": { "type": "string" },
         "size_bytes": { "type": "integer", "minimum": 0 },
-        "policy": { "$ref": "#/$defs/accessPolicy" }
+        "policy": { "$ref": "#/$defs/accessPolicy" },
+        "transcript": {
+          "type": "string",
+          "description": "A flat, plain-text caption/transcript for an audio or video payload (accessibility, WCAG 1.2). Disclosed under this payload's own `policy`, never a policy of its own."
+        },
+        "cues": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/transcriptCue" },
+          "description": "RM6: the same transcript with real segment/timing structure, when it was ingested from a WebVTT or SRT caption file rather than typed as a single block of plain text. Empty when only the flat `transcript` was supplied. Disclosed under this payload's own `policy` — there is deliberately no per-cue policy (see the TranscriptCue docstring in ledger.models for the open per-cue-consent-granularity question)."
+        }
+      }
+    },
+    "transcriptCue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start", "end", "text"],
+      "description": "One timed segment of a caption/transcript track (a WebVTT cue or SRT block).",
+      "properties": {
+        "start": {
+          "type": "string",
+          "pattern": "^[0-9]{2,}:[0-5][0-9]:[0-5][0-9]\\.[0-9]{3}$",
+          "description": "Normalized `HH:MM:SS.mmm` start time (WebVTT's own timestamp grammar), regardless of whether the cue was parsed from WebVTT or SRT."
+        },
+        "end": {
+          "type": "string",
+          "pattern": "^[0-9]{2,}:[0-5][0-9]:[0-5][0-9]\\.[0-9]{3}$",
+          "description": "Normalized `HH:MM:SS.mmm` end time; always later than `start`."
+        },
+        "text": { "type": "string", "description": "The cue's spoken/captioned text." },
+        "speaker": {
+          "type": ["string", "null"],
+          "description": "A speaker label from a WebVTT voice span (`<v Speaker Name>`), or null. SRT has no standardized speaker syntax, so an SRT-derived cue is always null here rather than a guessed value."
+        }
       }
     }
   }

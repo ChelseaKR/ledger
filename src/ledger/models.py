@@ -307,6 +307,43 @@ class Field:
     unseal_condition: str | None = None
 
 
+@dataclass(frozen=True)
+class TranscriptCue:
+    """One timed segment of a caption/transcript track (a WebVTT cue or SRT block).
+
+    RM6: captions/transcripts as a first-class *ingest* step for an already
+    -transcribed WebVTT or SRT file a contributor or steward uploads — ledger does
+    no speech-to-text of its own. A cue is the atomic unit both formats share: a
+    start instant, an end instant, and the text spoken in that span.
+
+    ``start``/``end`` are normalized to WebVTT's own timestamp grammar,
+    ``[hh:]mm:ss.mmm`` (zero-padded, dot-separated milliseconds — see
+    :mod:`ledger.captions`), whether the cue was parsed from a WebVTT file (which
+    uses this form natively) or an SRT file (whose ``,`` millisecond separator is
+    converted at parse time). One shape regardless of source format, so a reader
+    or an export never has to branch on which file ingested the cue.
+
+    ``speaker`` carries a voice label when the source format actually names one:
+    WebVTT's ``<v Speaker Name>`` voice span. SRT has no standardized speaker
+    syntax, so an SRT-derived cue always carries ``speaker=None`` rather than a
+    guessed value (honesty over a fabricated convention).
+
+    Immutable, like every other model here. A cue's disclosure is NOT decided
+    per-cue: it travels with, and is gated by, the single policy on the
+    :class:`PayloadFile` that carries it (the same rule that already governs the
+    flat ``transcript`` field). Whether a future version should support a finer,
+    per-cue disclosure policy — mirroring the per-segment ``Field`` policy the
+    oral-history session kit (EXP-09, unmerged) uses for a facilitator's
+    hand-marked session segments — is an open product/consent-design question this
+    module deliberately does not answer; see the RM6 implementation notes.
+    """
+
+    start: str
+    end: str
+    text: str
+    speaker: str | None = None
+
+
 @dataclass
 class PayloadFile:
     """A file inside the bag, addressed by content, carrying its own policy.
@@ -316,6 +353,18 @@ class PayloadFile:
     or silent connection (user research H3). It is plain descriptive text — never a
     warning conveyed only in audio — and is disclosed under the same policy as the
     payload it describes.
+
+    ``cues`` is the RM6 extension: the same transcript, additionally carrying real
+    segment/timing structure when it was ingested from a WebVTT or SRT caption
+    file (:mod:`ledger.captions`) rather than typed as a single block of plain
+    text. It is empty whenever no structured captions were supplied — ``transcript``
+    alone remains fully supported and is what every existing reader/exporter keeps
+    using. When both are present, ``transcript`` is the flattened text of ``cues``
+    (their text joined in order), kept in sync at ingest so a plain-text consumer
+    (search indexing, the flat transcript render, an export) never has to know
+    ``cues`` exists. ``cues`` is disclosed under the *same* payload policy as
+    everything else here — see :class:`TranscriptCue` for why no finer-grained,
+    per-cue policy is implemented yet.
     """
 
     filename: str
@@ -324,6 +373,7 @@ class PayloadFile:
     size_bytes: int = 0
     policy: AccessPolicy = AccessPolicy.SEALED_UNTIL
     transcript: str = ""
+    cues: tuple[TranscriptCue, ...] = ()
 
 
 @dataclass

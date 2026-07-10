@@ -18,7 +18,7 @@ from urllib.parse import parse_qsl, quote, urlencode, urlsplit
 
 from ledger import i18n, pagination, search
 from ledger.metadata.pid import is_pid
-from ledger.models import AccessPolicy, DisclosedRecord, Grant, PayloadFile, Record
+from ledger.models import AccessPolicy, DisclosedRecord, Grant, PayloadFile, Record, TranscriptCue
 
 # The site's one stylesheet, linked from every page.
 _STYLESHEET_HREF: str = "/static/app.css"
@@ -576,19 +576,48 @@ def _browse_main_html(
     )
 
 
+def _cue_li(cue: TranscriptCue) -> str:
+    """One timed transcript segment (RM6): its time range, speaker if known, and text.
+
+    The time range and speaker name are data, not translatable prose (like the
+    existing, already English-only ``bytes`` unit beside a payload's size), so
+    this needs no new i18n catalog entry."""
+    time_range = f"{_esc(cue.start)}-{_esc(cue.end)}"  # e.g. 00:00:01.000-00:00:04.000
+    speaker = f" <strong>{_esc(cue.speaker)}:</strong>" if cue.speaker else ""
+    return f'          <li><span class="muted">{time_range}</span>{speaker} {_esc(cue.text)}</li>'
+
+
 def _payload_li(rid: str, p: PayloadFile, *, lang: str = "en") -> str:
     """One payload list item: the download link plus its transcript, if any.
 
     A transcript/caption is surfaced in a ``<details>`` so audio or video content is
     available to a Deaf or hard-of-hearing reader and to anyone on a silent or slow
     connection (user research H3). An audio/video payload with *no* transcript is
-    marked as such, so a missing transcript is visible rather than silent."""
+    marked as such, so a missing transcript is visible rather than silent.
+
+    RM6: when the transcript was ingested from a WebVTT or SRT caption file
+    (:mod:`ledger.captions`), ``p.cues`` carries its real segment/timing structure
+    and is rendered as an ordered list of timed segments (time range, speaker where
+    the source format named one, then the segment's text) instead of one flat
+    paragraph — the structure a Deaf or hard-of-hearing reader following along with
+    the media benefits from, not just the words. A transcript with no structured
+    cues (the plain ``--transcript`` path, unchanged) still renders as a single
+    paragraph exactly as before.
+    """
     base = (
         f'      <li><a href="/record/{quote(rid)}/file/{quote(p.filename)}">'
         f"{_esc(p.filename)}</a> "
         f'<span class="muted">({_esc(p.media_type)}, {p.size_bytes} bytes)</span>'
     )
-    if p.transcript:
+    if p.cues:
+        segments = "\n".join(_cue_li(cue) for cue in p.cues)
+        base += (
+            '\n        <details class="transcript">\n'
+            f"          <summary>{_esc(i18n.t(lang, 'payload_transcript'))}</summary>\n"
+            f'          <ol class="transcript-cues">\n{segments}\n          </ol>\n'
+            "        </details>"
+        )
+    elif p.transcript:
         base += (
             '\n        <details class="transcript">\n'
             f"          <summary>{_esc(i18n.t(lang, 'payload_transcript'))}</summary>\n"
