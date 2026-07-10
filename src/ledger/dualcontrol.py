@@ -28,6 +28,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
+from ledger._filelock import file_lock
 from ledger.errors import LedgerError
 
 __all__ = ["ACTIONS", "ActionProposal", "ProposalStore"]
@@ -134,10 +135,17 @@ class ProposalStore:
         return None
 
     def add(self, proposal: ActionProposal) -> ActionProposal:
-        """Persist a new proposal (append-only) and return it."""
-        items = self._read()
-        items.append(proposal)
-        self._write(items)
+        """Persist a new proposal (append-only) and return it.
+
+        Locked read-modify-write so a proposal filed concurrently with another
+        mutation is never clobbered under the threaded server (dual-control is a
+        safety control; a dropped approval could authorize -- or fail to authorize
+        -- a high-stakes action).
+        """
+        with file_lock(self._path):
+            items = self._read()
+            items.append(proposal)
+            self._write(items)
         return proposal
 
     def approve(self, proposal_id: str, steward: str) -> ActionProposal:
@@ -145,29 +153,37 @@ class ProposalStore:
 
         Raises :class:`~ledger.errors.LedgerError` if the proposal is unknown or no
         longer open. Re-approving by the same steward is idempotent — it never
-        double-counts toward the threshold (one steward is one approval)."""
-        items = self._read()
-        for i, p in enumerate(items):
-            if p.proposal_id == proposal_id:
-                if p.status != _OPEN:
-                    raise LedgerError(f"proposal {proposal_id} is not open")
-                updated = replace(p, approvals=frozenset(p.approvals) | {steward})
-                items[i] = updated
-                self._write(items)
-                return updated
-        raise LedgerError(f"no proposal with id {proposal_id!r}")
+        double-counts toward the threshold (one steward is one approval). The
+        read-modify-write is locked so two stewards approving at once both count
+        (neither approval is lost to a racing write)."""
+        with file_lock(self._path):
+            items = self._read()
+            for i, p in enumerate(items):
+                if p.proposal_id == proposal_id:
+                    if p.status != _OPEN:
+                        raise LedgerError(f"proposal {proposal_id} is not open")
+                    updated = replace(p, approvals=frozenset(p.approvals) | {steward})
+                    items[i] = updated
+                    self._write(items)
+                    return updated
+            raise LedgerError(f"no proposal with id {proposal_id!r}")
 
     def mark(self, proposal_id: str, status: str) -> None:
-        """Set a proposal's terminal status (``executed`` or ``cancelled``)."""
+        """Set a proposal's terminal status (``executed`` or ``cancelled``).
+
+        Locked like :meth:`add`/:meth:`approve` so a terminal-status write cannot
+        race and be lost.
+        """
         if status not in _STATUSES:
             raise LedgerError(f"unknown proposal status: {status!r}")
-        items = self._read()
-        for i, p in enumerate(items):
-            if p.proposal_id == proposal_id:
-                items[i] = replace(p, status=status)
-                self._write(items)
-                return
-        raise LedgerError(f"no proposal with id {proposal_id!r}")
+        with file_lock(self._path):
+            items = self._read()
+            for i, p in enumerate(items):
+                if p.proposal_id == proposal_id:
+                    items[i] = replace(p, status=status)
+                    self._write(items)
+                    return
+            raise LedgerError(f"no proposal with id {proposal_id!r}")
 
     # --- persistence --------------------------------------------------------
 

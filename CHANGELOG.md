@@ -46,6 +46,16 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   hand-picked subset. After publishing, a new `verify-published` job downloads every
   file PyPI serves for the version and fails the release unless each is sha256-identical
   to what this run built; the GitHub Release only publishes after that check passes.
+- **Concurrency-safe workflow stores (FIX-05).** `ledger._filelock.file_lock`, a tiny
+  single-host advisory lock (`fcntl.flock` on a sibling `.lock` file, no-op on
+  non-POSIX), now guards the whole read-modify-write critical section of
+  `ConsentRequestStore`, `SubjectTokenStore`, `SubmissionQueue`, and `ProposalStore`. Under the threaded
+  browse server, two concurrent POSTs could previously each read the same JSON store,
+  append/modify independently, and have the second atomic rename silently clobber the
+  first — for consent this could mean a lost *withdrawal* request, the worst failure
+  class this project has. `tests/test_filelock.py` hammers each store from many
+  threads at once and asserts nothing is lost, plus unit tests of the lock primitive
+  itself.
 - **Mutual preservation aid: encrypted replica exchange (EXP-15).** A second, opt-in
   transport in `ledger.replicate` for community instances to hold *each other's*
   bags as redundancy without either side trusting the other with plaintext:
