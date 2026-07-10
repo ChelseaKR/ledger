@@ -31,10 +31,11 @@ tracked."
 | Security & Supply Chain | SEC-19 | No scheduled full-history secret scan (TruffleHog) | Open | P1-3 |
 | Security & Supply Chain | SEC-04 | No Harden-Runner egress policy on any workflow | Open | P1-7 |
 | Security & Supply Chain | SEC-17 | No pre-commit hooks | Open | P1-4 |
-| Security & Supply Chain | SEC-27, SEC-29, SEC-35/36/37 | No SBOM, signing, provenance, or OSSF Scorecard workflow | Open | release workflow (P1-6) |
+| Security & Supply Chain | SEC-27, SEC-29 | ~~No SBOM, signing, or provenance workflow~~ Closed 2026-07-10: `release.yml` generates a CycloneDX SBOM, cosign-signs (keyless) every artifact, and records SLSA build-provenance + SBOM attestations on every tagged release | Closed | 2026-07-10 (`.github/workflows/release.yml`) |
+| Security & Supply Chain | SEC-35, SEC-36, SEC-37 | No OpenSSF Scorecard workflow (§6.5 checks: Signed-Releases, Vulnerabilities, aggregate score) | Open | P1-6b |
 | CI/CD | CICD-12, CQ-37/38/39/40/43, SEC-15 | No committed branch-protection/ruleset export; server-side settings unverifiable offline | Open | P2-4 — **⛔ requires the repo owner to export/enable via `gh api repos/ChelseaKR/ledger/rulesets` themselves** (write-effect GitHub API call, out of scope for an automated pass) |
 | CI/CD | CICD-19, CICD-20 | No zizmor workflow-linter job; CodeQL doesn't analyze `language: actions` | Open | P1-3 |
-| Release & Versioning | REL-08, REL-13–17, REL-20 | No tag-triggered release workflow, no PyPI Trusted Publishing, no SBOM/cosign/SLSA on release | Open | P1-6 (flagship gap, effort: L) |
+| Release & Versioning | REL-08, REL-13–17, REL-20 | ~~No tag-triggered release workflow~~ Closed 2026-07-10: `release.yml` triggers on `v*` tags, re-runs lint/type/test at the tagged commit, verifies tag/version consistency, builds, generates SBOM+provenance, cosign-signs, publishes to PyPI via Trusted Publishing (OIDC), and mirrors artifacts to a GitHub Release. Registering the PyPI Trusted Publisher + `pypi` GitHub Environment is a one-time manual step for the project owner (workflow header); no `vX.Y.Z` tag has been pushed yet, so the pipeline is unexercised end-to-end (REL-03 below) | Closed (unexercised pending first tag) | 2026-07-10 (`.github/workflows/release.yml`) |
 | Release & Versioning | REL-03 | CHANGELOG declares `0.1.0` "released" 2026-06-16; no matching git tag exists | Open — claim corrected in CHANGELOG.md pending real cut (P2-6) |  |
 | Accessibility | A11Y-01–03, 07, 09 | axe-core / Lighthouse / pa11y / Playwright keyboard+reflow specs not run in CI (structural checker + manual review substitute today) | Open | P3-7 |
 | Accessibility | A11Y-11, 12, 16, 18 | No dated screen-reader/keyboard walkthrough artifact or `docs/a11y/STATEMENT.md` | Open | P2-3 |

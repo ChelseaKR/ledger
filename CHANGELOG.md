@@ -12,11 +12,21 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 > Unreleased rather than as a released version (a changelog claiming a release the
 > repo cannot produce is exactly the kind of unbacked claim this project's own
 > conformance audit exists to catch). It will move to a real `## [0.1.0] — YYYY-MM-DD`
-> section, with a matching signed annotated git tag, once the release workflow
-> (`docs/ROADMAP.md`, tracked as this repo's largest open gap) actually ships it.
+> section, with a matching signed annotated git tag, once the first `vX.Y.Z` tag is
+> actually pushed through the release workflow added below.
 
 ### Added
 
+- **Tag-triggered release workflow (`.github/workflows/release.yml`).** Pushing a
+  `vX.Y.Z` tag now re-runs the full lint/type/test gate against the tagged commit,
+  builds the sdist/wheel, fails closed if the tag doesn't match `pyproject.toml`'s
+  version, generates a CycloneDX SBOM of the shipped dependency closure, records
+  GitHub-native SLSA build-provenance and SBOM attestations, cosign-signs (keyless)
+  every artifact, publishes to PyPI via Trusted Publishing (OIDC — no stored API
+  token), and mirrors sdist/wheel/SBOM/signatures onto a GitHub Release. Registering
+  the PyPI Trusted Publisher and the `pypi` GitHub Environment remains a one-time
+  manual step for the project owner (documented in the workflow header); every other
+  stage runs with no additional setup.
 - **Mutual preservation aid: encrypted replica exchange (EXP-15).** A second, opt-in
   transport in `ledger.replicate` for community instances to hold *each other's*
   bags as redundancy without either side trusting the other with plaintext:
