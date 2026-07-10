@@ -98,9 +98,7 @@ def test_page_shell_sets_dir_from_text_direction() -> None:
     [
         ("/", "ar", "ar"),
         ("/?lang=fr", "en", "fr"),
-        ("/robots.txt", "es", "es"),
         ("/healthz", "en", "en"),
-        ("/feed.atom", "fr", "fr"),
     ],
 )
 def test_every_response_carries_language_headers(
@@ -109,6 +107,17 @@ def test_every_response_carries_language_headers(
     _status, _body, headers = _request(f"{base}{path}", accept_language=accept)
     assert headers.get("Content-Language") == expected_lang
     assert "Accept-Language" in headers.get("Vary", "")
+
+
+@pytest.mark.parametrize("path", ["/robots.txt", "/feed.atom", "/sitemap.xml"])
+def test_machine_feeds_do_not_vary_by_language(base: str, path: str) -> None:
+    """Feeds are always the anonymous-public view; they carry no language headers.
+
+    Mirrors main's G11 decision (test_language_switch): OAI-PMH, the sitemap,
+    robots.txt, and the Atom feed never vary with Accept-Language, so marking
+    them Content-Language would be a cache-correctness lie."""
+    _status, _body, headers = _request(f"{base}{path}", accept_language="es")
+    assert "Content-Language" not in headers
 
 
 def test_content_language_defaults_to_english(base: str) -> None:
