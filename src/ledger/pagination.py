@@ -18,9 +18,6 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Generic, TypeVar
-
-T = TypeVar("T")
 
 #: Records per page. Small enough to keep a page light for assistive tech and slow
 #: links, large enough that a modest collection is one or two pages.
@@ -28,7 +25,7 @@ DEFAULT_PER_PAGE: int = 20
 
 
 @dataclass(frozen=True)
-class Page(Generic[T]):
+class Page[T]:
     """One windowed slice of a result set, plus the facts a pager needs to render.
 
     ``number`` is the 1-based current page (always within ``1..pages``), ``total`` is
@@ -72,7 +69,7 @@ class Page(Generic[T]):
         return self.start_index + len(self.items) - 1
 
 
-def paginate(items: Sequence[T], page: int, per_page: int = DEFAULT_PER_PAGE) -> Page[T]:
+def paginate[T](items: Sequence[T], page: int, per_page: int = DEFAULT_PER_PAGE) -> Page[T]:
     """Return the :class:`Page` for ``items`` at the requested 1-based ``page``.
 
     The page number is clamped into ``1..pages`` so an out-of-range or non-positive

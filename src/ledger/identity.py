@@ -20,6 +20,18 @@ Design choices and the quality attributes they serve:
 * ``__repr__``/``__str__`` of both the identity and the vault are redacted, and no
   identity, sealed value, or ciphertext is ever logged or placed in an exception
   message -> the no-outing rule.
+
+.. note::
+   This vault's confidentiality primitives (Fernet, scrypt) and unversioned
+   ``"enc:"`` ciphertext marker are the subject of a committed harvest-now-
+   decrypt-later analysis and algorithm-lifecycle policy —
+   ``docs/audits/crypto-agility-pq-posture.md`` (EXP-13). It documents which
+   parts of this module are quantum-exposed today (a Grover-reduced symmetric
+   margin only; no public-key primitive exists here yet) and the conditions
+   that gate any future algorithm change, including hybrid post-quantum
+   encryption. Read that document, and the companion envelope/key-hierarchy
+   design it cross-references, before changing the encryption construction in
+   this module or adding a new algorithm to it.
 """
 
 from __future__ import annotations

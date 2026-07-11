@@ -3,9 +3,26 @@
 # SEC-17). CI (`.github/workflows/ci.yml`) remains the gate of record — these
 # hooks exist to catch the same lint/format/secret issues locally, before they
 # leave your machine, not to replace `make verify`. See CONTRIBUTING.md for setup.
+#
+# Revisions are pinned to full commit SHAs (tag noted in a trailing comment),
+# matching this repo's supply-chain-pinning convention everywhere else (GitHub
+# Actions in ci.yml, the Renovate config from BL-8, the digest-pinned Dockerfile
+# base image) — a movable tag is not an acceptable pin for a hook that runs
+# unreviewed on every contributor's machine. Bump deliberately via a reviewed PR.
 repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: cef0300fd0fc4d2a87a85fa2093c6b283ea36f4b  # v5.0.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-yaml
+      - id: check-added-large-files
+        args: ["--maxkb=2048"]
+      - id: mixed-line-ending
+        args: ["--fix=lf"]
+
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.9 # matches pyproject.toml's `ruff>=0.15` floor; bump both together
+    rev: c60c980e561ed3e73101667fe8365c609d19a438  # v0.15.9 — matches pyproject.toml's `ruff>=0.15` floor; bump both together
     hooks:
       - id: ruff-check
         # Scoped to src/tests, same as `make lint` and CI (ci.yml runs
@@ -21,7 +38,7 @@ repos:
         files: ^(src|tests)/
 
   - repo: https://github.com/gitleaks/gitleaks
-    rev: v8.30.1 # exact version CI's supply-chain job downloads and pins
+    rev: 83d9cd684c87d95d656c1458ef04895a7f1cbd8e  # v8.30.1 — exact version CI's supply-chain job downloads and pins
     hooks:
       - id: gitleaks
 

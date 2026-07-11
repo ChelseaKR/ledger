@@ -17,7 +17,8 @@ from collections.abc import Iterable
 from urllib.parse import parse_qsl, quote, urlencode, urlsplit
 
 from ledger import i18n, pagination, search
-from ledger.models import AccessPolicy, DisclosedRecord, Grant, PayloadFile
+from ledger.metadata.pid import is_ark
+from ledger.models import AccessPolicy, DisclosedRecord, Grant, PayloadFile, Record
 
 # The site's one stylesheet, linked from every page.
 _STYLESHEET_HREF: str = "/static/app.css"
@@ -621,11 +622,15 @@ def _citation_html(record: DisclosedRecord, *, base_url: str, archive_name: str,
     """A "Cite this record" block: a formatted citation, a permalink, a metadata link.
 
     Scholarship needs a stable, quotable reference (user research P2-3). The citation
-    is ``Title. [Date.] Archive. URL`` built from already-disclosed metadata (the
-    archive name falls back to the record's Dublin Core ``publisher``), so it carries
-    no identity. The permalink and the ``Available at`` URL are the record's public
-    address; a "download metadata" link points at the JSON API for machine reuse.
-    Everything is escaped, and the URL is quoted, so no value can break the markup."""
+    is ``Title. [Date.] Archive. [PID.] URL`` built from already-disclosed metadata
+    (the archive name falls back to the record's Dublin Core ``publisher``), so it
+    carries no identity. The persistent identifier is the archive-local ARK minted at
+    ingest and carried in Dublin Core ``identifier`` (RM5), included in the formatted
+    citation and shown on its own line so a reader can quote the stable handle rather
+    than the host-dependent URL. The permalink and the ``Available at`` URL are the
+    record's public address; a "download metadata" link points at the JSON API for
+    machine reuse. Everything is escaped, and the URL is quoted, so no value can break
+    the markup."""
     root = base_url.rstrip("/")
     permalink = f"{root}/record/{quote(record.record_id)}"
     publisher = record.dublin_core.get("publisher") or []
@@ -633,14 +638,25 @@ def _citation_html(record: DisclosedRecord, *, base_url: str, archive_name: str,
     dates = record.dublin_core.get("date") or []
     date_part = f" {_esc(dates[0])}." if dates and dates[0] else ""
     archive_part = f" {_esc(archive)}." if archive else ""
+    # The persistent identifier: the first ARK-style value in Dublin Core `identifier`
+    # (minted at ingest). Surfacing it in the citation gives scholarship a stable
+    # handle that outlives any URL (RM5, user research P2-3).
+    pid = next((value for value in record.dublin_core.get("identifier", []) if is_ark(value)), "")
+    pid_sentence = f" {_esc(pid)}." if pid else ""
     citation = (
-        f"{_esc(record.title)}.{date_part}{archive_part} "
+        f"{_esc(record.title)}.{date_part}{archive_part}{pid_sentence} "
         f"{_esc(i18n.t(lang, 'cite_available_at'))} {_esc(permalink)}"
+    )
+    pid_line = (
+        f'      <p>{_esc(i18n.t(lang, "cite_pid"))}: <span class="pid">{_esc(pid)}</span></p>\n'
+        if pid
+        else ""
     )
     return (
         '    <section aria-labelledby="cite-heading">\n'
         f'      <h2 id="cite-heading">{_esc(i18n.t(lang, "cite_heading"))}</h2>\n'
         f'      <p class="citation">{citation}</p>\n'
+        f"{pid_line}"
         f"      <p>{_esc(i18n.t(lang, 'cite_permalink'))}: "
         f'<a href="{_esc(permalink)}">{_esc(permalink)}</a></p>\n'
         f'      <p><a href="/api/record/{quote(record.record_id)}">'
@@ -841,6 +857,108 @@ def _error_main_html(heading: str, message: str) -> str:
         f"    <p>{_esc(message)}</p>\n"
         '    <p><a href="/">Back to all records</a></p>'
     )
+
+
+def _history_compare_fields(record: Record, lang: str) -> list[tuple[str, str]]:
+    """The four comparable, disclosure-safe fields of ``record`` as (label, value).
+
+    Only title, description, content warnings, and default access are compared — plain,
+    non-sealed metadata that is safe to show a steward. The opaque ``identity_ref`` and
+    any sealed field value are deliberately excluded, so the comparison can never leak a
+    contributor identity or a withheld value (no-outing rule)."""
+    return [
+        (i18n.t(lang, "hist_field_title"), record.title),
+        (i18n.t(lang, "hist_field_description"), " / ".join(record.dublin_core.description)),
+        (i18n.t(lang, "hist_field_warnings"), ", ".join(record.content_warnings)),
+        (i18n.t(lang, "hist_field_policy"), record.default_policy.value),
+    ]
+
+
+def _history_diff_table(current: Record, prior: Record, lang: str) -> str:
+    """An accessible field-by-field comparison of ``prior`` vs ``current``.
+
+    Each row names a field, its value in the selected earlier version, and its value
+    now, flagging the rows that changed so a steward can see at a glance what an update
+    altered (legibility). Every value passes through :func:`_esc` (no XSS) and is one of
+    the four disclosure-safe fields (no-outing rule)."""
+    now_fields = _history_compare_fields(current, lang)
+    then_fields = _history_compare_fields(prior, lang)
+    rows = []
+    for (label, now_value), (_label, then_value) in zip(now_fields, then_fields, strict=True):
+        changed = (
+            f' <span class="badge">{_esc(i18n.t(lang, "hist_changed"))}</span>'
+            if now_value != then_value
+            else ""
+        )
+        rows.append(
+            "        <tr>\n"
+            f'          <th scope="row">{_esc(label)}{changed}</th>\n'
+            f"          <td>{_esc(then_value)}</td>\n"
+            f"          <td>{_esc(now_value)}</td>\n"
+            "        </tr>"
+        )
+    return (
+        "    <table>\n"
+        f"      <caption>{_esc(i18n.t(lang, 'hist_compare_caption'))}</caption>\n"
+        "      <thead>\n"
+        "        <tr>\n"
+        f'          <th scope="col">{_esc(i18n.t(lang, "hist_field"))}</th>\n'
+        f'          <th scope="col">{_esc(i18n.t(lang, "hist_previous"))}</th>\n'
+        f'          <th scope="col">{_esc(i18n.t(lang, "hist_current"))}</th>\n'
+        "        </tr>\n"
+        "      </thead>\n"
+        f"      <tbody>\n{chr(10).join(rows)}\n      </tbody>\n"
+        "    </table>"
+    )
+
+
+def _history_main_html(
+    record_id: str,
+    *,
+    current: Record,
+    prior: Record | None,
+    versions: list[dict[str, str]],
+    selected: str,
+    lang: str,
+) -> str:
+    """Render the steward version-history ``<main>`` for one record.
+
+    Lists the saved snapshots (newest first) — each a link that selects it for
+    comparison — and, when an earlier version exists, a field-by-field comparison of it
+    against the current record. When the record has never been updated a plain "no
+    earlier versions" line is shown instead. Steward-only content, but still built only
+    from disclosure-safe fields and escaped throughout (no-outing rule, no XSS)."""
+    rid = quote(record_id)
+    parts = [
+        f"    <h1>{_esc(i18n.t(lang, 'hist_heading'))}</h1>",
+        f"    <p>{_esc(i18n.t(lang, 'hist_intro', id=record_id))}</p>",
+        f"    <h2>{_esc(i18n.t(lang, 'hist_versions_heading'))}</h2>",
+    ]
+    if not versions:
+        parts.append(f"    <p>{_esc(i18n.t(lang, 'hist_none'))}</p>")
+    else:
+        items = []
+        # The index is stored oldest-first; present newest-first for a reverse-chrono log.
+        for entry in reversed(versions):
+            address = entry.get("address", "")
+            label = i18n.t(
+                lang,
+                "hist_version_item",
+                when=entry.get("saved_at", ""),
+                event=entry.get("event_type", ""),
+            )
+            marker = (
+                f' <span class="badge">{_esc(i18n.t(lang, "hist_selected"))}</span>'
+                if address == selected
+                else ""
+            )
+            href = f"/record/{rid}/history?v={quote(address)}"
+            items.append(f'      <li><a href="{_esc(href)}">{_esc(label)}</a>{marker}</li>')
+        parts.append("    <ul>\n" + "\n".join(items) + "\n    </ul>")
+    if prior is not None:
+        parts.append(_history_diff_table(current, prior, lang))
+    parts.append(f'    <p><a href="/record/{rid}">{_esc(i18n.t(lang, "hist_back"))}</a></p>')
+    return "\n".join(parts)
 
 
 def _language_switch_html(lang: str, current_path: str) -> str:

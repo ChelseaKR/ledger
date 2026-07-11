@@ -28,13 +28,29 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from ledger import acr_gen, demo, dualcontrol, preservation, succession
-from ledger.access.grants import anonymous, community_member, steward
+from ledger import acr_gen, attest, demo, dualcontrol, preservation, succession
+from ledger.access.grants import (
+    anonymous,
+    community_member,
+    issue_grant_token,
+    load_grants,
+    load_revocations,
+    revoke_subject,
+    steward,
+)
 from ledger.access.redaction import redact_field, redact_payload
 from ledger.config import Config, StorageLocation
 from ledger.errors import LedgerError
+from ledger.export_drive import build_export_drive
 from ledger.identity import ContributorIdentity
 from ledger.ingest import Archive
+from ledger.lockdown import (
+    execute_lockdown,
+    execute_stand_up,
+    is_locked_down,
+    plan_lockdown,
+    verify_backup_location,
+)
 from ledger.models import (
     AccessPolicy,
     ContentAddress,
@@ -50,10 +66,12 @@ from ledger.models import (
 from ledger.moderate import (
     add_content_warning,
     change_consent,
+    execute_takedown,
     set_field_policy,
     set_payload_policy,
-    takedown,
 )
+from ledger.oralhistory import apply_session_manifest, parse_session_manifest
+from ledger.print_edition import build_print_edition
 from ledger.replicate import verify_replicas
 from ledger.server import serve
 
@@ -248,6 +266,7 @@ def _cmd_serve(args: argparse.Namespace) -> int:
         raise LedgerError(f"port out of range (0-65535): {args.port}")
     archive = _open_archive(Path(args.root))
     grants_path = Path(args.grants) if args.grants else None
+    revocations_path = Path(args.revocations) if args.revocations else None
     if args.allow_contributions and not os.environ.get("LEDGER_VAULT_KEY"):
         # The contribution form offers an optional sealed contact, which must be
         # encrypted into the vault on submit. Refuse to enable the write path without
@@ -262,8 +281,74 @@ def _cmd_serve(args: argparse.Namespace) -> int:
         host=args.host,
         port=args.port,
         grants_path=grants_path,
+        revocations_path=revocations_path,
         allow_contributions=args.allow_contributions,
     )
+    return 0
+
+
+def _grant_secret_from_env() -> bytes:
+    """The grant-token signing secret from the environment, or a clean error.
+
+    Like the vault key, the secret travels only in ``LEDGER_GRANT_SECRET`` — never
+    on the command line, where it would land in shell history and the process table
+    (confidentiality). An unset secret is a hard error rather than a silent
+    unsigned token (fail closed)."""
+    raw = os.environ.get("LEDGER_GRANT_SECRET")
+    if not raw:
+        raise LedgerError(
+            "set LEDGER_GRANT_SECRET to the grant signing secret (via the environment, never argv)"
+        )
+    return raw.encode("utf-8")
+
+
+def _cmd_grant_issue(args: argparse.Namespace) -> int:
+    """``grant issue`` — mint an authenticated capability token for a subject.
+
+    The token is the *only* thing printed: it is a sealed bearer value, so the
+    signing secret is never echoed and nothing else is written to stdout (the
+    no-outing rule's no-secret-outing corollary). The subject must already have a
+    provisioned grant in the grants file for the token to authorise anything at the
+    server; issuing a token for an unprovisioned subject is harmless (it resolves to
+    anonymous), so this command does not require the grants file. ``--expires-at``
+    bounds the token to an ISO-8601 instant; omitted, the token does not expire."""
+    secret = _grant_secret_from_env()
+    token = issue_grant_token(args.subject, secret, expires_at=args.expires_at or "")
+    print(token)
+    return 0
+
+
+def _cmd_grant_revoke(args: argparse.Namespace) -> int:
+    """``grant revoke`` — add a subject to the revocation list.
+
+    Retracts every still-unexpired token for the subject the next time the server
+    reads the list, without rotating the shared secret (immediate, targeted
+    retraction). Idempotent. Never prints or needs the signing secret."""
+    path = Path(args.revocations)
+    revoke_subject(path, args.subject)
+    print(f"revoked {args.subject!r}; wrote {path}")
+    return 0
+
+
+def _cmd_grant_list(args: argparse.Namespace) -> int:
+    """``grant list`` — list provisioned grant subjects with their revoked flag.
+
+    Reads the grants file and the revocation list and prints one subject per line
+    with a ``[revoked]`` marker where applicable. Subjects that are revoked but no
+    longer provisioned are listed too, so a steward can see a dangling revocation.
+    Prints no token and no secret (only public subject identifiers)."""
+    grants_path = Path(args.grants) if args.grants else None
+    grants = load_grants(grants_path) if grants_path is not None else {}
+    revocations_path = Path(args.revocations) if args.revocations else None
+    revoked = load_revocations(revocations_path) if revocations_path is not None else set()
+    subjects = sorted(set(grants) | revoked)
+    if not subjects:
+        print("(no grants provisioned)")
+        return 0
+    for subject in subjects:
+        marker = " [revoked]" if subject in revoked else ""
+        provisioned = "" if subject in grants else " [not provisioned]"
+        print(f"{subject}{marker}{provisioned}")
     return 0
 
 
@@ -457,33 +542,59 @@ def _cmd_verify_backup(args: argparse.Namespace) -> int:
     Only bag names and counts are printed (no-outing rule).
     """
     backup = Path(args.backup)
-    config = Config.load(backup / "store" / _CONFIG_FILENAME)
-    # The config records the ORIGINAL box's absolute paths; re-point it at the backup
-    # so we verify the copy on disk, not wherever it was first written.
-    config.store_root = str(backup / "store")
-    config.vault_path = str(backup / "identity.vault")
-    archive = Archive(config)
-
-    ready, reason = archive.check_readiness()
-    if not ready:
-        print(f"FAIL: backup is not readable ({reason})", file=sys.stderr)
+    result = verify_backup_location(backup)
+    # A config/readiness failure yields no per-bag reports; report it as unreadable,
+    # exactly as before (an empty *but readable* archive still verifies as PASS).
+    if not result.ok and not result.bags:
+        print(f"FAIL: backup is not readable ({result.reason})", file=sys.stderr)
         return 1
 
-    reports = archive.audit_fixity()
-    failures = 0
-    for name, report in reports:
-        ok = report.ok
-        if not ok:
-            failures += 1
-        print(f"{'PASS' if ok else 'FAIL'}\t{name}\t({report.checked} file(s) checked)")
+    for bag in result.bags:
+        print(f"{'PASS' if bag.ok else 'FAIL'}\t{bag.name}\t({bag.checked} file(s) checked)")
+    failures = result.failures
     summary = "PASS" if failures == 0 else "FAIL"
-    print(f"{summary}: backup at {backup} — {len(reports)} bag(s) verified, {failures} failed")
+    print(f"{summary}: backup at {backup} — {len(result.bags)} bag(s) verified, {failures} failed")
     return 0 if failures == 0 else 1
 
 
 def _proposal_store(archive: Archive) -> dualcontrol.ProposalStore:
     """The dual-control proposal store for ``archive`` (under ``logs/``)."""
     return dualcontrol.ProposalStore(archive.logs_dir / "proposals.json")
+
+
+# Actions whose execution is *deferred* from the moment approval completes to a
+# deliberate, separate ``--execute`` step. Lockdown and stand-up are irreversible or
+# safety-critical enough that gathering approvals must not, by itself, fire them:
+# assembling the authority and pulling the trigger are kept as two conscious acts.
+_DEFERRED_ACTIONS: frozenset[str] = frozenset({"lockdown", "stand-up"})
+
+
+def _deferred_ready_hint(root: str, proposal: dualcontrol.ActionProposal) -> str:
+    """The line printed when a deferred proposal becomes approved (tells the operator
+    the separate, deliberate command that actually performs it)."""
+    return (
+        f"proposal {proposal.proposal_id} ({proposal.action}) is APPROVED — "
+        f"run the deliberate step: ledger {proposal.action} --root {root} "
+        "--actor <steward> --execute"
+    )
+
+
+def _ready_deferred_proposal(archive: Archive, action: str) -> dualcontrol.ActionProposal:
+    """The oldest open, approved proposal for ``action``; error if none is ready.
+
+    The gate behind ``lockdown --execute`` / ``stand-up --execute``: the destructive
+    or safety-critical step runs only when a dual-control proposal for it has reached
+    the archive's approval threshold (accountability — no one steward acts alone)."""
+    store = _proposal_store(archive)
+    threshold = archive.config.dual_control_threshold
+    for proposal in store.open_proposals():
+        if proposal.action == action and proposal.is_ready(threshold):
+            return proposal
+    raise LedgerError(
+        f"{action} --execute requires an APPROVED dual-control proposal; run "
+        f"`ledger propose --action {action} --id <target> --actor <steward> --reason ...` "
+        "and gather approvals with `ledger approve`"
+    )
 
 
 def _perform_takedown(
@@ -496,20 +607,12 @@ def _perform_takedown(
     contributor identity revoked through the one shared removal effect
     (:meth:`Archive.remove_all_copies`). Only the record id and counts appear in the
     summary (no-outing rule). Factored so both the direct path and an approved
-    dual-control proposal execute the identical effect.
+    dual-control proposal execute the identical effect, which is itself shared with
+    the in-UI steward console via :func:`ledger.moderate.execute_takedown`.
     """
-    event, action = takedown(record_id, actor=actor, reason=reason, now=now)
-
-    # Whether there is a sealed identity to revoke, checked BEFORE removal so a failed
-    # revoke can still be reported once the bag (and the ref) are gone.
-    try:
-        had_identity = archive.get(record_id).identity_ref is not None
-    except LedgerError:
-        had_identity = False
-
-    archive.log_takedown(event)
-
-    removed, revoked = archive.remove_all_copies(record_id)
+    action, removed, revoked, had_identity = execute_takedown(
+        archive, record_id, actor=actor, reason=reason, now=now
+    )
     if had_identity and not revoked:  # pragma: no cover - vault failure is rare
         print(
             "warning: could not revoke identity from the vault; "
@@ -581,11 +684,18 @@ def _cmd_takedown(args: argparse.Namespace) -> int:
     return 0
 
 
+# Actions the generic ``propose``/``approve`` path can *execute* (see
+# :func:`_execute_proposal`). ``attest`` is deliberately excluded: it has its own
+# ``ledger attest`` flow with a fixed 2-of-N quorum and a separate store, so it is
+# never filed through the general dual-control path where it could not be executed.
+_PROPOSABLE_ACTIONS: frozenset[str] = dualcontrol.ACTIONS - {"attest"}
+
+
 def _cmd_propose(args: argparse.Namespace) -> int:
     """``propose`` — propose a high-stakes action for dual-control approval."""
-    if args.action not in dualcontrol.ACTIONS:
+    if args.action not in _PROPOSABLE_ACTIONS:
         raise LedgerError(
-            f"unknown action {args.action!r}; expected one of {sorted(dualcontrol.ACTIONS)}"
+            f"unknown action {args.action!r}; expected one of {sorted(_PROPOSABLE_ACTIONS)}"
         )
     archive = _open_archive(Path(args.root))
     now = args.now if args.now else now_iso()
@@ -605,8 +715,11 @@ def _cmd_propose(args: argparse.Namespace) -> int:
         f"{prop.approved_count()}/{threshold} approval(s)"
     )
     if prop.is_ready(threshold):
-        print(_execute_proposal(archive, prop, actor=args.actor, now=now))
-        store.mark(prop.proposal_id, "executed")
+        if prop.action in _DEFERRED_ACTIONS:
+            print(_deferred_ready_hint(args.root, prop))
+        else:
+            print(_execute_proposal(archive, prop, actor=args.actor, now=now))
+            store.mark(prop.proposal_id, "executed")
     return 0
 
 
@@ -619,8 +732,71 @@ def _cmd_approve(args: argparse.Namespace) -> int:
     threshold = archive.config.dual_control_threshold
     print(f"approved proposal {prop.proposal_id} ({prop.approved_count()}/{threshold})")
     if prop.is_ready(threshold):
-        print(_execute_proposal(archive, prop, actor=args.actor, now=now))
-        store.mark(prop.proposal_id, "executed")
+        if prop.action in _DEFERRED_ACTIONS:
+            print(_deferred_ready_hint(args.root, prop))
+        else:
+            print(_execute_proposal(archive, prop, actor=args.actor, now=now))
+            store.mark(prop.proposal_id, "executed")
+    return 0
+
+
+def _cmd_lockdown(args: argparse.Namespace) -> int:
+    """``lockdown`` — enter the duress posture (dry-run by default).
+
+    Without ``--execute`` this is a **dry run**: it prints the ordered steps a
+    lockdown would take (stop non-PUBLIC disclosure, and — only if configured and only
+    after off-box replicas verify — shred the local vault) and changes nothing. With
+    ``--execute`` it performs the lockdown, but only once a dual-control ``lockdown``
+    proposal has been approved (``ledger propose``/``approve``), so no single steward
+    can trigger a duress shred alone (accountability, fail-safe)."""
+    archive = _open_archive(Path(args.root))
+    now = args.now if args.now else now_iso()
+    if not args.execute:
+        for step in plan_lockdown(archive):
+            print(step)
+        print(
+            "dry run — nothing changed. Propose+approve a 'lockdown' action, "
+            "then re-run with --execute."
+        )
+        return 0
+    proposal = _ready_deferred_proposal(archive, "lockdown")
+    result = execute_lockdown(archive, actor=args.actor, now=now)
+    _proposal_store(archive).mark(proposal.proposal_id, "executed")
+    print(result.summary())
+    for step in result.steps:
+        print(f"  - {step}")
+    print(result.runbook)
+    return 0
+
+
+def _cmd_stand_up(args: argparse.Namespace) -> int:
+    """``stand-up`` — the inverse of lockdown: lift the freeze and restore (dry-run default).
+
+    Without ``--execute`` it describes what standing the archive back up would do and
+    reports whether it is currently locked down, changing nothing. With ``--execute``
+    it verifies an off-box replica, restores the local vault from it if the vault was
+    shredded, removes the lockdown flag, and resumes non-PUBLIC disclosure — but only
+    once a dual-control ``stand-up`` proposal has been approved (accountability)."""
+    archive = _open_archive(Path(args.root))
+    now = args.now if args.now else now_iso()
+    if not args.execute:
+        print(
+            "stand-up DRY-RUN — would verify an off-box replica, restore the vault if it "
+            "was shredded, remove lockdown.flag, and resume non-PUBLIC disclosure."
+        )
+        print(f"currently locked down: {is_locked_down(archive)}")
+        print(
+            "dry run — nothing changed. Propose+approve a 'stand-up' action, "
+            "then re-run with --execute."
+        )
+        return 0
+    proposal = _ready_deferred_proposal(archive, "stand-up")
+    result = execute_stand_up(archive, actor=args.actor, now=now)
+    _proposal_store(archive).mark(proposal.proposal_id, "executed")
+    print(result.summary())
+    for step in result.steps:
+        print(f"  - {step}")
+    print(result.runbook)
     return 0
 
 
@@ -632,6 +808,70 @@ def _cmd_proposals(args: argparse.Namespace) -> int:
     for p in open_props:
         print(f"{p.proposal_id}\t{p.action}\t{p.target}\t{p.approved_count()}/{threshold}")
     print(f"({len(open_props)} open proposal(s); threshold {threshold})")
+    return 0
+
+
+def _attest_store(archive: Archive) -> attest.AttestStore:
+    """The condition-attestation store for ``archive`` (under ``logs/``)."""
+    return attest.AttestStore(archive.logs_dir)
+
+
+def _cmd_attest_propose(args: argparse.Namespace) -> int:
+    """``attest propose`` — propose that a SEALED_CONDITIONAL condition has been met.
+
+    Validates the condition against the archive's controlled vocabulary
+    (``config.conditions``) so a typo can never invent an ungoverned condition, then
+    files a 2-of-N proposal: a *second, distinct* steward must ``attest approve`` it
+    before it opens anything. One steward alone changes nothing (no one may declare a
+    contributor dead by themselves)."""
+    archive = _open_archive(Path(args.root))
+    if args.condition not in archive.config.conditions:
+        raise LedgerError(
+            f"unknown condition {args.condition!r}; expected one of "
+            f"{sorted(archive.config.conditions)} (edit config.conditions to add one)"
+        )
+    now = args.now if args.now else now_iso()
+    prop = _attest_store(archive).propose(
+        args.condition, args.actor, reason=args.reason or "", now=now
+    )
+    print(
+        f"attestation PROPOSED for {args.condition!r} (proposal {prop.proposal_id}); "
+        f"needs {attest.ATTEST_THRESHOLD} distinct stewards "
+        f"({prop.approved_count()}/{attest.ATTEST_THRESHOLD}). "
+        f"Another steward runs: ledger attest approve --root {args.root} "
+        f"--id {prop.proposal_id} --actor <steward-id>"
+    )
+    return 0
+
+
+def _cmd_attest_approve(args: argparse.Namespace) -> int:
+    """``attest approve`` — approve a pending attestation; record it at the quorum.
+
+    Counts only *distinct* stewards, so one steward approving twice never reaches the
+    2-of-N quorum. On the approval that reaches quorum the condition is written into
+    the durable attested-conditions set and a PREMIS ``POLICY_CHANGE`` event recorded,
+    and every ``SEALED_CONDITIONAL`` field waiting on that condition opens on the next
+    read."""
+    archive = _open_archive(Path(args.root))
+    now = args.now if args.now else now_iso()
+    prop, attested_now = _attest_store(archive).approve(args.id, args.actor, now=now)
+    print(
+        f"approved attestation {prop.proposal_id} "
+        f"({prop.approved_count()}/{attest.ATTEST_THRESHOLD})"
+    )
+    if attested_now:
+        print(f"condition {prop.target!r} is now attested-met; fields sealed on it now disclose")
+    return 0
+
+
+def _cmd_attest_list(args: argparse.Namespace) -> int:
+    """``attest list`` — show open attestation proposals and attested conditions."""
+    store = _attest_store(_open_archive(Path(args.root)))
+    open_props = store.open_proposals()
+    for p in open_props:
+        print(f"{p.proposal_id}\t{p.target}\t{p.approved_count()}/{attest.ATTEST_THRESHOLD}")
+    met = sorted(store.attested())
+    print(f"({len(open_props)} open proposal(s); attested-met: {', '.join(met) or 'none'})")
     return 0
 
 
@@ -714,7 +954,15 @@ def _cmd_handoff(args: argparse.Namespace) -> int:
     """
     archive = _open_archive(Path(args.root))
     now = args.now if args.now else now_iso()
-    manifest = succession.build_handoff(archive, now=now, successor=args.successor)
+    manifest = succession.build_handoff(
+        archive, now=now, successor=args.successor, attest_steward=args.attest_steward
+    )
+    if args.attest_steward:
+        print(
+            "filed a 'group-dissolved' attestation proposal; a second steward must "
+            "'ledger attest approve' it before any conditional seal opens",
+            file=sys.stderr,
+        )
     manifest_json = manifest.to_json()
     if args.out:
         out_path = Path(args.out)
@@ -731,6 +979,107 @@ def _cmd_handoff(args: argparse.Namespace) -> int:
         file=sys.stderr,
     )
     return 0 if manifest.all_fixity_ok else 1
+
+
+def _cmd_export_drive(args: argparse.Namespace) -> int:
+    """``export-drive`` — build a self-verifying offline courier package (EXP-08).
+
+    Disclosure-filtered like every other read path: ``--as`` picks the viewer
+    (default: anonymous/PUBLIC, the narrowest — least privilege), and only what
+    that grant may see is re-bagged onto the package. Exits non-zero if any
+    freshly written bag fails its own validation, so a bad package is never
+    reported as ready to hand to a courier.
+    """
+    archive = _open_archive(Path(args.root))
+    grant = _grant_for(args.as_subject)
+    now = args.now if args.now else now_iso()
+    result = build_export_drive(
+        archive,
+        Path(args.out),
+        grant=grant,
+        archive_name=archive.config.archive_name,
+        base_url=args.base_url or "",
+        now=now,
+    )
+    status = "all bags verified" if result.all_bags_valid else "BAG VALIDATION FAILED"
+    print(
+        f"export-drive: {result.records_packaged} record(s), {result.files_packaged} file(s) "
+        f"packaged to {result.out_dir} for viewer {grant.subject!r}; {status}"
+    )
+    return 0 if result.all_bags_valid else 1
+
+
+def _cmd_print_edition(args: argparse.Namespace) -> int:
+    """``print-edition`` — render an accessible, zine-style HTML booklet (EXP-08).
+
+    PUBLIC-only by construction: always uses the anonymous grant, regardless of
+    who runs the command, because a printed page cannot later be redacted. Each
+    entry carries a visible SHA-256 fixity line plus, when the optional
+    ``segno`` package is installed (``pip install ledger-archive[print]``), a
+    scannable QR code encoding the same string. See the module docstring in
+    :mod:`ledger.print_edition` for why this renders HTML, not a bespoke PDF.
+    """
+    archive = _open_archive(Path(args.root))
+    now = args.now if args.now else now_iso()
+    record_ids = args.id if args.id else None
+    result = build_print_edition(
+        archive,
+        Path(args.out),
+        record_ids=record_ids,
+        archive_name=archive.config.archive_name,
+        base_url=args.base_url or "",
+        lang=args.lang,
+        now=now,
+    )
+    qr_note = (
+        "with QR codes" if result.qr_codes_rendered else "text-only fixity (segno not installed)"
+    )
+    print(f"print-edition: {result.records_included} record(s) -> {result.out_path} ({qr_note})")
+    return 0
+
+
+def _cmd_session_ingest(args: argparse.Namespace) -> int:
+    """``session ingest`` — apply an oral-history session manifest and ingest it.
+
+    EXP-09: reads a session-manifest JSON file (see
+    ``docs/oral-history/session-manifest-format.md``), validates that every
+    disclosing segment carries a spoken-consent timestamp, maps each segment onto
+    its own :class:`~ledger.models.Field` (and, for a segment naming a
+    ``payload_filename``, a pre-declared payload policy), and runs the result
+    through the one ingest path — exactly like ``ingest``, but session-shaped.
+    """
+    archive = _open_archive(Path(args.root))
+    manifest = parse_session_manifest(Path(args.manifest).read_text(encoding="utf-8"))
+
+    record = Record(
+        title=args.title,
+        default_policy=AccessPolicy.SEALED_UNTIL,
+        dublin_core=DublinCore(title=[args.title], publisher=[archive.config.archive_name]),
+        content_warnings=list(args.cw or []),
+    )
+    record = apply_session_manifest(record, manifest)
+
+    payload: dict[str, Path] = {}
+    for fname, path_str in _parse_pairs(args.file or []):
+        payload[fname] = Path(path_str)
+
+    identity: ContributorIdentity | None = None
+    if args.narrator_name or args.narrator_contact:
+        identity = ContributorIdentity(
+            name=args.narrator_name or "",
+            contact=args.narrator_contact or "",
+        )
+
+    now = args.now if args.now else now_iso()
+    aip = archive.ingest(payload, record, identity=identity, agent=args.actor, now=now)
+
+    print(f"record_id: {record.record_id}")
+    print(f"bag: {aip.bag.path}")
+    print(f"segments: {len(manifest.segments)}")
+    if record.identity_ref is not None:
+        # Print ONLY the opaque token; never the narrator's name or contact.
+        print(f"identity_ref: {record.identity_ref}")
+    return 0
 
 
 def _cmd_demo(args: argparse.Namespace) -> int:
@@ -806,11 +1155,36 @@ def _build_parser() -> argparse.ArgumentParser:
     p_serve.add_argument("--port", type=int, default=8000)
     p_serve.add_argument("--grants", help="path to a pre-provisioned grants JSON file")
     p_serve.add_argument(
+        "--revocations",
+        help="path to a revoked-subjects JSON file (default: revocations.json beside --grants)",
+    )
+    p_serve.add_argument(
         "--allow-contributions",
         action="store_true",
         help="enable the /contribute submission form (requires LEDGER_VAULT_KEY)",
     )
     p_serve.set_defaults(func=_cmd_serve)
+
+    p_grant = sub.add_parser("grant", help="mint, revoke, and list capability grant tokens")
+    grant_sub = p_grant.add_subparsers(dest="grant_command", required=True, metavar="SUBCOMMAND")
+    p_grant_issue = grant_sub.add_parser(
+        "issue", help="mint an authenticated token (secret via LEDGER_GRANT_SECRET)"
+    )
+    p_grant_issue.add_argument("--subject", required=True, help="subject the token authenticates")
+    p_grant_issue.add_argument("--expires-at", help="ISO-8601 expiry (default: never expires)")
+    p_grant_issue.set_defaults(func=_cmd_grant_issue)
+    p_grant_revoke = grant_sub.add_parser("revoke", help="add a subject to the revocation list")
+    p_grant_revoke.add_argument("--subject", required=True, help="subject to revoke")
+    p_grant_revoke.add_argument(
+        "--revocations", required=True, help="path to the revoked-subjects JSON file"
+    )
+    p_grant_revoke.set_defaults(func=_cmd_grant_revoke)
+    p_grant_list = grant_sub.add_parser(
+        "list", help="list provisioned subjects with their revoked flag"
+    )
+    p_grant_list.add_argument("--grants", help="path to the pre-provisioned grants JSON file")
+    p_grant_list.add_argument("--revocations", help="path to the revoked-subjects JSON file")
+    p_grant_list.set_defaults(func=_cmd_grant_list)
 
     p_audit = sub.add_parser("audit", help="validate every bag's fixity")
     p_audit.add_argument("--root", required=True)
@@ -883,7 +1257,10 @@ def _build_parser() -> argparse.ArgumentParser:
     p_propose = sub.add_parser("propose", help="propose a high-stakes action (dual-control)")
     p_propose.add_argument("--root", required=True)
     p_propose.add_argument(
-        "--action", required=True, choices=sorted(dualcontrol.ACTIONS), help="action to propose"
+        "--action",
+        required=True,
+        choices=sorted(_PROPOSABLE_ACTIONS),
+        help="action to propose",
     )
     p_propose.add_argument(
         "--id", required=True, help="target record id (or identity ref for unseal)"
@@ -903,6 +1280,61 @@ def _build_parser() -> argparse.ArgumentParser:
     p_proposals = sub.add_parser("proposals", help="list open dual-control proposals")
     p_proposals.add_argument("--root", required=True)
     p_proposals.set_defaults(func=_cmd_proposals)
+
+    p_attest = sub.add_parser(
+        "attest", help="attest a SEALED_CONDITIONAL condition (2-of-N stewards)"
+    )
+    attest_sub = p_attest.add_subparsers(dest="attest_command", required=True, metavar="SUBCOMMAND")
+    p_att_propose = attest_sub.add_parser("propose", help="propose that a condition has been met")
+    p_att_propose.add_argument("--root", required=True)
+    p_att_propose.add_argument("condition", help="condition name (from config.conditions)")
+    p_att_propose.add_argument("--actor", required=True, help="proposing steward id")
+    p_att_propose.add_argument("--reason", help="rationale (auditable; not persisted verbatim)")
+    p_att_propose.add_argument("--now", help="ISO-8601 timestamp")
+    p_att_propose.set_defaults(func=_cmd_attest_propose)
+
+    p_att_approve = attest_sub.add_parser(
+        "approve", help="approve a pending attestation; records it at 2-of-N"
+    )
+    p_att_approve.add_argument("--root", required=True)
+    p_att_approve.add_argument("--id", required=True, help="attestation proposal id")
+    p_att_approve.add_argument("--actor", required=True, help="approving steward id")
+    p_att_approve.add_argument("--now", help="ISO-8601 timestamp")
+    p_att_approve.set_defaults(func=_cmd_attest_approve)
+
+    p_att_list = attest_sub.add_parser(
+        "list", help="list open attestations and attested-met conditions"
+    )
+    p_att_list.add_argument("--root", required=True)
+    p_att_list.set_defaults(func=_cmd_attest_list)
+
+    p_lockdown = sub.add_parser(
+        "lockdown",
+        help="enter the duress posture (dry-run default; --execute needs an approved proposal)",
+    )
+    p_lockdown.add_argument("--root", required=True)
+    p_lockdown.add_argument("--actor", required=True, help="steward id triggering the lockdown")
+    p_lockdown.add_argument(
+        "--execute",
+        action="store_true",
+        help="perform it (requires an approved dual-control 'lockdown' proposal)",
+    )
+    p_lockdown.add_argument("--now", help="ISO-8601 timestamp")
+    p_lockdown.set_defaults(func=_cmd_lockdown)
+
+    p_standup = sub.add_parser(
+        "stand-up",
+        help="lift lockdown and restore (dry-run default; --execute needs an approved proposal)",
+    )
+    p_standup.add_argument("--root", required=True)
+    p_standup.add_argument("--actor", required=True, help="steward id standing the archive back up")
+    p_standup.add_argument(
+        "--execute",
+        action="store_true",
+        help="perform it (requires an approved dual-control 'stand-up' proposal)",
+    )
+    p_standup.add_argument("--now", help="ISO-8601 timestamp")
+    p_standup.set_defaults(func=_cmd_stand_up)
 
     p_replicas = sub.add_parser("replicas", help="report a bag's replica health")
     p_replicas.add_argument("--root", required=True)
@@ -931,9 +1363,66 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p_handoff.add_argument("--root", required=True)
     p_handoff.add_argument("--successor", help="name of the collective/person taking over")
+    p_handoff.add_argument(
+        "--attest-steward",
+        help="steward id filing a 'group-dissolved' attestation proposal at hand-off "
+        "(still needs a second steward's approval before any seal opens)",
+    )
     p_handoff.add_argument("--out", help="write the JSON manifest here (default: stdout)")
     p_handoff.add_argument("--now", help="ISO-8601 timestamp for a reproducible manifest")
     p_handoff.set_defaults(func=_cmd_handoff)
+
+    p_export_drive = sub.add_parser(
+        "export-drive", help="build a self-verifying offline courier package (sneakernet)"
+    )
+    p_export_drive.add_argument("--root", required=True)
+    p_export_drive.add_argument("--out", required=True, help="output directory (must not exist)")
+    p_export_drive.add_argument(
+        "--as", dest="as_subject", help="viewer subject to disclose for (default: anonymous)"
+    )
+    p_export_drive.add_argument("--base-url", help="public base URL for the manifest.csv links")
+    p_export_drive.add_argument("--now", help="ISO-8601 timestamp")
+    p_export_drive.set_defaults(func=_cmd_export_drive)
+
+    p_print_edition = sub.add_parser(
+        "print-edition", help="render a zine-style accessible HTML booklet of PUBLIC records"
+    )
+    p_print_edition.add_argument("--root", required=True)
+    p_print_edition.add_argument("--out", required=True, help="output HTML file path")
+    p_print_edition.add_argument(
+        "--id", action="append", help="record id to include (repeatable; default: all PUBLIC)"
+    )
+    p_print_edition.add_argument("--base-url", help="public base URL for fixity verify strings")
+    p_print_edition.add_argument("--lang", default="en", help="booklet language tag")
+    p_print_edition.add_argument("--now", help="ISO-8601 timestamp")
+    p_print_edition.set_defaults(func=_cmd_print_edition)
+
+    p_session = sub.add_parser("session", help="oral-history session kit")
+    session_sub = p_session.add_subparsers(
+        dest="session_command", required=True, metavar="SUBCOMMAND"
+    )
+    p_session_ingest = session_sub.add_parser(
+        "ingest", help="apply a session manifest (EXP-09) and ingest the result"
+    )
+    p_session_ingest.add_argument("--root", required=True)
+    p_session_ingest.add_argument("--title", required=True)
+    p_session_ingest.add_argument(
+        "--manifest", required=True, help="path to a session-manifest JSON file"
+    )
+    p_session_ingest.add_argument(
+        "--file",
+        action="append",
+        metavar="filename=path",
+        help="bytes for a segment's payload_filename (repeatable)",
+    )
+    p_session_ingest.add_argument("--cw", action="append", metavar="WARNING")
+    p_session_ingest.add_argument(
+        "--narrator-name", help="sealed into the vault; never printed back"
+    )
+    p_session_ingest.add_argument("--narrator-contact", help="sealed into the vault")
+    p_session_ingest.add_argument("--actor", default="ledger", help="ingest agent id")
+    p_session_ingest.add_argument("--now", help="ISO-8601 timestamp for reproducible ingest")
+    p_session_ingest.set_defaults(func=_cmd_session_ingest)
 
     p_demo = sub.add_parser("demo", help="run the scripted end-to-end no-outing proof")
     p_demo.set_defaults(func=_cmd_demo)

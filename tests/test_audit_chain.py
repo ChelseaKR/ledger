@@ -86,7 +86,7 @@ def _ingest(archive: Archive) -> tuple[str, Path]:
 
 def test_audit_fixity_passes_on_untampered_chain(tmp_path: Path) -> None:
     archive = Archive.init(Config.default("Chain Archive", tmp_path / "archive"))
-    _rid, _premis_path = _ingest(archive)
+    _ingest(archive)
     reports = archive.audit_fixity()
     assert len(reports) == 1
     _name, report = reports[0]
@@ -127,7 +127,7 @@ def test_premis_chain_head_and_heads(tmp_path: Path) -> None:
 
 def test_chain_head_summary_changes_when_history_is_rewritten(tmp_path: Path) -> None:
     archive = Archive.init(Config.default("Chain Archive", tmp_path / "archive"))
-    _rid, premis_path = _ingest(archive)
+    _, premis_path = _ingest(archive)
 
     before = archive.chain_head_summary()
 
@@ -141,7 +141,7 @@ def test_chain_head_summary_changes_when_history_is_rewritten(tmp_path: Path) ->
 
 def test_audit_log_chains_covers_archive_level_logs(tmp_path: Path) -> None:
     archive = Archive.init(Config.default("Chain Archive", tmp_path / "archive"))
-    rid, _premis_path = _ingest(archive)
+    rid, _ = _ingest(archive)
 
     # No archive-level logs yet.
     assert archive.audit_log_chains() == []
@@ -188,7 +188,7 @@ def test_verify_replicas_detects_divergent_chain_head(tmp_path: Path) -> None:
     mirror = tmp_path / "mirror"
     mirror.mkdir(parents=True, exist_ok=True)
     archive = Archive.init(Config.default("Chain Archive", root))
-    rid, _premis_path = _ingest(archive)
+    rid, _ = _ingest(archive)
 
     bag_dir = archive.bags_dir / rid
     mirror_loc = StorageLocation(name="mirror-1", path=str(mirror), kind="mirror")

@@ -43,7 +43,7 @@ from xml.sax.saxutils import escape as _sax_escape
 
 from ledger.chain import GENESIS_HASH, ChainVerification, build_chain, chain_head
 from ledger.chain import verify_chain as _verify_chain
-from ledger.models import PremisEvent, PremisEventType, canonical_json
+from ledger.models import PremisEvent, PremisEventType, PremisRights, canonical_json
 
 __all__ = ["PremisLog", "to_premis_xml"]
 
@@ -65,6 +65,27 @@ def escape(value: str) -> str:
 
 
 _PREMIS_NS = "http://www.loc.gov/premis/v3"
+
+
+def _rights_from_dict(data: dict[str, Any]) -> PremisRights:
+    """Rebuild a :class:`PremisRights` from its ``to_dict`` form.
+
+    Kept private and mirrors :meth:`PremisRights.to_dict`, so a written rights
+    statement round-trips exactly. Missing optional parts default to empty, so a
+    minimally-populated statement (only ``rightsBasis``) still reads back.
+    """
+    acts = data.get("grantedActs", [])
+    restrictions = data.get("restrictions", [])
+    linked = data.get("linkingObjectIdentifier")
+    return PremisRights(
+        rights_basis=str(data.get("rightsBasis", "")),
+        rights_note=str(data.get("rightsNote", "")),
+        granted_acts=tuple(str(a) for a in acts) if isinstance(acts, list) else (),
+        restrictions=(
+            tuple(str(r) for r in restrictions) if isinstance(restrictions, list) else ()
+        ),
+        linked_object=str(linked) if linked is not None else None,
+    )
 
 
 def _event_from_dict(data: dict[str, Any]) -> PremisEvent:
@@ -105,6 +126,8 @@ class PremisLog:
         self,
         events: list[PremisEvent] | None = None,
         prev_hashes: list[str] | None = None,
+        *,
+        rights: PremisRights | None = None,
     ) -> None:
         """Start a log, optionally seeded with prior events (defensively copied).
 
@@ -114,6 +137,14 @@ class PremisLog:
         adopted into the chained format on read — see :meth:`from_json`). Pass it
         explicitly only to preserve chain links read verbatim off disk, which is
         what makes tampering with an already-written entry detectable.
+
+        An optional PREMIS :class:`~ledger.models.PremisRights` statement describes
+        the terms under which the object may be used; it sits beside the event
+        history rather than in it, since a rights statement is a *standing* fact
+        about the object, not a point-in-time event (PREMIS v3 keeps them as
+        separate top-level entities). Because it is replaceable by design
+        (:meth:`set_rights`), it is *not* covered by the event hash chain — the
+        chain proves the event history, not the standing rights statement.
         """
         self._events: list[PremisEvent] = list(events) if events is not None else []
         if prev_hashes is not None:
@@ -122,6 +153,7 @@ class PremisLog:
             self._prev_hashes: list[str] = list(prev_hashes)
         else:
             self._prev_hashes = build_chain([e.to_dict() for e in self._events])
+        self._rights: PremisRights | None = rights
 
     def record(self, event: PremisEvent) -> None:
         """Append one event, chained to the current head. Append-only ->
@@ -162,36 +194,74 @@ class PremisLog:
         """
         return _verify_chain([e.to_dict() for e in self._events], self._prev_hashes)
 
+    @property
+    def rights(self) -> PremisRights | None:
+        """The standing rights statement for the object, or ``None`` if unset."""
+        return self._rights
+
+    def set_rights(self, rights: PremisRights | None) -> None:
+        """Attach (or clear) the object's rights statement.
+
+        A rights statement is a standing fact, not an append-only event, so it is
+        replaced rather than accumulated: re-declaring rights supersedes the prior
+        statement. The event history is untouched (auditability preserved), and the
+        hash chain covers only the event history — a rights statement is mutable by
+        design, so chaining it would make legitimate rights updates look like
+        tampering.
+        """
+        self._rights = rights
+
     def to_json(self) -> str:
         """Serialize to canonical JSON: a schema-versioned envelope over each
-        event's dict form plus its chain link.
+        event's dict form plus its chain link, with the standing rights statement
+        (when present) beside the entries.
 
         Determinism/reproducibility: canonical JSON gives a byte-identical string
-        for identical history, so the log hashes the same on every machine.
+        for identical content, so the log hashes the same on every machine.
         """
         entries = [
             {**event.to_dict(), "prevHash": prev}
             for event, prev in zip(self._events, self._prev_hashes, strict=True)
         ]
-        return canonical_json({"schemaVersion": _SCHEMA_VERSION, "entries": entries})
+        envelope: dict[str, Any] = {"schemaVersion": _SCHEMA_VERSION, "entries": entries}
+        if self._rights is not None:
+            envelope["rights"] = self._rights.to_dict()
+        return canonical_json(envelope)
 
     @classmethod
     def from_json(cls, text: str) -> PremisLog:
         """Reconstruct a log from :meth:`to_json` output, preserving order.
 
-        Also reads the legacy (schema 1) bare-array format written before chaining
-        existed: those logs have no ``prevHash`` on disk, so a fresh chain is
-        built for them from :data:`~ledger.chain.GENESIS_HASH` forward (an
-        in-memory migration — nothing is rewritten on disk until the caller next
-        calls :meth:`write`). This adopts old logs into the chained format going
-        forward; it cannot prove entries recorded before chaining existed were
-        untampered (evolvability, with the documented migration risk).
+        Accepts every shape this log has ever written (robustness, round-trip):
+
+        * a bare JSON list of events — the schema-1 form written before chaining
+          and before rights existed;
+        * ``{"events": [...], "rights": {...}}`` — the transitional pre-chain form
+          written while the rights entity existed but chaining did not;
+        * ``{"schemaVersion": 2, "entries": [...], "rights"?: {...}}`` — the
+          current chained envelope, each entry carrying its ``prevHash`` link.
+
+        Pre-chain logs have no ``prevHash`` on disk, so a fresh chain is built for
+        them from :data:`~ledger.chain.GENESIS_HASH` forward (an in-memory
+        migration — nothing is rewritten on disk until the caller next calls
+        :meth:`write`). This adopts old logs into the chained format going forward;
+        it cannot prove entries recorded before chaining existed were untampered
+        (evolvability, with the documented migration risk).
         """
         raw: object = json.loads(text)
         if isinstance(raw, list):
             events = [_event_from_dict(item) for item in raw]
             return cls(events)
         if isinstance(raw, dict):
+            raw_rights = raw.get("rights")
+            rights = _rights_from_dict(raw_rights) if isinstance(raw_rights, dict) else None
+            if "schemaVersion" not in raw:
+                # Transitional pre-chain form: {"events": [...], "rights": {...}}.
+                raw_events = raw.get("events", [])
+                if not isinstance(raw_events, list):
+                    raise ValueError("PREMIS log 'events' must be a list of events")
+                events = [_event_from_dict(item) for item in raw_events]
+                return cls(events, rights=rights)
             version = raw.get("schemaVersion")
             if version != _SCHEMA_VERSION:
                 raise ValueError(f"unsupported PREMIS log schema_version: {version!r}")
@@ -200,7 +270,7 @@ class PremisLog:
                 raise ValueError("PREMIS log 'entries' must be a list")
             events = [_event_from_dict(item) for item in entries]
             prev_hashes = [str(item.get("prevHash", GENESIS_HASH)) for item in entries]
-            return cls(events, prev_hashes=prev_hashes)
+            return cls(events, prev_hashes=prev_hashes, rights=rights)
         raise ValueError("PREMIS log JSON must be a list (legacy) or a schema-versioned object")
 
     def write(self, path: Path) -> None:
@@ -260,19 +330,67 @@ def _event_to_xml(event: PremisEvent, indent: str) -> list[str]:
     return lines
 
 
-def to_premis_xml(events: Sequence[PremisEvent]) -> str:
-    """Render ``events`` as a minimal, valid PREMIS XML document.
+def _rights_to_xml(rights: PremisRights, indent: str) -> list[str]:
+    """Render a rights statement as a ``premis:rights``/``rightsStatement`` element.
+
+    Emits the PREMIS v3 ``rights`` entity: a ``rightsStatement`` with a synthetic
+    ``rightsStatementIdentifier`` (local, derived from the linked object), the
+    ``rightsBasis``, and a ``rightsGranted`` block carrying each granted ``act`` and
+    ``restriction``. Every value is XML-escaped.
+
+    No-outing rule: a rights statement holds only the collection-level terms — a
+    basis, a note, granted acts, and restrictions — never a ``rightsHolder`` name or
+    any contributor identity, so nothing here can out a person.
+    """
+    inner = indent + "  "
+    inner2 = inner + "  "
+    lines = [f"{indent}<premis:rights>"]
+    lines.append(f"{inner}<premis:rightsStatement>")
+    lines.append(f"{inner2}<premis:rightsStatementIdentifier>")
+    lines.append(
+        f"{inner2}  <premis:rightsStatementIdentifierType>local"
+        "</premis:rightsStatementIdentifierType>"
+    )
+    ident = rights.linked_object if rights.linked_object is not None else "rights"
+    lines.append(
+        f"{inner2}  <premis:rightsStatementIdentifierValue>{escape(ident)}"
+        "</premis:rightsStatementIdentifierValue>"
+    )
+    lines.append(f"{inner2}</premis:rightsStatementIdentifier>")
+    lines.append(f"{inner2}<premis:rightsBasis>{escape(rights.rights_basis)}</premis:rightsBasis>")
+    if rights.rights_note:
+        lines.append(f"{inner2}<premis:rightsNote>{escape(rights.rights_note)}</premis:rightsNote>")
+    if rights.granted_acts or rights.restrictions:
+        lines.append(f"{inner2}<premis:rightsGranted>")
+        for act in rights.granted_acts:
+            lines.append(f"{inner2}  <premis:act>{escape(act)}</premis:act>")
+        for restriction in rights.restrictions:
+            lines.append(
+                f"{inner2}  <premis:restriction>{escape(restriction)}</premis:restriction>"
+            )
+        lines.append(f"{inner2}</premis:rightsGranted>")
+    lines.append(f"{inner}</premis:rightsStatement>")
+    lines.append(f"{indent}</premis:rights>")
+    return lines
+
+
+def to_premis_xml(events: Sequence[PremisEvent], rights: PremisRights | None = None) -> str:
+    """Render ``events`` (and an optional ``rights`` statement) as PREMIS v3 XML.
 
     Interoperability/standards-compliance: the result is a ``premis:premis`` root
-    in the PREMIS v3 namespace with one ``premis:event`` child per event, so other
-    preservation systems can ingest our history. All text is XML-escaped.
+    in the PREMIS v3 namespace with one ``premis:event`` child per event and, when
+    supplied, a ``premis:rights`` statement, so other preservation systems can
+    ingest both our history and the terms of use. All text is XML-escaped.
 
-    No-outing rule: only the safe, opaque fields of each event are emitted; there
-    is no identity or sealed value anywhere in the document.
+    No-outing rule: only the safe, opaque fields of each event and the
+    collection-level rights terms are emitted; there is no identity, rights-holder,
+    or sealed value anywhere in the document.
     """
     lines = ['<?xml version="1.0" encoding="UTF-8"?>']
     lines.append(f'<premis:premis xmlns:premis="{_PREMIS_NS}" version="3.0">')
     for event in events:
         lines.extend(_event_to_xml(event, "  "))
+    if rights is not None:
+        lines.extend(_rights_to_xml(rights, "  "))
     lines.append("</premis:premis>")
     return "\n".join(lines)

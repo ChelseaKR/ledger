@@ -267,6 +267,23 @@ and refuses to act at all when no replica validates — a divergent copy can nev
 propagate. This module moves and validates opaque bag *directories*; it places only
 bag names, location names, and paths into events and errors.
 
+**Mutual preservation aid (EXP-15).** A second, opt-in transport in the same module
+for community instances that hold *each other's* bags as redundancy without either
+side trusting the other with plaintext. `seal_bag` tars a bag deterministically and
+encrypts it with a Fernet key that never leaves the owning instance ("key stays
+home"); `replicate_sealed_bag` writes that ciphertext blob — never the bag — to a
+partner `StorageLocation` and re-hashes what actually landed on disk to catch a
+truncated or corrupted write (verify-on-arrival, adapted for ciphertext a partner
+cannot decrypt to validate structurally). `attest_sealed_replica` lets either side —
+typically the holding partner, on a schedule — prove which bytes they currently hold
+by SHA-256 digest alone, never decrypting; `verify_sealed_attestation` compares that
+digest against the one recorded at seal time, closing the residual that a hostile or
+compromised replica host can read what it stores. `recover_sealed_bag` is the
+recovery drill: pull the blob back, decrypt locally with the key that never left
+home, and run the exact same `validate_bag` used by the plaintext path — "does the
+partner's copy actually work" is answered by evidence, not assumption. See
+[`docs/MUTUAL-AID.md`](MUTUAL-AID.md) for the operational runbook.
+
 ### 1.9 Moderation: `moderate.py`
 
 `ModerationLog` is an append-only log of `ModerationAction`s. Every consequential
