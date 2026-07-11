@@ -49,6 +49,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
+from ledger._filelock import file_lock
 from ledger.errors import LedgerError
 
 __all__ = [
@@ -80,6 +81,22 @@ def _canonical(payload: Mapping[str, object]) -> bytes:
     )
 
 
+def _validate_counts(counts: Mapping[str, int]) -> None:
+    unknown = set(counts) - DEMAND_TYPES
+    if unknown:
+        raise LedgerError(
+            f"unknown demand type(s) {sorted(unknown)}; expected {sorted(DEMAND_TYPES)}"
+        )
+    for kind, count in counts.items():
+        if not isinstance(count, int) or isinstance(count, bool) or count < 0:
+            raise LedgerError(f"demand count for {kind!r} must be a non-negative integer")
+
+
+def _validate_digest(field_name: str, digest: str) -> None:
+    if digest and (len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest)):
+        raise LedgerError(f"{field_name} must be empty or a SHA-256 hex digest")
+
+
 @dataclass(frozen=True)
 class Attestation:
     """One dated, chained re-attestation of the archive's legal-demand posture.
@@ -104,16 +121,21 @@ class Attestation:
     digest: str = ""
 
     def __post_init__(self) -> None:
-        if not self.attested_date:
-            raise LedgerError("attested_date must not be empty")
-        unknown = set(self.demand_counts) - DEMAND_TYPES
-        if unknown:
-            raise LedgerError(
-                f"unknown demand type(s) {sorted(unknown)}; expected {sorted(DEMAND_TYPES)}"
-            )
-        for kind, count in self.demand_counts.items():
-            if not isinstance(count, int) or isinstance(count, bool) or count < 0:
-                raise LedgerError(f"demand count for {kind!r} must be a non-negative integer")
+        try:
+            datetime.strptime(self.attested_date, "%Y-%m-%d")
+        except ValueError as exc:
+            raise LedgerError("attested_date must be a valid YYYY-MM-DD date") from exc
+        if not self.attested_by.strip():
+            raise LedgerError("attested_by must not be empty")
+        if not self.statement_text.strip():
+            raise LedgerError("statement_text must not be empty")
+        if type(self.counsel_reviewed) is not bool:
+            raise LedgerError("counsel_reviewed must be a boolean")
+        if self.counsel_reviewed and not self.counsel_review_note.strip():
+            raise LedgerError("counsel_review_note is required when counsel_reviewed is true")
+        _validate_counts(self.demand_counts)
+        _validate_digest("prev_digest", self.prev_digest)
+        _validate_digest("digest", self.digest)
 
     def content_digest(self) -> str:
         """SHA-256 of this attestation's content plus ``prev_digest`` (the chain link)."""
@@ -148,21 +170,33 @@ class Attestation:
     @classmethod
     def from_dict(cls, data: Mapping[str, object]) -> Attestation:
         raw_counts = data.get("demand_counts", {})
-        counts = (
-            {str(k): int(str(v)) for k, v in raw_counts.items()}
-            if isinstance(raw_counts, dict)
-            else {}
-        )
+        if not isinstance(raw_counts, dict):
+            raise LedgerError("demand_counts must be an object")
+        counts: dict[str, int] = {}
+        for key, value in raw_counts.items():
+            if not isinstance(key, str) or type(value) is not int:
+                raise LedgerError("demand_counts must map strings to integers")
+            counts[key] = value
+        counsel_reviewed = data.get("counsel_reviewed", False)
+        if type(counsel_reviewed) is not bool:
+            raise LedgerError("counsel_reviewed must be a boolean")
+
+        def text(field_name: str) -> str:
+            value = data.get(field_name, "")
+            if not isinstance(value, str):
+                raise LedgerError(f"{field_name} must be a string")
+            return value
+
         return cls(
-            attested_date=str(data.get("attested_date", "")),
-            attested_by=str(data.get("attested_by", "")),
-            statement_text=str(data.get("statement_text", "")),
+            attested_date=text("attested_date"),
+            attested_by=text("attested_by"),
+            statement_text=text("statement_text"),
             demand_counts=counts,
-            counsel_reviewed=bool(data.get("counsel_reviewed", False)),
-            counsel_review_note=str(data.get("counsel_review_note", "")),
-            signature=str(data.get("signature", "")),
-            prev_digest=str(data.get("prev_digest", "")),
-            digest=str(data.get("digest", "")),
+            counsel_reviewed=counsel_reviewed,
+            counsel_review_note=text("counsel_review_note"),
+            signature=text("signature"),
+            prev_digest=text("prev_digest"),
+            digest=text("digest"),
         )
 
 
@@ -204,32 +238,36 @@ class TransparencyLog:
         edit, reorder, or deletion of history — the same tamper-evidence discipline
         as the PREMIS event log, applied to the archive's legal-demand posture.
         """
-        items = self._read()
-        prev_digest = items[-1].digest if items else ""
-        draft = Attestation(
-            attested_date=attested_date,
-            attested_by=attested_by,
-            statement_text=statement_text,
-            demand_counts=dict(demand_counts or {}),
-            counsel_reviewed=counsel_reviewed,
-            counsel_review_note=counsel_review_note,
-            signature=signature,
-            prev_digest=prev_digest,
-        )
-        entry = Attestation(
-            attested_date=draft.attested_date,
-            attested_by=draft.attested_by,
-            statement_text=draft.statement_text,
-            demand_counts=draft.demand_counts,
-            counsel_reviewed=draft.counsel_reviewed,
-            counsel_review_note=draft.counsel_review_note,
-            signature=draft.signature,
-            prev_digest=draft.prev_digest,
-            digest=draft.content_digest(),
-        )
-        items.append(entry)
-        self._write(items)
-        return entry
+        try:
+            with file_lock(self._path):
+                items = self._read()
+                prev_digest = items[-1].digest if items else ""
+                draft = Attestation(
+                    attested_date=attested_date,
+                    attested_by=attested_by,
+                    statement_text=statement_text,
+                    demand_counts=dict(demand_counts or {}),
+                    counsel_reviewed=counsel_reviewed,
+                    counsel_review_note=counsel_review_note,
+                    signature=signature,
+                    prev_digest=prev_digest,
+                )
+                entry = Attestation(
+                    attested_date=draft.attested_date,
+                    attested_by=draft.attested_by,
+                    statement_text=draft.statement_text,
+                    demand_counts=draft.demand_counts,
+                    counsel_reviewed=draft.counsel_reviewed,
+                    counsel_review_note=draft.counsel_review_note,
+                    signature=draft.signature,
+                    prev_digest=draft.prev_digest,
+                    digest=draft.content_digest(),
+                )
+                items.append(entry)
+                self._write(items)
+                return entry
+        except OSError as exc:
+            raise LedgerError(f"transparency log could not be written: {self._path}") from exc
 
     # --- persistence ---------------------------------------------------------
 
@@ -238,18 +276,26 @@ class TransparencyLog:
             return []
         try:
             raw = json.loads(self._path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            return []
+        except OSError as exc:
+            raise LedgerError(f"transparency log could not be read: {self._path}") from exc
+        except ValueError as exc:
+            raise LedgerError(f"transparency log is not valid JSON: {self._path}") from exc
         if not isinstance(raw, list):
-            return []
-        return [Attestation.from_dict(item) for item in raw if isinstance(item, dict)]
+            raise LedgerError("transparency log must contain a JSON list")
+        if not all(isinstance(item, dict) for item in raw):
+            raise LedgerError("every transparency log entry must be an object")
+        return [Attestation.from_dict(item) for item in raw]
 
     def _write(self, items: list[Attestation]) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         payload = json.dumps([a.to_dict() for a in items], ensure_ascii=False, indent=2)
         tmp = self._path.with_name(f"{self._path.name}.{os.getpid()}.tmp")
-        tmp.write_text(payload, encoding="utf-8")
-        os.replace(tmp, self._path)
+        try:
+            tmp.write_text(payload, encoding="utf-8")
+            os.replace(tmp, self._path)
+        except OSError:
+            tmp.unlink(missing_ok=True)
+            raise
 
 
 def verify_chain(entries: list[Attestation]) -> bool:
@@ -282,7 +328,8 @@ def days_since(date_str: str, *, now: datetime | None = None) -> int | None:
     except ValueError:
         return None
     current = now if now is not None else datetime.now(UTC)
-    return max(0, (current - attested).days)
+    delta = (current - attested).days
+    return delta if delta >= 0 else None
 
 
 def is_stale(latest: Attestation | None, cadence_days: int, *, now: datetime | None = None) -> bool:

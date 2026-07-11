@@ -2388,8 +2388,19 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             return
 
         log = transparency.TransparencyLog(Path(log_path))
-        entries = log.all()
-        latest = log.latest()
+        try:
+            entries = log.all()
+        except LedgerError:
+            main_html = transparency_unattested_main_html(
+                heading,
+                "The configured transparency log could not be verified. Treat the "
+                "legal-process statement as unavailable until a steward repairs it.",
+            )
+            self._send_html(
+                200, _page(heading, lang=lang, main_html=main_html, nav_html=self._nav())
+            )
+            return
+        latest = entries[-1] if entries else None
         if latest is None:
             main_html = transparency_unattested_main_html(
                 heading,

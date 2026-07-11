@@ -1069,7 +1069,10 @@ def transparency_main_html(
         "'How to read this page' below."
     )
     status_html = (
-        f'    <p class="warning" role="status">Last attested {_esc(str(since))} day(s) '
+        '    <p class="warning" role="status">The attestation date is invalid or in '
+        "the future. Treat this statement as STALE, not current.</p>\n"
+        if since is None
+        else f'    <p class="warning" role="status">Last attested {_esc(str(since))} day(s) '
         f"ago — this is beyond the archive's {cadence_days}-day re-attestation "
         "cadence. Treat this statement as STALE, not current.</p>\n"
         if stale

@@ -8,6 +8,7 @@ EXP-10).
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -115,10 +116,44 @@ def test_reloaded_log_round_trips_and_still_verifies(tmp_path: Path) -> None:
 
 
 @pytest.mark.disclosure
+def test_corrupt_log_fails_closed_and_is_not_overwritten(tmp_path: Path) -> None:
+    path = tmp_path / "transparency.json"
+    path.write_text("not-json", encoding="utf-8")
+    log = TransparencyLog(path)
+
+    with pytest.raises(LedgerError):
+        log.all()
+    with pytest.raises(LedgerError):
+        log.append(attested_date="2026-01-01", attested_by="s", statement_text="x")
+    assert path.read_text(encoding="utf-8") == "not-json"
+
+
+@pytest.mark.disclosure
+def test_loaded_counsel_flag_is_not_truthy_string_coercion(tmp_path: Path) -> None:
+    path = tmp_path / "transparency.json"
+    path.write_text(
+        json.dumps(
+            [
+                {
+                    "attested_date": "2026-01-01",
+                    "attested_by": "s",
+                    "statement_text": "x",
+                    "counsel_reviewed": "false",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(LedgerError):
+        TransparencyLog(path).all()
+
+
+@pytest.mark.disclosure
 def test_days_since_and_staleness() -> None:
     now = datetime(2026, 3, 1, tzinfo=UTC)
     assert days_since("2026-01-01", now=now) == 59
     assert days_since("not-a-date", now=now) is None
+    assert days_since("2027-01-01", now=now) is None
 
     fresh = Attestation(attested_date="2026-02-20", attested_by="s", statement_text="x")
     stale = Attestation(attested_date="2025-01-01", attested_by="s", statement_text="x")

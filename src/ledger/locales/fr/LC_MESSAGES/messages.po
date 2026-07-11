@@ -748,6 +748,9 @@ msgstr "Jeton pour une personne nommée"
 msgid "Transcript"
 msgstr "Transcription"
 
+msgid "Transparency"
+msgstr "Transparence"
+
 msgid "Type"
 msgstr "Type"
 

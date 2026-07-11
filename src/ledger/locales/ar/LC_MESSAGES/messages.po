@@ -713,6 +713,9 @@ msgstr "رمز لشخص مذكور"
 msgid "Transcript"
 msgstr "نص مكتوب"
 
+msgid "Transparency"
+msgstr "الشفافية"
+
 msgid "Type"
 msgstr "النوع"
 
