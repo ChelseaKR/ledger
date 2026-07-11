@@ -228,12 +228,7 @@ class Config:
             raise ConfigError("objection_response_days must not be negative")
         if self.transparency_cadence_days < 1:
             raise ConfigError("transparency_cadence_days must be at least 1")
-        if self.reading_room_k_floor < 2:
-            raise ConfigError("reading_room_k_floor must be at least 2")
-        if type(self.reading_room_enabled) is not bool:
-            raise ConfigError("reading_room_enabled must be a boolean")
-        if self.reading_room_enabled and self.dual_control_threshold < 2:
-            raise ConfigError("reading_room_enabled requires dual_control_threshold of at least 2")
+        self._validate_reading_room()
         for location in self.locations:
             location.validate()
 
@@ -264,6 +259,14 @@ class Config:
                 Path(self.vault_path),
             )
         )
+
+    def _validate_reading_room(self) -> None:
+        if self.reading_room_k_floor < 2:
+            raise ConfigError("reading_room_k_floor must be at least 2")
+        if type(self.reading_room_enabled) is not bool:
+            raise ConfigError("reading_room_enabled must be a boolean")
+        if self.reading_room_enabled and self.dual_control_threshold < 2:
+            raise ConfigError("reading_room_enabled requires dual_control_threshold of at least 2")
 
     def to_dict(self) -> dict[str, object]:
         """Serialize to a JSON-ready mapping with a deterministic field order.

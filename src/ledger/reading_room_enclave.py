@@ -348,9 +348,7 @@ class ReadingRoomEnclave:
         self._ensure_enabled()
         try:
             with file_lock(self._history_path):
-                return self._execute_locked(
-                    proposal_id, actor=actor, k_floor=k_floor, now=now
-                )
+                return self._execute_locked(proposal_id, actor=actor, k_floor=k_floor, now=now)
         except OSError as exc:
             raise LedgerError("reading-room history lock could not be acquired") from exc
 
@@ -464,9 +462,7 @@ class ReadingRoomEnclave:
             manifests[proposal_id] = query.to_dict()
             self._manifests_path.parent.mkdir(parents=True, exist_ok=True)
             payload = json.dumps(manifests, ensure_ascii=False, indent=2, sort_keys=True)
-            tmp = self._manifests_path.with_name(
-                f"{self._manifests_path.name}.{os.getpid()}.tmp"
-            )
+            tmp = self._manifests_path.with_name(f"{self._manifests_path.name}.{os.getpid()}.tmp")
             tmp.write_text(payload, encoding="utf-8")
             os.replace(tmp, self._manifests_path)
 

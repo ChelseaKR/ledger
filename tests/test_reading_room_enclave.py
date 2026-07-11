@@ -39,10 +39,11 @@ _NOW = "2026-01-01T00:00:00Z"
 _SENTINEL_TITLE = "SENTINEL-TITLE-DO-NOT-LEAK-4KQ9"
 
 
-def _archive(tmp_path: Path, *, k_floor: int = 2, threshold: int = 1) -> Archive:
+def _archive(tmp_path: Path, *, k_floor: int = 2, threshold: int = 2) -> Archive:
     config = Config.default("Enclave Test", tmp_path / "arc")
     config.reading_room_k_floor = k_floor
     config.dual_control_threshold = threshold
+    config.reading_room_enabled = True
     return Archive.init(config)
 
 
@@ -128,6 +129,14 @@ def test_execute_refuses_before_threshold_met(tmp_path: Path) -> None:
     assert result.total == 5
 
 
+def test_enclave_is_disabled_until_governance_opts_in(tmp_path: Path) -> None:
+    config = Config.default("Disabled", tmp_path / "arc")
+    archive = Archive.init(config)
+    enclave = ReadingRoomEnclave(archive)
+    with pytest.raises(LedgerError, match="disabled"):
+        enclave.propose(AggregateQuery(dimension="year", reason="r"), proposer="a")
+
+
 def test_same_steward_approving_twice_never_satisfies_threshold(tmp_path: Path) -> None:
     archive = _archive(tmp_path, threshold=2)
     _seed(archive, n=5, year="2020", subject="eviction")
@@ -150,11 +159,13 @@ def test_bucket_below_k_floor_is_suppressed(tmp_path: Path) -> None:
         dimension="year", reason="r", match_field="subject", match_term="eviction"
     )
     prop = enclave.propose(query, proposer="steward-a", now=_NOW)
+    enclave.approve(prop.proposal_id, "steward-b")
     result = enclave.execute(prop.proposal_id, actor="steward-a", now=_NOW)
 
     by_label = {b.label: b.count for b in result.buckets}
     assert by_label["2020"] == 5
-    assert by_label["2021"] is None  # suppressed, not omitted (honest about existing)
+    assert by_label["[suppressed]"] is None
+    assert "2021" not in by_label  # a sub-k label from sealed records must not leak
     assert result.suppressed_buckets == 1
 
 
@@ -168,6 +179,7 @@ def test_total_is_suppressed_whenever_any_bucket_is(tmp_path: Path) -> None:
         dimension="year", reason="r", match_field="subject", match_term="eviction"
     )
     prop = enclave.propose(query, proposer="steward-a", now=_NOW)
+    enclave.approve(prop.proposal_id, "steward-b")
     result = enclave.execute(prop.proposal_id, actor="steward-a", now=_NOW)
     assert result.total is None  # NOT 7 — that would leak "2021 has 2" by subtraction
 
@@ -181,6 +193,7 @@ def test_all_buckets_at_or_above_floor_are_never_suppressed(tmp_path: Path) -> N
         dimension="year", reason="r", match_field="subject", match_term="eviction"
     )
     prop = enclave.propose(query, proposer="steward-a", now=_NOW)
+    enclave.approve(prop.proposal_id, "steward-b")
     result = enclave.execute(prop.proposal_id, actor="steward-a", now=_NOW)
     assert result.suppressed_buckets == 0
     assert result.total == 7
@@ -191,6 +204,7 @@ def test_k_floor_may_be_raised_but_never_lowered_below_config(tmp_path: Path) ->
     _seed(archive, n=10, year="2020", subject="eviction")
     enclave = ReadingRoomEnclave(archive)
     prop = enclave.propose(AggregateQuery(dimension="year", reason="r"), proposer="a", now=_NOW)
+    enclave.approve(prop.proposal_id, "b")
     with pytest.raises(LedgerError):
         enclave.execute(prop.proposal_id, actor="a", k_floor=2, now=_NOW)  # weaker than config
     result = enclave.execute(prop.proposal_id, actor="a", k_floor=9, now=_NOW)  # stricter: ok
@@ -213,6 +227,7 @@ def test_aggregation_never_touches_records_a_normal_grant_could_not_even_list(
     assert archive.browse(anonymous(), now=_NOW) == []  # nothing listable to the public
     enclave = ReadingRoomEnclave(archive)
     prop = enclave.propose(AggregateQuery(dimension="year", reason="r"), proposer="a", now=_NOW)
+    enclave.approve(prop.proposal_id, "b")
     result = enclave.execute(prop.proposal_id, actor="a", now=_NOW)
     assert result.total == 4  # counted anyway, as an aggregate only
 
@@ -231,6 +246,7 @@ def test_differencing_guard_refuses_a_near_miss_of_a_prior_answer(tmp_path: Path
         dimension="year", reason="r", match_field="subject", match_term="eviction"
     )
     prop1 = enclave.propose(broad, proposer="a", now=_NOW)
+    enclave.approve(prop1.proposal_id, "b")
     result1 = enclave.execute(prop1.proposal_id, actor="a", now=_NOW)
     assert result1.total == 11
     assert result1.suppressed_buckets == 0
@@ -242,6 +258,7 @@ def test_differencing_guard_refuses_a_near_miss_of_a_prior_answer(tmp_path: Path
         dimension="year", reason="r", match_field="type", match_term="oral-history"
     )
     prop2 = enclave.propose(narrow, proposer="a", now=_NOW)
+    enclave.approve(prop2.proposal_id, "b")
     with pytest.raises(AggregationRefused):
         enclave.execute(prop2.proposal_id, actor="a", now=_NOW)
 
@@ -259,9 +276,11 @@ def test_identical_query_answered_twice_is_not_a_differencing_risk(tmp_path: Pat
     query = AggregateQuery(dimension="year", reason="r")
 
     prop1 = enclave.propose(query, proposer="a", now=_NOW)
+    enclave.approve(prop1.proposal_id, "b")
     result1 = enclave.execute(prop1.proposal_id, actor="a", now=_NOW)
 
     prop2 = enclave.propose(query, proposer="a", now=_NOW)
+    enclave.approve(prop2.proposal_id, "b")
     result2 = enclave.execute(prop2.proposal_id, actor="a", now=_NOW)  # must not raise
 
     assert result1.total == result2.total == 5
@@ -275,6 +294,7 @@ def test_differencing_guard_allows_a_safely_distant_second_query(tmp_path: Path)
 
     q_all = AggregateQuery(dimension="year", reason="r")
     p1 = enclave.propose(q_all, proposer="a", now=_NOW)
+    enclave.approve(p1.proposal_id, "b")
     r1 = enclave.execute(p1.proposal_id, actor="a", now=_NOW)
     assert r1.total == 10
 
@@ -285,6 +305,7 @@ def test_differencing_guard_allows_a_safely_distant_second_query(tmp_path: Path)
         dimension="year", reason="r", match_field="type", match_term="oral-history"
     )
     p2 = enclave.propose(q_type, proposer="a", now=_NOW)
+    enclave.approve(p2.proposal_id, "b")
     r2 = enclave.execute(p2.proposal_id, actor="a", now=_NOW)  # must not raise
     assert r2.total == 5
 
@@ -302,12 +323,14 @@ def test_answered_and_refused_queries_are_both_premis_logged(tmp_path: Path) -> 
         dimension="year", reason="r", match_field="subject", match_term="eviction"
     )
     p1 = enclave.propose(broad, proposer="a", now=_NOW)
+    enclave.approve(p1.proposal_id, "b")
     enclave.execute(p1.proposal_id, actor="a", now=_NOW)
 
     narrow = AggregateQuery(
         dimension="year", reason="r", match_field="type", match_term="oral-history"
     )
     p2 = enclave.propose(narrow, proposer="a", now=_NOW)
+    enclave.approve(p2.proposal_id, "b")
     with pytest.raises(AggregationRefused):
         enclave.execute(p2.proposal_id, actor="a", now=_NOW)
 
@@ -327,6 +350,7 @@ def test_log_never_contains_a_record_id(tmp_path: Path) -> None:
     _seed(archive, n=5, year="2020", subject="eviction")
     enclave = ReadingRoomEnclave(archive)
     prop = enclave.propose(AggregateQuery(dimension="year", reason="r"), proposer="a", now=_NOW)
+    enclave.approve(prop.proposal_id, "b")
     enclave.execute(prop.proposal_id, actor="a", now=_NOW)
 
     record_ids = {p.stem for p in archive.records_dir.glob("*.json")}
@@ -351,6 +375,7 @@ def test_manifest_and_history_files_round_trip_across_enclave_instances(tmp_path
     prop = ReadingRoomEnclave(archive).propose(
         AggregateQuery(dimension="year", reason="r"), proposer="a", now=_NOW
     )
+    ReadingRoomEnclave(archive).approve(prop.proposal_id, "b")
     # A brand-new enclave instance, as a second CLI invocation would construct.
     result = ReadingRoomEnclave(archive).execute(prop.proposal_id, actor="a", now=_NOW)
     assert result.total == 5
@@ -359,6 +384,20 @@ def test_manifest_and_history_files_round_trip_across_enclave_instances(tmp_path
     history_path = archive.logs_dir / "reading-room-history.json"
     assert json.loads(manifest_path.read_text())[prop.proposal_id]["dimension"] == "year"
     assert len(json.loads(history_path.read_text())) == 1
+
+
+def test_corrupt_history_refuses_instead_of_resetting_privacy_guard(tmp_path: Path) -> None:
+    archive = _archive(tmp_path)
+    _seed(archive, n=5, year="2020", subject="eviction")
+    enclave = ReadingRoomEnclave(archive)
+    prop = enclave.propose(AggregateQuery(dimension="year", reason="r"), proposer="a")
+    enclave.approve(prop.proposal_id, "b")
+    history = archive.logs_dir / "reading-room-history.json"
+    history.write_text("not-json", encoding="utf-8")
+
+    with pytest.raises(LedgerError, match="history is unreadable"):
+        enclave.execute(prop.proposal_id, actor="b")
+    assert history.read_text(encoding="utf-8") == "not-json"
 
 
 # --- CLI wiring: query-propose / approve, exactly as a steward would run it -----
@@ -379,6 +418,7 @@ def test_cli_query_propose_needs_a_second_distinct_steward_to_answer(
     cfg = json.loads(cfg_path.read_text())
     cfg["dual_control_threshold"] = 2
     cfg["reading_room_k_floor"] = 2
+    cfg["reading_room_enabled"] = True
     cfg_path.write_text(json.dumps(cfg))
     capsys.readouterr()
 
