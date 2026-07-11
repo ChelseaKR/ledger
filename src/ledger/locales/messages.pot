@@ -143,6 +143,7 @@ msgstr ""
 
 #, python-brace-format
 msgid "Comparing the current record with an earlier saved version. Record {id}."
+msgstr ""
 
 msgid "Consent tokens for the people named in this record"
 msgstr ""

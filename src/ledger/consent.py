@@ -230,15 +230,15 @@ class ConsentRequestStore:
         raises :class:`~ledger.errors.LedgerError` naming the id (which is public,
         not identity) so a typo fails loudly rather than silently no-op'ing.
 
-        RM12: the steward's response is *recorded* — ``resolved_at`` is stamped with
-        the current UTC time (or an explicit ``now`` for deterministic tests) so the
-        archive holds a time-bound, auditable answer to a named subject's objection.
+        RM12: a completed response is *recorded* — ``resolved_at`` is stamped only
+        when the request reaches ``resolved``. Acknowledgement alone preserves an
+        existing stamp (normally empty), so the archive does not misstate receipt as
+        a completed answer.
         """
         if status not in {"acknowledged", "resolved"}:
             raise LedgerError(
                 "consent request can only be resolved to 'acknowledged' or 'resolved'"
             )
-        stamped = now or now_iso()
         requests = self._read()
         found = False
         updated: list[ConsentRequest] = []
@@ -254,7 +254,7 @@ class ConsentRequestStore:
                         status=status,
                         created_at=req.created_at,
                         due_by=req.due_by,
-                        resolved_at=stamped,
+                        resolved_at=(now or now_iso()) if status == "resolved" else req.resolved_at,
                     )
                 )
             else:

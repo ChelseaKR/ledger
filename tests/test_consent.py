@@ -377,6 +377,24 @@ def test_resolve_stamps_resolved_at(tmp_path: Path) -> None:
     assert resolved.due_by == "2026-07-09T00:00:00Z"
 
 
+def test_acknowledge_does_not_claim_request_was_resolved(tmp_path: Path) -> None:
+    """Acknowledgement records lifecycle state without inventing a completed response."""
+    store = ConsentRequestStore(tmp_path / "consent.json")
+    store.add(
+        ConsentRequest(
+            record_id="a",
+            kind="subject-objection",
+            message="m",
+            request_id="id1",
+            due_by="2026-07-09T00:00:00Z",
+        )
+    )
+    store.resolve("id1", "acknowledged", now="2026-07-03T12:00:00Z")
+    acknowledged = store.all()[0]
+    assert acknowledged.status == "acknowledged"
+    assert acknowledged.resolved_at == ""
+
+
 def test_legacy_json_without_new_fields_still_loads(tmp_path: Path) -> None:
     """A consent-requests.json written before RM12 (no due_by/resolved_at) loads."""
     path = tmp_path / "consent.json"
