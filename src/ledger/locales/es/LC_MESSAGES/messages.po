@@ -810,3 +810,65 @@ msgstr "{when}, ref {ref}"
 msgid "— every recorded action across the archive."
 msgstr "— cada acción registrada en todo el archivo."
 
+
+msgid "A moderation decision needs a non-empty reason. Go back and supply a rationale, then try again."
+msgstr "Una decisión de moderación necesita un motivo no vacío. Vuelva atrás, indique una justificación e inténtelo de nuevo."
+
+msgid "Action not recorded"
+msgstr "Acción no registrada"
+
+msgid "Add content warning"
+msgstr "Añadir advertencia de contenido"
+
+msgid "Back to the record"
+msgstr "Volver al registro"
+
+#, python-brace-format
+msgid "Comparing the current record with an earlier saved version. Record {id}."
+msgstr "Comparando el registro actual con una versión anterior guardada. Registro {id}."
+
+msgid "Content warnings"
+msgstr "Advertencias de contenido"
+
+msgid "Current"
+msgstr "Actual"
+
+msgid "Default access"
+msgstr "Acceso predeterminado"
+
+msgid "Description"
+msgstr "Descripción"
+
+msgid "Field"
+msgstr "Campo"
+
+msgid "Field-by-field comparison of the current record and the selected earlier version"
+msgstr "Comparación campo por campo del registro actual y la versión anterior seleccionada"
+
+msgid "No earlier versions."
+msgstr "No hay versiones anteriores."
+
+msgid "Previous version"
+msgstr "Versión anterior"
+
+msgid "Reason (required)"
+msgstr "Motivo (obligatorio)"
+
+msgid "Saved versions"
+msgstr "Versiones guardadas"
+
+msgid "Take down"
+msgstr "Retirar"
+
+msgid "Version history"
+msgstr "Historial de versiones"
+
+msgid "changed"
+msgstr "cambiado"
+
+msgid "selected"
+msgstr "seleccionado"
+
+#, python-brace-format
+msgid "{when} — superseded by {event}"
+msgstr "{when} — reemplazada por {event}"

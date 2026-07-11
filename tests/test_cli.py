@@ -517,3 +517,78 @@ def test_redact_unknown_field_fails_without_leaking(
     err = capsys.readouterr().err
     assert "nope" in err
     assert _SEALED_FIELD_VALUE not in err
+
+
+# --- export-drive / print-edition (EXP-08) -----------------------------------
+
+
+def test_export_drive_cli_builds_a_self_verifying_package(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``export-drive`` packages the PUBLIC record and reports every bag verified."""
+    root = tmp_path / "arc"
+    assert _init(root) == 0
+    capsys.readouterr()
+
+    payload = _FIXTURES / "public.txt"
+    rc = cli.main(
+        [
+            "ingest",
+            "--root",
+            str(root),
+            "--title",
+            "Public sample",
+            "--public-field",
+            "story=a public account",
+            "--now",
+            _NOW,
+            str(payload),
+        ]
+    )
+    assert rc == 0
+    capsys.readouterr()
+
+    out = tmp_path / "drive"
+    rc = cli.main(["export-drive", "--root", str(root), "--out", str(out), "--now", _NOW])
+    assert rc == 0
+    out_text = capsys.readouterr().out
+    assert "1 record(s)" in out_text
+    assert "all bags verified" in out_text
+    assert (out / "index.html").is_file()
+    assert (out / "CHECKSUMS.sha256").is_file()
+    assert (out / "verify.sh").is_file()
+
+
+def test_print_edition_cli_renders_an_accessible_booklet(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``print-edition`` renders a booklet HTML file for the PUBLIC record."""
+    root = tmp_path / "arc"
+    assert _init(root) == 0
+    capsys.readouterr()
+
+    payload = _FIXTURES / "public.txt"
+    rc = cli.main(
+        [
+            "ingest",
+            "--root",
+            str(root),
+            "--title",
+            "Public sample",
+            "--public-field",
+            "story=a public account",
+            "--now",
+            _NOW,
+            str(payload),
+        ]
+    )
+    assert rc == 0
+    capsys.readouterr()
+
+    out = tmp_path / "booklet.html"
+    rc = cli.main(["print-edition", "--root", str(root), "--out", str(out), "--now", _NOW])
+    assert rc == 0
+    out_text = capsys.readouterr().out
+    assert "1 record(s)" in out_text
+    assert out.is_file()
+    assert "Public sample" in out.read_text(encoding="utf-8")

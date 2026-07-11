@@ -3,27 +3,34 @@
 # locally means green in CI (reproducibility, process capabilities).
 
 VENV ?= .venv
-# Prefer the project venv, but fall back to python3 so `make <target>` works in
-# CI (which installs into the runner's system Python and never creates .venv).
+# Prefer the project venv (created by `make install`'s `uv sync`, in CI too —
+# uv always materializes $(VENV) rather than installing into system Python), but
+# fall back to python3 so a target still resolves before `install` has run.
 # `?=` also lets a caller override, e.g. `make i18n PY=python`. This closes the
 # i18n gate's `.venv/bin/python: No such file or directory` (exit 127) failure.
 PY   ?= $(if $(wildcard $(VENV)/bin/python),$(VENV)/bin/python,python3)
-PIP  := $(PY) -m pip
 
 .DEFAULT_GOAL := help
-.PHONY: help venv install lint format type test cov audit accessibility acr demo serve \
-        i18n i18n-compile secret-scan container verify clean
+.PHONY: help venv install lock lint format type test cov audit accessibility acr demo serve \
+        i18n i18n-compile claims secret-scan container verify clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
 	  | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
 
 venv: ## Create the virtual environment
-	python3 -m venv $(VENV)
-	$(PIP) install --upgrade pip
+	uv venv $(VENV)
 
-install: venv ## Install ledger plus dev tooling
-	$(PIP) install -e ".[dev]"
+# SEC-13/CQ-09/CQ-27: install exactly the pinned, hash-locked graph in uv.lock
+# (the runtime dependency plus the `dev` PEP 735 dependency group), never a fresh
+# resolve against version ranges. `--locked` fails the build instead of silently
+# re-resolving if pyproject.toml and uv.lock ever drift apart, so "it installed"
+# means "it installed the audited, committed lockfile" (reproducibility).
+install: ## Install ledger plus dev tooling from the locked dependency graph
+	uv sync --locked --group dev
+
+lock: ## Regenerate uv.lock after a pyproject.toml dependency change
+	uv lock
 
 lint: ## Static analysis (ruff): correctness, security, import hygiene
 	$(PY) -m ruff check src tests
@@ -39,8 +46,12 @@ type: ## Strict type checking (mypy)
 test: ## Run the test suite (preservation + disclosure + no-outing audit)
 	$(PY) -m pytest
 
-cov: ## Run tests with coverage
+cov: ## Run tests with coverage (95% floor on the access/consent/dual-control core)
 	$(PY) -m pytest --cov --cov-report=term-missing
+	# Per-module floor (CODE-QUALITY-STANDARD, security/crypto-critical paths): the
+	# access-policy, consent, and dual-control modules must hold >=95% branch
+	# coverage, above the 85% baseline. Scoped re-report over the .coverage data.
+	$(PY) -m coverage report --include="src/ledger/access/*,src/ledger/consent.py,src/ledger/dualcontrol.py" --fail-under=95
 
 backup-test: ## Exercise the full back-up -> wipe -> restore disaster-recovery cycle
 	$(PY) -m pytest -m recovery
@@ -91,6 +102,9 @@ i18n-compile: ## Compile the committed PO catalogs to MO (run after editing a .p
 		src/ledger/locales/es/LC_MESSAGES/messages.po
 	@echo "i18n-compile: refreshed messages.mo for en, es."
 
+claims: ## Truthfulness gate: verify README/doc factual claims against the repo
+	$(PY) tools/check_claims.py
+
 secret-scan: ## Secret scan (gitleaks) — mirrors ci.yml's supply-chain job locally
 	# CI-authoritative: CI pins and downloads gitleaks 8.30.1 itself
 	# (.github/workflows/ci.yml, supply-chain job) regardless of what is on this
@@ -118,7 +132,7 @@ container: ## Build the self-host image and scan it for CRITICAL/HIGH CVEs (Triv
 # green here means green in CI. (The `no-outing-audit` job is `test`'s own
 # `disclosure`-marked subset, run standalone in CI for visibility, not a distinct
 # local gate; `container` is intentionally excluded — see its own target comment.)
-verify: lint type test i18n accessibility audit secret-scan ## Run the complete merge gate (== CI's required checks)
+verify: lint type test i18n accessibility audit secret-scan claims ## Run the complete merge gate (== CI's required checks)
 	@echo "verify: all gates green"
 
 clean: ## Remove caches and build artifacts (never touches an archive's data)

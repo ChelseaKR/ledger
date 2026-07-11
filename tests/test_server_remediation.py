@@ -20,6 +20,7 @@ from pathlib import Path
 
 import pytest
 
+from ledger.access.grants import issue_grant_token
 from ledger.config import Config
 from ledger.consent import issue_claim_token
 from ledger.identity import ContributorIdentity
@@ -30,6 +31,7 @@ from ledger.server import make_server
 _SENTINEL = "SENTINEL-REMEDIATION-DO-NOT-LEAK-Q9"
 _VAULT_KEY = b"0123456789abcdef0123456789abcdef0123456789a="
 _CLAIM_SECRET = "test-claim-secret"  # noqa: S105 - test fixture, not a real secret
+_GRANT_SECRET = b"remediation-test-grant-secret"
 _NOW = "2026-06-16T12:00:00Z"
 
 
@@ -39,6 +41,7 @@ def site(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[str,
     community record (+file); yields (base_url, public_id, community_id)."""
     monkeypatch.setenv("LEDGER_VAULT_KEY", _VAULT_KEY.decode())
     monkeypatch.setenv("LEDGER_CLAIM_SECRET", _CLAIM_SECRET)
+    monkeypatch.setenv("LEDGER_GRANT_SECRET", _GRANT_SECRET.decode())
     config = Config.default("Remediation Test Archive", tmp_path / "arc")
     archive = Archive.init(config)
 
@@ -92,10 +95,15 @@ def site(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[str,
             httpd.server_close()
 
 
+def _grant_header(subject: str) -> str:
+    """A signed capability token for ``subject`` (the header is now authenticated)."""
+    return issue_grant_token(subject, _GRANT_SECRET)
+
+
 def _get(base: str, path: str, *, grant: str | None = None) -> tuple[int, str, dict[str, str]]:
     req = urllib.request.Request(f"{base}{path}")  # noqa: S310 - loopback
     if grant:
-        req.add_header("X-Ledger-Grant", grant)
+        req.add_header("X-Ledger-Grant", _grant_header(grant))
     try:
         with urllib.request.urlopen(req, timeout=10) as r:  # noqa: S310
             return (
@@ -113,7 +121,7 @@ def _post(
     body = urllib.parse.urlencode(data).encode()
     req = urllib.request.Request(f"{base}{path}", data=body)  # noqa: S310 - loopback
     if grant:
-        req.add_header("X-Ledger-Grant", grant)
+        req.add_header("X-Ledger-Grant", _grant_header(grant))
     try:
         with urllib.request.urlopen(req, timeout=10) as r:  # noqa: S310
             return int(r.status), r.read().decode("utf-8")

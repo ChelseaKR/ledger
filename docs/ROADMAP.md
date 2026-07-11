@@ -25,19 +25,17 @@ tracked."
 
 | Standard | Control(s) | Gap | Status | Closes when |
 |---|---|---|---|---|
-| Security & Supply Chain | SEC-13, CQ-09, CQ-27 | No lockfile (`uv.lock`); dev deps not in PEP 735 `[dependency-groups]` | Open | uv migration lands (P1-2) |
 | Security & Supply Chain | SEC-28, REL-18 | No container CVE scan; base image pinned by tag, not digest | Open | Trivy job + digest pin (P1-1) |
 | Security & Supply Chain | SEC-07 | No Semgrep; SAST coverage today is CodeQL + ruff-S only | Open | P1-3 |
 | Security & Supply Chain | SEC-19 | No scheduled full-history secret scan (TruffleHog) | Open | P1-3 |
 | Security & Supply Chain | SEC-04 | No Harden-Runner egress policy on any workflow | Open | P1-7 |
 | Security & Supply Chain | SEC-17 | No pre-commit hooks | Open | P1-4 |
-| Security & Supply Chain | SEC-27, SEC-29, SEC-35/36 | ~~No SBOM, signing, or provenance~~ — `.github/workflows/release.yml` now generates a CycloneDX SBOM, cosign-signs the sdist/wheel/SBOM keylessly, and attests both SBOM and SLSA build provenance via GitHub's native attestations on every tagged release | Closed (SBOM/signing/provenance) — takes effect on the first pushed release tag | — |
-| Security & Supply Chain | SEC-37 | No OSSF Scorecard workflow (a periodic repo-health score, separate from the per-release SBOM/signing/provenance above) | Open | P1-6 follow-up |
+| Security & Supply Chain | SEC-27, SEC-29 | ~~No SBOM, signing, or provenance workflow~~ Closed 2026-07-10: `release.yml` generates a CycloneDX SBOM, cosign-signs (keyless) every artifact, and records SLSA build-provenance + SBOM attestations on every tagged release | Closed | 2026-07-10 (`.github/workflows/release.yml`) |
+| Security & Supply Chain | SEC-35, SEC-36, SEC-37 | No OpenSSF Scorecard workflow (§6.5 checks: Signed-Releases, Vulnerabilities, aggregate score) | Open | P1-6b |
 | CI/CD | CICD-12, CQ-37/38/39/40/43, SEC-15 | No committed branch-protection/ruleset export; server-side settings unverifiable offline | Open | P2-4 — **⛔ requires the repo owner to export/enable via `gh api repos/ChelseaKR/ledger/rulesets` themselves** (write-effect GitHub API call, out of scope for an automated pass) |
 | CI/CD | CICD-19, CICD-20 | No zizmor workflow-linter job; CodeQL doesn't analyze `language: actions` | Open | P1-3 |
-| Release & Versioning | REL-08, REL-14–17, REL-20 | ~~No tag-triggered release workflow, no SBOM/cosign/SLSA on release~~ — `.github/workflows/release.yml` builds on `push: tags: v*`, verifies the tag matches `pyproject.toml`'s version, then generates a CycloneDX SBOM, cosign-signs (keyless) the sdist/wheel/SBOM, and records GitHub-native SLSA build-provenance + SBOM attestations before publishing | Closed (workflow implemented) — first real run happens on the first pushed release tag (REL-03, below) | — |
-| Release & Versioning | REL-13 | No PyPI Trusted Publishing | Workflow implemented (`publish-pypi` job, OIDC, no stored token) but **⛔ requires the repo/PyPI-project owner** to do two one-time manual steps only an account holder can do: register the Trusted Publisher on pypi.org for `ChelseaKR/ledger` → `release.yml` → environment `pypi`, and create that `pypi` GitHub Environment — see the workflow's header comment | Open — blocked on owner action, not automatable | P1-6 follow-up |
-| Release & Versioning | REL-03 | CHANGELOG declares `0.1.0` "released" 2026-06-16; no matching git tag exists | Open — **⛔ requires the repo owner** to actually cut and push a `v0.1.0` tag (a live, one-time release action out of scope for an automated pass); claim corrected in CHANGELOG.md pending that cut (P2-6) |  |
+| Release & Versioning | REL-08, REL-13–17, REL-20 | ~~No tag-triggered release workflow~~ Closed 2026-07-10: `release.yml` triggers on `v*` tags, re-runs lint/type/test at the tagged commit, verifies tag/version consistency, builds, generates SBOM+provenance, cosign-signs, publishes to PyPI via Trusted Publishing (OIDC), and mirrors artifacts to a GitHub Release. Registering the PyPI Trusted Publisher + `pypi` GitHub Environment is a one-time manual step for the project owner (workflow header); no `vX.Y.Z` tag has been pushed yet, so the pipeline is unexercised end-to-end (REL-03 below) | Closed (unexercised pending first tag) | 2026-07-10 (`.github/workflows/release.yml`) |
+| Release & Versioning | REL-03 | CHANGELOG declares `0.1.0` "released" 2026-06-16; no matching git tag exists | Open — claim corrected in CHANGELOG.md pending real cut (P2-6) |  |
 | Accessibility | A11Y-01–03, 07, 09 | axe-core / Lighthouse / pa11y / Playwright keyboard+reflow specs not run in CI (structural checker + manual review substitute today) | Open | P3-7 |
 | Accessibility | A11Y-11, 12, 16, 18 | No dated screen-reader/keyboard walkthrough artifact or `docs/a11y/STATEMENT.md` | Open | P2-3 |
 | Responsible Tech | RTF-03 | No dated bias / representational-harm review artifact | Open | P2-2 |
@@ -45,7 +43,6 @@ tracked."
 | Responsible Tech | RTF-01 | Ethics/consequence scan substance exists (README, THREAT-MODEL, GOVERNANCE) but no committed, dated, signed-off artifact | Open | P2-2 |
 | Quality & Metrics | QM-02 | No performance budgets/benchmarks in CI (README claim already removed pending this — see CHANGELOG) | Open | P3-5 |
 | Quality & Metrics | QM-11, QM-18 | No DORA delivery-health review artifact; no root `DEFINITION_OF_DONE.md` | Open | P2-5 |
-| Code Quality | CQ-01 | Python floor is `>=3.11`, not the `>=3.12` the standard's drift-remediation note names for ledger | Open | P1-2 |
 | Code Quality | CQ-47 | No mutation testing on safety modules (`access/`, `identity.py`, `fixity.py`) | Open | P3-3 |
 | Code Quality | CQ-05 (partial) | Complexity gate is now enforced (`ruff` C901, max 10); 7 pre-existing functions exceed it and are waived with dated `# noqa: C901` comments pending a deliberate, fully-retested split — not rushed under audit time pressure on safety-adjacent code | Open (waived) | See `# noqa: C901` sites in `accessibility_check.py`, `bag.py`, `cli.py`, `contribute.py`, `ingest.py`, `server.py` |
 
