@@ -3,15 +3,15 @@
 # locally means green in CI (reproducibility, process capabilities).
 
 VENV ?= .venv
-# Prefer the project venv, but fall back to python3 so `make <target>` works in
-# CI (which installs into the runner's system Python and never creates .venv).
+# Prefer the project venv (created by `make install`'s `uv sync`, in CI too —
+# uv always materializes $(VENV) rather than installing into system Python), but
+# fall back to python3 so a target still resolves before `install` has run.
 # `?=` also lets a caller override, e.g. `make i18n PY=python`. This closes the
 # i18n gate's `.venv/bin/python: No such file or directory` (exit 127) failure.
 PY   ?= $(if $(wildcard $(VENV)/bin/python),$(VENV)/bin/python,python3)
-PIP  := $(PY) -m pip
 
 .DEFAULT_GOAL := help
-.PHONY: help venv install lint format type test cov audit accessibility acr demo serve \
+.PHONY: help venv install lock lint format type test cov audit accessibility acr demo serve \
         i18n i18n-compile claims secret-scan container verify clean
 
 help: ## Show this help
@@ -19,11 +19,18 @@ help: ## Show this help
 	  | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
 
 venv: ## Create the virtual environment
-	python3 -m venv $(VENV)
-	$(PIP) install --upgrade pip
+	uv venv $(VENV)
 
-install: venv ## Install ledger plus dev tooling
-	$(PIP) install -e ".[dev]"
+# SEC-13/CQ-09/CQ-27: install exactly the pinned, hash-locked graph in uv.lock
+# (the runtime dependency plus the `dev` PEP 735 dependency group), never a fresh
+# resolve against version ranges. `--locked` fails the build instead of silently
+# re-resolving if pyproject.toml and uv.lock ever drift apart, so "it installed"
+# means "it installed the audited, committed lockfile" (reproducibility).
+install: ## Install ledger plus dev tooling from the locked dependency graph
+	uv sync --locked --group dev
+
+lock: ## Regenerate uv.lock after a pyproject.toml dependency change
+	uv lock
 
 lint: ## Static analysis (ruff): correctness, security, import hygiene
 	$(PY) -m ruff check src tests

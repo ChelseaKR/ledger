@@ -116,17 +116,32 @@ the build. The gate has two parts.
    the structural regressions a machine can catch, deterministically, on every
    commit.
 
-2. **Manual screen-reader review (NVDA / VoiceOver).** The criteria a static scan
-   cannot judge — meaningful reading order, the quality of the interstitial flow,
-   announcement of the content-warning state, the equivalence of the list and table
-   views in practice — are verified by manual review with **NVDA** (Windows) and
-   **VoiceOver** (macOS/iOS). This manual review is a required step before a release
-   and before changes that touch the rendered surface; its findings are reflected in
-   the ACR's remarks.
+   A second, **browser-real** automated job adds engine-backed depth on top of that
+   static floor. The `accessibility-browser` job in `.github/workflows/ci.yml`
+   seeds a throwaway demo archive, serves it with `ledger serve`, and drives the
+   canonical pages in a headless Chromium running **axe-core** — under **both** the
+   light and dark colour schemes — asserting no serious or critical violations, plus
+   a keyboard-only traversal of the contribute form. This catches what a
+   standard-library HTML scan cannot: rendered colour contrast in each theme,
+   computed accessible names, and focus order. It is **CI/dev-only** — Playwright,
+   Node, and the browser live under `tools/a11y_browser/` and never enter the
+   `ledger` runtime, so the stdlib-only, one-cheap-box promise still holds.
+
+2. **Manual screen-reader review (NVDA / VoiceOver).** The criteria no scan — static
+   or browser-automated — can judge (meaningful reading order, the quality of the
+   interstitial flow, announcement of the content-warning state, `aria-live` status
+   messages, the equivalence of the list and table views in practice) are verified
+   by manual review with **NVDA** (Windows/Firefox) and **VoiceOver** (macOS/Safari).
+   This review runs on a **committed cadence** — quarterly, and before a release or
+   a change to the rendered surface — documented with its page list, checklist, and
+   a results log in
+   [`docs/accessibility/MANUAL-REVIEW-CADENCE.md`](accessibility/MANUAL-REVIEW-CADENCE.md).
+   Its findings are reflected in the ACR's remarks.
 
 A change that breaks the automated floor cannot merge because CI is red. A change
 that would degrade the human-judged surface is caught by the manual review and
-recorded honestly in the ACR rather than papered over.
+recorded honestly in the ACR rather than papered over. Together the automated axe
+evidence and the manual cadence are the ACR's stated **evidence basis**.
 
 ## The ACR (`docs/accessibility/ACR.md`)
 
@@ -169,7 +184,19 @@ make accessibility   # run the automated structural gate over the web/ surface
 make acr             # regenerate docs/accessibility/ACR.md from src/ledger/acr_gen.py
 ```
 
+The browser-real axe pass (the same one CI's `accessibility-browser` job runs) is
+opt-in locally, since it needs Node and a browser:
+
+```
+cd tools/a11y_browser
+npm ci
+npx playwright install chromium
+npx playwright test          # seeds + serves the demo, then runs axe + keyboard specs
+```
+
 `make accessibility` is the same command CI runs, so green locally means green in
-CI. The full picture is: the automated gate proves the structural floor on every
-commit; the manual NVDA/VoiceOver review covers what a machine cannot judge; and the
-ACR records the candid, end-to-end conformance result for anyone who needs it.
+CI. The full picture is: the static gate proves the structural floor on every
+commit; the browser axe job adds rendered-contrast and focus-order depth in both
+colour schemes; the committed NVDA/VoiceOver cadence covers what no machine can
+judge; and the ACR records the candid, end-to-end conformance result for anyone who
+needs it.

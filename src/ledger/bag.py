@@ -22,12 +22,14 @@ ledger replicates and exports. Design choices and quality attributes:
 
 from __future__ import annotations
 
+import os
+import shutil
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 from ledger.errors import BagValidationError
-from ledger.fixity import AuditReport, hash_file, hash_file_multi, verify_file
+from ledger.fixity import CHUNK_SIZE, AuditReport, hash_file, hash_file_multi, verify_file
 from ledger.models import HashAlgo
 
 _BAGIT_VERSION = "1.0"
@@ -91,13 +93,30 @@ def _tagmanifest_name(algo: HashAlgo) -> str:
     return f"tagmanifest-{algo.value}.txt"
 
 
-def _write_text(path: Path, text: str) -> None:
-    """Write ``text`` as UTF-8 with explicit newlines, no platform translation.
+def atomic_write_text(path: Path, text: str) -> None:
+    """Write ``text`` as UTF-8 atomically (temp file + fsync + ``os.replace``).
 
-    Disabling newline translation keeps bags byte-identical across operating
-    systems (reproducibility, portability).
+    Explicit ``\\n`` newlines with no platform translation keep bags
+    byte-identical across operating systems (reproducibility, portability). The
+    temp-file + ``os.replace`` discipline (the same one as ``PremisLog.write``)
+    means a crash mid-write leaves the previous good file intact instead of a
+    torn one that reads as tampering at the next audit (integrity, fault
+    tolerance). Note this makes each *file* atomic; a multi-file sequence (e.g.
+    a manifest rewrite followed by a reseal) still has a between-files crash
+    window, which the caller must keep as small as possible.
     """
-    path.write_text(text, encoding="utf-8", newline="\n")
+    path = Path(path)
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+    with open(tmp, "wb") as handle:
+        handle.write(text.encode("utf-8"))
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(tmp, path)
+
+
+def _write_text(path: Path, text: str) -> None:
+    """Bag-internal alias for :func:`atomic_write_text`."""
+    atomic_write_text(path, text)
 
 
 def _manifest_body(entries: Mapping[str, str]) -> str:
@@ -164,7 +183,12 @@ def write_bag(
     for relpath, source in payload.items():
         dest = data_dir / relpath
         dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_bytes(source.read_bytes())
+        # Stream the copy in fixed-size chunks (shutil.copyfileobj) rather than
+        # ``write_bytes(read_bytes())``, which would hold the entire payload in RAM
+        # — the difference between bagging a multi-gigabyte oral-history video and
+        # exhausting memory on the "one inexpensive box" the archive targets.
+        with source.open("rb") as src_handle, dest.open("wb") as dest_handle:
+            shutil.copyfileobj(src_handle, dest_handle, length=CHUNK_SIZE)
         digests = hash_file_multi(dest, algos)
         manifest_path = f"{_DATA_PREFIX}{relpath}"
         for algo in algos:
@@ -205,6 +229,59 @@ def write_bag(
         tag_entries = {name: hash_file(bag_dir / name, algo) for name in tag_files}
         _write_text(bag_dir / _tagmanifest_name(algo), _manifest_body(tag_entries))
 
+    return Bag(path=bag_dir)
+
+
+def refresh_tag_manifests(bag_dir: Path) -> Bag:
+    """Recompute every ``tagmanifest-<algo>.txt`` from the bag's current tag files.
+
+    A lawful post-ingest change rewrites a *tag* file inside a sealed bag — the
+    record manifest after a consent/policy change, ``premis.json`` after a new
+    event, the Dublin Core sidecar after an edit. Those files are covered by the tag
+    manifests, so once their bytes change the stale tag manifests no longer match and
+    :func:`validate_bag` reports the bag's own tag files as failing — making a
+    legitimate steward action indistinguishable from tampering at the next audit
+    (the core integrity claim, silently broken for every archive that ever changes a
+    record). This reseals the bag by recomputing the tag-manifest digests over the
+    current tag files so the bag re-validates.
+
+    Only the *tag* manifests are touched. The payload manifests (``manifest-*.txt``)
+    — the real content fixity — are left exactly as written at ingest, so a byte
+    flipped in a payload file, or a payload manifest edited by hand, is still caught
+    (integrity: this reseals metadata revisions, it does not paper over content rot).
+
+    The set of tag files is the union of the entries the existing tag manifests
+    already declare — the canonical set sealed at :func:`write_bag` time — never
+    "whatever happens to be at the bag root". A stray file that drifted in beside
+    the bag (an OS index file, an editor backup) is not silently sealed into the
+    archive's integrity claim, and its later disappearance cannot fail a
+    validation it was never part of. Each declared tag file is re-hashed under
+    each algorithm an existing tag manifest declares, so a refreshed bag is
+    byte-identical to one :func:`write_bag` would have emitted for the same
+    tag-file contents (reproducibility). Raises
+    :class:`~ledger.errors.BagValidationError` if the bag has no tag manifest to
+    refresh, or if a declared tag file is missing on disk (fail closed: a reseal
+    must never paper over a vanished tag file).
+    """
+    bag_dir = Path(bag_dir)
+    tagmanifest_paths = sorted(bag_dir.glob("tagmanifest-*.txt"))
+    if not tagmanifest_paths:
+        raise BagValidationError(f"no tag manifest to refresh: {bag_dir}")
+
+    # The canonical tag set: what the bag's own tag manifests already declare
+    # (a tag manifest never lists itself, per RFC 8493). Sorted for determinism.
+    declared: set[str] = set()
+    for tagmanifest_path in tagmanifest_paths:
+        declared.update(_parse_manifest(tagmanifest_path))
+    tag_files = sorted(declared)
+    for name in tag_files:
+        _reject_unsafe_relpath(name, context="tagmanifest refresh")
+        if not (bag_dir / name).is_file():
+            raise BagValidationError(f"declared tag file absent, refusing to reseal: {name}")
+    for tagmanifest_path in tagmanifest_paths:
+        algo = _algo_of_manifest(tagmanifest_path)
+        tag_entries = {name: hash_file(bag_dir / name, algo) for name in tag_files}
+        _write_text(tagmanifest_path, _manifest_body(tag_entries))
     return Bag(path=bag_dir)
 
 

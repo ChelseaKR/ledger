@@ -146,9 +146,11 @@ on confidentiality, integrity, and durability, so those clusters carry weight.
 **Safety** — the design property is that holding a record cannot out its contributor; identity is
 vaulted, separated, and grant-gated, and the no-outing rule is tested with sentinels. **Confidentiality**
 — sealed records and fields never render without a grant; the identity vault is encrypted at rest.
-**Securability** — secrets via env or a keystore, never committed; least-privilege grants; releases
-will be cryptographically signed once the release pipeline ships (tracked in
-[`docs/ROADMAP.md`](docs/ROADMAP.md) — no release has shipped yet, signed or otherwise). **Integrity**
+**Securability** — secrets via env or a keystore, never committed; least-privilege grants; a
+tag-triggered release pipeline (`.github/workflows/release.yml`) now cosign-signs and SLSA-attests
+every release artifact and publishes to PyPI via Trusted Publishing (OIDC, no stored token) — **no
+release has shipped yet** (no git tag cut; the PyPI Trusted Publisher registration is also a one-time
+manual step only the project owner can do — tracked in [`docs/ROADMAP.md`](docs/ROADMAP.md)). **Integrity**
 (data) — content addressing plus dual-algorithm BagIt manifests make tampering detectable, not
 deniable. **Autonomy** — a contributor controls their own disclosure and can revoke; the system
 enforces their decision, not a steward's preference. **Vulnerability** management — pip-audit,
@@ -298,14 +300,17 @@ reasoning and the one N/A decision below are recorded in
 [`docs/adr/0006-standards-applicability.md`](docs/adr/0006-standards-applicability.md).
 
 **Release-producing:** yes — intended as a PyPI package (`ledger-archive`, `pipx install`-able),
-pre-1.0, **no release has shipped yet** (no tag, no signed build, no SBOM — tracked below).
+pre-1.0. A tag-triggered release workflow now exists (`.github/workflows/release.yml`: build, SBOM,
+cosign signing, SLSA provenance, PyPI Trusted Publishing), but **no release has shipped yet** — no
+tag has been cut, and the PyPI Trusted Publisher registration is a one-time manual step only the
+project owner can do (tracked below).
 
 | Standard | Applies | This repo's posture |
 |---|---|---|
-| Code Quality | Applies | `ruff` (incl. `C901` complexity, max 10) + `mypy --strict`; branch coverage floor 85% (measured 86%); src layout; CODEOWNERS; Python floor `>=3.12`. **Gap:** no `uv.lock`/PEP 735 groups yet — [`docs/ROADMAP.md`](docs/ROADMAP.md) |
-| Security & Supply Chain | Applies — **ASVS L2** (touches PII/identity) | pip-audit + gitleaks + CodeQL all blocking in CI and in `make verify`, zero muted gates; SHA-pinned Actions with Renovate digest-pinning. **Gap:** no lockfile, container scan, Semgrep, TruffleHog, Harden-Runner, or SBOM/signing yet — [`docs/ROADMAP.md`](docs/ROADMAP.md) |
+| Code Quality | Applies | `ruff` (incl. `C901` complexity, max 10) + `mypy --strict`; branch coverage floor 85% (measured 86%); src layout; CODEOWNERS; Python floor `>=3.12`; hash-locked `uv.lock` + PEP 735 `[dependency-groups]` — [`docs/ROADMAP.md`](docs/ROADMAP.md) |
+| Security & Supply Chain | Applies — **ASVS L2** (touches PII/identity) | pip-audit + gitleaks + CodeQL all blocking in CI and in `make verify`, zero muted gates; SHA-pinned Actions with Renovate digest-pinning; `uv.lock` pins the full dependency graph and `uv sync --locked` fails the build on drift. **Gap:** no container scan, Semgrep, TruffleHog, Harden-Runner, or SBOM/signing yet — [`docs/ROADMAP.md`](docs/ROADMAP.md) |
 | CI/CD | Applies | Single `ci.yml`, least-privilege tokens, SHA-pinned actions, `make verify` now reproduces CI's full required-check set (lint, type, test, i18n, accessibility, audit, secret-scan). **Gap:** no committed branch-protection/ruleset artifact (server-side settings are unverifiable from the repo alone) — ⛔ see `docs/ROADMAP.md`, requires the repo owner |
-| Release & Versioning | Applies — **mandatory** (published-library repo) | SemVer intent stated; Keep-a-Changelog `CHANGELOG.md`. **Gap — the repo's largest:** no tag-triggered release workflow, no PyPI Trusted Publishing, no SBOM/cosign/SLSA provenance; the CHANGELOG's `[0.1.0] — 2026-06-16` section describes prepared, not shipped, work (no git tag exists) — [`docs/ROADMAP.md`](docs/ROADMAP.md) |
+| Release & Versioning | Applies — **mandatory** (published-library repo) | SemVer intent stated; Keep-a-Changelog `CHANGELOG.md`. Tag-triggered release workflow ships SBOM (CycloneDX), keyless cosign signatures, and GitHub-native SLSA build-provenance + SBOM attestations on every `v*` tag, then publishes to PyPI over Trusted Publishing. **Gap:** the PyPI Trusted Publisher itself still needs one-time manual registration by the project owner, and no tag has been cut yet — the CHANGELOG's `[0.1.0] — 2026-06-16` section describes prepared, not shipped, work — [`docs/ROADMAP.md`](docs/ROADMAP.md) |
 | Accessibility | Applies | WCAG 2.2 AA target; merge-blocking structural gate (`ledger.accessibility_check`); committed, dated, candid VPAT 2.5 ACR (`docs/accessibility/ACR.md`, 46 Supports / 6 Partially / 21 N/A). **Gap:** axe-core/Lighthouse/pa11y/Playwright not run in CI yet; no dated screen-reader/keyboard walkthrough artifact — [`docs/ROADMAP.md`](docs/ROADMAP.md) |
 | Observability | Applies — **Tier C** (library/CLI) | See `## Observability` below |
 | Internationalization | Applies | Full gettext catalog pipeline (EN/ES), five merge-blocking gates (POT-current, BCP-47, key-parity, completeness, `msgfmt --check`) — the repo's strongest standard |
@@ -354,9 +359,12 @@ open-source project, unaffiliated with any employer or client, containing no pro
 material), **CODE_OF_CONDUCT**, **CONTRIBUTING**, **SECURITY**, **GOVERNANCE**, a versioned metadata
 schema with a deprecation policy, **semver**, **ADRs**, and audit-as-artifact documents
 (`docs/THREAT-MODEL.md`, `docs/accessibility/ACR.md`; a fuller `docs/audits/` set is tracked in
-[`docs/ROADMAP.md`](docs/ROADMAP.md)). Conventional commits; pinned, **SLSA-friendly** GitHub Actions
-today; **no release has shipped yet** — no tag, no signing, no SBOM (see the Standards conformance
-table below and `docs/ROADMAP.md` for what's tracked); Dependabot + Renovate.
+[`docs/ROADMAP.md`](docs/ROADMAP.md)). Conventional commits; pinned GitHub Actions; a tag-triggered
+release workflow (`.github/workflows/release.yml`) that builds, SBOMs, cosign-signs, and
+SLSA-attests every `v*` release before publishing to PyPI over Trusted Publishing — but **no release
+has shipped yet**, since no tag has been cut and the PyPI Trusted Publisher still needs one-time
+manual registration (see the Standards conformance table below and `docs/ROADMAP.md` for what's
+tracked); Dependabot + Renovate.
 
 **License choice.** **AGPL-3.0** is chosen deliberately over a permissive license. ledger handles
 disclosure decisions and contributor safety, and the network-use clause means anyone who runs a

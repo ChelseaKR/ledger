@@ -22,6 +22,7 @@ depth).
 
 from __future__ import annotations
 
+import hashlib
 import json
 import mimetypes
 import os
@@ -32,7 +33,7 @@ from pathlib import Path
 
 from ledger.access import disclose, is_listable
 from ledger.attest import attested_conditions
-from ledger.bag import validate_bag, write_bag
+from ledger.bag import atomic_write_text, refresh_tag_manifests, validate_bag, write_bag
 from ledger.cas import ContentStore
 from ledger.config import Config
 from ledger.errors import BagValidationError, LedgerError, ObjectNotFound
@@ -746,6 +747,26 @@ class Archive:
         already-identity-free manifest bytes and the CAS, so it adds no new no-outing
         surface and needs no bag reseal (the index lives under ``records/``, outside
         every bag).
+
+        Because ``record.json`` and ``premis.json`` are *tag* files covered by the
+        bag's tag manifests, rewriting them would leave the tag manifests stale and
+        the bag failing its own :func:`~ledger.bag.validate_bag` check — a lawful
+        change reading as tampering at the next audit. The bag is therefore resealed
+        via :func:`~ledger.bag.refresh_tag_manifests`, which recomputes only the tag
+        manifests (the payload manifests, the real content fixity, are untouched), so
+        an updated bag re-validates while genuine content rot is still caught
+        (integrity, failure transparency).
+
+        Every reseal is itself recorded: a PREMIS ``VALIDATION`` event carrying the
+        old and new ``record.json`` digests (and the pre-append ``premis.json``
+        digest) is appended alongside ``event`` before the tag manifests are
+        recomputed. A lawful reseal therefore leaves an auditable digest transition
+        in the log it reseals — it is never bit-for-bit indistinguishable from an
+        edit that skipped the log — giving the hash-chained log (FIX-06) a concrete
+        anchor for each tag-manifest generation (accountability, non-repudiation).
+        All file writes are atomic (temp + ``os.replace``); the residual risk is a
+        crash *between* files, a window this ordering keeps to the log-write and
+        reseal steps that the next ``audit_fixity`` surfaces rather than hides.
         """
         manifest = serialize_record(record)
         fast = self.records_dir / f"{record.record_id}.json"
@@ -759,17 +780,48 @@ class Archive:
             address = self.store.put_bytes(prior)
             self._append_version(record.record_id, str(address), event.event_type.value)
 
-        fast.write_text(manifest, encoding="utf-8", newline="\n")
+        atomic_write_text(fast, manifest)
 
         bag_dir = self.bags_dir / record.record_id
+        will_reseal = next(bag_dir.glob("tagmanifest-*.txt"), None) is not None
+        resealed = False
+        transitions: list[str] = []
         in_bag = bag_dir / _RECORD_FILENAME
         if in_bag.exists():
-            in_bag.write_text(manifest, encoding="utf-8", newline="\n")
+            old_digest = hashlib.sha256(in_bag.read_bytes()).hexdigest()
+            new_digest = hashlib.sha256(manifest.encode("utf-8")).hexdigest()
+            atomic_write_text(in_bag, manifest)
+            transitions.append(f"{_RECORD_FILENAME} sha256 {old_digest} -> {new_digest}")
+            resealed = True
         premis_path = bag_dir / _PREMIS_FILENAME
         if premis_path.exists():
+            old_premis = hashlib.sha256(premis_path.read_bytes()).hexdigest()
             log = PremisLog.read(premis_path)
             log.record(event)
+            if will_reseal:
+                # The digest-transition record: what changed and from/to which
+                # bytes. The new premis.json digest cannot name itself (it would
+                # be self-referential); the refreshed tag manifest carries it.
+                transitions.append(f"{_PREMIS_FILENAME} sha256 before append {old_premis}")
+                log.record(
+                    PremisEvent(
+                        event_type=PremisEventType.VALIDATION,
+                        agent=event.agent,
+                        outcome="success",
+                        detail="bag resealed after lawful manifest update: "
+                        + "; ".join(transitions),
+                        linked_object=record.record_id,
+                        event_datetime=event.event_datetime,
+                    )
+                )
             log.write(premis_path)
+            resealed = True
+
+        # Reseal: recompute the tag manifests so the rewritten tag files re-validate.
+        # Guarded by the presence of a tag manifest so a records-only update (no bag
+        # on disk) stays a no-op rather than raising (robustness).
+        if resealed and will_reseal:
+            refresh_tag_manifests(bag_dir)
 
     def _append_version(self, record_id: str, address: str, event_type: str) -> None:
         """Append one superseded-manifest snapshot to the record's version index.
@@ -838,6 +890,32 @@ class Archive:
         self.logs_dir.mkdir(parents=True, exist_ok=True)
         log = PremisLog.read(log_path) if log_path.exists() else PremisLog()
         log.record(event)
+        log.write(log_path)
+
+    def log_grant_use(self, subject: str, route_class: str, *, now: str | None = None) -> None:
+        """Append a scrubbed record that an authenticated grant was used on a request.
+
+        Written to ``logs/grant-uses.premis.json`` so a steward can see *that* a
+        provisioned subject exercised its capability and on *which class of route*
+        (e.g. ``browse``, ``api``, ``steward``) — accountability for privileged
+        access. It records only the grant ``subject`` (a pre-provisioned identifier,
+        never a real contributor name) and a coarse route class: never the bearer
+        token, never a record id, never a query string, so the audit trail itself
+        discloses nothing (no-outing rule — logs disclose nothing).
+        """
+        self.logs_dir.mkdir(parents=True, exist_ok=True)
+        log_path = self.logs_dir / "grant-uses.premis.json"
+        log = PremisLog.read(log_path) if log_path.exists() else PremisLog()
+        log.record(
+            PremisEvent(
+                event_type=PremisEventType.VALIDATION,
+                agent=subject,
+                outcome="success",
+                detail=f"authenticated grant used on {route_class} route",
+                linked_object=None,
+                event_datetime=now if now is not None else now_iso(),
+            )
+        )
         log.write(log_path)
 
     def remove_all_copies(self, record_id: str) -> tuple[int, bool]:
