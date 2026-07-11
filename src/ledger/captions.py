@@ -96,7 +96,7 @@ __all__ = [
 # (an optional dot-separated class list before the annotation). The annotation —
 # everything up to the closing '>' — is the voice name (WebVTT spec §"WebVTT cue
 # voice span").
-_VOICE_TAG = re.compile(r"<v(?:\.[^>\s]*)*[ \t]+([^>]+)>")
+_VOICE_TAG = re.compile(r"<v(?:\.[^>.\s]+)*[ \t]+([^>]+)>")
 
 # Any WebVTT cue-span tag: <v ...>, </v>, <b>, <i>, <u>, <c>, <lang ...>, or a
 # cue-internal timestamp tag like <00:00:01.000>. Stripped from cue payload text
