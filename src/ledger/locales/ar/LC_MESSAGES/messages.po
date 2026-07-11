@@ -1,0 +1,903 @@
+# Arabic translations for ledger-archive.
+# Copyright (C) 2026 ORGANIZATION
+# This file is distributed under the same license as the ledger-archive
+# project.
+# FIRST AUTHOR <EMAIL@ADDRESS>, 2026.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: ledger-archive 0.1.0\n"
+"Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
+"POT-Creation-Date: 2026-06-30 00:00+0000\n"
+"PO-Revision-Date: 2026-06-30 00:00+0000\n"
+"Last-Translator: ledger contributors\n"
+"Language: ar\n"
+"Language-Team: ar <LL@li.org>\n"
+"Plural-Forms: nplurals=6; plural=(n==0 ? 0 : n==1 ? 1 : n==2 ? 2 : "
+"n%100>=3 && n%100<=10 ? 3 : n%100>=0 && n%100<=2 ? 4 : 5);\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.18.0\n"
+
+#, python-brace-format
+msgid ""
+" Published as {visibility}, this record would be visible to {audience} — "
+"it would not appear in public browse or search."
+msgstr ""
+" إذا نُشر بصفة {visibility}، فسيكون هذا السجل مرئيًا لـ {audience} — ولن "
+"يظهر في التصفح أو البحث العام."
+
+msgid "(add a content warning) — each records who acted and why."
+msgstr "(إضافة تحذير محتوى) — يسجّل كلٌّ منها من قام بالإجراء ولماذا."
+
+msgid "(change access),"
+msgstr "(تغيير الوصول)،"
+
+msgid ""
+"A moderation decision needs a non-empty reason. Go back and supply a "
+"rationale, then try again."
+msgstr "يتطلب قرار الإشراف سببًا غير فارغ. ارجع وقدّم مبررًا، ثم حاول مرة أخرى."
+
+msgid ""
+"A steward reviews every submission before anything becomes visible — "
+"nothing is published automatically."
+msgstr "يراجع المشرف كل مساهمة قبل أن يصبح أي شيء مرئيًا — لا يُنشر شيء تلقائيًا."
+
+msgid "A stranger sees nothing."
+msgstr "لا يرى الغريب شيئًا."
+
+msgid "A title is required."
+msgstr "العنوان مطلوب."
+
+msgid "About"
+msgstr "حول"
+
+msgid "Abuse — describes ongoing harm or mistreatment"
+msgstr "إساءة — يصف أذًى أو سوء معاملة مستمرًّا"
+
+msgid "Action a request with the audited CLI:"
+msgstr "نفِّذ طلبًا عبر واجهة الأوامر المُدقَّقة:"
+
+msgid "Action not recorded"
+msgstr "لم يُسجَّل الإجراء"
+
+msgid "Add content warning"
+msgstr "إضافة تحذير محتوى"
+
+msgid "Agent"
+msgstr "الفاعل"
+
+msgid ""
+"All records you may view, with their titles, summaries, and whether each "
+"carries a content warning."
+msgstr ""
+"جميع السجلات التي يمكنك عرضها، مع عناوينها وملخّصاتها وما إذا كان كلٌّ "
+"منها يحمل تحذير محتوى."
+
+msgid "An account is required."
+msgstr "الحساب مطلوب."
+
+msgid ""
+"An at-a-glance summary of the public records in this archive — the "
+"topics, kinds, and languages they cover. Every number counts only what is"
+" publicly visible."
+msgstr ""
+"ملخّص سريع للسجلات العامة في هذا الأرشيف — الموضوعات والأنواع واللغات "
+"التي تغطّيها. كل رقم يحصي ما هو مرئي علنًا فقط."
+
+msgid "Apply dates"
+msgstr "تطبيق التواريخ"
+
+msgid "Are you named in this record and object to it? Tell a steward"
+msgstr "هل أنت مذكور في هذا السجل وتعترض عليه؟ أخبر مشرفًا"
+
+msgid "Are you the contributor? Manage or withdraw your consent"
+msgstr "هل أنت المساهم؟ أدِر موافقتك أو اسحبها"
+
+msgid "Attach a file (optional)"
+msgstr "إرفاق ملف (اختياري)"
+
+msgid "Audit log"
+msgstr "سجل التدقيق"
+
+msgid "Available at"
+msgstr "متاح على"
+
+msgid "Back to records"
+msgstr "العودة إلى السجلات"
+
+msgid "Back to the archive"
+msgstr "العودة إلى الأرشيف"
+
+msgid "Back to the record"
+msgstr "العودة إلى السجل"
+
+msgid "Back to the steward console"
+msgstr "العودة إلى لوحة المشرف"
+
+msgid "Before you act"
+msgstr "قبل أن تتصرّف"
+
+msgid "Browse"
+msgstr "تصفّح"
+
+msgid "Catalogue metadata"
+msgstr "بيانات الفهرسة الوصفية"
+
+msgid "Check a request"
+msgstr "التحقق من طلب"
+
+msgid "Check status"
+msgstr "التحقق من الحالة"
+
+msgid "Cite this record"
+msgstr "استشهد بهذا السجل"
+
+msgid "Clear filters"
+msgstr "مسح المرشِّحات"
+
+msgid "Collection overview"
+msgstr "نظرة عامة على المجموعة"
+
+msgid "Comma-separated topics, e.g. mutual aid, housing."
+msgstr "موضوعات مفصولة بفواصل، مثل التعاضد، الإسكان."
+
+msgid "Community only — vetted members"
+msgstr "المجتمع فقط — أعضاء موثوقون"
+
+msgid "Community only — vetted members of this community"
+msgstr "المجتمع فقط — أعضاء موثوقون في هذا المجتمع"
+
+#, python-brace-format
+msgid "Comparing the current record with an earlier saved version. Record {id}."
+msgstr "مقارنة السجل الحالي بنسخة سابقة محفوظة. السجل {id}."
+
+msgid "Consent tokens for the people named in this record"
+msgstr "رموز الموافقة للأشخاص المذكورين في هذا السجل"
+
+msgid "Contact (optional, sealed)"
+msgstr "جهة الاتصال (اختياري، مختوم)"
+
+msgid "Content warning"
+msgstr "تحذير محتوى"
+
+msgid "Content warnings"
+msgstr "تحذيرات المحتوى"
+
+msgid "Content warnings (optional)"
+msgstr "تحذيرات المحتوى (اختياري)"
+
+msgid "Content warnings:"
+msgstr "تحذيرات المحتوى:"
+
+#, python-brace-format
+msgid "Content warnings: {list}"
+msgstr "تحذيرات المحتوى: {list}"
+
+msgid "Continue"
+msgstr "متابعة"
+
+msgid "Contribute to the archive"
+msgstr "ساهم في الأرشيف"
+
+msgid ""
+"Contributions arrive sealed — nothing is visible until you publish it. "
+"Publishing opens a record to the visibility the contributor asked for; "
+"withholding holds it for revision. Every choice is recorded."
+msgstr ""
+"تصل المساهمات مختومة — لا شيء مرئي حتى تنشره. النشر يفتح السجل بالرؤية "
+"التي طلبها المساهم؛ والحجب يبقيه للمراجعة. كل اختيار مُسجَّل."
+
+msgid "Current"
+msgstr "الحالي"
+
+msgid "Date"
+msgstr "التاريخ"
+
+msgid "Deadnaming — refers to a name a person no longer uses"
+msgstr "استخدام الاسم المتروك — يشير إلى اسم لم يعد الشخص يستخدمه"
+
+msgid "Death — describes the death of a person"
+msgstr "موت — يصف وفاة شخص"
+
+msgid "Default access"
+msgstr "الوصول الافتراضي"
+
+msgid "Deportation — describes removal from a country or its threat"
+msgstr "ترحيل — يصف الإبعاد من بلد أو التهديد به"
+
+msgid "Description"
+msgstr "الوصف"
+
+msgid ""
+"Descriptive details make this record findable by topic and browsable by "
+"facet. Like the summary, they are shown to anyone who can see the record."
+msgstr ""
+"التفاصيل الوصفية تجعل هذا السجل قابلًا للعثور عليه حسب الموضوع وللتصفح "
+"حسب الوجه. مثل الملخّص، تُعرض لكل من يستطيع رؤية السجل."
+
+msgid "Detail"
+msgstr "تفصيل"
+
+msgid "Details"
+msgstr "تفاصيل"
+
+msgid "Details (optional)"
+msgstr "تفاصيل (اختياري)"
+
+msgid "Download metadata (JSON)"
+msgstr "تنزيل البيانات الوصفية (JSON)"
+
+msgid "Download results (CSV)"
+msgstr "تنزيل النتائج (CSV)"
+
+msgid "Edit a pending submission"
+msgstr "تعديل مساهمة معلّقة"
+
+#, python-brace-format
+msgid "Edited ({count} time)"
+msgid_plural "Edited ({count} times)"
+msgstr[0] "عُدِّل ({count} مرة)"
+msgstr[1] "عُدِّل ({count} مرة)"
+msgstr[2] "عُدِّل ({count} مرتين)"
+msgstr[3] "عُدِّل ({count} مرات)"
+msgstr[4] "عُدِّل ({count} مرة)"
+msgstr[5] "عُدِّل ({count} مرة)"
+
+msgid ""
+"Enter the reference code you were given when you filed a consent or "
+"takedown request to see whether a steward has acted on it."
+msgstr ""
+"أدخل الرمز المرجعي الذي حصلت عليه عند تقديم طلب موافقة أو إزالة لمعرفة ما"
+" إذا كان مشرف قد اتخذ إجراءً بشأنه."
+
+msgid "Event"
+msgstr "الحدث"
+
+msgid ""
+"Every recorded action across the archive, newest first. This log carries "
+"no contributor identity or sealed value — only what happened, who acted, "
+"and the outcome."
+msgstr ""
+"كل إجراء مُسجَّل عبر الأرشيف، الأحدث أولًا. لا يحمل هذا السجل هوية مساهم "
+"ولا قيمة مختومة — بل فقط ما حدث ومن قام به والنتيجة."
+
+msgid "Field"
+msgstr "الحقل"
+
+msgid ""
+"Field-by-field comparison of the current record and the selected earlier "
+"version"
+msgstr "مقارنة حقل بحقل بين السجل الحالي والنسخة السابقة المحددة"
+
+msgid "File"
+msgstr "ملف"
+
+#, python-brace-format
+msgid "Filed: {when}"
+msgstr "قُدِّم: {when}"
+
+msgid "Files"
+msgstr "ملفات"
+
+msgid "From"
+msgstr "من"
+
+msgid "Hate speech — contains slurs or attacks on a group"
+msgstr "خطاب كراهية — يحتوي على شتائم أو هجمات على جماعة"
+
+msgid "How should this be shared?"
+msgstr "كيف ينبغي مشاركة هذا؟"
+
+msgid "How to reach you"
+msgstr "كيفية الوصول إليك"
+
+msgid "If a steward publishes this, a stranger who is not signed in would see:"
+msgstr "إذا نشر مشرف هذا، فإن غريبًا غير مسجَّل الدخول سيرى:"
+
+msgid ""
+"If you contributed something and it is still waiting for review, you can "
+"withdraw it here using the reference and withdrawal code from your "
+"confirmation page. Withdrawing permanently removes the submission and "
+"erases any contact details you sealed with it. Once a steward has "
+"published a record, request a change from its page instead."
+msgstr ""
+"إذا ساهمت بشيء وما زال ينتظر المراجعة، يمكنك سحبه هنا باستخدام المرجع "
+"ورمز السحب من صفحة تأكيدك. السحب يزيل المساهمة نهائيًا ويمحو أي بيانات "
+"اتصال ختمتها معها. بعد أن ينشر مشرف سجلًا، اطلب التغيير من صفحته بدلًا من"
+" ذلك."
+
+msgid ""
+"If your submission is still waiting for review, you can correct it here. "
+"Enter the reference and code from your confirmation, choose “Load my "
+"submission”, make your changes, then save. Once a steward has published a"
+" record, this no longer applies — request a change from its page instead."
+msgstr ""
+"إذا كانت مساهمتك ما زالت تنتظر المراجعة، يمكنك تصحيحها هنا. أدخل المرجع "
+"والرمز من تأكيدك، واختر «تحميل مساهمتي»، وأجرِ تغييراتك ثم احفظ. بعد أن "
+"ينشر مشرف سجلًا، لم يعد هذا ينطبق — اطلب التغيير من صفحته بدلًا من ذلك."
+
+msgid "Incarceration — describes jail, prison, or detention"
+msgstr "حبس — يصف السجن أو الاحتجاز"
+
+msgid ""
+"It has been permanently removed, along with any contact details you had "
+"sealed with it. Nothing from it remains in the archive."
+msgstr ""
+"لقد أُزيل نهائيًا، مع أي بيانات اتصال كنت قد ختمتها معه. لم يبقَ منه شيء "
+"في الأرشيف."
+
+msgid ""
+"It is sealed and waiting for a steward to review it. Nothing you "
+"submitted is public yet, and any contact details you gave are encrypted "
+"and will never be shown."
+msgstr ""
+"إنه مختوم وينتظر أن يراجعه مشرف. لا شيء مما قدّمته عام بعد، وأي بيانات "
+"اتصال قدّمتها مشفّرة ولن تُعرض أبدًا."
+
+msgid "Keep this if you might change your mind"
+msgstr "احتفظ بهذا إن كنت قد تغيّر رأيك"
+
+msgid "Language"
+msgstr "اللغة"
+
+msgid "Languages"
+msgstr "اللغات"
+
+msgid "Load my submission"
+msgstr "تحميل مساهمتي"
+
+msgid "Mark resolved"
+msgstr "وضع علامة كمحلول"
+
+msgid "Medical — describes injury, illness, or clinical procedures"
+msgstr "طبي — يصف إصابة أو مرضًا أو إجراءات سريرية"
+
+msgid "Name"
+msgstr "الاسم"
+
+msgid "Newest"
+msgstr "الأحدث"
+
+msgid "Next"
+msgstr "التالي"
+
+msgid "No"
+msgstr "لا"
+
+msgid "No earlier versions."
+msgstr "لا توجد نسخ سابقة."
+
+msgid "No open requests."
+msgstr "لا توجد طلبات مفتوحة."
+
+msgid "No recorded events yet."
+msgstr "لا توجد أحداث مُسجَّلة بعد."
+
+msgid "No records are available to you yet."
+msgstr "لا توجد سجلات متاحة لك بعد."
+
+msgid "No records match your search."
+msgstr "لا توجد سجلات تطابق بحثك."
+
+msgid "No submissions awaiting review."
+msgstr "لا توجد مساهمات تنتظر المراجعة."
+
+msgid "No transcript provided for this audio/video."
+msgstr "لم تُقدَّم أي نسخة نصية لهذا الصوت/الفيديو."
+
+msgid "Object"
+msgstr "اعتراض"
+
+msgid "Oldest"
+msgstr "الأقدم"
+
+msgid ""
+"One line shown in listings, search results, and the feed. Anyone who can "
+"see this record will see this summary."
+msgstr ""
+"سطر واحد يظهر في القوائم ونتائج البحث والموجز. سيرى هذا الملخّص كل من "
+"يستطيع رؤية هذا السجل."
+
+msgid ""
+"Only a steward with explicit permission can ever see this. It is "
+"encrypted, never shown publicly, and never reveals who contributed a "
+"record."
+msgstr ""
+"لا يمكن أن يرى هذا سوى مشرف يملك إذنًا صريحًا. إنه مشفّر، ولا يُعرض علنًا"
+" أبدًا، ولا يكشف أبدًا من ساهم بسجل."
+
+msgid "Open consent & takedown requests"
+msgstr "طلبات الموافقة والإزالة المفتوحة"
+
+msgid "Open the record to read it before deciding."
+msgstr "افتح السجل لقراءته قبل اتخاذ القرار."
+
+msgid "Outcome"
+msgstr "النتيجة"
+
+msgid "Outing — reveals someone's identity without their consent"
+msgstr "فضح — يكشف هوية شخص دون موافقته"
+
+msgid "Overview"
+msgstr "نظرة عامة"
+
+#, python-brace-format
+msgid "Page {number} of {pages}"
+msgstr "الصفحة {number} من {pages}"
+
+msgid "Pagination"
+msgstr "ترقيم الصفحات"
+
+msgid ""
+"Parts of this record have been kept private by the contributor or a "
+"steward. You are seeing everything you are allowed to see."
+msgstr ""
+"أُبقيت أجزاء من هذا السجل خاصة من قِبل المساهم أو مشرف. أنت ترى كل ما "
+"يُسمح لك برؤيته."
+
+msgid "Permanent link"
+msgstr "رابط دائم"
+
+msgid "Persistent identifier"
+msgstr "المعرّف الدائم"
+
+msgid "Police violence — describes harm or force by police"
+msgstr "عنف الشرطة — يصف أذًى أو استخدام قوة من قِبل الشرطة"
+
+msgid "Preview what a stranger sees"
+msgstr "معاينة ما يراه الغريب"
+
+msgid "Preview — what a stranger would see"
+msgstr "معاينة — ما سيراه الغريب"
+
+msgid "Previous"
+msgstr "السابق"
+
+msgid "Previous version"
+msgstr "النسخة السابقة"
+
+msgid "Public — anyone may read it"
+msgstr "عام — يمكن لأي شخص قراءته"
+
+msgid "Public — anyone may read it once a steward approves"
+msgstr "عام — يمكن لأي شخص قراءته بمجرد موافقة مشرف"
+
+msgid "Publish (as requested)"
+msgstr "نشر (كما طُلب)"
+
+msgid "Reason (required)"
+msgstr "السبب (مطلوب)"
+
+msgid "Received — a steward has not acted on it yet."
+msgstr "مُستلَم — لم يتخذ مشرف إجراءً بشأنه بعد."
+
+msgid "Record content."
+msgstr "محتوى السجل."
+
+msgid "Recorded actions, newest first"
+msgstr "الإجراءات المُسجَّلة، الأحدث أولًا"
+
+msgid "Records (list view)"
+msgstr "السجلات (عرض القائمة)"
+
+msgid "Records (table view)"
+msgstr "السجلات (عرض الجدول)"
+
+msgid "Reference"
+msgstr "المرجع"
+
+msgid "Related records"
+msgstr "سجلات ذات صلة"
+
+msgid "Relevance"
+msgstr "الصلة"
+
+#, python-brace-format
+msgid ""
+"Removal: {confirmed} of {total} storage location(s) have confirmed the "
+"takedown."
+msgstr "الإزالة: أكّد {confirmed} من أصل {total} مواقع تخزين تنفيذ الإزالة."
+
+msgid "Request status"
+msgstr "حالة الطلب"
+
+#, python-brace-format
+msgid "Request: {kind}"
+msgstr "الطلب: {kind}"
+
+msgid "Resolved — a steward has acted on it."
+msgstr "محلول — اتخذ مشرف إجراءً بشأنه."
+
+#, python-brace-format
+msgid "Responded {when}"
+msgstr "تم الرد {when}"
+
+#, python-brace-format
+msgid "Response due by {when}"
+msgstr "موعد الرد النهائي {when}"
+
+msgid "Save changes"
+msgstr "حفظ التغييرات"
+
+msgid "Saved versions"
+msgstr "النسخ المحفوظة"
+
+msgid "Sealed — keep it withheld for now"
+msgstr "مختوم — أبقِه محجوبًا في الوقت الحالي"
+
+msgid "Sealed — kept private for now"
+msgstr "مختوم — مُبقًى خاصًا في الوقت الحالي"
+
+msgid "Search"
+msgstr "بحث"
+
+msgid "Search the archive"
+msgstr "ابحث في الأرشيف"
+
+msgid "Seen by a steward and under consideration."
+msgstr "شاهده مشرف وهو قيد النظر."
+
+msgid "Select this submission"
+msgstr "حدِّد هذه المساهمة"
+
+msgid "Self-harm — describes a person hurting themselves"
+msgstr "إيذاء النفس — يصف شخصًا يؤذي نفسه"
+
+msgid "Sexual violence — describes sexual assault or coercion"
+msgstr "عنف جنسي — يصف اعتداءً جنسيًا أو إكراهًا"
+
+msgid ""
+"Share a story, an account, or knowledge worth keeping. A steward reviews "
+"every submission before anything is published — your contribution is kept"
+" sealed until then. Use \"Preview\" to see exactly what a stranger would "
+"see before you submit."
+msgstr ""
+"شارك قصة أو شهادة أو معرفة تستحق الحفظ. يراجع مشرف كل مساهمة قبل نشر أي "
+"شيء — تبقى مساهمتك مختومة حتى ذلك الحين. استخدم «معاينة» لترى بالضبط ما "
+"سيراه الغريب قبل أن ترسل."
+
+#, python-brace-format
+msgid "Showing {start}-{end} of {total} record(s)."
+msgstr "عرض {start}-{end} من {total} سجل."
+
+msgid "Skip to main content"
+msgstr "انتقل إلى المحتوى الرئيسي"
+
+msgid "Some parts of this record are not available under your current access:"
+msgstr "بعض أجزاء هذا السجل غير متاحة ضمن وصولك الحالي:"
+
+msgid "Some parts of this record are not shown"
+msgstr "بعض أجزاء هذا السجل غير معروضة"
+
+msgid "Sort by:"
+msgstr "الترتيب حسب:"
+
+#, python-brace-format
+msgid "Spanning {earliest} to {latest}."
+msgstr "يمتد من {earliest} إلى {latest}."
+
+msgid "Status"
+msgstr "الحالة"
+
+#, python-brace-format
+msgid "Status: {status}"
+msgstr "الحالة: {status}"
+
+msgid "Steward console"
+msgstr "لوحة المشرف"
+
+#, python-brace-format
+msgid "Still pending at: {locations}."
+msgstr "ما زال معلقًا في: {locations}."
+
+msgid "Subjects"
+msgstr "الموضوعات"
+
+msgid "Submissions awaiting review"
+msgstr "مساهمات تنتظر المراجعة"
+
+msgid "Submit for review"
+msgstr "إرسال للمراجعة"
+
+msgid "Substance use — describes drug or alcohol use"
+msgstr "تعاطي مواد — يصف استخدام المخدرات أو الكحول"
+
+msgid "Suicide — describes suicide or suicidal thoughts"
+msgstr "انتحار — يصف الانتحار أو الأفكار الانتحارية"
+
+msgid "Summary"
+msgstr "ملخّص"
+
+msgid "Summary (optional)"
+msgstr "ملخّص (اختياري)"
+
+msgid "Take down"
+msgstr "إزالة"
+
+msgid "Thank you — your contribution was received"
+msgstr "شكرًا لك — تم استلام مساهمتك"
+
+#, python-brace-format
+msgid "That file is too large. The limit is {max} MB."
+msgstr "هذا الملف كبير جدًا. الحد هو {max} ميغابايت."
+
+#, python-brace-format
+msgid "That file type isn't accepted. Allowed types are: {types}."
+msgstr "نوع الملف هذا غير مقبول. الأنواع المسموح بها: {types}."
+
+msgid "That submission is too long."
+msgstr "هذه المساهمة طويلة جدًا."
+
+msgid "The language of the material, e.g. English or Spanish."
+msgstr "لغة المادة، مثل الإنجليزية أو الإسبانية."
+
+msgid "The takedown is confirmed at every storage location."
+msgstr "تم تأكيد الإزالة في كل موقع تخزين."
+
+msgid "There are no public records yet."
+msgstr "لا توجد سجلات عامة بعد."
+
+msgid ""
+"This record carries the following content warnings. Review them before "
+"continuing."
+msgstr "يحمل هذا السجل تحذيرات المحتوى التالية. راجِعها قبل المتابعة."
+
+msgid "This record has access restrictions."
+msgstr "لهذا السجل قيود وصول."
+
+msgid "Those contact details are too long."
+msgstr "بيانات الاتصال هذه طويلة جدًا."
+
+msgid "Tick anything a reader should be warned about before this is shown."
+msgstr "أشِّر على أي شيء ينبغي تحذير القارئ منه قبل عرض هذا."
+
+msgid "Title"
+msgstr "العنوان"
+
+msgid "To"
+msgstr "إلى"
+
+msgid "To withdraw it, go to"
+msgstr "لسحبه، انتقل إلى"
+
+msgid "Token for a named person"
+msgstr "رمز لشخص مذكور"
+
+msgid "Transcript"
+msgstr "نص مكتوب"
+
+msgid "Type"
+msgstr "النوع"
+
+msgid "Types"
+msgstr "الأنواع"
+
+msgid "Version history"
+msgstr "سجل الإصدارات"
+
+msgid "View the audit log"
+msgstr "عرض سجل التدقيق"
+
+msgid "Violence — describes physical harm or attack"
+msgstr "عنف — يصف أذًى جسديًا أو اعتداءً"
+
+msgid ""
+"We could not find a pending submission with that reference and code. "
+"Check both and try again."
+msgstr ""
+"لم نتمكن من العثور على مساهمة معلّقة بهذا المرجع والرمز. تحقق من كليهما "
+"وحاول مرة أخرى."
+
+msgid ""
+"We could not find a request with that reference. Check it and try again —"
+" it is the code shown when you filed the request."
+msgstr ""
+"لم نتمكن من العثور على طلب بهذا المرجع. تحقق منه وحاول مرة أخرى — إنه "
+"الرمز المعروض عند تقديمك للطلب."
+
+msgid ""
+"We could not withdraw a pending submission with that reference and code. "
+"Check both and try again."
+msgstr ""
+"لم نتمكن من سحب مساهمة معلّقة بهذا المرجع والرمز. تحقق من كليهما وحاول "
+"مرة أخرى."
+
+msgid "What a stranger sees"
+msgstr "ما يراه الغريب"
+
+msgid "What kind of material this is, e.g. photograph, oral history, flyer."
+msgstr "أي نوع من المواد هذا، مثل صورة فوتوغرافية، تاريخ شفوي، منشور."
+
+msgid "When"
+msgstr "متى"
+
+msgid "When the material is from, e.g. 1994 or 2021-05-01."
+msgstr "من أي زمن المادة، مثل 1994 أو 2021-05-01."
+
+msgid ""
+"While your submission is still waiting for review you can withdraw it "
+"yourself. To do that you will need both of these — keep them private, as "
+"together they let someone withdraw this submission:"
+msgstr ""
+"ما دامت مساهمتك تنتظر المراجعة يمكنك سحبها بنفسك. للقيام بذلك ستحتاج إلى "
+"كلا هذين — أبقِهما خاصين، فمعًا يتيحان لأحدهم سحب هذه المساهمة:"
+
+msgid "Withdraw a submission"
+msgstr "سحب مساهمة"
+
+msgid "Withdraw this submission"
+msgstr "سحب هذه المساهمة"
+
+msgid "Withdrawal code"
+msgstr "رمز السحب"
+
+msgid "Withheld"
+msgstr "محجوب"
+
+msgid "Withhold"
+msgstr "حجب"
+
+msgid "Withhold selected"
+msgstr "حجب المحدد"
+
+msgid "Would publish as:"
+msgstr "سيُنشر بصفة:"
+
+msgid "Yes"
+msgstr "نعم"
+
+msgid "You can also correct it on"
+msgstr "يمكنك أيضًا تصحيحه في"
+
+#, python-brace-format
+msgid ""
+"You can attach one image, audio file, or PDF (up to {max} MB). Accepted: "
+"{accepted}. The file is reviewed with the rest of your submission and is "
+"not public until a steward publishes it."
+msgstr ""
+"يمكنك إرفاق صورة واحدة أو ملف صوتي أو PDF (حتى {max} ميغابايت). المقبول: "
+"{accepted}. تُراجَع الملف مع بقية مساهمتك ولا يكون عامًا حتى ينشره مشرف."
+
+msgid ""
+"You can read access-restricted content to do your work, but content "
+"sealed with the 'sealed' policy — and every contributor's identity — is "
+"restricted even from you. Some records may be sealed above your access; "
+"their absence here does not mean they do not exist."
+msgstr ""
+"يمكنك قراءة المحتوى المقيّد الوصول لأداء عملك، لكن المحتوى المختوم بسياسة"
+" «sealed» — وهوية كل مساهم — مقيّد حتى عنك. قد تكون بعض السجلات مختومة "
+"فوق مستوى وصولك؛ غيابها هنا لا يعني أنها غير موجودة."
+
+msgid ""
+"You said this record names other people. Give each of them one of the "
+"tokens below, privately and in person where you can. Anyone who holds a "
+"token can object to being named and a steward will treat their objection "
+"as confirmed. These are shown only once and are not stored in a form "
+"anyone can read — copy them now:"
+msgstr ""
+"ذكرت أن هذا السجل يسمّي أشخاصًا آخرين. أعطِ كل واحد منهم رمزًا من الرموز "
+"أدناه، بصورة خاصة وشخصيًا حيثما أمكن. يمكن لأي شخص يحمل رمزًا الاعتراض على "
+"ذكر اسمه، وسيعامل المشرف اعتراضه على أنه مؤكّد. تُعرض هذه الرموز مرة واحدة "
+"فقط ولا تُخزَّن بصيغة يمكن لأي شخص قراءتها — انسخها الآن:"
+
+msgid "Your account"
+msgstr "حسابك"
+
+msgid "Your changes were saved"
+msgstr "تم حفظ تغييراتك"
+
+msgid "Your code"
+msgstr "رمزك"
+
+msgid "Your contribution could not be saved right now. Please try again."
+msgstr "تعذّر حفظ مساهمتك الآن. يرجى المحاولة مرة أخرى."
+
+msgid "Your identity is never shown. Contributors control what is public."
+msgstr "لا تُعرض هويتك أبدًا. المساهمون يتحكمون بما هو عام."
+
+msgid ""
+"Your name and contact are never shown to any reader — they are sealed. "
+"They are not in this preview."
+msgstr ""
+"لا يُعرض اسمك وجهة اتصالك لأي قارئ أبدًا — إنهما مختومان. وهما غير "
+"موجودين في هذه المعاينة."
+
+msgid ""
+"Your pending submission has been updated. It is still sealed and waiting "
+"for a steward to review it."
+msgstr "تم تحديث مساهمتك المعلّقة. ما زالت مختومة وتنتظر أن يراجعها مشرف."
+
+msgid "Your request reference"
+msgstr "مرجع طلبك"
+
+msgid "Your submission was withdrawn"
+msgstr "تم سحب مساهمتك"
+
+msgid "and enter both."
+msgstr "وأدخل كليهما."
+
+msgid "ask a steward to make contact"
+msgstr "اطلب من مشرف إجراء اتصال"
+
+msgid "changed"
+msgstr "معدّل"
+
+msgid "community members only"
+msgstr "أعضاء المجتمع فقط"
+
+msgid "correct the record"
+msgstr "تصحيح السجل"
+
+msgid "no one yet"
+msgstr "لا أحد بعد"
+
+msgid "objection from a person named in the record"
+msgstr "اعتراض من شخص مذكور في السجل"
+
+msgid "on record"
+msgstr "في السجل"
+
+msgid "selected"
+msgstr "محدد"
+
+#, python-brace-format
+msgid "submitted {when}"
+msgstr "قُدِّم {when}"
+
+msgid "the edit page"
+msgstr "صفحة التعديل"
+
+msgid "the withdrawal page"
+msgstr "صفحة السحب"
+
+msgid "tighten access"
+msgstr "تشديد الوصول"
+
+msgid "verified objection from a named subject (token confirmed)"
+msgstr "اعتراض موثّق من شخص مذكور (تم تأكيد الرمز)"
+
+msgid "withdraw / take down"
+msgstr "سحب / إزالة"
+
+#, python-brace-format
+msgid ""
+"{count} detail is restricted under your current access. If you are a "
+"community member or steward, sign in to see what is withheld and why."
+msgid_plural ""
+"{count} details are restricted under your current access. If you are a "
+"community member or steward, sign in to see what is withheld and why."
+msgstr[0] ""
+"{count} تفصيل مقيّد ضمن وصولك الحالي. إذا كنت عضوًا في المجتمع أو مشرفًا،"
+" فسجّل الدخول لمعرفة ما هو محجوب ولماذا."
+msgstr[1] ""
+"{count} تفصيل مقيّد ضمن وصولك الحالي. إذا كنت عضوًا في المجتمع أو مشرفًا،"
+" فسجّل الدخول لمعرفة ما هو محجوب ولماذا."
+msgstr[2] ""
+"{count} تفصيلان مقيّدان ضمن وصولك الحالي. إذا كنت عضوًا في المجتمع أو "
+"مشرفًا، فسجّل الدخول لمعرفة ما هو محجوب ولماذا."
+msgstr[3] ""
+"{count} تفاصيل مقيّدة ضمن وصولك الحالي. إذا كنت عضوًا في المجتمع أو "
+"مشرفًا، فسجّل الدخول لمعرفة ما هو محجوب ولماذا."
+msgstr[4] ""
+"{count} تفصيلًا مقيّدًا ضمن وصولك الحالي. إذا كنت عضوًا في المجتمع أو "
+"مشرفًا، فسجّل الدخول لمعرفة ما هو محجوب ولماذا."
+msgstr[5] ""
+"{count} تفصيل مقيّد ضمن وصولك الحالي. إذا كنت عضوًا في المجتمع أو مشرفًا،"
+" فسجّل الدخول لمعرفة ما هو محجوب ولماذا."
+
+#, python-brace-format
+msgid "{count} public record(s)."
+msgstr "{count} سجل عام."
+
+#, python-brace-format
+msgid "{when} — superseded by {event}"
+msgstr "{when} — حلّ محله {event}"
+
+#, python-brace-format
+msgid "{when}, ref {ref}"
+msgstr "{when}، مرجع {ref}"
+
+msgid "— every recorded action across the archive."
+msgstr "— كل إجراء مُسجَّل عبر الأرشيف."

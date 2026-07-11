@@ -2,7 +2,8 @@
 
 The accessible browse server (:mod:`ledger.render`, :mod:`ledger.server`) and the
 contribution write path (:mod:`ledger.contribute`) are where ledger emits
-end-user-facing, natural-language text, in English or Spanish. This module is the
+end-user-facing, natural-language text, in English, Spanish, French, or Arabic
+(Arabic exercises right-to-left layout via :func:`text_direction`). This module is the
 single migration seam onto GNU gettext catalogs (INTERNATIONALIZATION-STANDARD
 §3/§4): the *source string is the English text itself*, extracted by ``pybabel``
 into ``locales/messages.pot`` and translated in
@@ -54,7 +55,7 @@ DEFAULT_LANG = "en"
 
 # The languages this build ships a catalog for, in preference order. A steward's
 # config may serve a subset; ``negotiate`` is told the available set explicitly.
-SUPPORTED: tuple[str, ...] = ("en", "es")
+SUPPORTED: tuple[str, ...] = ("en", "es", "fr", "ar")
 
 # Code->code map used at response-header sinks (Content-Language, the lang cookie)
 # so a language tag written to a header provably originates from this constant set,
@@ -70,7 +71,15 @@ SUPPORTED_HEADER: dict[str, str] = {code: code for code in SUPPORTED}
 _LANGUAGE_NAMES: dict[str, str] = {
     "en": "English",
     "es": "Español",
+    "fr": "Français",
+    "ar": "العربية",
 }
+
+# Right-to-left scripts (INTERNATIONALIZATION-STANDARD §7 G10). A language whose
+# primary subtag is in this set is rendered with ``dir="rtl"`` so the browse pages
+# lay out correctly for Arabic/Hebrew/Persian/Urdu readers. The set is keyed by
+# primary subtag, so a regional variant (``ar-EG``) is still recognized as RTL.
+_RTL_LANGS: frozenset[str] = frozenset({"ar", "he", "fa", "ur"})
 
 
 def get_translation(lang: str) -> gettext.NullTranslations:
@@ -594,3 +603,59 @@ def language_name(code: str) -> str:
     if primary in _LANGUAGE_NAMES:
         return _LANGUAGE_NAMES[primary]
     return _humanize(code)
+
+
+def text_direction(lang: str) -> str:
+    """Return the base text direction for ``lang``: ``"rtl"`` or ``"ltr"``.
+
+    Used to set ``<html dir="…">`` on every rendered page (G10). A right-to-left
+    script (Arabic, Hebrew, Persian, Urdu) returns ``"rtl"``; everything else,
+    including an unknown or malformed tag, returns ``"ltr"`` — the safe default, so
+    a page never renders with a wrong or empty direction. Matched by primary subtag,
+    so a regional variant (``ar-EG``) is still recognized as RTL, case-insensitively.
+    """
+    primary = lang.lower().partition("-")[0]
+    return "rtl" if primary in _RTL_LANGS else "ltr"
+
+
+# Pseudolocale (INTERNATIONALIZATION-STANDARD §7 G9). An "en-XA"-style accent map:
+# every ASCII letter maps to an accented look-alike so a reader (or a test) can spot
+# any string that was NOT run through the gettext seam — it stays plain ASCII while
+# translated chrome is accented. This is a TEST-ONLY affordance: ``pseudolocalize``
+# is never wired into ``SUPPORTED`` and ships no catalog, so production only ever
+# serves real, human-authored locales.
+_PSEUDO_MAP = str.maketrans(
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ",
+    "ábčđéƒǧĥíĵķłmñóþqŕš†úvwxyžÁßČĐÉƑǦĤÍĴĶŁMÑÓÞQŔŠŤÚVWXYŽ",
+)
+
+#: Markers wrapped around a pseudolocalized string; a test asserts that every piece
+#: of localized chrome on a rendered page is wrapped, so an un-wrapped English word
+#: reveals a hardcoded (non-gettext) string.
+PSEUDO_PREFIX = "⟦"
+PSEUDO_SUFFIX = "⟧"
+
+
+def pseudolocalize(text: str) -> str:
+    """Accent-wrap ``text`` for the pseudolocale, leaving ``{placeholders}`` intact.
+
+    Every run of literal text has its ASCII letters mapped to accented look-alikes
+    and the whole string is bracketed with :data:`PSEUDO_PREFIX`/:data:`PSEUDO_SUFFIX`.
+    ``{field}`` placeholders are passed through verbatim so ``str.format`` still
+    resolves them (placeholder parity is preserved), which lets a test render every
+    page under the pseudolocale and assert no un-accented English chrome leaked
+    through a hardcoded string. Test-only: not a shipped locale (G9).
+    """
+    out: list[str] = []
+    i = 0
+    while i < len(text):
+        ch = text[i]
+        if ch == "{":
+            close = text.find("}", i)
+            if close != -1:
+                out.append(text[i : close + 1])
+                i = close + 1
+                continue
+        out.append(ch.translate(_PSEUDO_MAP))
+        i += 1
+    return f"{PSEUDO_PREFIX}{''.join(out)}{PSEUDO_SUFFIX}"

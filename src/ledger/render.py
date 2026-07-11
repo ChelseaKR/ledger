@@ -56,7 +56,9 @@ def _page(title: str, *, lang: str, main_html: str, nav_html: str = "") -> str:
     """Wrap ``main_html`` in the shared, accessible page shell.
 
     The shell encodes the WCAG 2.2 AA structure every page shares (accessibility):
-    a declared document type and ``lang``; a unique, descriptive ``<title>``; a
+    a declared document type, ``lang``, and base text ``dir`` (``ltr``/``rtl``, from
+    :func:`ledger.i18n.text_direction`, so an RTL language lays out correctly); a
+    unique, descriptive ``<title>``; a
     visible "skip to main content" link as the *first* focusable element; the
     ``header``/``nav``/``main``/``footer`` landmarks; and a single ``<main>``
     target the skip link jumps to. ``title`` is escaped because record titles flow
@@ -67,9 +69,10 @@ def _page(title: str, *, lang: str, main_html: str, nav_html: str = "") -> str:
     (accessibility).
     """
     nav_block = f'\n    <nav aria-label="Site">{nav_html}</nav>' if nav_html else ""
+    direction = i18n.text_direction(lang)
     return (
         "<!doctype html>\n"
-        f'<html lang="{_esc(lang)}">\n'
+        f'<html lang="{_esc(lang)}" dir="{_esc(direction)}">\n'
         "<head>\n"
         '  <meta charset="utf-8">\n'
         '  <meta name="viewport" content="width=device-width, initial-scale=1">\n'

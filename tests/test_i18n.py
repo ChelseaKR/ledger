@@ -74,8 +74,18 @@ def test_negotiate_wildcard_picks_first_available() -> None:
 
 
 def test_negotiate_unknown_language_falls_back_to_default() -> None:
-    assert negotiate("fr") == DEFAULT_LANG
+    # A language ledger ships no catalog for degrades to the default.
+    assert negotiate("de") == DEFAULT_LANG
     assert negotiate("de-DE, zh;q=0.8") == DEFAULT_LANG
+
+
+def test_negotiate_returns_new_ui_languages() -> None:
+    # RM7 shipped French and Arabic catalogs, so negotiation resolves them.
+    assert negotiate("fr") == "fr"
+    assert negotiate("ar") == "ar"
+    # Primary-subtag fall-down and q-value ordering work for the new languages too.
+    assert negotiate("ar-EG") == "ar"
+    assert negotiate("en;q=0.4, fr;q=0.9") == "fr"
 
 
 def test_negotiate_none_falls_back_to_default() -> None:
@@ -117,7 +127,15 @@ def test_t_returns_translated_string() -> None:
 
 def test_t_unknown_language_uses_english_source() -> None:
     # An unknown language loads NullTranslations; gettext returns the English msgid.
-    assert t("fr", "nav_search") == "Search"
+    assert t("de", "nav_search") == "Search"
+
+
+def test_t_returns_french_and_arabic() -> None:
+    # The RM7 catalogs render real translations, not the English fallback.
+    assert t("fr", "nav_browse") == "Parcourir"
+    assert t("ar", "nav_browse") == "تصفّح"
+    assert t("fr", "nav_search") != "Search"
+    assert t("ar", "nav_search") != "Search"
 
 
 def test_t_unknown_key_returns_the_key() -> None:
@@ -209,7 +227,20 @@ def test_gloss_unknown_tag_is_humanized() -> None:
 
 
 def test_gloss_unknown_language_falls_back_to_english_source() -> None:
-    assert gloss_cw("fr", "medical") == gloss_cw("en", "medical")
+    assert gloss_cw("de", "medical") == gloss_cw("en", "medical")
+
+
+def test_gloss_all_cw_tags_covered_in_every_language() -> None:
+    """Every content-warning tag is glossed (with the em-dash) in all four languages."""
+    from ledger.config import _STARTER_CONTENT_WARNINGS
+
+    for lang in SUPPORTED:
+        for tag in _STARTER_CONTENT_WARNINGS:
+            gloss = gloss_cw(lang, tag)
+            assert "—" in gloss, (lang, tag, gloss)
+    # French and Arabic are genuinely translated, not the English fallback.
+    assert gloss_cw("fr", "medical") != gloss_cw("en", "medical")
+    assert gloss_cw("ar", "medical") != gloss_cw("en", "medical")
 
 
 # --- language_name ----------------------------------------------------------
@@ -218,6 +249,13 @@ def test_gloss_unknown_language_falls_back_to_english_source() -> None:
 def test_language_name_known_codes() -> None:
     assert language_name("en") == "English"
     assert language_name("es") == "Español"
+
+
+def test_language_name_new_autonyms() -> None:
+    # RM7 autonyms, in the language's own script (not gettext-translated).
+    assert language_name("fr") == "Français"
+    assert language_name("ar") == "العربية"
+    assert language_name("ar-EG") == "العربية"
 
 
 def test_language_name_uses_proper_accent() -> None:
@@ -232,8 +270,48 @@ def test_language_name_primary_subtag() -> None:
 
 
 def test_language_name_unknown_is_humanized() -> None:
-    assert language_name("fr") == "Fr"
+    assert language_name("de") == "De"
     assert language_name("klingon-tlh") == "Klingon tlh"
+
+
+# --- text_direction (RTL plumbing, G10) -------------------------------------
+
+
+def test_text_direction_rtl_for_arabic() -> None:
+    assert i18n.text_direction("ar") == "rtl"
+    # RTL is matched by primary subtag, case-insensitively.
+    assert i18n.text_direction("ar-EG") == "rtl"
+    assert i18n.text_direction("AR") == "rtl"
+    # The other declared RTL scripts resolve even without a shipped catalog.
+    for code in ("he", "fa", "ur"):
+        assert i18n.text_direction(code) == "rtl"
+
+
+def test_text_direction_ltr_for_ltr_and_unknown() -> None:
+    for code in ("en", "es", "fr", "en-US", "zz", ""):
+        assert i18n.text_direction(code) == "ltr"
+
+
+# --- pseudolocale (G9, test-only) -------------------------------------------
+
+
+def test_pseudolocalize_wraps_and_accents_but_keeps_placeholders() -> None:
+    out = i18n.pseudolocalize("Showing {start}-{end} of {total} record(s).")
+    # Bracketed with the pseudo markers so a test can spot un-wrapped chrome.
+    assert out.startswith(i18n.PSEUDO_PREFIX) and out.endswith(i18n.PSEUDO_SUFFIX)
+    # Placeholders survive verbatim, so str.format still resolves them.
+    assert "{start}" in out and "{end}" in out and "{total}" in out
+    assert out.format(start=1, end=9, total=9)  # does not raise
+    # ASCII letters are accented, so the plain-ASCII original is gone.
+    assert "Showing" not in out
+    # A round-trip through .format still yields a pseudolocalized (non-English) string.
+    assert "record" not in out
+
+
+def test_pseudolocalize_is_not_a_shipped_locale() -> None:
+    # G9: the pseudolocale is a test affordance only, never negotiable/served.
+    assert "en-XA" not in i18n.SUPPORTED
+    assert "en-xa" not in {s.lower() for s in i18n.SUPPORTED}
 
 
 # --- I1: safety-critical strings are localized ------------------------------
