@@ -1,0 +1,56 @@
+name: semgrep
+
+# Vulnerability management (SEC-07): SAST coverage today is CodeQL (codeql.yml) plus
+# ruff's `S` (bandit) rule subset in the lint gate. Neither is a semantic,
+# pattern-based SAST engine — CodeQL's `security-and-quality` query pack is strong on
+# data-flow but Python-taint-rule coverage differs from Semgrep's, and ruff-S is a
+# linter, not a SAST scanner. Semgrep's `p/ci` registry ruleset (OWASP + language
+# best-practice rules, curated for low false-positive CI use, no Semgrep-app token
+# required) closes that gap as a second, independently-sourced SAST pass. Runs on
+# every PR into main and on a weekly schedule, same rationale as codeql.yml: a
+# newly-published rule catches a pre-existing pattern even with no code change.
+on:
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "42 4 * * 1" # Mondays, 04:42 UTC — offset from codeql.yml's 04:27 run
+
+permissions:
+  contents: read
+
+# Cancel a superseded scan when a PR branch is updated; only the latest revision's
+# result matters to the merge gate.
+concurrency:
+  group: semgrep-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scan:
+    name: Semgrep SAST (p/ci)
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+    steps:
+      # Harden-Runner (SEC-04): audit mode first, see ci.yml for the rollout note.
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
+        with:
+          python-version: "3.12"
+          cache: pip
+      # Installed from PyPI like pip-audit in ci.yml, rather than a third-party
+      # Action, so the only trust boundary is the pinned package version.
+      - name: Install Semgrep
+        run: python -m pip install --upgrade pip && pip install semgrep==1.145.0
+      - name: SAST scan (Semgrep, SARIF for the Security tab)
+        run: semgrep scan --config p/ci --sarif --output semgrep.sarif --error src tests
+      - name: Upload SARIF to code scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@54f647b7e1bb85c95cddabcd46b0c578ec92bc1a  # v4
+        with:
+          sarif_file: semgrep.sarif
