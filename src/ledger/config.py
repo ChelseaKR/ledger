@@ -478,9 +478,7 @@ def _migrate(data: dict[str, object], from_version: int) -> dict[str, object]:
     At schema 1 there is nothing earlier to migrate from, so this is the identity
     transform; the structure exists now so the first real bump is a one-line change.
     """
-    # Example of the intended shape for future versions:
-    #   if from_version < 2:
-    #       data = _migrate_1_to_2(data)
+    # Future schema bumps belong in explicit, ordered migration helpers called here.
     return data
 
 

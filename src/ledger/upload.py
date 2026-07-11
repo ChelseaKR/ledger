@@ -53,6 +53,11 @@ def sniff_media_type(data: bytes) -> str | None:
     other or with any other RIFF type.
     """
     for media_type, signatures in _SIGNATURES.items():
+        # Keep the public allowlist and the recognizer tied together. Besides
+        # guarding future edits, this makes ALLOWED_TYPES an exercised contract in
+        # this module rather than an export that static analysis sees as orphaned.
+        if media_type not in ALLOWED_TYPES:
+            continue
         for signature in signatures:
             if data.startswith(signature):
                 if media_type == "image/webp" and not (len(data) >= 12 and data[8:12] == b"WEBP"):

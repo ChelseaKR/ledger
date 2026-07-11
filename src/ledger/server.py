@@ -118,6 +118,39 @@ from ledger.tombstones import PRIMARY_LOCATION, TombstoneStore
 # root is the canonical boundary the traversal guard enforces.
 _WEB_ROOT: Path = Path(__file__).resolve().parent.parent.parent / "web"
 _STATIC_ROOT: Path = (_WEB_ROOT / "static").resolve()
+_STAGED_UPLOAD_FILENAME = "payload.bin"
+
+
+def _supported_language(value: object) -> str | None:
+    """Map request-derived language input to one of four literal safe tags."""
+    if value == "en":
+        return "en"
+    if value == "es":
+        return "es"
+    if value == "fr":
+        return "fr"
+    if value == "ar":
+        return "ar"
+    return None
+
+
+def _language_cookie(value: object) -> str | None:
+    """Return a wholly literal cookie header for a supported language."""
+    if value == "en":
+        return "lang=en; Path=/; Max-Age=31536000; SameSite=Lax; HttpOnly"
+    if value == "es":
+        return "lang=es; Path=/; Max-Age=31536000; SameSite=Lax; HttpOnly"
+    if value == "fr":
+        return "lang=fr; Path=/; Max-Age=31536000; SameSite=Lax; HttpOnly"
+    if value == "ar":
+        return "lang=ar; Path=/; Max-Age=31536000; SameSite=Lax; HttpOnly"
+    return None
+
+
+def _record_id_or_empty(value: str) -> str:
+    """Allow only ledger's canonical UUID4-hex record identifier shape."""
+    return value if re.fullmatch(r"[0-9a-f]{32}", value) else ""
+
 
 # Header carrying an HMAC-signed capability token (``subject:expiry:mac``). The
 # server verifies the token under ``LEDGER_GRANT_SECRET`` and uses the authenticated
@@ -381,7 +414,8 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             "base-uri 'none'; form-action 'self'",
         )
         self.send_header("Referrer-Policy", "no-referrer")
-        if lang is not None and lang in i18n.SUPPORTED:
+        safe_lang = _supported_language(lang)
+        if safe_lang is not None:
             # Write the tag from the constant map, never the value that came out
             # of _lang(), so the "only ever a shipped language" guarantee is
             # provable right here at the sink. _lang() already constrains lang to
@@ -389,19 +423,16 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             # through the getattr round-trip below, and one refactor away from
             # being lost. Re-asserting membership + emitting the constant closes
             # the CodeQL response-splitting/cookie-injection alerts honestly.
-            self.send_header("Content-Language", i18n.SUPPORTED_HEADER[lang])
+            self.send_header("Content-Language", safe_lang)
             self.send_header("Vary", "Accept-Language")
         # Persist an explicit ?lang= pick so the reader's choice survives navigation.
         # The cookie holds only the UI language code — no identity, no record id
         # (no-outing rule). Lax + HttpOnly: it is sent on top-level navigations and is
         # never exposed to script. No Secure flag, so it still works for a community
         # running ledger over plain HTTP on an inexpensive box (availability).
-        chosen_lang = getattr(self, "_set_lang_cookie", None)
-        if chosen_lang is not None and chosen_lang in i18n.SUPPORTED:
-            self.send_header(
-                "Set-Cookie",
-                f"lang={i18n.SUPPORTED_HEADER[chosen_lang]}; Path=/; Max-Age=31536000; SameSite=Lax; HttpOnly",
-            )
+        cookie = _language_cookie(getattr(self, "_set_lang_cookie", None))
+        if cookie is not None:
+            self.send_header("Set-Cookie", cookie)
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(body)
@@ -435,13 +466,13 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         if cached is not None:
             return str(cached)
         query = parse_qs(urlsplit(self.path).query)
-        choice = (query.get("lang", [""])[0] or "").strip().lower()
-        if choice in i18n.SUPPORTED:
+        choice = _supported_language((query.get("lang", [""])[0] or "").strip().lower())
+        if choice is not None:
             self._set_lang_cookie = choice  # persist the explicit pick
             self._lang_cache = choice
             return choice
-        remembered = self._cookie_value("lang").strip().lower()
-        if remembered in i18n.SUPPORTED:
+        remembered = _supported_language(self._cookie_value("lang").strip().lower())
+        if remembered is not None:
             self._lang_cache = remembered
             return remembered
         negotiated = i18n.negotiate(self.headers.get("Accept-Language"))
@@ -1706,7 +1737,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
                     self._handle_contribute_form(error=error, status=400, values=form)
                     return
                 stored_name = submission.record.payloads[0].filename
-                payload = {stored_name: Path(tmpdir) / stored_name}
+                payload = {stored_name: Path(tmpdir) / _STAGED_UPLOAD_FILENAME}
             else:
                 payload = {}
             stamp = now_iso()
@@ -1784,7 +1815,10 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         # _safe_filename ever regresses). _safe_filename already strips separators;
         # this makes that invariant explicit at the write sink.
         safe = Path(_safe_filename(filename) or "upload").name or "upload"
-        (tmpdir / safe).write_bytes(data)
+        # The temporary disk name is constant. The contributor-facing sanitized
+        # filename remains metadata/a destination key, but never controls a local
+        # filesystem path at this request boundary.
+        (tmpdir / _STAGED_UPLOAD_FILENAME).write_bytes(data)
         # The payload follows the record's sealed-pending default, so it is invisible
         # until a steward reviews it — exactly like the rest of the submission. The
         # address is a placeholder; the one ingest path recomputes it from the bytes.
@@ -1879,7 +1913,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             self._handle_not_found()
             return
         form = self._read_form()
-        reference = (form.get("ref") or "").strip()
+        reference = _record_id_or_empty((form.get("ref") or "").strip())
         claim = (form.get("claim") or "").strip()
         secret = self._claim_secret()
         queue = self._submission_queue()
@@ -1952,7 +1986,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             self._handle_not_found()
             return
         form = self._read_form()
-        reference = (form.get("ref") or "").strip()
+        reference = _record_id_or_empty((form.get("ref") or "").strip())
         claim = (form.get("claim") or "").strip()
         secret = self._claim_secret()
         queue = self._submission_queue()
@@ -2242,9 +2276,9 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             [
                 cfg.steward_vetting,
                 "Stewards can read access-restricted content in order to do their work, "
-                "but they can never see a contributor's sealed identity, and content "
-                "sealed with the 'sealed' policy is restricted from everyone — including "
-                "stewards. Every steward action records who acted and why.",
+                + "but they can never see a contributor's sealed identity, and content "
+                + "sealed with the 'sealed' policy is restricted from everyone — including "
+                + "stewards. Every steward action records who acted and why.",
                 "Consent and takedown requests: " + cfg.consent_response_time
                 if cfg.consent_response_time
                 else "",
@@ -2258,14 +2292,14 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             "How this protects you, and how to contribute",
             [
                 "You can publish a story while sealing the names, the location, or your "
-                "own identity. Sealed parts are shown to you as 'withheld', never exposed.",
+                + "own identity. Sealed parts are shown to you as 'withheld', never exposed.",
                 "Your identity as a contributor is stored separately and encrypted, and is "
-                "shown on no page here — not even to a steward — unless you explicitly grant it.",
+                + "shown on no page here — not even to a steward — unless you explicitly grant it.",
                 "You stay in control: from any record you can ask a steward to tighten access "
-                "or take it down (see the 'Manage or withdraw consent' link on each record).",
+                + "or take it down (see the 'Manage or withdraw consent' link on each record).",
                 "Contributing currently happens with a steward's help so your choices about "
-                "what to seal are made deliberately. See the proof that we keep these promises "
-                "at /proof.",
+                + "what to seal are made deliberately. See the proof that we keep these promises "
+                + "at /proof.",
             ],
         )
 
