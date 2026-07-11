@@ -23,12 +23,13 @@ ledger replicates and exports. Design choices and quality attributes:
 from __future__ import annotations
 
 import os
+import shutil
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 from ledger.errors import BagValidationError
-from ledger.fixity import AuditReport, hash_file, hash_file_multi, verify_file
+from ledger.fixity import CHUNK_SIZE, AuditReport, hash_file, hash_file_multi, verify_file
 from ledger.models import HashAlgo
 
 _BAGIT_VERSION = "1.0"
@@ -182,7 +183,12 @@ def write_bag(
     for relpath, source in payload.items():
         dest = data_dir / relpath
         dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_bytes(source.read_bytes())
+        # Stream the copy in fixed-size chunks (shutil.copyfileobj) rather than
+        # ``write_bytes(read_bytes())``, which would hold the entire payload in RAM
+        # — the difference between bagging a multi-gigabyte oral-history video and
+        # exhausting memory on the "one inexpensive box" the archive targets.
+        with source.open("rb") as src_handle, dest.open("wb") as dest_handle:
+            shutil.copyfileobj(src_handle, dest_handle, length=CHUNK_SIZE)
         digests = hash_file_multi(dest, algos)
         manifest_path = f"{_DATA_PREFIX}{relpath}"
         for algo in algos:

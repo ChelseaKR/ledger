@@ -52,6 +52,7 @@ import time
 from email import policy as email_policy
 from email.parser import BytesParser
 from pathlib import Path
+from typing import BinaryIO
 from urllib.parse import parse_qs, quote, unquote, urlsplit
 
 from ledger import consent, contribute, export, i18n, oai, pagination, review, search, upload
@@ -64,6 +65,7 @@ from ledger.errors import (
     ObjectNotFound,
     ValidationError,
 )
+from ledger.fixity import CHUNK_SIZE
 from ledger.ingest import Archive
 from ledger.lockdown import is_locked_down
 from ledger.models import (
@@ -2121,7 +2123,17 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         is an indistinguishable 404. Bytes are read from the content-addressed store
         by their address, so what is served is fixity-verified by construction
         (integrity). Records were previously unreadable — the filename was an inert
-        false affordance (user research C4)."""
+        false affordance (user research C4).
+
+        Streams the file in :data:`~ledger.fixity.CHUNK_SIZE` windows rather than
+        reading it whole into memory first (FIX-03): a multi-gigabyte oral-history
+        video must not cost gigabytes of RSS to serve on the "one inexpensive box"
+        the archive targets. A single ``Range: bytes=...`` request is honored with
+        a ``206 Partial Content`` response (RFC 9110 §14) so a browser can seek
+        within served audio/video instead of re-downloading the whole file; a
+        malformed unit, a multi-range request, or no header at all falls back to a
+        full ``200`` response, and an unsatisfiable range gets a clean ``416``.
+        """
         record_id = _decode_id(raw_id)
         filename = _decode_id(raw_name)
         grant = self._resolve_grant()
@@ -2134,14 +2146,55 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         if payload is None:
             self._handle_not_found()
             return
+        # get_path/stat/open are all inside the not-found mapping: if the object
+        # vanishes between any two of them (TOCTOU), the answer stays the same
+        # indistinguishable 404 as any other unfetchable record (anti-enumeration).
+        handle = None
         try:
-            data = self._archive().store.read_bytes(payload.address)
-        except (ObjectNotFound, LedgerError):
+            path = self._archive().store.get_path(payload.address)
+            size = path.stat().st_size
+            if self.command != "HEAD":
+                handle = path.open("rb")
+        except (ObjectNotFound, LedgerError, OSError):
+            if handle is not None:  # pragma: no cover - defensive
+                handle.close()
             self._handle_not_found()
             return
-        self.send_response(200)
+        try:
+            self._send_file_response(handle, payload, filename, size)
+        finally:
+            if handle is not None:
+                handle.close()
+
+    def _send_file_response(
+        self, handle: BinaryIO | None, payload: PayloadFile, filename: str, size: int
+    ) -> None:
+        """Write the (range-aware) file response headers, then stream the bytes.
+
+        ``handle`` is the already-open payload handle (``None`` for HEAD). A
+        syntactically valid but unsatisfiable ``Range`` gets a clean ``416``;
+        otherwise a single satisfiable range gets ``206`` and anything else the
+        full ``200`` (RFC 9110 §14). The caller owns closing ``handle``.
+        """
+        try:
+            byte_range = _parse_range(self.headers.get("Range"), size)
+        except ValueError:
+            self.send_response(416)
+            self.send_header("Content-Range", f"bytes */{size}")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.end_headers()
+            return
+        if byte_range is None:
+            status, start, end = 200, 0, size - 1
+        else:
+            status, (start, end) = 206, byte_range
+        length = end - start + 1
+        self.send_response(status)
         self.send_header("Content-Type", payload.media_type or "application/octet-stream")
-        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Content-Length", str(length))
+        self.send_header("Accept-Ranges", "bytes")
+        if status == 206:
+            self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
         self.send_header("X-Content-Type-Options", "nosniff")
         # RFC 6266: a percent-encoded filename* is a recognized-safe way to carry
         # the (already CR/LF/quote-stripped) name, and it renders non-ASCII names
@@ -2154,8 +2207,15 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Security-Policy", "default-src 'none'; sandbox")
         self.send_header("Referrer-Policy", "no-referrer")
         self.end_headers()
-        if self.command != "HEAD":
-            self.wfile.write(data)
+        if handle is not None:
+            handle.seek(start)
+            remaining = length
+            while remaining > 0:
+                chunk = handle.read(min(CHUNK_SIZE, remaining))
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+                remaining -= len(chunk)
 
     # --- consent (user research P0-2): the contributor's front door ---------
 
@@ -2340,6 +2400,62 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
 
 
 # --- module-level render helpers (shared by routes) -------------------------
+
+
+class _UnsatisfiableRange(ValueError):
+    """A syntactically valid ``Range`` header names bytes ``size`` doesn't have."""
+
+
+def _parse_suffix_range(end_s: str, size: int) -> tuple[int, int] | None:
+    """Parse the suffix form ``bytes=-N`` (the last N bytes of the resource).
+
+    A suffix range against an empty resource is unsatisfiable (RFC 9110 §14.1.2:
+    there is no last byte to name), so ``size == 0`` raises rather than yielding
+    a malformed ``206`` with an inverted ``Content-Range``."""
+    try:
+        suffix_len = int(end_s)
+    except ValueError:
+        return None
+    if size == 0 or suffix_len <= 0:
+        raise _UnsatisfiableRange("unsatisfiable suffix range")
+    return max(0, size - suffix_len), size - 1
+
+
+def _parse_bounded_range(start_s: str, end_s: str, size: int) -> tuple[int, int] | None:
+    """Parse the ``bytes=start-`` / ``bytes=start-end`` forms against ``size``."""
+    try:
+        start = int(start_s)
+        end = int(end_s) if end_s else size - 1
+    except ValueError:
+        return None
+    if start < 0 or start >= size or start > end:
+        raise _UnsatisfiableRange("unsatisfiable range")
+    return start, min(end, size - 1)
+
+
+def _parse_range(header: str | None, size: int) -> tuple[int, int] | None:
+    """Parse a single-range ``Range: bytes=start-end`` header against ``size``.
+
+    Returns an inclusive ``(start, end)`` byte range, or ``None`` if there is no
+    ``Range`` header, it names a unit other than ``bytes``, it requests more than
+    one range, or it is otherwise malformed — RFC 9110 §14.2 lets a server ignore
+    any Range request it does not want to honor, and falling back to a full
+    ``200`` response is always a valid (if less efficient) answer. Raises
+    :class:`_UnsatisfiableRange` only for a syntactically well-formed but
+    unsatisfiable range, so the caller can answer that case with a clean ``416``
+    instead of silently serving the wrong bytes.
+    """
+    if not header or not header.startswith("bytes="):
+        return None
+    spec = header[len("bytes=") :]
+    if "," in spec or "-" not in spec:
+        return None
+    start_s, _, end_s = spec.partition("-")
+    if start_s == "" and end_s == "":
+        return None
+    if start_s == "":
+        return _parse_suffix_range(end_s, size)
+    return _parse_bounded_range(start_s, end_s, size)
 
 
 def _safe_filename(name: str) -> str:

@@ -47,6 +47,8 @@ def site(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[str,
 
     pub_file = tmp_path / "flyer.txt"
     pub_file.write_text("Pride march 1991, library steps, noon.")
+    empty_file = tmp_path / "empty.txt"
+    empty_file.write_text("")  # zero-length payloads can enter the CAS
     pub = Record(
         title="Flyer 1991",
         default_policy=AccessPolicy.PUBLIC,
@@ -54,7 +56,7 @@ def site(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[str,
         fields=[Field("text", "public", AccessPolicy.PUBLIC)],
     )
     archive.ingest(
-        {pub_file.name: pub_file},
+        {pub_file.name: pub_file, empty_file.name: empty_file},
         pub,
         identity=ContributorIdentity(name=_SENTINEL),
         vault_key=_VAULT_KEY,
@@ -100,10 +102,18 @@ def _grant_header(subject: str) -> str:
     return issue_grant_token(subject, _GRANT_SECRET)
 
 
-def _get(base: str, path: str, *, grant: str | None = None) -> tuple[int, str, dict[str, str]]:
+def _get(
+    base: str,
+    path: str,
+    *,
+    grant: str | None = None,
+    headers: dict[str, str] | None = None,
+) -> tuple[int, str, dict[str, str]]:
     req = urllib.request.Request(f"{base}{path}")  # noqa: S310 - loopback
     if grant:
         req.add_header("X-Ledger-Grant", _grant_header(grant))
+    for name, value in (headers or {}).items():
+        req.add_header(name, value)
     try:
         with urllib.request.urlopen(req, timeout=10) as r:  # noqa: S310
             return (
@@ -112,7 +122,11 @@ def _get(base: str, path: str, *, grant: str | None = None) -> tuple[int, str, d
                 {k.lower(): v for k, v in r.headers.items()},
             )
     except urllib.error.HTTPError as e:
-        return int(e.code), e.read().decode("utf-8"), {}
+        return (
+            int(e.code),
+            e.read().decode("utf-8"),
+            {k.lower(): v for k, v in e.headers.items()},
+        )
 
 
 def _post(
@@ -166,6 +180,51 @@ def test_community_file_access_controlled(site: tuple[str, str, str]) -> None:
     base, _pub, comm = site
     assert _get(base, f"/record/{comm}/file/runbook.txt")[0] == 404  # anon denied
     assert _get(base, f"/record/{comm}/file/runbook.txt", grant="member")[0] == 200
+
+
+def test_file_download_supports_byte_range(site: tuple[str, str, str]) -> None:
+    """FIX-03: a ``Range`` request gets a ``206`` with exactly the requested bytes.
+
+    This is what lets a browser seek within served audio/video instead of
+    re-downloading the whole file; the content is small here, but the same code
+    path serves multi-gigabyte media without ever loading it whole into memory.
+    """
+    base, pub, _comm = site
+    full_status, full_body, _ = _get(base, f"/record/{pub}/file/flyer.txt")
+    assert full_status == 200
+    status, body, headers = _get(
+        base, f"/record/{pub}/file/flyer.txt", headers={"Range": "bytes=0-4"}
+    )
+    assert status == 206
+    assert body == full_body[:5]
+    assert headers["content-range"] == f"bytes 0-4/{len(full_body.encode())}"
+    assert headers["accept-ranges"] == "bytes"
+
+
+def test_file_download_rejects_unsatisfiable_range(site: tuple[str, str, str]) -> None:
+    base, pub, _comm = site
+    status, _body, headers = _get(
+        base, f"/record/{pub}/file/flyer.txt", headers={"Range": "bytes=999999-9999999"}
+    )
+    assert status == 416
+    assert headers["content-range"].startswith("bytes */")
+
+
+def test_empty_file_suffix_range_is_unsatisfiable(site: tuple[str, str, str]) -> None:
+    """RFC 9110 §14.1.2: a suffix range against a zero-length resource has no
+    last byte to name — it must be a ``416``, never a malformed ``206`` with an
+    inverted ``Content-Range`` (``bytes 0--1/0``)."""
+    base, pub, _comm = site
+    status, _body, headers = _get(
+        base, f"/record/{pub}/file/empty.txt", headers={"Range": "bytes=-5"}
+    )
+    assert status == 416
+    assert headers["content-range"] == "bytes */0"
+    # and a plain GET of the empty payload still succeeds
+    status, body, headers = _get(base, f"/record/{pub}/file/empty.txt")
+    assert status == 200
+    assert body == ""
+    assert headers["content-length"] == "0"
 
 
 # --- OAI-PMH + sitemap (P2-3), public only ----------------------------------
