@@ -93,6 +93,23 @@ msgstr ""
 "types et les langues qu’ils couvrent. Chaque nombre ne compte que ce qui "
 "est visible publiquement."
 
+msgid ""
+"An automatic, offline check did not find an obvious name, address, phone "
+"number, email, handle, or date in your account."
+msgstr ""
+"Une vérification automatique hors ligne n’a trouvé aucun nom, adresse, numéro "
+"de téléphone, courriel, identifiant ou date manifeste dans votre récit."
+
+#, python-brace-format
+msgid ""
+"An automatic, offline check found {count} possible identifying detail(s) "
+"below. Nothing is changed — review each one and edit your account "
+"yourself if you want it removed."
+msgstr ""
+"Une vérification automatique hors ligne a trouvé ci-dessous {count} élément(s) "
+"d’identification possible(s). Rien n’est modifié — examinez chaque élément et "
+"modifiez vous-même votre récit si vous souhaitez le retirer."
+
 msgid "Apply dates"
 msgstr "Appliquer les dates"
 
@@ -468,6 +485,27 @@ msgstr ""
 "Violence policière — décrit un préjudice ou l’usage de la force par la "
 "police"
 
+msgid "Possible address"
+msgstr "Adresse possible"
+
+msgid "Possible date"
+msgstr "Date possible"
+
+msgid "Possible email address"
+msgstr "Adresse électronique possible"
+
+msgid "Possible handle or username"
+msgstr "Identifiant ou nom d’utilisateur possible"
+
+msgid "Possible identifying details in your account"
+msgstr "Éléments d’identification possibles dans votre récit"
+
+msgid "Possible name"
+msgstr "Nom possible"
+
+msgid "Possible phone number"
+msgstr "Numéro de téléphone possible"
+
 msgid "Preview what a stranger sees"
 msgstr "Prévisualiser ce que voit un inconnu"
 
@@ -669,6 +707,15 @@ msgid "There are no public records yet."
 msgstr "Il n’y a pas encore d’enregistrements publics."
 
 msgid ""
+"This check looks for common patterns only. It finds some identifying "
+"details, not all of them — please still read your account yourself before"
+" it is shared."
+msgstr ""
+"Cette vérification recherche uniquement des motifs courants. Elle détecte "
+"certains éléments d’identification, pas tous — relisez donc vous-même votre "
+"récit avant son partage."
+
+msgid ""
 "This record carries the following content warnings. Review them before "
 "continuing."
 msgstr ""
@@ -816,11 +863,12 @@ msgid ""
 "as confirmed. These are shown only once and are not stored in a form "
 "anyone can read — copy them now:"
 msgstr ""
-"Vous avez indiqué que cet enregistrement nomme d’autres personnes. Donnez à "
-"chacune l’un des jetons ci-dessous, en privé et en personne si possible. Toute "
-"personne détenant un jeton peut s’opposer à être nommée, et un·e responsable "
-"traitera son objection comme confirmée. Ces jetons ne sont affichés qu’une fois "
-"et ne sont pas stockés sous une forme lisible — copiez-les maintenant :"
+"Vous avez indiqué que cet enregistrement nomme d’autres personnes. Donnez"
+" à chacune l’un des jetons ci-dessous, en privé et en personne si "
+"possible. Toute personne détenant un jeton peut s’opposer à être nommée, "
+"et un·e responsable traitera son objection comme confirmée. Ces jetons ne"
+" sont affichés qu’une fois et ne sont pas stockés sous une forme lisible "
+"— copiez-les maintenant :"
 
 msgid "Your account"
 msgstr "Votre compte"
@@ -922,6 +970,10 @@ msgstr[1] ""
 "{count} détails sont restreints selon votre accès actuel. Si vous êtes "
 "membre de la communauté ou responsable, connectez-vous pour voir ce qui "
 "est masqué et pourquoi."
+
+#, python-brace-format
+msgid "{count} found"
+msgstr "{count} trouvé(s)"
 
 #, python-brace-format
 msgid "{count} public record(s)."
