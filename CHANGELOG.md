@@ -27,6 +27,16 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the PyPI Trusted Publisher and the `pypi` GitHub Environment remains a one-time
   manual step for the project owner (documented in the workflow header); every other
   stage runs with no additional setup.
+- **Hardened release gates (REL-08/10/14/16).** The release workflow's verify job
+  now asserts the pushed tag is a *signed annotated* tag (a lightweight or unsigned
+  tag fails closed; signature presence is checked — pinning the signer's identity
+  awaits a committed allowed-signers file, tracked in `docs/ROADMAP.md`), requires a
+  matching `## [X.Y.Z]` section in this file before anything builds, and runs the
+  complete `make verify` merge gate (lint, type, test, i18n, accessibility,
+  pip-audit, secret-scan, claims) from the locked dependency graph instead of a
+  hand-picked subset. After publishing, a new `verify-published` job downloads every
+  file PyPI serves for the version and fails the release unless each is sha256-identical
+  to what this run built; the GitHub Release only publishes after that check passes.
 - **Mutual preservation aid: encrypted replica exchange (EXP-15).** A second, opt-in
   transport in `ledger.replicate` for community instances to hold *each other's*
   bags as redundancy without either side trusting the other with plaintext:
