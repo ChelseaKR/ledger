@@ -164,6 +164,8 @@ def _messages(translation: gettext.NullTranslations) -> dict[str, str]:
         "sw_requests_heading": _("Open consent & takedown requests"),
         "sw_on_record": _("on record"),
         "sw_request_meta": _("{when}, ref {ref}"),
+        "sw_due_by": _("Response due by {when}"),
+        "sw_resolved_at": _("Responded {when}"),
         "sw_mark_resolved": _("Mark resolved"),
         "sw_no_requests": _("No open requests."),
         "sw_before_heading": _("Before you act"),
@@ -207,6 +209,9 @@ def _messages(translation: gettext.NullTranslations) -> dict[str, str]:
         "req_kind_correct": _("correct the record"),
         "req_kind_contact": _("ask a steward to make contact"),
         "req_kind_object": _("objection from a person named in the record"),
+        "req_kind_subject-objection": _(
+            "verified objection from a named subject (token confirmed)"
+        ),
         "audit_heading": _("Audit log"),
         "audit_intro": _(
             "Every recorded action across the archive, newest first. This log carries no contributor identity or sealed value — only what happened, who acted, and the outcome."
@@ -334,6 +339,11 @@ def _messages(translation: gettext.NullTranslations) -> dict[str, str]:
         "thanks_withdraw_after": _("and enter both."),
         "thanks_edit_before": _("You can also correct it on"),
         "edit_page_link_text": _("the edit page"),
+        "thanks_subject_heading": _("Consent tokens for the people named in this record"),
+        "thanks_subject_intro": _(
+            "You said this record names other people. Give each of them one of the tokens below, privately and in person where you can. Anyone who holds a token can object to being named and a steward will treat their objection as confirmed. These are shown only once and are not stored in a form anyone can read — copy them now:"
+        ),
+        "thanks_subject_token_label": _("Token for a named person"),
         "withdraw_heading": _("Withdraw a submission"),
         "withdraw_intro": _(
             "If you contributed something and it is still waiting for review, you can withdraw it here using the reference and withdrawal code from your confirmation page. Withdrawing permanently removes the submission and erases any contact details you sealed with it. Once a steward has published a record, request a change from its page instead."

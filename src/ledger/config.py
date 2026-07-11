@@ -151,6 +151,12 @@ class Config:
     steward_vetting: str = ""
     consent_response_time: str = ""
     contact: str = ""
+    # RM12/EXP-04: the response window, in days, a steward commits to for a *named
+    # subject's* verified objection. When > 0, a verified subject-objection is filed
+    # with a ``due_by`` this many days out, giving the archive a time-bound,
+    # recorded answer. 0 (the default) leaves ``consent_response_time`` (free-text)
+    # as the only stated window and files objections with no machine due date.
+    objection_response_days: int = 0
     # Dual-control: how many DISTINCT stewards must approve a high-stakes action
     # (takedown, identity-unseal, publish-to-public) before it executes. 1 (the
     # default) is single-steward — no change to existing behaviour; a community sets
@@ -197,6 +203,8 @@ class Config:
             raise ConfigError("dual_control_threshold must be at least 1")
         self._validate_conditions()
         self._validate_lockdown()
+        if self.objection_response_days < 0:
+            raise ConfigError("objection_response_days must not be negative")
         for location in self.locations:
             location.validate()
 
@@ -253,6 +261,7 @@ class Config:
             # Omitted entirely when unset, so an archive that has not armed a duress
             # posture writes no lockdown block (least surprise, smallest config).
             **({"lockdown": self.lockdown.to_dict()} if self.lockdown is not None else {}),
+            "objection_response_days": self.objection_response_days,
         }
 
     def save(self, path: Path) -> None:
@@ -337,6 +346,7 @@ class Config:
             contact=str(migrated.get("contact", "")),
             dual_control_threshold=int(str(migrated.get("dual_control_threshold", 1))),
             lockdown=lockdown,
+            objection_response_days=int(str(migrated.get("objection_response_days", 0))),
             schema_version=CONFIG_SCHEMA_VERSION,
         )
         config.validate()

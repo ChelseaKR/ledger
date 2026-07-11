@@ -46,9 +46,11 @@ import hashlib
 import http.server
 import json
 import os
+import re
 import tempfile
 import threading
 import time
+from datetime import UTC, datetime, timedelta
 from email import policy as email_policy
 from email.parser import BytesParser
 from pathlib import Path
@@ -661,6 +663,46 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
     def _submission_queue(self) -> review.SubmissionQueue:
         return review.SubmissionQueue(self._archive().logs_dir / "submission-queue.json")
 
+    def _subject_token_store(self) -> consent.SubjectTokenStore:
+        """The per-record store of subject-token *hashes* (RM12/EXP-04).
+
+        Only SHA-256 hashes of the tokens minted at ingest are persisted here — never
+        the clear tokens and never an identity — so it can verify a presented token
+        without being able to reproduce one (no-outing rule)."""
+        return consent.SubjectTokenStore(self._archive().logs_dir / "subject-tokens.json")
+
+    def _objection_due_by(self) -> str:
+        """The ISO-8601 due date for a verified subject-objection, or empty (RM12).
+
+        Prefers the numeric ``objection_response_days`` config knob; if that is unset
+        (0) it falls back to a bare day count parsed out of the free-text
+        ``consent_response_time`` (e.g. "7" or "7 days"). A sentence that states no
+        parseable window leaves the due date empty rather than guessing."""
+        cfg = self._archive().config
+        days = cfg.objection_response_days
+        if days <= 0:
+            days = _parse_response_days(cfg.consent_response_time)
+        if days <= 0:
+            return ""
+        due = datetime.now(UTC) + timedelta(days=days)
+        return due.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    def _mint_subject_tokens(self, record_id: str, count: int) -> list[str]:
+        """Mint ``count`` subject tokens for ``record_id`` and persist only their hashes.
+
+        Returns the *clear* tokens for one-time display on the receipt (out-of-band
+        distribution to each named subject); the store keeps SHA-256 hashes only. No
+        tokens are minted when no claim secret is configured (nothing could later
+        verify them) or when ``count`` is zero (least privilege)."""
+        secret = self._claim_secret()
+        if not secret or count <= 0:
+            return []
+        tokens = [consent.issue_subject_token(record_id, i, secret) for i in range(count)]
+        self._subject_token_store().register(
+            record_id, [consent.subject_token_hash(token) for token in tokens]
+        )
+        return tokens
+
     def _post_consent(self, raw_id: str) -> None:
         """``POST /record/{id}/consent`` — file a contributor consent request.
 
@@ -923,6 +965,11 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             f'    <form method="post" action="/record/{quote(record_id)}/object">\n'
             '      <p><label for="message">What is your concern?</label></p>\n'
             '      <p><textarea id="message" name="message" rows="5" required></textarea></p>\n'
+            '      <p><label for="token">Consent token (optional)</label><br>\n'
+            '      <span class="muted">If the contributor gave you a token because this '
+            "record names you, enter it here so a steward can see your objection is "
+            "confirmed. Leave it blank if you do not have one.</span></p>\n"
+            '      <p><input type="text" id="token" name="token" autocomplete="off"></p>\n'
             '      <p><button type="submit">Send to a steward</button></p>\n'
             "    </form>"
         )
@@ -935,7 +982,12 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
 
         Queues a ``kind="object"`` request (B3). The objector's message is stored for
         the steward but never logged or echoed in an error (no-outing rule); they get
-        a reference token to check progress at ``/consent-status`` (B2)."""
+        a reference token to check progress at ``/consent-status`` (B2).
+
+        RM12/EXP-04: if the form carries a ``token`` that verifies against a stored
+        subject-token hash for this record, the objection is filed as a *verified*
+        ``kind="subject-objection"`` with a recorded ``due_by`` response window;
+        otherwise the existing tokenless ``kind="object"`` flow is unchanged."""
         record_id = _decode_id(raw_id)
         grant = self._resolve_grant()
         lang = self._lang()
@@ -944,13 +996,23 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         except (AccessDenied, ObjectNotFound):
             self._handle_not_found()
             return
-        message = self._read_form().get("message", "").strip()
+        form = self._read_form()
+        message = form.get("message", "").strip()
         if not message:
             self._handle_object_form(
                 raw_id, error="Please describe your concern so a steward can act on it.", status=400
             )
             return
-        req = consent.ConsentRequest(record_id=record_id, kind="object", message=message)
+        token = form.get("token", "").strip()
+        if token and self._subject_token_store().verify(record_id, token):
+            req = consent.ConsentRequest(
+                record_id=record_id,
+                kind="subject-objection",
+                message=message,
+                due_by=self._objection_due_by(),
+            )
+        else:
+            req = consent.ConsentRequest(record_id=record_id, kind="object", message=message)
         self._consent_store().add(req)
         rt = self._archive().config.consent_response_time or "A steward will review your request."
         main_html = (
@@ -995,6 +1057,41 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             "        </form>\n"
             f'        <p><a href="/record/{rid}/history">'
             f"{_esc(i18n.t(lang, 'sw_history_link'))}</a></p>\n"
+        )
+
+    def _render_request_row(self, r: consent.ConsentRequest, lang: str) -> str:
+        """Render one open consent/objection request as a steward-console ``<li>``.
+
+        Shows the kind label (a verified subject-objection reads distinctly from a
+        tokenless one), the record link, the filed-at meta, and — for RM12 — the
+        recorded, time-bound response: a ``due_by`` window when one was set and a
+        ``resolved_at`` stamp once a steward has responded. A missing due date or
+        stamp simply renders nothing (backward compatible with pre-RM12 requests)."""
+        due = (
+            f'\n        <span class="muted">{_esc(i18n.t(lang, "sw_due_by", when=r.due_by))}</span>'
+            if r.due_by
+            else ""
+        )
+        resolved = (
+            f'\n        <span class="muted">'
+            f"{_esc(i18n.t(lang, 'sw_resolved_at', when=r.resolved_at))}</span>"
+            if r.resolved_at
+            else ""
+        )
+        return (
+            "      <li>\n"
+            f"        <strong>{_esc(i18n.t(lang, f'req_kind_{r.kind}'))}</strong> "
+            f"{_esc(i18n.t(lang, 'sw_on_record'))} "
+            f'<a href="/record/{quote(r.record_id)}">{_esc(r.record_id)}</a> '
+            f'<span class="muted">'
+            f"({_esc(i18n.t(lang, 'sw_request_meta', when=r.created_at, ref=r.request_id))})"
+            "</span>"
+            f"{due}{resolved}\n"
+            f'        <form method="post" action="/steward/requests/{quote(r.request_id)}/resolve">\n'
+            '          <input type="hidden" name="status" value="resolved">\n'
+            f'          <button type="submit">{_esc(i18n.t(lang, "sw_mark_resolved"))}</button>\n'
+            "        </form>\n"
+            "      </li>"
         )
 
     def _handle_steward_console(self) -> None:
@@ -1087,21 +1184,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             submissions_html = f"    <p>{_esc(i18n.t(lang, 'sw_no_submissions'))}</p>"
         open_reqs = self._consent_store().open_requests()
         if open_reqs:
-            rows = "\n".join(
-                "      <li>\n"
-                f"        <strong>{_esc(i18n.t(lang, f'req_kind_{r.kind}'))}</strong> "
-                f"{_esc(i18n.t(lang, 'sw_on_record'))} "
-                f'<a href="/record/{quote(r.record_id)}">{_esc(r.record_id)}</a> '
-                f'<span class="muted">'
-                f"({_esc(i18n.t(lang, 'sw_request_meta', when=r.created_at, ref=r.request_id))})"
-                "</span>\n"
-                f'        <form method="post" action="/steward/requests/{quote(r.request_id)}/resolve">\n'
-                '          <input type="hidden" name="status" value="resolved">\n'
-                f'          <button type="submit">{_esc(i18n.t(lang, "sw_mark_resolved"))}</button>\n'
-                "        </form>\n"
-                "      </li>"
-                for r in open_reqs
-            )
+            rows = "\n".join(self._render_request_row(r, lang) for r in open_reqs)
             requests_html = f'    <ul class="requests">\n{rows}\n    </ul>'
         else:
             requests_html = f"    <p>{_esc(i18n.t(lang, 'sw_no_requests'))}</p>"
@@ -1633,6 +1716,13 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         # pending. Only when a claim secret is configured; otherwise the thanks page
         # stays generic and self-withdrawal is unavailable.
         claim_token = self._claim_token(record_id)
+        # RM12/EXP-04: mint one subject token per named subject the contributor
+        # declared. The clear tokens are shown once on this receipt for out-of-band
+        # hand-off; only their SHA-256 hashes are persisted (no identities, no clear
+        # tokens on disk — mirror the contributor claim token above).
+        subject_tokens = self._mint_subject_tokens(
+            record_id, _named_subjects_count(form.get("named_subjects_count", ""))
+        )
         lang = self._lang()
         self._send_html(
             200,
@@ -1642,6 +1732,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
                 main_html=contribute.render_thanks_main(
                     reference=record_id if claim_token else None,
                     claim_token=claim_token,
+                    subject_tokens=subject_tokens,
                     lang=lang,
                 ),
                 nav_html=self._nav(),
@@ -2544,6 +2635,36 @@ def _decode_id(raw: str) -> str:
     disclosure-gated archive, never interpolated into a path here.
     """
     return unquote(raw)
+
+
+# Named subjects a contributor may declare per submission (RM12/EXP-04). Bounded so a
+# crafted form cannot ask the server to mint an unbounded number of tokens.
+_MAX_NAMED_SUBJECTS: int = 20
+
+
+def _named_subjects_count(raw: str) -> int:
+    """Parse the ``named_subjects_count`` form field to a bounded int in 0..20.
+
+    A blank, non-integer, or out-of-range value degrades to a safe count rather than
+    raising, so a malformed form never takes the submit path down: a negative clamps
+    to 0 and an oversized count clamps to :data:`_MAX_NAMED_SUBJECTS`.
+    """
+    try:
+        value = int(raw.strip())
+    except (AttributeError, ValueError):
+        return 0
+    return max(0, min(value, _MAX_NAMED_SUBJECTS))
+
+
+def _parse_response_days(text: str) -> int:
+    """Extract a bare day count from a response-time string, or 0 if there is none.
+
+    Matches a whole-string ``"7"`` or ``"7 days"`` (the machine-readable case) so a
+    numeric window configured as free-text still yields a due date, while a real
+    sentence — which states no single parseable window — yields 0 (leave empty).
+    """
+    match = re.fullmatch(r"\s*(\d+)\s*(?:days?)?\s*", text or "")
+    return int(match.group(1)) if match else 0
 
 
 # --- server construction ----------------------------------------------------

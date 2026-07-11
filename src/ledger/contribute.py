@@ -455,6 +455,7 @@ def render_thanks_main(
     *,
     reference: str | None = None,
     claim_token: str | None = None,
+    subject_tokens: list[str] | None = None,
     lang: str = i18n.DEFAULT_LANG,
 ) -> str:
     """Render the ``<main>`` confirmation shown after a submission.
@@ -490,11 +491,38 @@ def render_thanks_main(
         )
     else:
         withdraw_block = ""
+    subject_block = _render_subject_tokens_block(subject_tokens or [], lang)
     return (
         f"    <h1>{_esc(i18n.t(lang, 'thanks_heading'))}</h1>\n"
         f'    <p role="status">{_esc(i18n.t(lang, "thanks_status"))}</p>\n'
         f"{withdraw_block}"
+        f"{subject_block}"
         f'    <p><a href="/">{_esc(i18n.t(lang, "back_to_archive"))}</a></p>\n'
+    )
+
+
+def _render_subject_tokens_block(subject_tokens: list[str], lang: str) -> str:
+    """Render the one-time list of subject consent tokens, or empty when there are none.
+
+    RM12/EXP-04: each token is a *capability* a named person can later use to file a
+    verified objection — never an identity, and shown here exactly once for the
+    contributor to hand out of band. Only SHA-256 hashes of these tokens are ever
+    persisted server-side, so this receipt is the sole place a clear token appears."""
+    if not subject_tokens:
+        return ""
+    items = "\n".join(
+        f"        <li><code>{_esc(token)}</code> "
+        f'<span class="muted">({_esc(i18n.t(lang, "thanks_subject_token_label"))})</span></li>'
+        for token in subject_tokens
+    )
+    return (
+        '    <section class="subject-tokens" aria-labelledby="subject-tokens-heading">\n'
+        f'      <h2 id="subject-tokens-heading">{_esc(i18n.t(lang, "thanks_subject_heading"))}</h2>\n'
+        f"      <p>{_esc(i18n.t(lang, 'thanks_subject_intro'))}</p>\n"
+        "      <ul>\n"
+        f"{items}\n"
+        "      </ul>\n"
+        "    </section>\n"
     )
 
 

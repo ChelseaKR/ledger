@@ -51,8 +51,12 @@ __all__ = [
     "VALID_STATUSES",
     "ConsentRequest",
     "ConsentRequestStore",
+    "SubjectTokenStore",
     "issue_claim_token",
+    "issue_subject_token",
+    "subject_token_hash",
     "verify_claim_token",
+    "verify_subject_token",
 ]
 
 # The documented set of asks a contributor can make about their own record. Kept
@@ -62,7 +66,11 @@ VALID_KINDS: frozenset[str] = frozenset(
     # The first four are filed by the *contributor* (claim-token gated). "object" is
     # filed by a *subject* — a person named in a record they did not contribute — who
     # has no claim token; it is a first-class request a steward must weigh (B3).
-    {"withdraw", "tighten", "correct", "contact", "object"}
+    # "subject-objection" is that same objection *proven* by a subject claim token a
+    # steward minted for that named person at ingest and handed over out of band
+    # (RM12/EXP-04): it verifies against a stored token hash, so a steward can trust
+    # the objector is who they say they are without ever storing an identity.
+    {"withdraw", "tighten", "correct", "contact", "object", "subject-objection"}
 )
 
 # The lifecycle a steward may move a request through. "open" is the initial state a
@@ -75,6 +83,12 @@ VALID_STATUSES: frozenset[str] = frozenset({_OPEN, "acknowledged", "resolved"})
 # The prefix that marks a claim token, so a token is recognisable and cannot be
 # confused with another opaque string. The body is a hex HMAC-SHA256 digest.
 _CLAIM_PREFIX: str = "claim:"
+
+# The prefix that marks a *subject* claim token (RM12/EXP-04) — the capability a
+# steward mints for a person *named in* a record at ingest and hands over out of
+# band. It is distinct from the contributor claim prefix so the two capabilities
+# can never be confused. The body is a hex HMAC-SHA256 digest.
+_SUBJECT_PREFIX: str = "subject:"
 
 
 @dataclass(frozen=True)
@@ -93,6 +107,14 @@ class ConsentRequest:
     request_id: str = field(default_factory=lambda: secrets.token_hex(8))
     status: str = _OPEN
     created_at: str = field(default_factory=now_iso)
+    # RM12: a time-bound, recorded steward response. ``due_by`` is the ISO-8601
+    # instant by which a steward committed to respond (empty when no response window
+    # is configured); ``resolved_at`` is stamped by
+    # :meth:`ConsentRequestStore.resolve` when a steward actually responds. Both
+    # default to empty so a consent-requests.json written before this field existed
+    # still loads (backward compatibility).
+    due_by: str = ""
+    resolved_at: str = ""
 
     def __post_init__(self) -> None:
         # Reject an unknown kind/status at construction so a malformed request can
@@ -116,6 +138,8 @@ class ConsentRequest:
             "request_id": self.request_id,
             "status": self.status,
             "created_at": self.created_at,
+            "due_by": self.due_by,
+            "resolved_at": self.resolved_at,
         }
 
     @classmethod
@@ -135,6 +159,10 @@ class ConsentRequest:
         request_id = _require_str(data, "request_id")
         status = _require_str(data, "status")
         created_at = _require_str(data, "created_at")
+        # due_by/resolved_at are optional and default to empty, so a queue written
+        # before RM12 added them still loads unchanged (backward compatibility).
+        due_by = _optional_str(data, "due_by")
+        resolved_at = _optional_str(data, "resolved_at")
         # __post_init__ re-validates kind/status, turning a tampered file into a
         # clear LedgerError rather than a silently-accepted bad value.
         return cls(
@@ -144,6 +172,8 @@ class ConsentRequest:
             request_id=request_id,
             status=status,
             created_at=created_at,
+            due_by=due_by,
+            resolved_at=resolved_at,
         )
 
 
@@ -191,7 +221,7 @@ class ConsentRequestStore:
         requests.append(req)
         self._write(requests)
 
-    def resolve(self, request_id: str, status: str) -> None:
+    def resolve(self, request_id: str, status: str, *, now: str | None = None) -> None:
         """Advance the request with ``request_id`` to ``status`` and persist.
 
         ``status`` must be ``acknowledged`` or ``resolved`` — a steward may move a
@@ -199,6 +229,11 @@ class ConsentRequestStore:
         arbitrary state (correctness, accountability). A missing ``request_id``
         raises :class:`~ledger.errors.LedgerError` naming the id (which is public,
         not identity) so a typo fails loudly rather than silently no-op'ing.
+
+        RM12: a completed response is *recorded* — ``resolved_at`` is stamped only
+        when the request reaches ``resolved``. Acknowledgement alone preserves an
+        existing stamp (normally empty), so the archive does not misstate receipt as
+        a completed answer.
         """
         if status not in {"acknowledged", "resolved"}:
             raise LedgerError(
@@ -218,6 +253,8 @@ class ConsentRequestStore:
                         request_id=req.request_id,
                         status=status,
                         created_at=req.created_at,
+                        due_by=req.due_by,
+                        resolved_at=(now or now_iso()) if status == "resolved" else req.resolved_at,
                     )
                 )
             else:
@@ -282,6 +319,121 @@ def verify_claim_token(record_id: str, token: str, secret: bytes) -> bool:
     return hmac.compare_digest(expected, token)
 
 
+def issue_subject_token(record_id: str, subject_index: int, secret: bytes) -> str:
+    """Mint the claim token a *named subject* uses to prove standing over ``record_id``.
+
+    RM12/EXP-04: a record may name people who did not contribute it. At ingest a
+    steward mints one token per named subject and hands each person theirs out of
+    band (never storing an identity); holding it lets that person file a *verified*
+    objection later. Like the contributor claim token this is stateless — an
+    HMAC-SHA256 over the public ``f"{record_id}:subject:{subject_index}"`` under the
+    server ``secret`` — so no per-person account or identity is stored. The token is
+    a *sealed* value (it authorises a verified objection), so it is never logged or
+    placed in an error; only a SHA-256 hash of it is ever persisted
+    (:func:`subject_token_hash`).
+    """
+    message = f"{record_id}:subject:{subject_index}".encode()
+    digest = hmac.new(secret, message, sha256).hexdigest()
+    return f"{_SUBJECT_PREFIX}{digest}"
+
+
+def verify_subject_token(record_id: str, subject_index: int, token: str, secret: bytes) -> bool:
+    """Whether ``token`` is a valid subject token for ``(record_id, subject_index)``.
+
+    Constant-time comparison (:func:`hmac.compare_digest`) so a near-miss forgery
+    leaks no timing signal (safety). Returns ``False`` for any malformed,
+    wrong-record, wrong-index, wrong-secret, or tampered token rather than raising,
+    so a verification check is a simple boolean gate.
+    """
+    expected = issue_subject_token(record_id, subject_index, secret)
+    return hmac.compare_digest(expected, token)
+
+
+def subject_token_hash(token: str) -> str:
+    """The SHA-256 hex digest of a subject ``token`` — the only form ever persisted.
+
+    A steward stores these hashes (see :class:`SubjectTokenStore`) rather than the
+    clear tokens, so the on-disk state can *verify* a presented token without being
+    able to reproduce one. This mirrors how a password is stored as a hash: the
+    stored value confirms possession but cannot be replayed to mint the capability.
+    """
+    return sha256(token.encode("utf-8")).hexdigest()
+
+
+class SubjectTokenStore:
+    """Per-record SHA-256 hashes of the subject tokens minted at ingest (RM12/EXP-04).
+
+    Persisted as a single JSON object mapping a public ``record_id`` to the list of
+    :func:`subject_token_hash` digests for that record's named subjects. Only hashes
+    are stored — never the clear tokens and never an identity — so the file can
+    *verify* a presented token (:meth:`verify`) without being able to reproduce one,
+    and a leak of the file outs no one. Atomic write (temp file + ``os.replace``) so
+    a crash mid-write leaves the prior state intact; a missing file reads as empty.
+    """
+
+    def __init__(self, path: Path) -> None:
+        self._path = Path(path)
+
+    def register(self, record_id: str, hashes: list[str]) -> None:
+        """Record the subject-token ``hashes`` for ``record_id`` (append/merge)."""
+        if not hashes:
+            return
+        data = self._read()
+        existing = data.get(record_id, [])
+        # Preserve order and drop duplicates so re-registering is idempotent.
+        merged = list(existing)
+        for h in hashes:
+            if h not in merged:
+                merged.append(h)
+        data[record_id] = merged
+        self._write(data)
+
+    def hashes_for(self, record_id: str) -> list[str]:
+        """The stored subject-token hashes for ``record_id`` (empty if none)."""
+        return list(self._read().get(record_id, []))
+
+    def verify(self, record_id: str, token: str) -> bool:
+        """Whether ``token`` matches a stored subject-token hash for ``record_id``.
+
+        Compares the SHA-256 of the presented token against each stored hash in
+        constant time, so possession of any minted subject token for the record
+        verifies without the server secret and without leaking a timing signal.
+        """
+        if not token:
+            return False
+        presented = subject_token_hash(token)
+        return any(hmac.compare_digest(presented, stored) for stored in self.hashes_for(record_id))
+
+    def _read(self) -> dict[str, list[str]]:
+        try:
+            text = self._path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            return {}
+        try:
+            raw: object = json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise LedgerError(f"subject-token store {self._path} is not valid JSON: {exc}") from exc
+        if not isinstance(raw, dict):
+            raise LedgerError(f"subject-token store {self._path} must contain a JSON object")
+        result: dict[str, list[str]] = {}
+        for key, value in raw.items():
+            if not isinstance(value, list) or not all(isinstance(h, str) for h in value):
+                raise LedgerError(f"subject-token store {self._path} entry {key!r} must be a list")
+            result[str(key)] = [str(h) for h in value]
+        return result
+
+    def _write(self, data: dict[str, list[str]]) -> None:
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        payload = json.dumps(data, indent=2, ensure_ascii=False, sort_keys=True)
+        tmp = self._path.with_name(f"{self._path.name}.{os.getpid()}.tmp")
+        try:
+            tmp.write_text(payload + "\n", encoding="utf-8")
+            os.replace(tmp, self._path)
+        except OSError as exc:
+            tmp.unlink(missing_ok=True)
+            raise LedgerError(f"subject-token store could not be written: {self._path}") from exc
+
+
 def _require_str(data: Mapping[str, object], key: str) -> str:
     """Return ``data[key]`` as a ``str`` or raise naming the missing/bad field.
 
@@ -290,6 +442,21 @@ def _require_str(data: Mapping[str, object], key: str) -> str:
     """
     if key not in data:
         raise LedgerError(f"consent request is missing required field {key!r}")
+    value = data[key]
+    if not isinstance(value, str):
+        raise LedgerError(f"consent request field {key!r} must be a string")
+    return value
+
+
+def _optional_str(data: Mapping[str, object], key: str) -> str:
+    """Return ``data[key]`` as a ``str``, or ``""`` if absent (backward compatible).
+
+    A present-but-non-string value is a tampered file and raises naming the field
+    (never its value); an *absent* key is the normal case for a queue written before
+    the field existed, so it degrades to empty rather than failing to load.
+    """
+    if key not in data:
+        return ""
     value = data[key]
     if not isinstance(value, str):
         raise LedgerError(f"consent request field {key!r} must be a string")

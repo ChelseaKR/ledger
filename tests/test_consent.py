@@ -18,8 +18,12 @@ from ledger.consent import (
     VALID_KINDS,
     ConsentRequest,
     ConsentRequestStore,
+    SubjectTokenStore,
     issue_claim_token,
+    issue_subject_token,
+    subject_token_hash,
     verify_claim_token,
+    verify_subject_token,
 )
 from ledger.errors import LedgerError
 
@@ -53,6 +57,8 @@ def test_to_dict_has_stable_keys() -> None:
         "request_id",
         "status",
         "created_at",
+        "due_by",
+        "resolved_at",
     }
 
 
@@ -246,3 +252,164 @@ def test_claim_token_tampered_rejected() -> None:
 def test_claim_token_garbage_rejected() -> None:
     """An arbitrary non-token string does not verify."""
     assert verify_claim_token("rec-1", "not-a-real-token", _SECRET) is False
+
+
+# --- subject token (RM12/EXP-04) ---------------------------------------------
+
+
+def test_subject_token_issue_and_verify_valid() -> None:
+    """A subject token verifies for its own record and index under the same secret."""
+    token = issue_subject_token("rec-1", 0, _SECRET)
+    assert token.startswith("subject:")
+    assert verify_subject_token("rec-1", 0, token, _SECRET) is True
+
+
+def test_subject_token_is_deterministic() -> None:
+    """Same (record, index, secret) always yields the same token (statelessness)."""
+    assert issue_subject_token("rec-1", 2, _SECRET) == issue_subject_token("rec-1", 2, _SECRET)
+
+
+def test_subject_token_wrong_index_rejected() -> None:
+    """A token minted for one subject index does not verify for another."""
+    token = issue_subject_token("rec-1", 0, _SECRET)
+    assert verify_subject_token("rec-1", 1, token, _SECRET) is False
+
+
+def test_subject_token_wrong_record_rejected() -> None:
+    """A token minted for one record does not verify for another."""
+    token = issue_subject_token("rec-1", 0, _SECRET)
+    assert verify_subject_token("rec-2", 0, token, _SECRET) is False
+
+
+def test_subject_token_wrong_secret_rejected() -> None:
+    """A subject token does not verify under a different server secret."""
+    token = issue_subject_token("rec-1", 0, _SECRET)
+    assert verify_subject_token("rec-1", 0, token, b"a-different-secret") is False
+
+
+def test_subject_token_differs_from_claim_token() -> None:
+    """A subject token and a contributor claim token are never the same value."""
+    assert issue_subject_token("rec-1", 0, _SECRET) != issue_claim_token("rec-1", _SECRET)
+
+
+# --- SubjectTokenStore -------------------------------------------------------
+
+
+def test_subject_token_store_missing_file_is_empty(tmp_path: Path) -> None:
+    store = SubjectTokenStore(tmp_path / "subject-tokens.json")
+    assert store.hashes_for("rec-1") == []
+    assert store.verify("rec-1", issue_subject_token("rec-1", 0, _SECRET)) is False
+
+
+def test_subject_token_store_verifies_a_registered_token(tmp_path: Path) -> None:
+    """A token whose hash was registered verifies; an unregistered one does not."""
+    store = SubjectTokenStore(tmp_path / "subject-tokens.json")
+    good = issue_subject_token("rec-1", 0, _SECRET)
+    store.register("rec-1", [subject_token_hash(good)])
+    assert store.verify("rec-1", good) is True
+    other = issue_subject_token("rec-1", 1, _SECRET)
+    assert store.verify("rec-1", other) is False
+
+
+def test_subject_token_store_persists_only_hashes(tmp_path: Path) -> None:
+    """The on-disk file holds SHA-256 hashes only — never the clear tokens."""
+    path = tmp_path / "subject-tokens.json"
+    store = SubjectTokenStore(path)
+    tokens = [issue_subject_token("rec-1", i, _SECRET) for i in range(2)]
+    store.register("rec-1", [subject_token_hash(t) for t in tokens])
+    text = path.read_text(encoding="utf-8")
+    for token in tokens:
+        assert token not in text
+        assert subject_token_hash(token) in text
+
+
+def test_subject_token_store_register_is_idempotent(tmp_path: Path) -> None:
+    """Registering the same hash twice does not duplicate it."""
+    store = SubjectTokenStore(tmp_path / "subject-tokens.json")
+    h = subject_token_hash(issue_subject_token("rec-1", 0, _SECRET))
+    store.register("rec-1", [h])
+    store.register("rec-1", [h])
+    assert store.hashes_for("rec-1") == [h]
+
+
+# --- subject-objection kind + due_by/resolved_at (RM12) ----------------------
+
+
+def test_subject_objection_kind_accepted() -> None:
+    """The RM12 verified-objection kind constructs without error."""
+    req = ConsentRequest(record_id="r", kind="subject-objection", message="please redact me")
+    assert req.kind == "subject-objection"
+
+
+def test_due_by_and_resolved_at_round_trip(tmp_path: Path) -> None:
+    """due_by/resolved_at survive a to_dict/from_dict round-trip and a store write."""
+    req = ConsentRequest(
+        record_id="r",
+        kind="subject-objection",
+        message="m",
+        request_id="id1",
+        due_by="2026-07-09T00:00:00Z",
+        resolved_at="2026-07-03T00:00:00Z",
+    )
+    restored = ConsentRequest.from_dict(req.to_dict())
+    assert restored == req
+    assert restored.due_by == "2026-07-09T00:00:00Z"
+    assert restored.resolved_at == "2026-07-03T00:00:00Z"
+
+
+def test_resolve_stamps_resolved_at(tmp_path: Path) -> None:
+    """Resolving a request records when the steward responded (RM12)."""
+    store = ConsentRequestStore(tmp_path / "consent.json")
+    store.add(
+        ConsentRequest(
+            record_id="a",
+            kind="subject-objection",
+            message="m",
+            request_id="id1",
+            due_by="2026-07-09T00:00:00Z",
+        )
+    )
+    store.resolve("id1", "resolved", now="2026-07-03T12:00:00Z")
+    resolved = store.all()[0]
+    assert resolved.status == "resolved"
+    assert resolved.resolved_at == "2026-07-03T12:00:00Z"
+    # The committed response window is preserved, not lost, when resolving.
+    assert resolved.due_by == "2026-07-09T00:00:00Z"
+
+
+def test_acknowledge_does_not_claim_request_was_resolved(tmp_path: Path) -> None:
+    """Acknowledgement records lifecycle state without inventing a completed response."""
+    store = ConsentRequestStore(tmp_path / "consent.json")
+    store.add(
+        ConsentRequest(
+            record_id="a",
+            kind="subject-objection",
+            message="m",
+            request_id="id1",
+            due_by="2026-07-09T00:00:00Z",
+        )
+    )
+    store.resolve("id1", "acknowledged", now="2026-07-03T12:00:00Z")
+    acknowledged = store.all()[0]
+    assert acknowledged.status == "acknowledged"
+    assert acknowledged.resolved_at == ""
+
+
+def test_legacy_json_without_new_fields_still_loads(tmp_path: Path) -> None:
+    """A consent-requests.json written before RM12 (no due_by/resolved_at) loads."""
+    path = tmp_path / "consent.json"
+    legacy = [
+        {
+            "record_id": "r",
+            "kind": "object",
+            "message": "m",
+            "request_id": "id1",
+            "status": "open",
+            "created_at": "2026-06-16T00:00:00Z",
+        }
+    ]
+    path.write_text(json.dumps(legacy), encoding="utf-8")
+    loaded = ConsentRequestStore(path).all()
+    assert len(loaded) == 1
+    assert loaded[0].due_by == ""
+    assert loaded[0].resolved_at == ""
