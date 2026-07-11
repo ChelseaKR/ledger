@@ -126,6 +126,32 @@ msgstr "Before you act"
 msgid "Browse"
 msgstr "Browse"
 
+msgid "Browse by place"
+msgstr "Browse by place"
+
+msgid "Browse by time"
+msgstr "Browse by time"
+
+msgid ""
+"Browse the archive by the places its records name. Each place links to "
+"every record that mentions it."
+msgstr ""
+"Browse the archive by the places its records name. Each place links to "
+"every record that mentions it."
+
+msgid ""
+"Browse the archive by year. Each year links to the records from that "
+"period."
+msgstr ""
+"Browse the archive by year. Each year links to the records from that "
+"period."
+
+msgid "By year (list view)"
+msgstr "By year (list view)"
+
+msgid "By year (table view)"
+msgstr "By year (table view)"
+
 msgid "Catalogue metadata"
 msgstr "Catalogue metadata"
 
@@ -323,6 +349,9 @@ msgstr "Language"
 msgid "Languages"
 msgstr "Languages"
 
+msgid "Linked records"
+msgstr "Linked records"
+
 msgid "Load my submission"
 msgstr "Load my submission"
 
@@ -353,8 +382,14 @@ msgstr "No recorded events yet."
 msgid "No records are available to you yet."
 msgstr "No records are available to you yet."
 
+msgid "No records carry a date yet."
+msgstr "No records carry a date yet."
+
 msgid "No records match your search."
 msgstr "No records match your search."
+
+msgid "No records name a place yet."
+msgstr "No records name a place yet."
 
 msgid "No submissions awaiting review."
 msgstr "No submissions awaiting review."
@@ -419,6 +454,9 @@ msgstr "Permanent link"
 msgid "Persistent identifier"
 msgstr "Persistent identifier"
 
+msgid "Places"
+msgstr "Places"
+
 msgid "Police violence — describes harm or force by police"
 msgstr "Police violence — describes harm or force by police"
 
@@ -475,6 +513,12 @@ msgstr "Records (list view)"
 
 msgid "Records (table view)"
 msgstr "Records (table view)"
+
+msgid "Records grouped by the year they are from, oldest first."
+msgstr "Records grouped by the year they are from, oldest first."
+
+msgid "Records that link here"
+msgstr "Records that link here"
 
 msgid "Reference"
 msgstr "Reference"
@@ -634,11 +678,17 @@ msgstr ""
 msgid "This record has access restrictions."
 msgstr "This record has access restrictions."
 
+msgid "This record links to"
+msgstr "This record links to"
+
 msgid "Those contact details are too long."
 msgstr "Those contact details are too long."
 
 msgid "Tick anything a reader should be warned about before this is shown."
 msgstr "Tick anything a reader should be warned about before this is shown."
+
+msgid "Timeline"
+msgstr "Timeline"
 
 msgid "Title"
 msgstr "Title"
@@ -729,6 +779,9 @@ msgstr "Withhold selected"
 
 msgid "Would publish as:"
 msgstr "Would publish as:"
+
+msgid "Year"
+msgstr "Year"
 
 msgid "Yes"
 msgstr "Yes"
@@ -850,6 +903,14 @@ msgstr "{count} found"
 #, python-brace-format
 msgid "{count} public record(s)."
 msgstr "{count} public record(s)."
+
+#, python-brace-format
+msgid "{count} record(s) carry no date and are not shown here."
+msgstr "{count} record(s) carry no date and are not shown here."
+
+#, python-brace-format
+msgid "{count} record(s) name no place and are not shown here."
+msgstr "{count} record(s) name no place and are not shown here."
 
 #, python-brace-format
 msgid "{when}, ref {ref}"

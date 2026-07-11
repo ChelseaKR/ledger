@@ -105,7 +105,9 @@ from ledger.render import (
     _nav_html,
     _overview_main_html,
     _page,
+    _places_html,
     _record_main_html,
+    _timeline_html,
     transparency_main_html,
     transparency_unattested_main_html,
 )
@@ -494,6 +496,10 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
                 self._handle_about()
             elif path == "/overview":
                 self._handle_overview()
+            elif path == "/places":
+                self._handle_places()
+            elif path == "/timeline":
+                self._handle_timeline()
             elif path == "/governance":
                 self._handle_governance()
             elif path == "/how-it-works":
@@ -1307,11 +1313,12 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
     def _active_facets(params: dict[str, list[str]]) -> list[tuple[str, str]]:
         """Every active Dublin Core facet filter, one value per field, in field order.
 
-        Composing facets (subject AND type AND language) lets a reader narrow on more
-        than one axis at once. Only the first value of each field is taken, so a
+        Composing facets (subject AND type AND language AND coverage) lets a reader
+        narrow on more than one axis at once — ``coverage`` is what makes the /places
+        browse compose with the rest. Only the first value of each field is taken, so a
         crafted repeated param cannot AND a field against itself into nothing."""
         active: list[tuple[str, str]] = []
-        for field in ("subject", "type", "language"):
+        for field in ("subject", "type", "language", "coverage"):
             values = params.get(field)
             if values and values[0]:
                 active.append((field, values[0]))
@@ -1426,7 +1433,18 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             return
         # Other records on the same subjects the *viewer* may list, so the related
         # links never point at anything the viewer could not already see (no-outing).
-        related = search.related_by_subject(record, self._archive().browse(grant))
+        listable = self._archive().browse(grant)
+        related = search.related_by_subject(record, listable)
+        # Explicit DC ``relation`` links (and the reciprocal), resolved against only the
+        # records the viewer may list: a relation to a sealed record resolves to nothing
+        # (never leaks its existence), so this is safe for any grant (no-outing rule).
+        # A stable/custom internal id need not look like the default UUID hex. Pass
+        # the complete internal-id set so a relation to any non-listable record is
+        # dropped instead of misclassified as an external identifier and exposed.
+        known_internal_ids = {item.record_id for item in self._archive()._all_records()}
+        relations = search.resolve_relations(
+            record, listable, known_internal_ids=known_internal_ids
+        )
         main_html = _record_main_html(
             record,
             proceed=proceed,
@@ -1435,6 +1453,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             base_url=self._base_url(),
             archive_name=self._archive().config.archive_name,
             related=related,
+            relations=relations,
         )
         self._send_html(
             200,
@@ -2592,6 +2611,46 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             200,
             _page(
                 i18n.t(lang, "overview_heading"),
+                lang=lang,
+                main_html=main_html,
+                nav_html=self._nav(),
+            ),
+        )
+
+    def _handle_places(self) -> None:
+        """``GET /places`` — the accessible "browse by place" view (roadmap EX3).
+
+        Groups the records the viewer may list by Dublin Core ``coverage`` (place),
+        each linking into the composed ``?coverage=`` facet query. Built only from
+        :meth:`Archive.browse` output, so a place never surfaces a record the viewer
+        may not see (no-outing rule)."""
+        lang = self._lang()
+        grant = self._resolve_grant()
+        main_html = _places_html(self._archive().browse(grant), lang=lang)
+        self._send_html(
+            200,
+            _page(
+                i18n.t(lang, "places_heading"),
+                lang=lang,
+                main_html=main_html,
+                nav_html=self._nav(),
+            ),
+        )
+
+    def _handle_timeline(self) -> None:
+        """``GET /timeline`` — the accessible "browse by time" view (roadmap EX3).
+
+        Groups the records the viewer may list by the year of their Dublin Core
+        ``date``, rendered as an ordered list plus a table equivalent. Built only from
+        :meth:`Archive.browse` output, so nothing here can reflect a withheld value
+        (no-outing rule)."""
+        lang = self._lang()
+        grant = self._resolve_grant()
+        main_html = _timeline_html(self._archive().browse(grant), lang=lang)
+        self._send_html(
+            200,
+            _page(
+                i18n.t(lang, "timeline_heading"),
                 lang=lang,
                 main_html=main_html,
                 nav_html=self._nav(),

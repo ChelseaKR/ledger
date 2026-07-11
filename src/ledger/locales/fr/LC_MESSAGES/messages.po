@@ -97,8 +97,9 @@ msgid ""
 "An automatic, offline check did not find an obvious name, address, phone "
 "number, email, handle, or date in your account."
 msgstr ""
-"Une vérification automatique hors ligne n’a trouvé aucun nom, adresse, numéro "
-"de téléphone, courriel, identifiant ou date manifeste dans votre récit."
+"Une vérification automatique hors ligne n’a trouvé aucun nom, adresse, "
+"numéro de téléphone, courriel, identifiant ou date manifeste dans votre "
+"récit."
 
 #, python-brace-format
 msgid ""
@@ -106,9 +107,10 @@ msgid ""
 "below. Nothing is changed — review each one and edit your account "
 "yourself if you want it removed."
 msgstr ""
-"Une vérification automatique hors ligne a trouvé ci-dessous {count} élément(s) "
-"d’identification possible(s). Rien n’est modifié — examinez chaque élément et "
-"modifiez vous-même votre récit si vous souhaitez le retirer."
+"Une vérification automatique hors ligne a trouvé ci-dessous {count} "
+"élément(s) d’identification possible(s). Rien n’est modifié — examinez "
+"chaque élément et modifiez vous-même votre récit si vous souhaitez le "
+"retirer."
 
 msgid "Apply dates"
 msgstr "Appliquer les dates"
@@ -147,6 +149,32 @@ msgstr "Avant d’agir"
 
 msgid "Browse"
 msgstr "Parcourir"
+
+msgid "Browse by place"
+msgstr "Parcourir par lieu"
+
+msgid "Browse by time"
+msgstr "Parcourir dans le temps"
+
+msgid ""
+"Browse the archive by the places its records name. Each place links to "
+"every record that mentions it."
+msgstr ""
+"Parcourez l’archive selon les lieux nommés par ses enregistrements. Chaque lieu "
+"renvoie à tous les enregistrements qui le mentionnent."
+
+msgid ""
+"Browse the archive by year. Each year links to the records from that "
+"period."
+msgstr ""
+"Parcourez l’archive par année. Chaque année renvoie aux enregistrements de cette "
+"période."
+
+msgid "By year (list view)"
+msgstr "Par année (vue liste)"
+
+msgid "By year (table view)"
+msgstr "Par année (vue tableau)"
 
 msgid "Catalogue metadata"
 msgstr "Métadonnées de catalogue"
@@ -380,6 +408,9 @@ msgstr "Langue"
 msgid "Languages"
 msgstr "Langues"
 
+msgid "Linked records"
+msgstr "Enregistrements liés"
+
 msgid "Load my submission"
 msgstr "Charger mon envoi"
 
@@ -413,8 +444,14 @@ msgstr "Aucun événement consigné pour l’instant."
 msgid "No records are available to you yet."
 msgstr "Aucun enregistrement ne vous est encore accessible."
 
+msgid "No records carry a date yet."
+msgstr "Aucun enregistrement ne comporte encore de date."
+
 msgid "No records match your search."
 msgstr "Aucun enregistrement ne correspond à votre recherche."
+
+msgid "No records name a place yet."
+msgstr "Aucun enregistrement ne nomme encore de lieu."
 
 msgid "No submissions awaiting review."
 msgstr "Aucun envoi en attente d’examen."
@@ -479,6 +516,9 @@ msgstr "Lien permanent"
 
 msgid "Persistent identifier"
 msgstr "Identifiant pérenne"
+
+msgid "Places"
+msgstr "Lieux"
 
 msgid "Police violence — describes harm or force by police"
 msgstr ""
@@ -546,6 +586,12 @@ msgstr "Enregistrements (vue liste)"
 
 msgid "Records (table view)"
 msgstr "Enregistrements (vue tableau)"
+
+msgid "Records grouped by the year they are from, oldest first."
+msgstr "Enregistrements regroupés par année, les plus anciens d’abord."
+
+msgid "Records that link here"
+msgstr "Enregistrements qui renvoient ici"
 
 msgid "Reference"
 msgstr "Référence"
@@ -711,9 +757,9 @@ msgid ""
 "details, not all of them — please still read your account yourself before"
 " it is shared."
 msgstr ""
-"Cette vérification recherche uniquement des motifs courants. Elle détecte "
-"certains éléments d’identification, pas tous — relisez donc vous-même votre "
-"récit avant son partage."
+"Cette vérification recherche uniquement des motifs courants. Elle détecte"
+" certains éléments d’identification, pas tous — relisez donc vous-même "
+"votre récit avant son partage."
 
 msgid ""
 "This record carries the following content warnings. Review them before "
@@ -725,6 +771,9 @@ msgstr ""
 msgid "This record has access restrictions."
 msgstr "Cet enregistrement comporte des restrictions d’accès."
 
+msgid "This record links to"
+msgstr "Cet enregistrement renvoie à"
+
 msgid "Those contact details are too long."
 msgstr "Ces coordonnées sont trop longues."
 
@@ -732,6 +781,9 @@ msgid "Tick anything a reader should be warned about before this is shown."
 msgstr ""
 "Cochez tout ce dont un lecteur devrait être averti avant que cela ne soit"
 " montré."
+
+msgid "Timeline"
+msgstr "Chronologie"
 
 msgid "Title"
 msgstr "Titre"
@@ -830,6 +882,9 @@ msgstr "Retenir la sélection"
 
 msgid "Would publish as:"
 msgstr "Serait publié en tant que :"
+
+msgid "Year"
+msgstr "Année"
 
 msgid "Yes"
 msgstr "Oui"
@@ -981,6 +1036,14 @@ msgstr "{count} trouvé(s)"
 #, python-brace-format
 msgid "{count} public record(s)."
 msgstr "{count} enregistrement(s) public(s)."
+
+#, python-brace-format
+msgid "{count} record(s) carry no date and are not shown here."
+msgstr "{count} enregistrement(s) sans date ne sont pas affiché(s) ici."
+
+#, python-brace-format
+msgid "{count} record(s) name no place and are not shown here."
+msgstr "{count} enregistrement(s) ne nommant aucun lieu ne sont pas affiché(s) ici."
 
 #, python-brace-format
 msgid "{when} — superseded by {event}"

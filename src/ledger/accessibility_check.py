@@ -320,7 +320,9 @@ def _render_sample_pages() -> dict[str, str]:
         from ledger.render import (
             _browse_main_html,
             _page,
+            _places_html,
             _record_main_html,
+            _timeline_html,
             transparency_main_html,
         )
         from ledger.transparency import TransparencyLog
@@ -334,6 +336,8 @@ def _render_sample_pages() -> dict[str, str]:
             dublin_core=DublinCore(
                 title=["Sample record"],
                 description=["A sample record used only to render the accessibility surface."],
+                coverage=["Sample City"],
+                date=["1994"],
             ),
             fields=[Field(name="story", value="A sample story.", policy=AccessPolicy.PUBLIC)],
         )
@@ -363,6 +367,12 @@ def _render_sample_pages() -> dict[str, str]:
             ),
             "rendered:/record/{id}": _page(
                 one.title, lang="en", main_html=_record_main_html(one, proceed=True)
+            ),
+            "rendered:/places": _page(
+                "Browse by place", lang="en", main_html=_places_html(disclosed)
+            ),
+            "rendered:/timeline": _page(
+                "Browse by time", lang="en", main_html=_timeline_html(disclosed)
             ),
             "rendered:/contribute": _page(
                 "Contribute", lang="en", main_html=contribute.render_contribute_main(config)
