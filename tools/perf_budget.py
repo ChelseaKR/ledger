@@ -111,8 +111,8 @@ def _ingest_20_records(root: Path) -> None:
         archive.ingest({}, _build_record(i), agent="perf-budget", now="2026-01-01T00:00:00Z")
 
 
-def _browse_200_records(root: Path) -> None:
-    """Ingest 200 records once, then browse-list them (the read path stewards use)."""
+def _build_and_browse_200_records(root: Path) -> None:
+    """Ingest 200 records, then browse-list them (a combined scale-path budget)."""
     config = Config.default("Perf Budget Browse Archive", root / "archive")
     archive = Archive.init(config)
     for i in range(200):
@@ -146,10 +146,10 @@ BUDGETS: list[Budget] = [
         run=_ingest_20_records,
     ),
     Budget(
-        name="browse_200_records",
+        name="build_and_browse_200_records",
         budget_seconds=6.0,
-        rationale="ingest 200 records once, then one disclosed browse listing",
-        run=_browse_200_records,
+        rationale="ingest 200 records, then produce one disclosed browse listing",
+        run=_build_and_browse_200_records,
     ),
 ]
 
