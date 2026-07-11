@@ -3,27 +3,34 @@
 # locally means green in CI (reproducibility, process capabilities).
 
 VENV ?= .venv
-# Prefer the project venv, but fall back to python3 so `make <target>` works in
-# CI (which installs into the runner's system Python and never creates .venv).
+# Prefer the project venv (created by `make install`'s `uv sync`, in CI too —
+# uv always materializes $(VENV) rather than installing into system Python), but
+# fall back to python3 so a target still resolves before `install` has run.
 # `?=` also lets a caller override, e.g. `make i18n PY=python`. This closes the
 # i18n gate's `.venv/bin/python: No such file or directory` (exit 127) failure.
 PY   ?= $(if $(wildcard $(VENV)/bin/python),$(VENV)/bin/python,python3)
-PIP  := $(PY) -m pip
 
 .DEFAULT_GOAL := help
-.PHONY: help venv install lint format type test cov audit accessibility acr demo serve \
-        i18n i18n-compile claims secret-scan container verify clean
+.PHONY: help venv install lock lint format type test cov audit accessibility acr demo serve \
+        i18n i18n-compile claims secret-scan workflow-lint container verify clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
 	  | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
 
 venv: ## Create the virtual environment
-	python3 -m venv $(VENV)
-	$(PIP) install --upgrade pip
+	uv venv $(VENV)
 
-install: venv ## Install ledger plus dev tooling
-	$(PIP) install -e ".[dev]"
+# SEC-13/CQ-09/CQ-27: install exactly the pinned, hash-locked graph in uv.lock
+# (the runtime dependency plus the `dev` PEP 735 dependency group), never a fresh
+# resolve against version ranges. `--locked` fails the build instead of silently
+# re-resolving if pyproject.toml and uv.lock ever drift apart, so "it installed"
+# means "it installed the audited, committed lockfile" (reproducibility).
+install: ## Install ledger plus dev tooling from the locked dependency graph
+	uv sync --locked --group dev
+
+lock: ## Regenerate uv.lock after a pyproject.toml dependency change
+	uv lock
 
 lint: ## Static analysis (ruff): correctness, security, import hygiene
 	$(PY) -m ruff check src tests
@@ -110,6 +117,13 @@ secret-scan: ## Secret scan (gitleaks) — mirrors ci.yml's supply-chain job loc
 	}
 	gitleaks detect --source . --config .gitleaks.toml --no-banner --redact --exit-code 1
 
+workflow-lint: ## Static analysis of the workflow YAML itself (zizmor) — mirrors ci.yml's workflow-lint job
+	# zizmor ships a compiled binary via its pip wheel, not a `python -m`-runnable
+	# module, so it's invoked directly off $(VENV)/bin, falling back to PATH.
+	@if [ -x "$(VENV)/bin/zizmor" ]; then "$(VENV)/bin/zizmor" .github/workflows; \
+	elif command -v zizmor >/dev/null 2>&1; then zizmor .github/workflows; \
+	else echo "zizmor not found; run 'make install' (or 'pip install zizmor')"; exit 1; fi
+
 container: ## Build the self-host image and scan it for CRITICAL/HIGH CVEs (Trivy)
 	# Not part of `verify`: it needs a working Docker daemon, which not every
 	# contributor's environment has, and a Dockerfile-only change is rare enough
@@ -121,11 +135,12 @@ container: ## Build the self-host image and scan it for CRITICAL/HIGH CVEs (Triv
 
 # The full gate. Determinism + reproducibility: same inputs, same result, every run.
 # Matches CI's required-check set byte-for-byte (CICD-27): the `gate`, `i18n`,
-# `accessibility`, and `supply-chain` jobs in ci.yml run exactly these targets, so
-# green here means green in CI. (The `no-outing-audit` job is `test`'s own
-# `disclosure`-marked subset, run standalone in CI for visibility, not a distinct
-# local gate; `container` is intentionally excluded — see its own target comment.)
-verify: lint type test i18n accessibility audit secret-scan claims ## Run the complete merge gate (== CI's required checks)
+# `accessibility`, `supply-chain`, and `workflow-lint` jobs in ci.yml run exactly
+# these targets, so green here means green in CI. (The `no-outing-audit` job is
+# `test`'s own `disclosure`-marked subset, run standalone in CI for visibility, not
+# a distinct local gate; `container` is intentionally excluded — see its own
+# target comment.)
+verify: lint type test i18n accessibility audit secret-scan claims workflow-lint ## Run the complete merge gate (== CI's required checks)
 	@echo "verify: all gates green"
 
 clean: ## Remove caches and build artifacts (never touches an archive's data)

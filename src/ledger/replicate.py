@@ -303,6 +303,21 @@ def heal(
     first healthy one in ``locations`` order, so repeated runs are reproducible.
     Locations and their statuses are paired by index (not by name), so two targets
     that happen to share a name are still healed independently and correctly.
+
+    .. warning::
+       **Honest limit — heal is fixity-aware, not revision-aware.** "Validates"
+       means *internally consistent* (RFC 8493), not *current*. A replica made
+       before a lawful :meth:`~ledger.ingest.Archive.apply_update` still fully
+       self-validates after the primary bag is updated and resealed, so if the
+       newer copies are lost, healing from the stale replica resurrects the
+       pre-update ``record.json`` — including a consent/policy state the
+       contributor has since *tightened* (a real privacy regression, pinned by
+       ``test_heal_from_stale_replica_resurrects_pre_update_manifest``). Until
+       heal learns revision ordering, re-replicate promptly after updates and
+       treat replica currency as an operational duty, not a property this
+       function checks. The reseal's PREMIS ``VALIDATION`` digest transition
+       gives an auditor the evidence to *detect* such a resurrection after the
+       fact.
     """
     statuses = verify_replicas(bag_name, locations)
     paired = list(zip(locations, statuses, strict=True))

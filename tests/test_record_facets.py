@@ -75,6 +75,50 @@ def test_record_page_offers_a_citation_and_metadata_link() -> None:
     assert 'href="/api/record/rec-9"' in html
 
 
+def test_citation_surfaces_the_persistent_identifier() -> None:
+    """The minted ARK PID shows on its own line and inside the formatted citation."""
+    record = DisclosedRecord(
+        record_id="rec-9",
+        title="The May march",
+        dublin_core={
+            "date": ["1994"],
+            "publisher": ["People's Archive"],
+            "identifier": ["ark:/99999/lrec-9"],
+        },
+        fields={},
+        payloads=(),
+        content_warnings=(),
+        withheld=(),
+    )
+    html = _record_main_html(
+        record,
+        proceed=True,
+        base_url="https://archive.example/",
+        archive_name="People's Archive",
+    )
+    # A dedicated persistent-identifier line carries the ARK.
+    assert "Persistent identifier" in html
+    assert '<span class="pid">ark:/99999/lrec-9</span>' in html
+    # The ARK is also woven into the formatted citation string, before the URL.
+    assert "People&#x27;s Archive. ark:/99999/lrec-9." in html
+
+
+def test_citation_without_a_pid_omits_the_pid_line() -> None:
+    """A record with no ARK identifier shows no persistent-identifier line."""
+    record = DisclosedRecord(
+        record_id="rec-8",
+        title="No PID here",
+        dublin_core={"identifier": ["rec-8"]},  # a bare id is not an ARK
+        fields={},
+        payloads=(),
+        content_warnings=(),
+        withheld=(),
+    )
+    html = _record_main_html(record, proceed=True, base_url="https://x.org", archive_name="A")
+    assert "Persistent identifier" not in html
+    assert '<span class="pid">' not in html
+
+
 def test_citation_escapes_a_crafted_title() -> None:
     """A title with markup cannot break out of the citation."""
     record = DisclosedRecord(

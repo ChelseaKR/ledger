@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 from cryptography.fernet import Fernet
 
-from ledger.bag import Bag, write_bag
+from ledger.bag import Bag, refresh_tag_manifests, write_bag
 from ledger.config import StorageLocation
 from ledger.errors import FixityError, ReplicationError
 from ledger.models import PremisEvent, PremisEventType
@@ -159,6 +159,51 @@ def test_heal_raises_when_no_replica_validates(tmp_path: Path, source_bag: Bag) 
 
     with pytest.raises(FixityError, match="nothing trustworthy"):
         heal(source_bag.name, [only], agent=_AGENT, now=_NOW)
+
+
+@pytest.mark.preservation
+def test_heal_from_stale_replica_resurrects_pre_update_manifest(
+    tmp_path: Path,
+    write_file: Callable[[str, bytes], Path],
+    sample_bytes: bytes,
+) -> None:
+    """Honest-limit pin: heal is fixity-aware, not revision-aware (FIX-01 residual).
+
+    A replica made *before* a lawful update still fully self-validates after the
+    primary is updated and resealed — staleness is invisible to RFC 8493 fixity.
+    If the current copies are lost, healing from the stale replica resurrects the
+    pre-update ``record.json``, including a consent state the contributor has
+    since tightened. This test documents that residual (see the ``heal``
+    docstring's warning) so a future revision-aware heal has a behavior to flip.
+    """
+    payload = {"photo.jpg": write_file("src/photo.jpg", sample_bytes)}
+    bag = write_bag(
+        tmp_path / "bag-stale",
+        payload,
+        extra_tag_files={"record.json": b'{"policy": "public"}'},
+    )
+    stale = _location(tmp_path, "mirror-stale")
+    current = _location(tmp_path, "mirror-current")
+    replicate_bag(bag.path, stale, agent=_AGENT, now=_NOW)
+
+    # A lawful consent tightening on the primary: rewrite the tag file + reseal.
+    (bag.path / "record.json").write_bytes(b'{"policy": "stewards"}')
+    refresh_tag_manifests(bag.path)
+    replicate_bag(bag.path, current, agent=_AGENT, now=_NOW)
+
+    # The stale replica still fully self-validates: staleness is not detectable
+    # by fixity alone.
+    statuses = verify_replicas(bag.name, [stale, current])
+    assert all(status.ok for status in statuses)
+
+    # Lose the current replica; heal rebuilds it from the first healthy replica
+    # in order — the stale one.
+    corrupt = Path(current.path) / bag.name / "record.json"
+    corrupt.write_bytes(b"torn")
+    heal(bag.name, [stale, current], agent=_AGENT, now=_NOW)
+
+    healed = (Path(current.path) / bag.name / "record.json").read_bytes()
+    assert healed == b'{"policy": "public"}'  # the pre-update state came back
 
 
 @pytest.mark.preservation

@@ -176,6 +176,63 @@ class PremisEvent:
         return d
 
 
+@dataclass(frozen=True)
+class PremisRights:
+    """A PREMIS v3 Rights statement: the terms under which content may be used.
+
+    A rights statement says *what may be done* with an object and *under what
+    authority*, so a downstream reader (or a partner repository) knows whether it
+    may disseminate or replicate a record without having to re-negotiate terms
+    (interoperability, standards-compliance; PREMIS v3 rightsStatement).
+
+    The shape is deliberately minimal and opaque, mirroring
+    :class:`PremisEvent`:
+
+    * ``rights_basis`` — the PREMIS ``rightsBasis`` vocabulary value
+      (``"license"``, ``"statute"``, ``"copyright"``, ``"other"``, …).
+    * ``rights_note`` — a free-text ``rightsBasis``/``copyrightNote`` style
+      description of the terms (e.g. a licence name), never an identity.
+    * ``granted_acts`` — the PREMIS ``act`` values that ARE permitted
+      (``"disseminate"``, ``"replicate"``, ``"migrate"``, …).
+    * ``restrictions`` — the PREMIS ``restriction`` values that constrain each
+      granted act (e.g. ``"attribution required"``, ``"no commercial use"``).
+    * ``linked_object`` — an opaque record/content id the statement is about,
+      exactly like :attr:`PremisEvent.linked_object`.
+
+    No-outing rule: a rights statement carries no contributor identity and no
+    ``rightsHolder`` name — the terms are those of the *collection/community*, and
+    any real person stays only in the encrypted vault. This is why there is no
+    rights-holder or agent field here.
+    """
+
+    rights_basis: str
+    rights_note: str = ""
+    granted_acts: tuple[str, ...] = ()
+    restrictions: tuple[str, ...] = ()
+    linked_object: str | None = None
+
+    def to_dict(self) -> dict[str, object]:
+        """Serialize to the canonical on-disk mapping (empty parts dropped).
+
+        Mirrors :meth:`PremisEvent.to_dict`: only populated members are emitted so
+        the sidecar stays compact and a rights statement round-trips exactly.
+        """
+        d: dict[str, object] = {"rightsBasis": self.rights_basis}
+        if self.rights_note:
+            d["rightsNote"] = self.rights_note
+        if self.granted_acts:
+            d["grantedActs"] = list(self.granted_acts)
+        if self.restrictions:
+            d["restrictions"] = list(self.restrictions)
+        if self.linked_object is not None:
+            d["linkingObjectIdentifier"] = self.linked_object
+        return d
+
+    def canonical_json(self) -> str:
+        """Deterministic JSON for hashing/round-trip, like the rest of the metadata."""
+        return canonical_json(self.to_dict())
+
+
 # The fifteen Dublin Core Metadata Element Set elements (ISO 15836). Every element
 # is repeatable, so each is a list; empty lists are dropped on serialization. None
 # of these elements is permitted to carry contributor-identifying free text — the
