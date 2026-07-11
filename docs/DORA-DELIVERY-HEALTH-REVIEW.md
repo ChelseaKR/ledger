@@ -53,8 +53,7 @@ counted; `main` currently has no tags/releases (`git tag` is empty — the
 release-workflow gap tracked as REL-08/P1-6), so lead time is measured PR-open
 to PR-merge rather than commit-to-deploy.
 
-## Results (2026-07-07, covers the repo's full history: 2026-06-17 to
-## 2026-07-07, 13 merged PRs)
+## Results (2026-07-07; covers the repo's full history to that date: 2026-06-17 to 2026-07-07, 13 merged PRs)
 
 | DORA metric | Portfolio floor | Ledger, this window | Gate |
 |---|---|---|---|

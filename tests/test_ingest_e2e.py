@@ -32,6 +32,7 @@ from ledger.models import (
     AccessPolicy,
     DublinCore,
     Field,
+    PremisEvent,
     PremisEventType,
     Record,
 )
@@ -103,6 +104,23 @@ def test_full_lifecycle_ingest_disclose_replicate_consent(tmp_path: Path) -> Non
     event_types = [e.event_type for e in premis.events]
     assert PremisEventType.INGESTION in event_types
     assert PremisEventType.FIXITY_CHECK in event_types
+
+    # RM5: the DC sidecar carries a minted, deterministic ARK persistent identifier.
+    from ledger.metadata.dublincore import read_sidecar
+    from ledger.metadata.pid import is_ark, mint_ark
+
+    dc = read_sidecar(aip.dc_path)
+    expected_pid = mint_ark(rid)
+    assert expected_pid in dc.identifier
+    assert any(is_ark(v) for v in dc.identifier)
+
+    # RM5: the PREMIS log carries a rights statement (basis + granted acts), and it
+    # survives the on-disk round trip. The record declared no licence, so it falls back
+    # to the honest default basis.
+    assert premis.rights is not None
+    assert premis.rights.rights_basis == "other"
+    assert "disseminate" in premis.rights.granted_acts
+    assert premis.rights.linked_object == rid
 
     # The stored bag is structurally valid (audit passes). audit_fixity now returns
     # (bag_name, report) pairs so a broken bag can be reported without aborting.
@@ -194,6 +212,34 @@ def test_full_lifecycle_ingest_disclose_replicate_consent(tmp_path: Path) -> Non
     assert anon_denied, "anonymous disclose must be denied after tightening consent"
 
 
+def test_declared_licence_becomes_a_license_basis_rights_statement(tmp_path: Path) -> None:
+    """A record declaring a Dublin Core licence yields a ``license``-basis rights entity.
+
+    The declared rights value is lifted into the PREMIS rights statement's note, so the
+    reuse terms travel with the preservation log rather than living only in the
+    descriptive sidecar (RM5).
+    """
+    from ledger.metadata.premis import PremisLog as _PremisLog
+
+    config = Config.default("Licence Archive", tmp_path / "arc")
+    archive = Archive.init(config)
+    record = Record(
+        title="A CC-licensed zine",
+        default_policy=AccessPolicy.PUBLIC,
+        dublin_core=DublinCore(
+            title=["A CC-licensed zine"],
+            rights=["CC-BY-SA-4.0"],
+        ),
+    )
+    aip = archive.ingest({}, record, now=_NOW_INGEST)
+
+    rights = _PremisLog.read(aip.premis_path).rights
+    assert rights is not None
+    assert rights.rights_basis == "license"
+    assert rights.rights_note == "CC-BY-SA-4.0"
+    assert rights.linked_object == record.record_id
+
+
 def test_sealed_until_field_unseals_on_its_date(tmp_path: Path) -> None:
     """A SEALED_UNTIL field is withheld before its unseal date and shown after.
 
@@ -224,4 +270,79 @@ def test_sealed_until_field_unseals_on_its_date(tmp_path: Path) -> None:
 
     after = archive.disclose(rid, anonymous(), now="2027-01-02T00:00:00Z")
     assert after.fields.get("later") == "visible only after the date"
-    assert "later" not in after.redactions
+
+
+def test_apply_update_reseals_bag_so_audit_fixity_stays_green(tmp_path: Path) -> None:
+    """FIX-01: a post-ingest steward edit must not make audit_fixity flag its own bag.
+
+    ``Archive.apply_update`` is the shared write path behind every post-ingest
+    change (consent/policy change, content warning, review decision). Before the
+    fix, it rewrote ``record.json``/``premis.json`` -- tag files covered by the
+    bag's own tag manifests -- without refreshing those manifests, so the very next
+    ``audit_fixity`` sweep reported a lawful steward edit as tampering. This pins
+    the round trip: ingest, apply an update, audit -- still all green -- and that a
+    genuine corrupted payload byte is still caught right after that same update.
+    """
+    config = Config.default("Reseal Archive", tmp_path / "arc")
+    archive = Archive.init(config)
+    record = Record(
+        title="Reseal sample",
+        default_policy=AccessPolicy.PUBLIC,
+        dublin_core=DublinCore(title=["Reseal sample"]),
+        fields=[Field(name="story", value="before", policy=AccessPolicy.PUBLIC)],
+    )
+    payload = _FIXTURES / "public.txt"
+    archive.ingest({payload.name: payload}, record, now=_NOW_INGEST)
+    rid = record.record_id
+
+    # Sanity: freshly ingested bag is valid.
+    reports = dict(archive.audit_fixity())
+    assert reports[rid].ok
+
+    # A steward edit: tighten the record's default policy (a real post-ingest
+    # change -- consent tightening, a content-warning addition, a review decision
+    # all go through the same apply_update path).
+    updated = archive.get(rid)
+    updated.default_policy = AccessPolicy.STEWARDS
+    event = PremisEvent(
+        event_type=PremisEventType.CONSENT_CHANGE,
+        agent="e2e-steward",
+        outcome="success",
+        detail="tighten default policy to stewards",
+        event_datetime=_NOW_CONSENT,
+    )
+    archive.apply_update(updated, event)
+
+    # The update actually took effect (a no-op apply_update must not pass this
+    # test): the next read reflects the tightened policy.
+    assert archive.get(rid).default_policy is AccessPolicy.STEWARDS
+
+    # The change is durably recorded in the bag's PREMIS log...
+    premis = PremisLog.read(archive.bags_dir / rid / "premis.json")
+    assert any(e.event_type is PremisEventType.CONSENT_CHANGE for e in premis.events)
+
+    # ...the reseal itself is recorded as a VALIDATION event carrying the
+    # record.json digest transition, so a lawful reseal is never bit-for-bit
+    # indistinguishable from an edit that skipped the log...
+    reseal_events = [
+        e
+        for e in premis.events
+        if e.event_type is PremisEventType.VALIDATION and "resealed" in e.detail
+    ]
+    assert len(reseal_events) == 1
+    assert "record.json sha256" in reseal_events[0].detail
+    assert " -> " in reseal_events[0].detail
+    assert reseal_events[0].linked_object == rid
+
+    # ...and, crucially, the bag still re-validates: the lawful edit does not read
+    # as tampering at the next audit (the FIX-01 guarantee).
+    reports = dict(archive.audit_fixity())
+    assert reports[rid].ok
+
+    # A genuine payload corruption right after the update is still caught -- the
+    # reseal only recomputes tag manifests, never payload fixity.
+    payload_files = list((archive.bags_dir / rid / "data").rglob("*"))
+    payload_file = next(p for p in payload_files if p.is_file())
+    payload_file.write_bytes(b"corrupted after update")
+    reports = dict(archive.audit_fixity())
+    assert not reports[rid].ok

@@ -12,8 +12,8 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 > Unreleased rather than as a released version (a changelog claiming a release the
 > repo cannot produce is exactly the kind of unbacked claim this project's own
 > conformance audit exists to catch). It will move to a real `## [0.1.0] — YYYY-MM-DD`
-> section, with a matching signed annotated git tag, once the release workflow
-> (`docs/ROADMAP.md`, tracked as this repo's largest open gap) actually ships it.
+> section, with a matching signed annotated git tag, once the first `vX.Y.Z` tag is
+> actually pushed through the release workflow added below.
 
 ### Added
 
@@ -26,6 +26,39 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `DEFINITION_OF_DONE.md` instantiates QM-18, tracing every AUTO/REVIEW/RELEASE-GATE
   item to what `ci.yml`/`Makefile` actually enforce today and to the `docs/ROADMAP.md`
   row tracking what doesn't exist yet.
+- **Tag-triggered release workflow (`.github/workflows/release.yml`).** Pushing a
+  `vX.Y.Z` tag now re-runs the full lint/type/test gate against the tagged commit,
+  builds the sdist/wheel, fails closed if the tag doesn't match `pyproject.toml`'s
+  version, generates a CycloneDX SBOM of the shipped dependency closure, records
+  GitHub-native SLSA build-provenance and SBOM attestations, cosign-signs (keyless)
+  every artifact, publishes to PyPI via Trusted Publishing (OIDC — no stored API
+  token), and mirrors sdist/wheel/SBOM/signatures onto a GitHub Release. Registering
+  the PyPI Trusted Publisher and the `pypi` GitHub Environment remains a one-time
+  manual step for the project owner (documented in the workflow header); every other
+  stage runs with no additional setup.
+- **Hardened release gates (REL-08/10/14/16).** The release workflow's verify job
+  now asserts the pushed tag is a *signed annotated* tag (a lightweight or unsigned
+  tag fails closed; signature presence is checked — pinning the signer's identity
+  awaits a committed allowed-signers file, tracked in `docs/ROADMAP.md`), requires a
+  matching `## [X.Y.Z]` section in this file before anything builds, and runs the
+  complete `make verify` merge gate (lint, type, test, i18n, accessibility,
+  pip-audit, secret-scan, claims) from the locked dependency graph instead of a
+  hand-picked subset. After publishing, a new `verify-published` job downloads every
+  file PyPI serves for the version and fails the release unless each is sha256-identical
+  to what this run built; the GitHub Release only publishes after that check passes.
+- **Mutual preservation aid: encrypted replica exchange (EXP-15).** A second, opt-in
+  transport in `ledger.replicate` for community instances to hold *each other's*
+  bags as redundancy without either side trusting the other with plaintext:
+  `seal_bag`/`unseal_bag` encrypt a whole bag with a Fernet key that never leaves
+  the owning instance ("key stays home"); `replicate_sealed_bag` writes the
+  ciphertext blob — never the bag — to a partner `StorageLocation` and verifies it
+  landed intact by digest; `attest_sealed_replica`/`verify_sealed_attestation`
+  implement the scheduled fixity attestation exchange, letting a partner prove
+  which bytes it holds without ever decrypting them; `recover_sealed_bag` is the
+  recovery drill, pulling a blob back, decrypting locally, and running the same
+  `validate_bag` used by every other replica. Closes the threat-model residual that
+  a hostile or compromised replica host can read what it stores. See
+  [`docs/MUTUAL-AID.md`](docs/MUTUAL-AID.md) for the operational runbook.
 - **Disclosure-policy workflow.** First-class, accountable steward commands to set and
   apply a disclosure policy on an already-archived item, enforced by the core engine and
   honoured by the reading-room:

@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import threading
 import urllib.request
 from contextlib import redirect_stderr, redirect_stdout
@@ -32,7 +33,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from tempfile import mkdtemp
 
-from ledger.access.grants import anonymous, build_grant, steward
+from ledger.access.grants import anonymous, build_grant, issue_grant_token, steward
 from ledger.config import Config, StorageLocation
 from ledger.identity import ContributorIdentity
 from ledger.ingest import Archive, serialize_record
@@ -69,6 +70,10 @@ _SENTINEL_SEALED_FIELD = "SEALED-FIELD-PRIVATE-NAMES-9Z2K"
 # Fixed timestamps so the bag, manifests, and events are byte-reproducible.
 _NOW_INGEST = "2026-06-16T12:00:00Z"
 _NOW_CONSENT = "2026-06-16T12:05:00Z"
+# A fixed secret so the scripted proof can mint the steward capability token it
+# uses to exercise the authenticated read path deterministically. Not a real
+# secret — production supplies one via LEDGER_GRANT_SECRET.
+_GRANT_SECRET = "demo-grant-secret-not-for-production"  # noqa: S105 - demo fixture
 
 _RULE = "=" * 70
 
@@ -197,6 +202,13 @@ def _collect_public_surfaces(archive: Archive, grants_path: Path, rid: str) -> _
     can assert no sentinel reaches a log either. The server is always shut down and
     closed, even on error (resource hygiene).
     """
+    # The steward header is now an authenticated capability token, so the demo mints
+    # a real signed token under a fixed demo secret — exercising the genuine
+    # authenticated request path rather than a bypass (fidelity). In production the
+    # secret arrives via LEDGER_GRANT_SECRET, never on disk.
+    os.environ["LEDGER_GRANT_SECRET"] = _GRANT_SECRET
+    steward_token = issue_grant_token("steward-1", _GRANT_SECRET.encode("utf-8"))
+
     httpd = make_server(archive, host="127.0.0.1", port=0, grants_path=grants_path)
     raw_host, port = httpd.server_address[0], httpd.server_address[1]
     host = raw_host.decode("ascii") if isinstance(raw_host, (bytes, bytearray)) else str(raw_host)
@@ -209,10 +221,10 @@ def _collect_public_surfaces(archive: Archive, grants_path: Path, rid: str) -> _
             server_thread.start()
             surfaces = _PublicSurfaces(
                 steward_record_html=_http_get(
-                    host, port, f"/record/{rid}?proceed=1", subject="steward-1"
+                    host, port, f"/record/{rid}?proceed=1", subject=steward_token
                 ),
                 steward_record_json=_http_get(
-                    host, port, f"/api/record/{rid}", subject="steward-1"
+                    host, port, f"/api/record/{rid}", subject=steward_token
                 ),
                 anon_browse_html=_http_get(host, port, "/"),
                 anon_record_html=_http_get(host, port, f"/record/{rid}?proceed=1"),

@@ -10,7 +10,7 @@ name = "ledger-archive"
 version = "0.1.0"
 description = "A privacy-first community archive for queer histories and mutual-aid knowledge."
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 license = "AGPL-3.0-or-later"
 license-files = ["LICENSE"]
 authors = [{ name = "Chelsea Kelly-Reif" }]
@@ -22,7 +22,6 @@ classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: End Users/Desktop",
     "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Topic :: System :: Archiving",
     "Topic :: Sociology :: History",
@@ -38,24 +37,25 @@ dependencies = [
     "cryptography>=42,<50",
 ]
 
-[project.optional-dependencies]
-dev = [
-    "pytest>=8",
-    "pytest-cov>=5",
-    "ruff>=0.15",
-    "mypy>=1.18",
-    "pip-audit>=2.7",
-    # i18n message-catalog tooling (INTERNATIONALIZATION-STANDARD §3/§4). Babel
-    # provides `pybabel extract` and the CLDR-backed `Locale.parse` used by the
-    # i18n gates. Pure Python (no PyICU/native ICU build), so ledger keeps its
-    # "run on one inexpensive box, no heavy dependency tree" property.
-    "babel>=2.16",
-]
-
 [project.urls]
 Homepage = "https://github.com/ChelseaKR/ledger"
 Source = "https://github.com/ChelseaKR/ledger"
 Issues = "https://github.com/ChelseaKR/ledger/issues"
+
+# Published extras stay under `[project.optional-dependencies]` — they ship in the
+# wheel's metadata and remain installable by any consumer. `print` is a documented
+# user-facing install path (ADR-0008, `pip install ledger-archive[print]`), so it
+# must NOT move to a PEP 735 dependency group (groups are never published).
+#
+# Opt-in only (EXP-08): `ledger print-edition` renders its accessible HTML booklet
+# and the always-present plain-text fixity digest with no extra dependency at all;
+# this extra adds the scannable QR-code image alongside that text. `segno` is a
+# pure-Python, zero-dependency QR/SVG generator, so installing it keeps the "no
+# heavy dependency tree" property even for the machines that opt in.
+[project.optional-dependencies]
+print = [
+    "segno>=1.5,<2",
+]
 
 # Deployability/installability: `pipx install ledger-archive` then `ledger ...`.
 [project.scripts]
@@ -64,9 +64,32 @@ ledger = "ledger.cli:main"
 [tool.hatch.build.targets.wheel]
 packages = ["src/ledger"]
 
+# SEC-13/CQ-09/CQ-27: dev tooling lives in a PEP 735 dependency group, not a
+# `[project.optional-dependencies]` extra. Extras ship in the built wheel's
+# metadata and are installable by any consumer (`pip install ledger-archive[dev]`);
+# a dependency group is contributor/CI-only tooling, never published, and is
+# resolved together with everything else into the single lockfile (`uv.lock`) that
+# `uv sync` and `uv lock --check` pin and verify (supply-chain reproducibility).
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-cov>=5",
+    "ruff>=0.15",
+    "mypy>=1.18",
+    "pip-audit>=2.7",
+    # Static analysis of the workflow YAML itself (CICD-19); see the
+    # workflow-lint job in .github/workflows/ci.yml.
+    "zizmor>=1.9",
+    # i18n message-catalog tooling (INTERNATIONALIZATION-STANDARD §3/§4). Babel
+    # provides `pybabel extract` and the CLDR-backed `Locale.parse` used by the
+    # i18n gates. Pure Python (no PyICU/native ICU build), so ledger keeps its
+    # "run on one inexpensive box, no heavy dependency tree" property.
+    "babel>=2.16",
+]
+
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py312"
 src = ["src", "tests"]
 
 [tool.ruff.lint]
@@ -85,7 +108,7 @@ max-complexity = 10
 "tests/*" = ["S101"]  # asserts are the point of a test
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.12"
 strict = true
 warn_unreachable = true
 warn_redundant_casts = true

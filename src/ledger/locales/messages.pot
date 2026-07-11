@@ -31,6 +31,11 @@ msgid "(change access),"
 msgstr ""
 
 msgid ""
+"A moderation decision needs a non-empty reason. Go back and supply a "
+"rationale, then try again."
+msgstr ""
+
+msgid ""
 "A steward reviews every submission before anything becomes visible — "
 "nothing is published automatically."
 msgstr ""
@@ -48,6 +53,12 @@ msgid "Abuse — describes ongoing harm or mistreatment"
 msgstr ""
 
 msgid "Action a request with the audited CLI:"
+msgstr ""
+
+msgid "Action not recorded"
+msgstr ""
+
+msgid "Add content warning"
 msgstr ""
 
 msgid "Agent"
@@ -91,6 +102,9 @@ msgstr ""
 msgid "Back to the archive"
 msgstr ""
 
+msgid "Back to the record"
+msgstr ""
+
 msgid "Back to the steward console"
 msgstr ""
 
@@ -127,10 +141,17 @@ msgstr ""
 msgid "Community only — vetted members of this community"
 msgstr ""
 
+#, python-brace-format
+msgid "Comparing the current record with an earlier saved version. Record {id}."
+msgstr ""
+
 msgid "Contact (optional, sealed)"
 msgstr ""
 
 msgid "Content warning"
+msgstr ""
+
+msgid "Content warnings"
 msgstr ""
 
 msgid "Content warnings (optional)"
@@ -155,6 +176,9 @@ msgid ""
 "withholding holds it for revision. Every choice is recorded."
 msgstr ""
 
+msgid "Current"
+msgstr ""
+
 msgid "Date"
 msgstr ""
 
@@ -164,7 +188,13 @@ msgstr ""
 msgid "Death — describes the death of a person"
 msgstr ""
 
+msgid "Default access"
+msgstr ""
+
 msgid "Deportation — describes removal from a country or its threat"
+msgstr ""
+
+msgid "Description"
 msgstr ""
 
 msgid ""
@@ -208,6 +238,14 @@ msgid ""
 "Every recorded action across the archive, newest first. This log carries "
 "no contributor identity or sealed value — only what happened, who acted, "
 "and the outcome."
+msgstr ""
+
+msgid "Field"
+msgstr ""
+
+msgid ""
+"Field-by-field comparison of the current record and the selected earlier "
+"version"
 msgstr ""
 
 msgid "File"
@@ -294,6 +332,9 @@ msgstr ""
 msgid "No"
 msgstr ""
 
+msgid "No earlier versions."
+msgstr ""
+
 msgid "No open requests."
 msgstr ""
 
@@ -359,6 +400,9 @@ msgstr ""
 msgid "Permanent link"
 msgstr ""
 
+msgid "Persistent identifier"
+msgstr ""
+
 msgid "Police violence — describes harm or force by police"
 msgstr ""
 
@@ -371,6 +415,9 @@ msgstr ""
 msgid "Previous"
 msgstr ""
 
+msgid "Previous version"
+msgstr ""
+
 msgid "Public — anyone may read it"
 msgstr ""
 
@@ -378,6 +425,9 @@ msgid "Public — anyone may read it once a steward approves"
 msgstr ""
 
 msgid "Publish (as requested)"
+msgstr ""
+
+msgid "Reason (required)"
 msgstr ""
 
 msgid "Received — a steward has not acted on it yet."
@@ -415,6 +465,9 @@ msgid "Resolved — a steward has acted on it."
 msgstr ""
 
 msgid "Save changes"
+msgstr ""
+
+msgid "Saved versions"
 msgstr ""
 
 msgid "Sealed — keep it withheld for now"
@@ -499,6 +552,9 @@ msgstr ""
 msgid "Summary (optional)"
 msgstr ""
 
+msgid "Take down"
+msgstr ""
+
 msgid "Thank you — your contribution was received"
 msgstr ""
 
@@ -549,6 +605,9 @@ msgid "Type"
 msgstr ""
 
 msgid "Types"
+msgstr ""
+
+msgid "Version history"
 msgstr ""
 
 msgid "View the audit log"
@@ -668,6 +727,9 @@ msgstr ""
 msgid "ask a steward to make contact"
 msgstr ""
 
+msgid "changed"
+msgstr ""
+
 msgid "community members only"
 msgstr ""
 
@@ -681,6 +743,9 @@ msgid "objection from a person named in the record"
 msgstr ""
 
 msgid "on record"
+msgstr ""
+
+msgid "selected"
 msgstr ""
 
 #, python-brace-format
@@ -711,6 +776,10 @@ msgstr[1] ""
 
 #, python-brace-format
 msgid "{count} public record(s)."
+msgstr ""
+
+#, python-brace-format
+msgid "{when} — superseded by {event}"
 msgstr ""
 
 #, python-brace-format
