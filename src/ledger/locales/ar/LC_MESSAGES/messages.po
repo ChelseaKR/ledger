@@ -138,6 +138,30 @@ msgstr "قبل أن تتصرّف"
 msgid "Browse"
 msgstr "تصفّح"
 
+msgid "Browse by place"
+msgstr "التصفح حسب المكان"
+
+msgid "Browse by time"
+msgstr "التصفح حسب الزمن"
+
+msgid ""
+"Browse the archive by the places its records name. Each place links to "
+"every record that mentions it."
+msgstr ""
+"تصفّح الأرشيف حسب الأماكن التي تسمّيها سجلاته. يرتبط كل مكان بجميع السجلات "
+"التي تذكره."
+
+msgid ""
+"Browse the archive by year. Each year links to the records from that "
+"period."
+msgstr "تصفّح الأرشيف حسب السنة. ترتبط كل سنة بسجلات تلك الفترة."
+
+msgid "By year (list view)"
+msgstr "حسب السنة (عرض القائمة)"
+
+msgid "By year (table view)"
+msgstr "حسب السنة (عرض الجدول)"
+
 msgid "Catalogue metadata"
 msgstr "بيانات الفهرسة الوصفية"
 
@@ -361,6 +385,9 @@ msgstr "اللغة"
 msgid "Languages"
 msgstr "اللغات"
 
+msgid "Linked records"
+msgstr "السجلات المرتبطة"
+
 msgid "Load my submission"
 msgstr "تحميل مساهمتي"
 
@@ -394,8 +421,14 @@ msgstr "لا توجد أحداث مُسجَّلة بعد."
 msgid "No records are available to you yet."
 msgstr "لا توجد سجلات متاحة لك بعد."
 
+msgid "No records carry a date yet."
+msgstr "لا تحمل أي سجلات تاريخًا حتى الآن."
+
 msgid "No records match your search."
 msgstr "لا توجد سجلات تطابق بحثك."
+
+msgid "No records name a place yet."
+msgstr "لا تسمّي أي سجلات مكانًا حتى الآن."
 
 msgid "No submissions awaiting review."
 msgstr "لا توجد مساهمات تنتظر المراجعة."
@@ -459,6 +492,9 @@ msgstr "رابط دائم"
 msgid "Persistent identifier"
 msgstr "المعرّف الدائم"
 
+msgid "Places"
+msgstr "الأماكن"
+
 msgid "Police violence — describes harm or force by police"
 msgstr "عنف الشرطة — يصف أذًى أو استخدام قوة من قِبل الشرطة"
 
@@ -521,6 +557,12 @@ msgstr "السجلات (عرض القائمة)"
 
 msgid "Records (table view)"
 msgstr "السجلات (عرض الجدول)"
+
+msgid "Records grouped by the year they are from, oldest first."
+msgstr "سجلات مجمّعة حسب السنة، الأقدم أولًا."
+
+msgid "Records that link here"
+msgstr "السجلات التي تشير إلى هنا"
 
 msgid "Reference"
 msgstr "المرجع"
@@ -681,8 +723,8 @@ msgid ""
 "details, not all of them — please still read your account yourself before"
 " it is shared."
 msgstr ""
-"يبحث هذا الفحص عن الأنماط الشائعة فقط. يعثر على بعض التفاصيل التعريفية لا "
-"كلها — لذا يرجى قراءة روايتك بنفسك قبل مشاركتها."
+"يبحث هذا الفحص عن الأنماط الشائعة فقط. يعثر على بعض التفاصيل التعريفية لا"
+" كلها — لذا يرجى قراءة روايتك بنفسك قبل مشاركتها."
 
 msgid ""
 "This record carries the following content warnings. Review them before "
@@ -692,11 +734,17 @@ msgstr "يحمل هذا السجل تحذيرات المحتوى التالية.
 msgid "This record has access restrictions."
 msgstr "لهذا السجل قيود وصول."
 
+msgid "This record links to"
+msgstr "يشير هذا السجل إلى"
+
 msgid "Those contact details are too long."
 msgstr "بيانات الاتصال هذه طويلة جدًا."
 
 msgid "Tick anything a reader should be warned about before this is shown."
 msgstr "أشِّر على أي شيء ينبغي تحذير القارئ منه قبل عرض هذا."
+
+msgid "Timeline"
+msgstr "الخط الزمني"
 
 msgid "Title"
 msgstr "العنوان"
@@ -792,6 +840,9 @@ msgstr "حجب المحدد"
 
 msgid "Would publish as:"
 msgstr "سيُنشر بصفة:"
+
+msgid "Year"
+msgstr "السنة"
 
 msgid "Yes"
 msgstr "نعم"
@@ -942,6 +993,14 @@ msgstr "تم العثور على {count}"
 #, python-brace-format
 msgid "{count} public record(s)."
 msgstr "{count} سجل عام."
+
+#, python-brace-format
+msgid "{count} record(s) carry no date and are not shown here."
+msgstr "هناك {count} من السجلات بلا تاريخ ولا تظهر هنا."
+
+#, python-brace-format
+msgid "{count} record(s) name no place and are not shown here."
+msgstr "هناك {count} من السجلات لا تسمّي مكانًا ولا تظهر هنا."
 
 #, python-brace-format
 msgid "{when} — superseded by {event}"

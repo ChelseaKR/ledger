@@ -63,6 +63,16 @@ def test_relation_to_a_non_disclosed_record_is_dropped() -> None:
     assert not resolved  # nothing to render at all
 
 
+def test_custom_internal_id_is_not_misclassified_as_external() -> None:
+    """Hidden records with stable non-UUID ids remain invisible too."""
+    a = _disclosed("public", "Alpha", relation=["private-oral-history"])
+    resolved = search.resolve_relations(
+        a, [a], known_internal_ids={"public", "private-oral-history"}
+    )
+    assert resolved.outgoing == ()
+    assert resolved.external == ()
+
+
 def test_unknown_relation_string_is_external_plain_text() -> None:
     a = _disclosed("a" * 32, "Alpha", relation=["urn:isbn:9780000000000", "https://ex.org/x"])
     resolved = search.resolve_relations(a, [a])

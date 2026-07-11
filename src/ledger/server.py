@@ -1438,7 +1438,13 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         # Explicit DC ``relation`` links (and the reciprocal), resolved against only the
         # records the viewer may list: a relation to a sealed record resolves to nothing
         # (never leaks its existence), so this is safe for any grant (no-outing rule).
-        relations = search.resolve_relations(record, listable)
+        # A stable/custom internal id need not look like the default UUID hex. Pass
+        # the complete internal-id set so a relation to any non-listable record is
+        # dropped instead of misclassified as an external identifier and exposed.
+        known_internal_ids = {item.record_id for item in self._archive()._all_records()}
+        relations = search.resolve_relations(
+            record, listable, known_internal_ids=known_internal_ids
+        )
         main_html = _record_main_html(
             record,
             proceed=proceed,

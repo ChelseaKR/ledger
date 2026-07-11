@@ -444,12 +444,17 @@ def _looks_like_record_id(value: str) -> bool:
 
 
 def resolve_relations(
-    record: DisclosedRecord, candidates: Sequence[DisclosedRecord]
+    record: DisclosedRecord,
+    candidates: Sequence[DisclosedRecord],
+    *,
+    known_internal_ids: set[str] | None = None,
 ) -> RecordRelations:
     """Resolve ``record``'s Dublin Core ``relation`` links against disclosed records.
 
-    ``candidates`` is the set the *viewer* may list (the ``Archive.browse`` output), so
-    resolution is closed over exactly what the viewer can already see. For each
+    ``candidates`` is the set the *viewer* may list (the ``Archive.browse`` output).
+    ``known_internal_ids`` lets the caller identify hidden records even when their
+    stable id does not have the default UUID shape; those values are suppressed.
+    For each
     ``relation`` value on ``record``:
 
     * if it names a disclosed record's id -> that record is an **outgoing** link;
@@ -467,6 +472,7 @@ def resolve_relations(
     outgoing: list[DisclosedRecord] = []
     external: list[str] = []
     seen_out: set[str] = set()
+    internal_ids = known_internal_ids or set()
     for value in record.dublin_core.get("relation") or ():
         if value == record.record_id or value in seen_out:
             continue
@@ -474,7 +480,7 @@ def resolve_relations(
         if target is not None:
             outgoing.append(target)
             seen_out.add(value)
-        elif not _looks_like_record_id(value):
+        elif value not in internal_ids and not _looks_like_record_id(value):
             if value not in external:
                 external.append(value)
         # else: an id-shaped value we cannot see -> render nothing (no-outing).
