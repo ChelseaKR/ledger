@@ -10,7 +10,7 @@ name = "ledger-archive"
 version = "0.1.0"
 description = "A privacy-first community archive for queer histories and mutual-aid knowledge."
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 license = "AGPL-3.0-or-later"
 license-files = ["LICENSE"]
 authors = [{ name = "Chelsea Kelly-Reif" }]
@@ -22,7 +22,6 @@ classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: End Users/Desktop",
     "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Topic :: System :: Archiving",
     "Topic :: Sociology :: History",
@@ -51,6 +50,14 @@ dev = [
     # "run on one inexpensive box, no heavy dependency tree" property.
     "babel>=2.16",
 ]
+# Opt-in only (EXP-08): `ledger print-edition` renders its accessible HTML booklet
+# and the always-present plain-text fixity digest with no extra dependency at all;
+# this extra adds the scannable QR-code image alongside that text. `segno` is a
+# pure-Python, zero-dependency QR/SVG generator, so installing it keeps the "no
+# heavy dependency tree" property even for the machines that opt in.
+print = [
+    "segno>=1.5,<2",
+]
 
 [project.urls]
 Homepage = "https://github.com/ChelseaKR/ledger"
@@ -66,7 +73,7 @@ packages = ["src/ledger"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py312"
 src = ["src", "tests"]
 
 [tool.ruff.lint]
@@ -85,7 +92,7 @@ max-complexity = 10
 "tests/*" = ["S101"]  # asserts are the point of a test
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.12"
 strict = true
 warn_unreachable = true
 warn_redundant_casts = true

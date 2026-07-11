@@ -31,6 +31,7 @@ import tempfile
 from pathlib import Path
 
 from ledger.access import disclose, is_listable
+from ledger.attest import attested_conditions
 from ledger.bag import refresh_tag_manifests, validate_bag, write_bag
 from ledger.cas import ContentStore
 from ledger.config import Config
@@ -64,6 +65,14 @@ from ledger.preservation import identify_file
 _RECORD_FILENAME = "record.json"
 _DC_FILENAME = "dublincore.json"
 _PREMIS_FILENAME = "premis.json"
+
+# Suffix of the per-record, append-only version index written beside the fast-lookup
+# manifest under ``records/``. It lists, oldest first, the CAS address of every prior
+# manifest snapshot with when it was superseded and by what kind of event — a
+# lightweight living-document history over the content store, outside any bag (so it
+# needs no tag-manifest reseal). Each snapshot already passed the identity-refusing
+# :func:`serialize_record`, so the history carries no contributor identity (no-outing).
+_VERSIONS_SUFFIX = ".versions.json"
 
 # Environment variable a deployment may set to supply the vault key without putting
 # it in config or on a command line -> confidentiality. The vault itself owns the
@@ -623,6 +632,17 @@ class Archive:
 
     # --- reads --------------------------------------------------------------
 
+    def attested_conditions(self) -> frozenset[str]:
+        """The ``SEALED_CONDITIONAL`` conditions attested-met for this archive.
+
+        Loaded from the durable attested-conditions set under ``logs/`` (written by
+        the 2-of-N :mod:`ledger.attest` flow). Every read path funnels this into
+        :func:`ledger.access.disclose` as ``conditions_met`` — see :meth:`disclose`
+        and :meth:`browse` — so a field "sealed until a condition is met" opens
+        uniformly for *all* callers (CLI, server, export) the moment its condition is
+        attested, and stays sealed until then (fail-closed)."""
+        return attested_conditions(self.logs_dir)
+
     def _record_path(self, record_id: str) -> Path:
         """The fast-lookup manifest path for ``record_id`` under ``records/``."""
         return self.records_dir / f"{record_id}.json"
@@ -643,6 +663,10 @@ class Archive:
             return deserialize_record(in_bag.read_text(encoding="utf-8"))
         raise ObjectNotFound(record_id)
 
+    def _versions_path(self, record_id: str) -> Path:
+        """The append-only version-index path for ``record_id`` under ``records/``."""
+        return self.records_dir / f"{record_id}{_VERSIONS_SUFFIX}"
+
     def apply_update(self, record: Record, event: PremisEvent) -> None:
         """Persist an updated record manifest and append a PREMIS event to its bag.
 
@@ -653,6 +677,14 @@ class Archive:
         auditable (accountability, traceability). All writes go through the
         identity-refusing :func:`serialize_record`, so a persisted manifest can never
         carry an in-memory identity (no-outing rule).
+
+        Before the fast-lookup manifest is overwritten, its *current* bytes are
+        snapshotted into the content store and recorded in an append-only per-record
+        version index (:meth:`record_versions`), so a steward can compare the record
+        against any prior revision (living-document history). The snapshot reuses the
+        already-identity-free manifest bytes and the CAS, so it adds no new no-outing
+        surface and needs no bag reseal (the index lives under ``records/``, outside
+        every bag).
 
         Because ``record.json`` and ``premis.json`` are *tag* files covered by the
         bag's tag manifests, rewriting them would leave the tag manifests stale and
@@ -665,6 +697,16 @@ class Archive:
         """
         manifest = serialize_record(record)
         fast = self.records_dir / f"{record.record_id}.json"
+
+        # Snapshot the manifest being superseded into the CAS and note it in the
+        # append-only version index, oldest first. Done before the overwrite so the
+        # previous revision is preserved; the very first update of a freshly ingested
+        # record snapshots its as-ingested manifest.
+        if fast.exists():
+            prior = fast.read_bytes()
+            address = self.store.put_bytes(prior)
+            self._append_version(record.record_id, str(address), event.event_type.value)
+
         fast.write_text(manifest, encoding="utf-8", newline="\n")
 
         bag_dir = self.bags_dir / record.record_id
@@ -686,6 +728,61 @@ class Archive:
         if resealed and next(bag_dir.glob("tagmanifest-*.txt"), None) is not None:
             refresh_tag_manifests(bag_dir)
 
+    def _append_version(self, record_id: str, address: str, event_type: str) -> None:
+        """Append one superseded-manifest snapshot to the record's version index.
+
+        The index is append-only and canonical (sorted keys, compact) so the history
+        is byte-stable and cannot be silently rewritten (auditability, reproducibility).
+        Each entry names only the snapshot's opaque CAS ``address``, when it was saved,
+        and the kind of event that superseded it — never a contributor identity or a
+        sealed value (no-outing rule)."""
+        path = self._versions_path(record_id)
+        entries = self._read_versions(path)
+        entries.append({"address": address, "saved_at": now_iso(), "event_type": event_type})
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(canonical_json(entries), encoding="utf-8", newline="\n")
+
+    @staticmethod
+    def _read_versions(path: Path) -> list[dict[str, str]]:
+        """Load a version index as a list of string maps, empty if absent/unreadable."""
+        if not path.exists():
+            return []
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+        except (ValueError, OSError):
+            return []
+        if not isinstance(raw, list):
+            return []
+        return [{str(k): str(v) for k, v in item.items()} for item in raw if isinstance(item, dict)]
+
+    def record_versions(self, record_id: str) -> list[dict[str, str]]:
+        """Return ``record_id``'s prior-manifest snapshots, oldest first.
+
+        Each entry is ``{"address", "saved_at", "event_type"}`` — the CAS address of a
+        superseded manifest, when it was superseded, and by what kind of event. Returns
+        an empty list when the record has never been updated, so a caller can ask about
+        any record id safely. The index is identity-free by construction (every snapshot
+        passed :func:`serialize_record`), so this discloses nothing protected (no-outing
+        rule)."""
+        return self._read_versions(self._versions_path(record_id))
+
+    def get_version(self, record_id: str, address: str) -> Record:
+        """Rebuild a prior :class:`~ledger.models.Record` from a snapshot ``address``.
+
+        Reads the snapshotted manifest bytes back out of the content store and
+        deserializes them, so a steward can view exactly what the record said at that
+        revision (living-document history). The ``address`` must be one listed in
+        :meth:`record_versions` for this record; :class:`~ledger.errors.ObjectNotFound`
+        is raised (naming only the address) if no such snapshot exists. The snapshot
+        already passed the identity-refusing :func:`serialize_record`, so the returned
+        record carries only the opaque ``identity_ref`` token, never an identity
+        (no-outing rule)."""
+        known = {entry["address"] for entry in self.record_versions(record_id)}
+        if address not in known:
+            raise ObjectNotFound(address)
+        addr = ContentAddress.parse(address)
+        return deserialize_record(self.store.read_bytes(addr).decode("utf-8"))
+
     def log_takedown(self, event: PremisEvent) -> None:
         """Append a takedown/withdrawal decision to the archive-level takedowns log.
 
@@ -698,6 +795,32 @@ class Archive:
         self.logs_dir.mkdir(parents=True, exist_ok=True)
         log = PremisLog.read(log_path) if log_path.exists() else PremisLog()
         log.record(event)
+        log.write(log_path)
+
+    def log_grant_use(self, subject: str, route_class: str, *, now: str | None = None) -> None:
+        """Append a scrubbed record that an authenticated grant was used on a request.
+
+        Written to ``logs/grant-uses.premis.json`` so a steward can see *that* a
+        provisioned subject exercised its capability and on *which class of route*
+        (e.g. ``browse``, ``api``, ``steward``) — accountability for privileged
+        access. It records only the grant ``subject`` (a pre-provisioned identifier,
+        never a real contributor name) and a coarse route class: never the bearer
+        token, never a record id, never a query string, so the audit trail itself
+        discloses nothing (no-outing rule — logs disclose nothing).
+        """
+        self.logs_dir.mkdir(parents=True, exist_ok=True)
+        log_path = self.logs_dir / "grant-uses.premis.json"
+        log = PremisLog.read(log_path) if log_path.exists() else PremisLog()
+        log.record(
+            PremisEvent(
+                event_type=PremisEventType.VALIDATION,
+                agent=subject,
+                outcome="success",
+                detail=f"authenticated grant used on {route_class} route",
+                linked_object=None,
+                event_datetime=now if now is not None else now_iso(),
+            )
+        )
         log.write(log_path)
 
     def remove_all_copies(self, record_id: str) -> tuple[int, bool]:
@@ -746,6 +869,13 @@ class Archive:
         fast = self.records_dir / f"{record_id}.json"
         if fast.exists():
             fast.unlink()
+        # Remove the append-only version index too, so a takedown leaves no dangling
+        # history pointer. The snapshot bytes it referenced are content-addressed and
+        # identity-free; they are left to normal store maintenance rather than chased
+        # here, keeping this destructive primitive simple.
+        versions = self._versions_path(record_id)
+        if versions.exists():
+            versions.unlink()
         for location in self.config.locations:
             replica = Path(location.path) / record_id
             if replica.exists() and replica != bag_dir:
@@ -769,7 +899,9 @@ class Archive:
         record (confidentiality).
         """
         stamp = now if now is not None else now_iso()
-        return disclose(self.get(record_id), grant, stamp)
+        return disclose(
+            self.get(record_id), grant, stamp, conditions_met=self.attested_conditions()
+        )
 
     def _all_records(self) -> list[Record]:
         """Load every stored record manifest from the fast-lookup directory.
@@ -781,6 +913,11 @@ class Archive:
             return []
         records: list[Record] = []
         for path in self.records_dir.glob("*.json"):
+            # The append-only version indexes live under records/ with the same
+            # extension; they are not manifests, so skip them (they would only be
+            # skipped later as unparseable, but this is explicit and cheaper).
+            if path.name.endswith(_VERSIONS_SUFFIX):
+                continue
             try:
                 records.append(deserialize_record(path.read_text(encoding="utf-8")))
             except (LedgerError, ValueError, OSError):
@@ -800,10 +937,11 @@ class Archive:
         ``created_at`` then ``record_id`` — for a stable browse (predictability).
         """
         stamp = now if now is not None else now_iso()
+        conditions = self.attested_conditions()
         out: list[DisclosedRecord] = []
         for record in self._all_records():
-            if is_listable(record, grant, stamp):
-                out.append(disclose(record, grant, stamp))
+            if is_listable(record, grant, stamp, conditions_met=conditions):
+                out.append(disclose(record, grant, stamp, conditions_met=conditions))
         return out
 
     def resolve_identity(

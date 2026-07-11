@@ -177,7 +177,13 @@ class HandoffManifest:
         )
 
 
-def build_handoff(archive: Archive, *, now: str, successor: str | None = None) -> HandoffManifest:
+def build_handoff(
+    archive: Archive,
+    *,
+    now: str,
+    successor: str | None = None,
+    attest_steward: str | None = None,
+) -> HandoffManifest:
     """Build a :class:`HandoffManifest` for ``archive`` as of instant ``now``.
 
     Re-verifies every bag's fixity (so the successor inherits a *checked* archive),
@@ -185,7 +191,25 @@ def build_handoff(archive: Archive, *, now: str, successor: str | None = None) -
     encrypted vault live — without ever reading an identity, a sealed value, or the
     vault key (no-outing rule). ``now`` is injected rather than read from the clock,
     so a hand-off is reproducible. ``successor`` optionally names who is taking over.
+
+    A folding group is exactly the ``group-dissolved`` event the ``SEALED_CONDITIONAL``
+    tier waits on (FIX-07). When ``attest_steward`` is given, this files a
+    *proposal* to attest ``group-dissolved`` on the group's behalf — a proposal only:
+    it still needs a second, distinct steward to ``attest approve`` before any seal
+    opens, so the hand-off can *initiate* the dissolution attestation without one
+    person unilaterally springing sealed records open. Omitted, the hand-off has no
+    side effects and stays a pure inventory.
     """
+    if attest_steward is not None:
+        # Imported lazily so the pure-inventory path carries no attestation machinery.
+        from ledger.attest import AttestStore
+
+        AttestStore(archive.logs_dir).propose(
+            "group-dissolved",
+            attest_steward,
+            reason="group succession hand-off — dissolution attestation initiated",
+            now=now,
+        )
     inventory: list[RecordInventory] = []
     all_ok = True
     for bag_name, report in archive.audit_fixity():
