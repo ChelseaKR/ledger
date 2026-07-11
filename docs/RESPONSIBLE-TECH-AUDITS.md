@@ -185,7 +185,17 @@ Applicability decisions and the N/A for AI-Evaluation live in
   a *distinct*, regenerated-per-release register extracted from those paragraphs
   with owner + date does not exist yet as its own artifact. Tracked in
   `docs/ROADMAP.md` (RTF-06, QM-09).
-- **Signed off:** 2026-07-05 — Chelsea Kelly-Reif.
+- **Sealing-layer crypto design (FIX-11):** the identity vault's Fernet-key reuse
+  across identity and content ciphertext, and the `enc:` string-prefix envelope,
+  are internal design choices, not yet blessed by an external cryptographer.
+  [`docs/audits/crypto-design-review-sealing-layer.md`](audits/crypto-design-review-sealing-layer.md)
+  is the design doc (key-hierarchy and envelope proposal, open questions) meant to
+  be handed to that reviewer before RM2 broadens at-rest encryption on top of
+  these choices. **The review itself has not happened** — this is prep, not a
+  closed gap; do not read the design doc's existence as sign-off.
+- **Signed off:** 2026-07-05 — Chelsea Kelly-Reif. *(The FIX-11 sealing-layer
+  design doc above was added after this date and is explicitly excluded from this
+  sign-off — it is awaiting its own, separate, external review.)*
 
 ---
 
@@ -199,6 +209,7 @@ Applicability decisions and the N/A for AI-Evaluation live in
 - [`docs/audits/ethics-consequence-scan.md`](audits/ethics-consequence-scan.md) — review-ready draft; human sign-off pending (RTF-01)
 - [`docs/audits/dpia.md`](audits/dpia.md) — Data Protection Impact Assessment draft (dated 2026-07-07; human review pending)
 - [`docs/audits/bias-representational-harm.md`](audits/bias-representational-harm.md) — dated review draft, six findings and a tracked recommendations table (human review pending)
+- [`docs/audits/crypto-design-review-sealing-layer.md`](audits/crypto-design-review-sealing-layer.md) — FIX-11 key-hierarchy/envelope design doc, drafted for an external cryptographer; **review pending, not yet committed as a sign-off**
 - **Not yet created** (tracked in [`docs/ROADMAP.md`](ROADMAP.md#open-conformance-gaps)): `docs/audits/residual-risk-register.md`
 
 No LLM or model inference exists anywhere in ledger (ingest, fixity, access policy,
