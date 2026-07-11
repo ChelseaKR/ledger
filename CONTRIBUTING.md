@@ -61,7 +61,7 @@ make install
 ```
 
 This creates a virtual environment in `.venv` and installs ledger plus the dev tooling (ruff,
-mypy, pytest, pip-audit — the PEP 735 `dev` dependency group in `pyproject.toml`) from the
+mypy, pytest, pip-audit, zizmor — the PEP 735 `dev` dependency group in `pyproject.toml`) from the
 locked, hash-pinned graph in `uv.lock` (`uv sync --locked`), not a fresh version-range resolve.
 If you add or bump a dependency, run `make lock` to regenerate `uv.lock` and commit the result
 alongside the `pyproject.toml` change. Run `make help` to see every target.
@@ -87,7 +87,8 @@ A change merges when the full gate is green. Reproduce it locally with:
 make verify
 ```
 
-`make verify` runs **lint + type + test + i18n + accessibility + audit + secret-scan** — the same
+`make verify` runs **lint + type + test + i18n + accessibility + audit + secret-scan + claims +
+workflow-lint** — the same
 `make` targets CI's required checks run, on the same pinned toolchain, so green locally means green
 in CI (CI-CD-STANDARD CICD-27: local `make verify` and the CI required-check set are kept in parity
 by hand; if you add a CI job, add its target to `verify` in the same PR).
@@ -101,6 +102,8 @@ by hand; if you add a CI job, add its target to `verify` in the same PR).
 | Accessibility | `make accessibility` | static checks (landmarks, labels, `lang`, alt text, contrast) |
 | Audit | `make audit` | pip-audit dependency vulnerability scan — blocking, never muted |
 | Secret scan | `make secret-scan` | gitleaks over full history if installed locally; CI is authoritative |
+| Claims | `make claims` | truthfulness gate: README/doc factual claims verified against the repo |
+| Workflow lint | `make workflow-lint` | zizmor static analysis of `.github/workflows/*.yml` — injection, credential persistence, permissions |
 
 Two gates are called out separately because they protect the project's core promises, and a
 regression in either must be unmistakable, not buried:

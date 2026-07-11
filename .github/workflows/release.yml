@@ -373,7 +373,7 @@ jobs:
     needs: [build, sbom, provenance, sign, publish-pypi, verify-published]
     runs-on: ubuntu-latest
     permissions:
-      contents: write   # softprops/action-gh-release creates the GitHub Release + uploads assets
+      contents: write   # `gh release create` needs to create the Release + upload assets
     steps:
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
         with:
@@ -394,9 +394,19 @@ jobs:
       # release end to end (the sdist/wheel PyPI got, the SBOM, the cosign
       # detached signatures) ships as GitHub Release assets too, alongside the
       # GitHub-native attest-sbom/attest-build-provenance attestations recorded
-      # above (`gh attestation verify`).
-      - uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b  # v3.0.1
-        with:
-          files: release-assets/*
-          generate_release_notes: true
-          fail_on_unmatched_files: true
+      # above (`gh attestation verify`). The runner's own `gh` CLI does this in
+      # one auditable command — one less third-party action in the release path
+      # (zizmor superfluous-actions). `--verify-tag` refuses to invent a release
+      # for a tag that no longer exists; the un-nullglobbed `release-assets/*`
+      # makes gh fail loudly if the assets are missing rather than shipping an
+      # empty release.
+      - name: Publish GitHub Release with verification assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "$GITHUB_REF_NAME" release-assets/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes \
+            --verify-tag

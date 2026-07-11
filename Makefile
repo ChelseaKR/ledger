@@ -12,7 +12,7 @@ PY   ?= $(if $(wildcard $(VENV)/bin/python),$(VENV)/bin/python,python3)
 
 .DEFAULT_GOAL := help
 .PHONY: help venv install lock lint format type test cov audit accessibility acr demo serve \
-        i18n i18n-compile claims secret-scan container verify clean
+        i18n i18n-compile claims secret-scan workflow-lint container verify clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -117,6 +117,13 @@ secret-scan: ## Secret scan (gitleaks) — mirrors ci.yml's supply-chain job loc
 	}
 	gitleaks detect --source . --config .gitleaks.toml --no-banner --redact --exit-code 1
 
+workflow-lint: ## Static analysis of the workflow YAML itself (zizmor) — mirrors ci.yml's workflow-lint job
+	# zizmor ships a compiled binary via its pip wheel, not a `python -m`-runnable
+	# module, so it's invoked directly off $(VENV)/bin, falling back to PATH.
+	@if [ -x "$(VENV)/bin/zizmor" ]; then "$(VENV)/bin/zizmor" .github/workflows; \
+	elif command -v zizmor >/dev/null 2>&1; then zizmor .github/workflows; \
+	else echo "zizmor not found; run 'make install' (or 'pip install zizmor')"; exit 1; fi
+
 container: ## Build the self-host image and scan it for CRITICAL/HIGH CVEs (Trivy)
 	# Not part of `verify`: it needs a working Docker daemon, which not every
 	# contributor's environment has, and a Dockerfile-only change is rare enough
@@ -128,11 +135,12 @@ container: ## Build the self-host image and scan it for CRITICAL/HIGH CVEs (Triv
 
 # The full gate. Determinism + reproducibility: same inputs, same result, every run.
 # Matches CI's required-check set byte-for-byte (CICD-27): the `gate`, `i18n`,
-# `accessibility`, and `supply-chain` jobs in ci.yml run exactly these targets, so
-# green here means green in CI. (The `no-outing-audit` job is `test`'s own
-# `disclosure`-marked subset, run standalone in CI for visibility, not a distinct
-# local gate; `container` is intentionally excluded — see its own target comment.)
-verify: lint type test i18n accessibility audit secret-scan claims ## Run the complete merge gate (== CI's required checks)
+# `accessibility`, `supply-chain`, and `workflow-lint` jobs in ci.yml run exactly
+# these targets, so green here means green in CI. (The `no-outing-audit` job is
+# `test`'s own `disclosure`-marked subset, run standalone in CI for visibility, not
+# a distinct local gate; `container` is intentionally excluded — see its own
+# target comment.)
+verify: lint type test i18n accessibility audit secret-scan claims workflow-lint ## Run the complete merge gate (== CI's required checks)
 	@echo "verify: all gates green"
 
 clean: ## Remove caches and build artifacts (never touches an archive's data)
