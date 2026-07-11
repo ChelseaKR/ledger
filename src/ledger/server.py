@@ -52,6 +52,7 @@ import time
 from email import policy as email_policy
 from email.parser import BytesParser
 from pathlib import Path
+from typing import BinaryIO
 from urllib.parse import parse_qs, quote, unquote, urlsplit
 
 from ledger import consent, contribute, export, i18n, oai, pagination, review, search, upload
@@ -2160,49 +2161,61 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             self._handle_not_found()
             return
         try:
-            try:
-                byte_range = _parse_range(self.headers.get("Range"), size)
-            except ValueError:
-                self.send_response(416)
-                self.send_header("Content-Range", f"bytes */{size}")
-                self.send_header("X-Content-Type-Options", "nosniff")
-                self.end_headers()
-                return
-            if byte_range is None:
-                status, start, end = 200, 0, size - 1
-            else:
-                status, (start, end) = 206, byte_range
-            length = end - start + 1
-            self.send_response(status)
-            self.send_header("Content-Type", payload.media_type or "application/octet-stream")
-            self.send_header("Content-Length", str(length))
-            self.send_header("Accept-Ranges", "bytes")
-            if status == 206:
-                self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
-            self.send_header("X-Content-Type-Options", "nosniff")
-            # RFC 6266: a percent-encoded filename* is a recognized-safe way to carry
-            # the (already CR/LF/quote-stripped) name, and it renders non-ASCII names
-            # correctly for a bilingual archive. Keep an ASCII filename= fallback.
-            safe_name = _safe_filename(filename)
-            self.send_header(
-                "Content-Disposition",
-                f"inline; filename=\"{safe_name}\"; filename*=UTF-8''{quote(safe_name, safe='')}",
-            )
-            self.send_header("Content-Security-Policy", "default-src 'none'; sandbox")
-            self.send_header("Referrer-Policy", "no-referrer")
-            self.end_headers()
-            if handle is not None:
-                handle.seek(start)
-                remaining = length
-                while remaining > 0:
-                    chunk = handle.read(min(CHUNK_SIZE, remaining))
-                    if not chunk:
-                        break
-                    self.wfile.write(chunk)
-                    remaining -= len(chunk)
+            self._send_file_response(handle, payload, filename, size)
         finally:
             if handle is not None:
                 handle.close()
+
+    def _send_file_response(
+        self, handle: BinaryIO | None, payload: PayloadFile, filename: str, size: int
+    ) -> None:
+        """Write the (range-aware) file response headers, then stream the bytes.
+
+        ``handle`` is the already-open payload handle (``None`` for HEAD). A
+        syntactically valid but unsatisfiable ``Range`` gets a clean ``416``;
+        otherwise a single satisfiable range gets ``206`` and anything else the
+        full ``200`` (RFC 9110 §14). The caller owns closing ``handle``.
+        """
+        try:
+            byte_range = _parse_range(self.headers.get("Range"), size)
+        except ValueError:
+            self.send_response(416)
+            self.send_header("Content-Range", f"bytes */{size}")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.end_headers()
+            return
+        if byte_range is None:
+            status, start, end = 200, 0, size - 1
+        else:
+            status, (start, end) = 206, byte_range
+        length = end - start + 1
+        self.send_response(status)
+        self.send_header("Content-Type", payload.media_type or "application/octet-stream")
+        self.send_header("Content-Length", str(length))
+        self.send_header("Accept-Ranges", "bytes")
+        if status == 206:
+            self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        # RFC 6266: a percent-encoded filename* is a recognized-safe way to carry
+        # the (already CR/LF/quote-stripped) name, and it renders non-ASCII names
+        # correctly for a bilingual archive. Keep an ASCII filename= fallback.
+        safe_name = _safe_filename(filename)
+        self.send_header(
+            "Content-Disposition",
+            f"inline; filename=\"{safe_name}\"; filename*=UTF-8''{quote(safe_name, safe='')}",
+        )
+        self.send_header("Content-Security-Policy", "default-src 'none'; sandbox")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.end_headers()
+        if handle is not None:
+            handle.seek(start)
+            remaining = length
+            while remaining > 0:
+                chunk = handle.read(min(CHUNK_SIZE, remaining))
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+                remaining -= len(chunk)
 
     # --- consent (user research P0-2): the contributor's front door ---------
 
