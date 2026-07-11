@@ -26,7 +26,7 @@ tracked."
 | Standard | Control(s) | Gap | Status | Closes when |
 |---|---|---|---|---|
 | Security & Supply Chain | SEC-28, REL-18 | No container CVE scan; base image pinned by tag, not digest | Open | Trivy job + digest pin (P1-1) |
-| Security & Supply Chain | SEC-07 | No Semgrep; SAST coverage today is CodeQL + ruff-S only | Open | P1-3 |
+| Security & Supply Chain | SEC-07 | No Semgrep; SAST coverage today is CodeQL + ruff-S only | Closed — [`.github/workflows/semgrep.yml`](../.github/workflows/semgrep.yml) runs Semgrep's `p/ci` ruleset on every PR and weekly, SARIF uploaded to the Security tab | P1-3 |
 | Security & Supply Chain | SEC-19 | No scheduled full-history secret scan (TruffleHog) | Open | P1-3 |
 | Security & Supply Chain | SEC-04 | No Harden-Runner egress policy on any workflow | Open | P1-7 |
 | Security & Supply Chain | SEC-17 | No pre-commit hooks | Open | P1-4 |
