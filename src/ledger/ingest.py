@@ -58,6 +58,7 @@ from ledger.models import (
     PremisEventType,
     PremisRights,
     Record,
+    TranscriptCue,
     canonical_json,
     now_iso,
 )
@@ -131,6 +132,20 @@ def serialize_record(record: Record) -> str:
                 "size_bytes": p.size_bytes,
                 "policy": p.policy.value,
                 "transcript": p.transcript,
+                # RM6: structured segment/timing cues (WebVTT/SRT-derived), empty
+                # when the payload carries only the flat ``transcript`` above.
+                # Disclosed under the SAME payload policy — no separate cue-level
+                # policy field (see TranscriptCue's docstring on the open
+                # per-cue-consent-granularity question).
+                "cues": [
+                    {
+                        "start": cue.start,
+                        "end": cue.end,
+                        "text": cue.text,
+                        "speaker": cue.speaker,
+                    }
+                    for cue in p.cues
+                ],
             }
             for p in record.payloads
         ],
@@ -193,6 +208,7 @@ def _field_from_dict(item: dict[str, object]) -> Field:
 def _payload_from_dict(item: dict[str, object]) -> PayloadFile:
     """Rebuild one :class:`~ledger.models.PayloadFile` from its mapping."""
     size = item.get("size_bytes", 0)
+    cues = tuple(_cue_from_dict(c) for c in _as_dicts(item.get("cues", [])))
     return PayloadFile(
         filename=str(item.get("filename", "")),
         address=ContentAddress.parse(str(item.get("address", ""))),
@@ -200,6 +216,18 @@ def _payload_from_dict(item: dict[str, object]) -> PayloadFile:
         size_bytes=size if isinstance(size, int) else 0,
         policy=AccessPolicy(str(item.get("policy", AccessPolicy.SEALED_UNTIL.value))),
         transcript=str(item.get("transcript", "")),
+        cues=cues,
+    )
+
+
+def _cue_from_dict(item: dict[str, object]) -> TranscriptCue:
+    """Rebuild one :class:`~ledger.models.TranscriptCue` from its mapping (RM6)."""
+    speaker = item.get("speaker")
+    return TranscriptCue(
+        start=str(item.get("start", "")),
+        end=str(item.get("end", "")),
+        text=str(item.get("text", "")),
+        speaker=str(speaker) if speaker is not None else None,
     )
 
 
@@ -351,6 +379,9 @@ def ingest_sip(  # noqa: C901
         source = sip.payload[filename]
         existing = declared.get(filename)
         transcript = existing.transcript if existing is not None else ""
+        # RM6: a pre-declared payload's structured caption cues (WebVTT/SRT-parsed)
+        # ride through the one ingest path exactly like its flat transcript does.
+        cues = existing.cues if existing is not None else ()
         # Identify the format from the clear source bytes (content-based, before any
         # at-rest encryption). A confident content signature beats a filename guess.
         fmt = identify_file(source)
@@ -392,6 +423,7 @@ def ingest_sip(  # noqa: C901
                 size_bytes=size,
                 policy=policy,
                 transcript=transcript,
+                cues=cues,
             )
         )
         # A fixity check per payload: the stored address re-derived from the bytes,

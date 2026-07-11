@@ -256,3 +256,17 @@ Also shipped since (2026-07-02), corrected 2026-07-11: **RM5** PREMIS Rights ent
 Also shipped since (2026-07-02): **RM12+EXP-04** named-subject consent standing — subject claim tokens minted at ingest (`consent.issue_subject_token`/`verify_subject_token`, `SubjectTokenStore` persisting hashes only), a verified `subject-objection` consent request with a recorded, time-bound `due_by`/`resolved_at`, and a contribution-receipt one-time token hand-off (`server.py`, `contribute.py`).
 
 **RM7 — more UI languages + RTL + remaining i18n gates (shipped).** Added **French** and **Arabic** UI catalogs (`locales/fr`, `locales/ar`) alongside en/es, each fully translated including plural forms (Arabic's six CLDR categories) and every content-warning gloss. Added RTL plumbing — `i18n.text_direction()` and autonyms `Français`/`العربية` — so the page shell emits `<html lang="…" dir="ltr|rtl">`. Closed the remaining i18n gates: **G1** UTF-8 byte check (`tools/check_i18n_utf8.py`), **G9** test-only pseudolocale (`i18n.pseudolocalize`), **G10** RTL direction, **G11** `Content-Language` + `Vary: Accept-Language` on every response, **G12** CLDR/Babel freshness pin (`tools/check_i18n_deps.py` + `babel<3`). The `make i18n` gate now enforces en/es/fr/ar key-parity/completeness. Verify: `make verify` green (549 tests). See `docs/I18N.md`.
+
+## Implementation status — 2026-07-09 (RM6, PR under review)
+Shipped this pass: the standards-grounded slice of **RM6** — WebVTT (W3C) and SRT
+caption/transcript *ingest* (`captions.py`, `models.TranscriptCue`, `ingest.py`,
+`cli.py --captions`, `render.py`), i.e. parsing an already-transcribed caption file
+into real, standard segment/timing structure and storing it alongside the existing
+flat `transcript` field. No speech-to-text; ledger still does no transcription of
+its own — the human transcription step and the harder UX/consent-granularity
+decisions stay deferred exactly as before. Verify: `make verify` green (571 tests,
+with dedicated RM6 coverage). **Deliberately not implemented**: a per-cue disclosure
+policy/consent granularity finer than the existing whole-payload policy — see
+`ledger.models.TranscriptCue`'s docstring and the PR description for the concrete
+open question, informed by the (separate, unmerged) EXP-09 oral-history session
+kit's per-segment `Field`-policy precedent. RM7 (languages/RTL) shipped separately.

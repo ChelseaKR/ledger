@@ -109,6 +109,19 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   asserted in-repo (`tests/test_redact_suggest.py`), and every surface carries the
   honest caveat that this finds *some* identifying detail, not all of it — addressing
   the residual self-disclosure risk noted in the threat model (§4.3).
+- **Captions/transcripts with real segment/timing structure (RM6).** `ledger ingest
+  --captions filename=path.vtt|.srt` parses an *already-transcribed* WebVTT (W3C) or
+  SRT caption file into structured `TranscriptCue` segments (start, end, text, and a
+  speaker label where the source format names one — WebVTT's `<v>` voice span; SRT has
+  no standardized speaker syntax) and stores them on the payload alongside the existing
+  flat `transcript` field, which is auto-backfilled from the cues so every existing
+  plain-text consumer (search, the H3 transcript render, export) keeps working
+  unchanged. The record page renders the structured cues as an ordered list of timed
+  segments. Cues are disclosed under the *same* payload-level policy as everything
+  else about the file — there is no separate, weaker disclosure path and no
+  per-cue/per-segment consent policy (that granularity question is open; see
+  `ledger.models.TranscriptCue`'s docstring). This is caption-file *ingest* only:
+  ledger performs no speech-to-text.
 - **Disclosure-policy workflow.** First-class, accountable steward commands to set and
   apply a disclosure policy on an already-archived item, enforced by the core engine and
   honoured by the reading-room:

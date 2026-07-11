@@ -101,3 +101,16 @@ class ConsentError(LedgerError):
 
 class ModerationError(LedgerError):
     """A moderation or takedown action was malformed or unauthorized."""
+
+
+class CaptionParseError(LedgerError):
+    """An uploaded WebVTT or SRT caption/transcript file is malformed.
+
+    Raised by :mod:`ledger.captions` on a structural problem (missing ``WEBVTT``
+    signature, an unparsable timestamp, an end time not after its start, or a
+    cue/block with no timings). The message names only the *line number and
+    condition*, never the caption text itself, so a malformed file's content
+    cannot leak into a log or an error (no-outing rule, defense in depth: caption
+    text is contributor-supplied prose, potentially about the same sensitive
+    material a transcript field would carry).
+    """

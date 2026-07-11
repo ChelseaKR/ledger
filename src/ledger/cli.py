@@ -27,11 +27,13 @@ import json
 import os
 import sys
 from collections.abc import Sequence
+from dataclasses import replace as _dc_replace
 from pathlib import Path
 
 from ledger import (
     acr_gen,
     attest,
+    captions,
     checkup,
     demo,
     dualcontrol,
@@ -193,20 +195,46 @@ def _cmd_ingest(args: argparse.Namespace) -> int:  # noqa: C901
     # media type is guessed so an audio/video file is recognised as such.
     import mimetypes
 
-    predeclared: list[PayloadFile] = []
+    predeclared: dict[str, PayloadFile] = {}
     for fname, text in _parse_pairs(args.transcript or []):
         guessed, _ = mimetypes.guess_type(fname)
-        predeclared.append(
-            PayloadFile(
+        predeclared[fname] = PayloadFile(
+            filename=fname,
+            address=ContentAddress(algo=HashAlgo.SHA256, digest="0" * 64),
+            media_type=guessed or "application/octet-stream",
+            policy=record.default_policy,
+            transcript=text,
+        )
+    # RM6: --captions filename=path attaches a structured, ALREADY-TRANSCRIBED
+    # WebVTT or SRT caption file to a payload — ledger parses the file's real
+    # segment/timing structure, it does not transcribe audio or video itself (that
+    # stays a human/deferred step). The file's format is sniffed from its content
+    # (ledger.captions.sniff_caption_format), never guessed from the path's
+    # extension. An explicit --transcript for the same filename is kept verbatim;
+    # otherwise the cues' flattened text becomes the flat transcript so every
+    # plain-text consumer (search indexing, the non-structured render, an export)
+    # keeps working unchanged.
+    for fname, caption_path in _parse_pairs(args.captions or []):
+        caption_text = Path(caption_path).read_text(encoding="utf-8")
+        cues = tuple(captions.parse_captions(caption_text))
+        plain = captions.cues_to_plain_text(list(cues))
+        existing = predeclared.get(fname)
+        if existing is not None:
+            predeclared[fname] = _dc_replace(
+                existing, cues=cues, transcript=existing.transcript or plain
+            )
+        else:
+            guessed, _ = mimetypes.guess_type(fname)
+            predeclared[fname] = PayloadFile(
                 filename=fname,
                 address=ContentAddress(algo=HashAlgo.SHA256, digest="0" * 64),
                 media_type=guessed or "application/octet-stream",
                 policy=record.default_policy,
-                transcript=text,
+                transcript=plain,
+                cues=cues,
             )
-        )
     if predeclared:
-        record.payloads = predeclared
+        record.payloads = list(predeclared.values())
 
     identity: ContributorIdentity | None = None
     # Seal whenever ANY contributor material is supplied, so a contact given without
@@ -1394,6 +1422,16 @@ def _build_parser() -> argparse.ArgumentParser:
         action="append",
         metavar="filename=text",
         help="a transcript/caption for an audio or video payload (accessibility)",
+    )
+    p_ingest.add_argument(
+        "--captions",
+        action="append",
+        metavar="filename=path.vtt|path.srt",
+        help=(
+            "an already-transcribed WebVTT or SRT caption file for an audio or video "
+            "payload, ingested with its real segment/timing structure (RM6; not "
+            "speech-to-text — the file must already be transcribed)"
+        ),
     )
     p_ingest.add_argument("--contributor-name", help="sealed into the vault; never printed back")
     p_ingest.add_argument("--contributor-contact", help="sealed into the vault")
