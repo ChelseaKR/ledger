@@ -1,0 +1,14 @@
+{
+  "name": "ledger-a11y-browser",
+  "version": "0.0.0",
+  "private": true,
+  "description": "CI/dev-only browser accessibility harness (Playwright + axe) over the served ledger demo. Not part of the stdlib-only runtime.",
+  "license": "AGPL-3.0-or-later",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.10.0",
+    "@playwright/test": "^1.48.0"
+  }
+}
