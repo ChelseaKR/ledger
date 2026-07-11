@@ -674,3 +674,44 @@ def test_print_edition_cli_renders_an_accessible_booklet(
     assert "1 record(s)" in out_text
     assert out.is_file()
     assert "Public sample" in out.read_text(encoding="utf-8")
+
+
+# --- offline redaction assistant (EXP-07) -----------------------------------
+
+
+def test_redact_suggest_reads_a_file_and_prints_findings_as_json(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``redact-suggest --file`` scans a text file entirely offline and reports it."""
+    scanned = tmp_path / "account.txt"
+    scanned.write_text(
+        "You can reach me at witness.line@example.com or 555-234-5678.",
+        encoding="utf-8",
+    )
+    rc = cli.main(["redact-suggest", "--file", str(scanned)])
+    assert rc == 0
+    out = json.loads(capsys.readouterr().out)
+    kinds = {s["kind"] for s in out["suggestions"]}
+    assert "email" in kinds
+    assert "phone" in kinds
+    assert out["count"] == len(out["suggestions"])
+    # The honest caveat travels with the result — never a completeness claim.
+    assert "not all" in out["caveat"]
+
+
+def test_redact_suggest_reads_stdin_and_never_applies_anything(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Without ``--file``, ``redact-suggest`` reads stdin; it writes nothing anywhere."""
+    import io
+
+    monkeypatch.setattr(
+        "sys.stdin", io.StringIO("It was a hard year but we got through it together.")
+    )
+    rc = cli.main(["redact-suggest"])
+    assert rc == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["suggestions"] == []
+    assert out["count"] == 0
+    # A scan command takes no --root: it cannot touch an archive, only read text.
+    assert list(tmp_path.iterdir()) == []

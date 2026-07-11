@@ -1782,10 +1782,16 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             disclose(preview, anonymous(), now) if is_listable(preview, anonymous(), now) else None
         )
         visibility = form.get("visibility") or "community"
-        panel = contribute.render_preview_panel(
-            stranger_view, visibility=visibility, lang=self._lang()
-        )
-        self._handle_contribute_form(values=form, preview_html=panel)
+        lang = self._lang()
+        panel = contribute.render_preview_panel(stranger_view, visibility=visibility, lang=lang)
+        # The offline redaction assistant (EXP-07) runs over the contributor's own
+        # account text — not the stranger-disclosed view — so it can flag a detail
+        # even when the requested visibility would otherwise hide the whole record
+        # from a stranger. It only ever suggests; nothing here is applied.
+        account_field = submission.record.field_named("account")
+        account_text = account_field.value if account_field is not None else ""
+        redaction_panel = contribute.render_redaction_suggestions(account_text, lang=lang)
+        self._handle_contribute_form(values=form, preview_html=panel + redaction_panel)
 
     # --- contributor self-service withdrawal --------------------------------
 

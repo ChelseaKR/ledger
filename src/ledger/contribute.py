@@ -34,7 +34,7 @@ import html
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 
-from ledger import i18n, upload
+from ledger import i18n, redact_suggest, upload
 from ledger.config import Config
 from ledger.errors import ValidationError
 from ledger.identity import ContributorIdentity
@@ -390,6 +390,75 @@ def render_contribute_main(
         '      <button type="submit" name="action" value="submit">'
         f"{_esc(i18n.t(lang, 'button_submit'))}</button></p>\n"
         "    </form>\n"
+    )
+
+
+_SUGGESTION_KIND_LABEL_KEY: dict[redact_suggest.SuggestionKind, str] = {
+    redact_suggest.SuggestionKind.NAME: "redact_kind_name",
+    redact_suggest.SuggestionKind.ADDRESS: "redact_kind_address",
+    redact_suggest.SuggestionKind.PHONE: "redact_kind_phone",
+    redact_suggest.SuggestionKind.EMAIL: "redact_kind_email",
+    redact_suggest.SuggestionKind.HANDLE: "redact_kind_handle",
+    redact_suggest.SuggestionKind.DATE: "redact_kind_date",
+}
+
+# Bounds how many distinct example spans are listed per kind, so a long account
+# with many repeats of the same pattern (e.g. a date mentioned ten times) cannot
+# blow up the preview page — the count in the heading still reflects the total.
+_MAX_EXAMPLES_PER_KIND = 8
+
+
+def render_redaction_suggestions(account: str, *, lang: str = i18n.DEFAULT_LANG) -> str:
+    """Render the offline redaction-assistant panel for a contributor's account text.
+
+    Runs the entirely local, offline detector (:mod:`ledger.redact_suggest`) over
+    ``account`` — the free text a contributor wrote, not any stranger-disclosed
+    view — and lists what it found, grouped by kind, with the exact matched text so
+    the contributor can find and judge each one themselves. This is a *suggestion*
+    only (EXP-07): nothing here edits ``account`` or applies a seal — a contributor
+    who wants a detail hidden edits their own text, or (once the record exists) a
+    steward applies the existing per-field sealing (``ledger seal`` / ``ledger
+    redact``). The caveat that this finds *some*, not all, identifying detail is
+    always shown, whether or not anything was found, so an empty result never reads
+    as an all-clear guarantee (false confidence is the documented failure mode).
+    """
+    suggestions = redact_suggest.suggest(account)
+    counts = redact_suggest.summary_counts(suggestions)
+    if suggestions:
+        groups = []
+        for kind, label_key in _SUGGESTION_KIND_LABEL_KEY.items():
+            kind_hits = [s for s in suggestions if s.kind == kind]
+            if not kind_hits:
+                continue
+            seen: list[str] = []
+            for hit in kind_hits:
+                if hit.text not in seen:
+                    seen.append(hit.text)
+                if len(seen) >= _MAX_EXAMPLES_PER_KIND:
+                    break
+            items = "".join(f"        <li><code>{_esc(example)}</code></li>\n" for example in seen)
+            groups.append(
+                "      <li>\n"
+                f"        {_esc(i18n.t(lang, label_key))} "
+                f"({_esc(i18n.t(lang, 'redact_found_count', count=counts[kind.value]))})\n"
+                "        <ul>\n"
+                f"{items}"
+                "        </ul>\n"
+                "      </li>\n"
+            )
+        body = (
+            f"      <p>{_esc(i18n.t(lang, 'redact_suggest_found', count=len(suggestions)))}</p>\n"
+            "      <ul>\n" + "".join(groups) + "      </ul>\n"
+        )
+    else:
+        body = f"      <p>{_esc(i18n.t(lang, 'redact_suggest_empty'))}</p>\n"
+    return (
+        '    <section class="redact-suggest" aria-labelledby="redact-suggest-heading">\n'
+        f'      <h2 id="redact-suggest-heading">{_esc(i18n.t(lang, "redact_suggest_heading"))}'
+        "</h2>\n"
+        f"{body}"
+        f'      <p class="hint">{_esc(i18n.t(lang, "redact_suggest_caveat"))}</p>\n'
+        "    </section>\n"
     )
 
 

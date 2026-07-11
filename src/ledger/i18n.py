@@ -333,6 +333,23 @@ def _messages(translation: gettext.NullTranslations) -> dict[str, str]:
         "preview_sealed_hint": _(
             "Your name and contact are never shown to any reader — they are sealed. They are not in this preview."
         ),
+        "redact_suggest_heading": _("Possible identifying details in your account"),
+        "redact_suggest_found": _(
+            "An automatic, offline check found {count} possible identifying detail(s) below. Nothing is changed — review each one and edit your account yourself if you want it removed."
+        ),
+        "redact_suggest_empty": _(
+            "An automatic, offline check did not find an obvious name, address, phone number, email, handle, or date in your account."
+        ),
+        "redact_suggest_caveat": _(
+            "This check looks for common patterns only. It finds some identifying details, not all of them — please still read your account yourself before it is shared."
+        ),
+        "redact_found_count": _("{count} found"),
+        "redact_kind_name": _("Possible name"),
+        "redact_kind_address": _("Possible address"),
+        "redact_kind_phone": _("Possible phone number"),
+        "redact_kind_email": _("Possible email address"),
+        "redact_kind_handle": _("Possible handle or username"),
+        "redact_kind_date": _("Possible date"),
         "thanks_heading": _("Thank you — your contribution was received"),
         "thanks_status": _(
             "It is sealed and waiting for a steward to review it. Nothing you submitted is public yet, and any contact details you gave are encrypted and will never be shown."

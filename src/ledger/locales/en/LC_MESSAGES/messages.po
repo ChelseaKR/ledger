@@ -77,6 +77,22 @@ msgstr ""
 "topics, kinds, and languages they cover. Every number counts only what is"
 " publicly visible."
 
+msgid ""
+"An automatic, offline check did not find an obvious name, address, phone "
+"number, email, handle, or date in your account."
+msgstr ""
+"An automatic, offline check did not find an obvious name, address, phone "
+"number, email, handle, or date in your account."
+
+msgid ""
+"An automatic, offline check found {count} possible identifying detail(s) "
+"below. Nothing is changed — review each one and edit your account "
+"yourself if you want it removed."
+msgstr ""
+"An automatic, offline check found {count} possible identifying detail(s) "
+"below. Nothing is changed — review each one and edit your account "
+"yourself if you want it removed."
+
 msgid "Apply dates"
 msgstr "Apply dates"
 
@@ -406,6 +422,27 @@ msgstr "Persistent identifier"
 msgid "Police violence — describes harm or force by police"
 msgstr "Police violence — describes harm or force by police"
 
+msgid "Possible address"
+msgstr "Possible address"
+
+msgid "Possible date"
+msgstr "Possible date"
+
+msgid "Possible email address"
+msgstr "Possible email address"
+
+msgid "Possible handle or username"
+msgstr "Possible handle or username"
+
+msgid "Possible identifying details in your account"
+msgstr "Possible identifying details in your account"
+
+msgid "Possible name"
+msgstr "Possible name"
+
+msgid "Possible phone number"
+msgstr "Possible phone number"
+
 msgid "Preview what a stranger sees"
 msgstr "Preview what a stranger sees"
 
@@ -577,6 +614,15 @@ msgstr "The takedown is confirmed at every storage location."
 
 msgid "There are no public records yet."
 msgstr "There are no public records yet."
+
+msgid ""
+"This check looks for common patterns only. It finds some identifying "
+"details, not all of them — please still read your account yourself before"
+" it is shared."
+msgstr ""
+"This check looks for common patterns only. It finds some identifying "
+"details, not all of them — please still read your account yourself before"
+" it is shared."
 
 msgid ""
 "This record carries the following content warnings. Review them before "
@@ -793,6 +839,10 @@ msgstr[0] ""
 msgstr[1] ""
 "{count} details are restricted under your current access. If you are a "
 "community member or steward, sign in to see what is withheld and why."
+
+#, python-brace-format
+msgid "{count} found"
+msgstr "{count} found"
 
 #, python-brace-format
 msgid "{count} public record(s)."

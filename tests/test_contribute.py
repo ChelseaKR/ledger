@@ -384,6 +384,90 @@ def test_preview_of_sealed_shows_a_stranger_sees_nothing(
     assert "Secret account." not in panel  # the account is not exposed to a stranger
 
 
+# --- offline redaction assistant (EXP-07) -----------------------------------
+
+
+def _redact_suggest_panel(body: str) -> str:
+    """Extract the redaction-assistant panel from a rendered preview page."""
+    start = body.index('<section class="redact-suggest"')
+    return body[start : body.index("</section>", start)]
+
+
+@pytest.mark.disclosure
+def test_preview_flags_a_likely_identifying_detail(
+    open_server: tuple[Archive, str],
+) -> None:
+    """Preview surfaces the offline redaction assistant's findings, unapplied."""
+    archive, base = open_server
+    status, body = _post(
+        base,
+        "/contribute",
+        {
+            "action": "preview",
+            "title": "A hard night",
+            "account": "You can reach me at survivor.contact@example.com afterward.",
+            "visibility": "sealed",
+        },
+    )
+    assert status == 200
+    panel = _redact_suggest_panel(body)
+    assert "survivor.contact@example.com" in panel
+    # It only ever suggests — nothing is stored or altered by a preview.
+    assert archive._all_records() == []
+    # The caveat against false confidence is always shown alongside a finding.
+    assert "common patterns only" in panel
+
+
+@pytest.mark.disclosure
+def test_preview_redaction_assistant_runs_even_when_a_stranger_sees_nothing(
+    open_server: tuple[Archive, str],
+) -> None:
+    """The assistant scans the contributor's own text, not the stranger view.
+
+    A sealed/community submission shows a stranger nothing, but self-disclosure
+    risk (threat model §4.3) exists the moment the words are written, regardless
+    of the requested visibility — so the assistant still runs and still flags it.
+    """
+    _archive, base = open_server
+    status, body = _post(
+        base,
+        "/contribute",
+        {
+            "action": "preview",
+            "title": "Held back",
+            "account": "Call me at 555-234-5678 when you get this.",
+            "visibility": "sealed",
+        },
+    )
+    assert status == 200
+    stranger_panel = _preview_panel(body)
+    assert "A stranger sees nothing" in stranger_panel
+    redact_panel = _redact_suggest_panel(body)
+    assert "555-234-5678" in redact_panel
+
+
+@pytest.mark.disclosure
+def test_preview_redaction_assistant_says_so_plainly_when_nothing_is_found(
+    open_server: tuple[Archive, str],
+) -> None:
+    """An empty result still shows the caveat — never reads as an all-clear."""
+    _archive, base = open_server
+    status, body = _post(
+        base,
+        "/contribute",
+        {
+            "action": "preview",
+            "title": "A quiet account",
+            "account": "It was a hard year but we got through it together.",
+            "visibility": "public",
+        },
+    )
+    assert status == 200
+    panel = _redact_suggest_panel(body)
+    assert "did not find" in panel
+    assert "common patterns only" in panel
+
+
 # --- file upload (backlog A2) ----------------------------------------------
 
 # A minimal payload carrying the PNG signature; sniffing reads only the prefix.

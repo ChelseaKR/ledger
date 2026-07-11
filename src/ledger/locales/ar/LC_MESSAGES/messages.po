@@ -86,6 +86,22 @@ msgstr ""
 "ملخّص سريع للسجلات العامة في هذا الأرشيف — الموضوعات والأنواع واللغات "
 "التي تغطّيها. كل رقم يحصي ما هو مرئي علنًا فقط."
 
+msgid ""
+"An automatic, offline check did not find an obvious name, address, phone "
+"number, email, handle, or date in your account."
+msgstr ""
+"لم يعثر فحص تلقائي يعمل دون اتصال على اسم أو عنوان أو رقم هاتف أو بريد "
+"إلكتروني أو معرّف أو تاريخ واضح في روايتك."
+
+#, python-brace-format
+msgid ""
+"An automatic, offline check found {count} possible identifying detail(s) "
+"below. Nothing is changed — review each one and edit your account "
+"yourself if you want it removed."
+msgstr ""
+"عثر فحص تلقائي يعمل دون اتصال على {count} من التفاصيل التعريفية المحتملة "
+"أدناه. لم يتغير شيء — راجع كل تفصيل وعدّل روايتك بنفسك إذا أردت إزالته."
+
 msgid "Apply dates"
 msgstr "تطبيق التواريخ"
 
@@ -446,6 +462,27 @@ msgstr "المعرّف الدائم"
 msgid "Police violence — describes harm or force by police"
 msgstr "عنف الشرطة — يصف أذًى أو استخدام قوة من قِبل الشرطة"
 
+msgid "Possible address"
+msgstr "عنوان محتمل"
+
+msgid "Possible date"
+msgstr "تاريخ محتمل"
+
+msgid "Possible email address"
+msgstr "عنوان بريد إلكتروني محتمل"
+
+msgid "Possible handle or username"
+msgstr "معرّف أو اسم مستخدم محتمل"
+
+msgid "Possible identifying details in your account"
+msgstr "تفاصيل تعريفية محتملة في روايتك"
+
+msgid "Possible name"
+msgstr "اسم محتمل"
+
+msgid "Possible phone number"
+msgstr "رقم هاتف محتمل"
+
 msgid "Preview what a stranger sees"
 msgstr "معاينة ما يراه الغريب"
 
@@ -640,6 +677,14 @@ msgid "There are no public records yet."
 msgstr "لا توجد سجلات عامة بعد."
 
 msgid ""
+"This check looks for common patterns only. It finds some identifying "
+"details, not all of them — please still read your account yourself before"
+" it is shared."
+msgstr ""
+"يبحث هذا الفحص عن الأنماط الشائعة فقط. يعثر على بعض التفاصيل التعريفية لا "
+"كلها — لذا يرجى قراءة روايتك بنفسك قبل مشاركتها."
+
+msgid ""
 "This record carries the following content warnings. Review them before "
 "continuing."
 msgstr "يحمل هذا السجل تحذيرات المحتوى التالية. راجِعها قبل المتابعة."
@@ -778,9 +823,9 @@ msgid ""
 "anyone can read — copy them now:"
 msgstr ""
 "ذكرت أن هذا السجل يسمّي أشخاصًا آخرين. أعطِ كل واحد منهم رمزًا من الرموز "
-"أدناه، بصورة خاصة وشخصيًا حيثما أمكن. يمكن لأي شخص يحمل رمزًا الاعتراض على "
-"ذكر اسمه، وسيعامل المشرف اعتراضه على أنه مؤكّد. تُعرض هذه الرموز مرة واحدة "
-"فقط ولا تُخزَّن بصيغة يمكن لأي شخص قراءتها — انسخها الآن:"
+"أدناه، بصورة خاصة وشخصيًا حيثما أمكن. يمكن لأي شخص يحمل رمزًا الاعتراض "
+"على ذكر اسمه، وسيعامل المشرف اعتراضه على أنه مؤكّد. تُعرض هذه الرموز مرة "
+"واحدة فقط ولا تُخزَّن بصيغة يمكن لأي شخص قراءتها — انسخها الآن:"
 
 msgid "Your account"
 msgstr "حسابك"
@@ -886,6 +931,10 @@ msgstr[4] ""
 msgstr[5] ""
 "{count} تفصيل مقيّد ضمن وصولك الحالي. إذا كنت عضوًا في المجتمع أو مشرفًا،"
 " فسجّل الدخول لمعرفة ما هو محجوب ولماذا."
+
+#, python-brace-format
+msgid "{count} found"
+msgstr "تم العثور على {count}"
 
 #, python-brace-format
 msgid "{count} public record(s)."
