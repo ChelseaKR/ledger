@@ -121,6 +121,16 @@ def _normalize_newlines(text: str) -> str:
     return text.lstrip("﻿").replace("\r\n", "\n").replace("\r", "\n")
 
 
+def _has_webvtt_signature(text: str) -> bool:
+    return text == "WEBVTT" or text.startswith(("WEBVTT\n", "WEBVTT ", "WEBVTT\t"))
+
+
+def _is_webvtt_metadata_block(head: str) -> bool:
+    return head in {"NOTE", "STYLE", "REGION"} or head.startswith(
+        ("NOTE ", "NOTE\t", "STYLE ", "STYLE\t", "REGION ", "REGION\t")
+    )
+
+
 def _parse_timestamp(raw: str, pattern: re.Pattern[str], *, context: str) -> float:
     """Parse one WebVTT- or SRT-shaped timestamp to seconds, or raise naming ``context``."""
     match = pattern.match(raw.strip())
@@ -188,7 +198,7 @@ def sniff_caption_format(text: str) -> str | None:
     non-blank line. Anything else is unrecognised.
     """
     body = _normalize_newlines(text).lstrip()
-    if body.startswith("WEBVTT"):
+    if _has_webvtt_signature(body):
         return "vtt"
     lines = [ln for ln in body.splitlines() if ln.strip()]
     if not lines:
@@ -198,6 +208,27 @@ def sniff_caption_format(text: str) -> str | None:
     if "-->" in lines[0] and "," in lines[0]:
         return "srt"
     return None
+
+
+def _parse_webvtt_cue(lines: list[str], cue_number: int) -> TranscriptCue:
+    context = f"cue {cue_number}"
+    timing_index = 0 if "-->" in lines[0] else 1
+    if timing_index >= len(lines):
+        raise CaptionParseError(f"{context}: cue has no timings line")
+    start_raw, end_raw = _split_timing_line(lines[timing_index], context=context)
+    start = _parse_timestamp(start_raw, _WEBVTT_TS, context=f"{context} start time")
+    end = _parse_timestamp(end_raw, _WEBVTT_TS, context=f"{context} end time")
+    if end <= start:
+        raise CaptionParseError(f"{context}: end time must be after the start time")
+    speaker, cue_text = _extract_voice(lines[timing_index + 1 :])
+    if not cue_text:
+        raise CaptionParseError(f"{context}: cue text must not be empty")
+    return TranscriptCue(
+        start=_format_timestamp(start),
+        end=_format_timestamp(end),
+        text=cue_text,
+        speaker=speaker,
+    )
 
 
 def parse_webvtt(text: str) -> list[TranscriptCue]:
@@ -216,7 +247,8 @@ def parse_webvtt(text: str) -> list[TranscriptCue]:
     file with no cues at all.
     """
     body = _normalize_newlines(text)
-    if not body.lstrip().startswith("WEBVTT"):
+    signature = body.lstrip()
+    if not _has_webvtt_signature(signature):
         raise CaptionParseError("not a WebVTT file: missing the 'WEBVTT' signature")
     blocks = _BLOCK_SPLIT.split(body.strip("\n"))
 
@@ -230,29 +262,10 @@ def parse_webvtt(text: str) -> list[TranscriptCue]:
         if not lines or not lines[0].strip():
             continue
         head = lines[0].strip()
-        if head.startswith(("NOTE", "STYLE", "REGION")):
+        if _is_webvtt_metadata_block(head):
             continue
 
-        idx = 0
-        if "-->" not in lines[0]:
-            idx = 1  # an optional cue identifier line precedes the timings
-        if idx >= len(lines):
-            raise CaptionParseError(f"cue {len(cues) + 1}: cue has no timings line")
-        context = f"cue {len(cues) + 1}"
-        start_raw, end_raw = _split_timing_line(lines[idx], context=context)
-        start = _parse_timestamp(start_raw, _WEBVTT_TS, context=f"{context} start time")
-        end = _parse_timestamp(end_raw, _WEBVTT_TS, context=f"{context} end time")
-        if end <= start:
-            raise CaptionParseError(f"{context}: end time must be after the start time")
-        speaker, cue_text = _extract_voice(lines[idx + 1 :])
-        cues.append(
-            TranscriptCue(
-                start=_format_timestamp(start),
-                end=_format_timestamp(end),
-                text=cue_text,
-                speaker=speaker,
-            )
-        )
+        cues.append(_parse_webvtt_cue(lines, len(cues) + 1))
 
     if not cues:
         raise CaptionParseError("no cues found in WebVTT file")
@@ -294,6 +307,8 @@ def parse_srt(text: str) -> list[TranscriptCue]:
             raise CaptionParseError(f"{context}: end time must be after the start time")
         text_lines = lines[idx + 1 :]
         cue_text = " ".join(" ".join(text_lines).split())
+        if not cue_text:
+            raise CaptionParseError(f"{context}: cue text must not be empty")
         cues.append(
             TranscriptCue(
                 start=_format_timestamp(start),

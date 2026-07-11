@@ -359,10 +359,10 @@ class PayloadFile:
     file (:mod:`ledger.captions`) rather than typed as a single block of plain
     text. It is empty whenever no structured captions were supplied — ``transcript``
     alone remains fully supported and is what every existing reader/exporter keeps
-    using. When both are present, ``transcript`` is the flattened text of ``cues``
-    (their text joined in order), kept in sync at ingest so a plain-text consumer
-    (search indexing, the flat transcript render, an export) never has to know
-    ``cues`` exists. ``cues`` is disclosed under the *same* payload policy as
+    using. When captions are the only transcript source, ``transcript`` is flattened
+    from ``cues``; an explicitly supplied flat transcript is retained as a distinct,
+    potentially fuller human-authored alternative. ``cues`` is disclosed under the
+    *same* payload policy as
     everything else here — see :class:`TranscriptCue` for why no finer-grained,
     per-cue policy is implemented yet.
     """

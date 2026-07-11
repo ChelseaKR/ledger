@@ -225,6 +225,30 @@ def test_parse_captions_rejects_unrecognised_format() -> None:
         parse_captions("Dear diary, today I...")
 
 
+def test_webvtt_signature_must_end_at_a_token_boundary() -> None:
+    """A lookalike prefix is not accepted as the mandatory WebVTT signature."""
+    with pytest.raises(CaptionParseError):
+        parse_webvtt("WEBVTT-NOT-VALID\n\n00:00.000 --> 00:01.000\ntext")
+
+
+def test_note_prefix_can_still_be_a_real_cue_identifier() -> None:
+    """Only the WebVTT NOTE token starts a note block, not every NOTE-prefixed id."""
+    text = "WEBVTT\n\nNOTEworthy\n00:00.000 --> 00:01.000\nKept"
+    assert [cue.text for cue in parse_webvtt(text)] == ["Kept"]
+
+
+@pytest.mark.parametrize(
+    "parser,text",
+    [
+        (parse_webvtt, "WEBVTT\n\n00:00.000 --> 00:01.000\n<v Speaker></v>"),
+        (parse_srt, "1\n00:00:00,000 --> 00:00:01,000\n   "),
+    ],
+)
+def test_empty_cue_text_is_rejected(parser, text: str) -> None:
+    with pytest.raises(CaptionParseError):
+        parser(text)
+
+
 def test_cues_to_plain_text_joins_with_speaker_prefix() -> None:
     cues = parse_webvtt(_VTT)
     plain = cues_to_plain_text(cues)
