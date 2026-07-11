@@ -316,6 +316,7 @@ def test_no_identity_leak_on_new_surfaces(site: tuple[str, str, str]) -> None:
         "/governance",
         "/how-it-works",
         "/proof",
+        "/proof/attestation.json",
         "/status",
         "/oai?verb=ListRecords&metadataPrefix=oai_dc",
         "/sitemap.xml",
@@ -339,3 +340,20 @@ def test_healthz_counts_gated_to_steward(site: tuple[str, str, str]) -> None:
     _, boss_body, _ = _get(base, "/healthz", grant="boss")
     boss = json.loads(boss_body)
     assert boss["fixity"]["bags_audited"] >= 2  # a steward sees the real counts
+
+
+def test_proof_attestation_json_has_no_count_even_for_a_steward(
+    site: tuple[str, str, str],
+) -> None:
+    """EXP-01: unlike ``/healthz``, ``/proof/attestation.json`` never carries a
+    count, for *any* grant — the whole point is a non-steward third party (a
+    partner, a rival fork) can verify from it, so nothing in its shape can vary
+    by who is asking (see ``ledger.attestation`` for what is published and why)."""
+    base, _pub, _comm = site
+    status, body, _ = _get(base, "/proof/attestation.json")
+    # No attestation has been published in this fixture yet.
+    assert status == 404
+    assert json.loads(body)["status"] == "not_published"
+    status, boss_body, _ = _get(base, "/proof/attestation.json", grant="boss")
+    assert status == 404
+    assert json.loads(boss_body)["status"] == "not_published"

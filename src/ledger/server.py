@@ -58,6 +58,7 @@ from urllib.parse import parse_qs, quote, urlsplit
 from ledger import consent, contribute, export, i18n, oai, pagination, review, search, upload
 from ledger.access import anonymous, disclose, is_listable
 from ledger.access.grants import load_grants, load_revocations, verify_grant_token
+from ledger.attestation import HealthAttestation, latest_attestation_path
 from ledger.errors import (
     AccessDenied,
     LedgerError,
@@ -486,6 +487,8 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
                 self._handle_how_it_works()
             elif path == "/proof":
                 self._handle_proof()
+            elif path == "/proof/attestation.json":
+                self._handle_proof_attestation()
             elif path == "/oai":
                 self._handle_oai(params)
             elif path == "/sitemap.xml":
@@ -2226,29 +2229,109 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             ],
         )
 
+    def _load_latest_attestation(self) -> HealthAttestation | None:
+        """The most recently published :class:`HealthAttestation`, or ``None``.
+
+        Reads only the file ``ledger attest-health`` last wrote (EXP-01) — this
+        route never runs a fixity audit itself, so it stays cheap and safe to poll
+        even for an unauthenticated visitor (see :mod:`ledger.attestation`). A
+        missing, unreadable, or malformed file is treated as "nothing published
+        yet" rather than an error (failure transparency, degradability)."""
+        path = latest_attestation_path(self._archive())
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            return None
+        try:
+            return HealthAttestation.from_json(text)
+        except (ValueError, KeyError, TypeError):
+            return None
+
     def _handle_proof(self) -> None:
-        """``GET /proof`` — explain the verifiable no-outing guarantee (show, don't tell)."""
+        """``GET /proof`` — explain, and let a visitor check, the no-outing guarantee.
+
+        EXP-01: below the existing plain-language promise, this now shows the
+        most recently published transparency attestation — a dated, optionally
+        signed statement of archive health anyone can independently check — and
+        links to its machine-readable form at ``/proof/attestation.json``.
+        """
+        lang = self._lang()
         chain_head = self._archive().chain_head_summary()
-        self._info_page(
-            "Our promise, proven",
-            "We prove the promise, we don't just state it",
-            [
-                "The claim 'contributor identities are never shown here' is not an honour-system "
-                "promise — it is a test the software must pass on every build.",
-                "A contributor's identity is stored only as an opaque token plus encrypted data "
-                "in a separate vault. The record a page is built from has no place to put an "
-                "identity, so there is nothing to leak.",
-                "The project's audit ingests a sentinel identity and then checks that it appears "
-                "on no page, in no data file, in no backup, and in no log — and that a sealed "
-                "record cannot even be confirmed to exist by an outsider.",
-                "The same discipline applies to the record of what happened here: every "
-                "preservation and moderation event is hash-chained, so editing history after "
-                "the fact — even by someone with direct access to the disk — changes this "
-                "archive's chain head. Anyone who has previously noted the value below can "
-                "confirm it has only ever moved forward: chain head "
-                f"{chain_head} (also published, for stewards, at /healthz).",
-            ],
+        attestation = self._load_latest_attestation()
+        if attestation is None:
+            attestation_html = (
+                "    <h2>Verify it yourself</h2>\n"
+                "    <p>No transparency attestation has been published yet. A steward "
+                "publishes one, on a schedule, by running "
+                "<code>ledger attest-health</code>.</p>"
+            )
+        else:
+            health = (
+                "passed its most recent fixity check"
+                if attestation.fixity_ok
+                else "did NOT pass its most recent fixity check — a steward has been notified"
+            )
+            signed = (
+                f"signed (format: {_esc(attestation.signature_format or 'unknown')})"
+                if attestation.signature
+                else "unsigned — this archive has not configured a signing key"
+            )
+            attestation_html = (
+                "    <h2>Verify it yourself</h2>\n"
+                f"    <p>As of {_esc(attestation.generated_at)}, this archive {_esc(health)}, "
+                f"running ledger {_esc(attestation.software_version)}. The attestation is "
+                f"{_esc(signed)}.</p>\n"
+                "    <p>The full, machine-readable attestation is at "
+                '<a href="/proof/attestation.json">/proof/attestation.json</a>. Its '
+                "<code>chain_head_summary</code> field changes the instant any record's or "
+                "log's history anywhere in the archive is rewritten, so saving two dated "
+                "copies over time and comparing them is enough to catch a rolled-back archive "
+                "— without trusting this server or any steward. See "
+                "<code>docs/VERIFYING-ATTESTATIONS.md</code> in the ledger source for how to "
+                "check the signature.</p>"
+            )
+        main_html = (
+            "    <h1>Our promise, proven</h1>\n"
+            "    <p>The claim 'contributor identities are never shown here' is not an "
+            "honour-system promise — it is a test the software must pass on every build.</p>\n"
+            "    <p>A contributor's identity is stored only as an opaque token plus encrypted "
+            "data in a separate vault. The record a page is built from has no place to put an "
+            "identity, so there is nothing to leak.</p>\n"
+            "    <p>The project's audit ingests a sentinel identity and then checks that it "
+            "appears on no page, in no data file, in no backup, and in no log — and that a "
+            "sealed record cannot even be confirmed to exist by an outsider.</p>\n"
+            "    <p>Preservation and moderation events are hash-chained, so editing history "
+            "after the fact changes the archive chain head. Anyone who previously noted it "
+            f"can confirm it only moved forward: <code>{_esc(chain_head)}</code> "
+            "(also available to stewards at <code>/healthz</code>).</p>\n"
+            f"{attestation_html}"
         )
+        self._send_html(
+            200,
+            _page("Our promise, proven", lang=lang, main_html=main_html, nav_html=self._nav()),
+        )
+
+    def _handle_proof_attestation(self) -> None:
+        """``GET /proof/attestation.json`` — the raw, machine-verifiable attestation (EXP-01).
+
+        Serves exactly the file ``ledger attest-health`` last published — never a
+        live fixity audit (a full audit re-hashes every stored payload; see
+        :mod:`ledger.attestation`) — so anyone, including an unauthenticated
+        partner or rival fork with no grant at all, can fetch and check this
+        cheaply and as often as they like.
+        """
+        attestation = self._load_latest_attestation()
+        if attestation is None:
+            self._send_json(
+                404,
+                {
+                    "status": "not_published",
+                    "detail": "no attestation has been published yet; a steward runs "
+                    "`ledger attest-health`.",
+                },
+            )
+            return
+        self._send_json(200, attestation.to_dict())
 
     # --- content retrieval (user research P0-4 / C4) -----------------------
 

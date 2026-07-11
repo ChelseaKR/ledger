@@ -167,6 +167,11 @@ class Config:
     # and requires configured off-box replicas). A steward sets this to arm the
     # one-command lockdown for their threat model (safety: default to narrowest).
     lockdown: LockdownConfig | None = None
+    # Path to an SSH private key a steward signs `/proof` attestations with
+    # (`ledger attest-health`, EXP-01; `ssh-keygen -Y sign`, no new runtime dep).
+    # Empty means "unconfigured": attestations still publish, just unsigned, so a
+    # fresh archive is never blocked on key setup (default to runnable).
+    attestation_signing_key: str = ""
     schema_version: int = CONFIG_SCHEMA_VERSION
 
     def validate(self) -> None:
@@ -262,6 +267,7 @@ class Config:
             # posture writes no lockdown block (least surprise, smallest config).
             **({"lockdown": self.lockdown.to_dict()} if self.lockdown is not None else {}),
             "objection_response_days": self.objection_response_days,
+            "attestation_signing_key": self.attestation_signing_key,
         }
 
     def save(self, path: Path) -> None:
@@ -347,6 +353,7 @@ class Config:
             dual_control_threshold=int(str(migrated.get("dual_control_threshold", 1))),
             lockdown=lockdown,
             objection_response_days=int(str(migrated.get("objection_response_days", 0))),
+            attestation_signing_key=str(migrated.get("attestation_signing_key", "")),
             schema_version=CONFIG_SCHEMA_VERSION,
         )
         config.validate()

@@ -41,6 +41,7 @@ from ledger.access.grants import (
     steward,
 )
 from ledger.access.redaction import redact_field, redact_payload
+from ledger.attestation import build_attestation, publish_attestation, sign_attestation
 from ledger.backup import create_backup, prune_backups, restore_backup, verify_backup
 from ledger.config import Config, StorageLocation
 from ledger.errors import LedgerError
@@ -1206,6 +1207,38 @@ def _cmd_checkup(args: argparse.Namespace) -> int:
     return report.exit_code
 
 
+def _cmd_attest_health(args: argparse.Namespace) -> int:
+    """``attest-health`` — publish a signed, dated transparency attestation (EXP-01).
+
+    Meant as a cron target: re-audits fixity, computes the archive's chain-head
+    summary, optionally signs the result with a steward's SSH key (``ssh-keygen
+    -Y sign``), and writes it where the server's ``/proof`` route serves it from
+    (:mod:`ledger.attestation`). No payload byte or contributor identity is ever
+    in the attestation (no-outing rule) — see the module docstring for exactly
+    what is published and why some things (like a raw record count) are not.
+
+    Exits non-zero when the fixity audit found a problem, so a cron failure
+    alerts a steward the same way ``ledger audit`` does — an unsigned or unhealthy
+    attestation is still published (a health problem should be visible, not
+    hidden by a failed publish step).
+    """
+    archive = _open_archive(Path(args.root))
+    now = args.now if args.now else now_iso()
+    attestation = build_attestation(archive, now=now)
+    key_path = args.signing_key or archive.config.attestation_signing_key
+    if key_path:
+        try:
+            attestation = sign_attestation(attestation, Path(key_path))
+        except LedgerError as exc:
+            print(f"attest-health: signing failed: {exc}", file=sys.stderr)
+            return 1
+    out_path = publish_attestation(archive, attestation)
+    status = "healthy" if attestation.fixity_ok else "FIXITY ISSUES PRESENT"
+    signed = "signed" if attestation.signature else "UNSIGNED"
+    print(f"attest-health: {status}, {signed}, published to {out_path}", file=sys.stderr)
+    return 0 if attestation.fixity_ok else 1
+
+
 def _cmd_demo(args: argparse.Namespace) -> int:
     """``demo`` — run the self-contained, scripted no-outing proof end to end."""
     return demo.main()
@@ -1589,6 +1622,18 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p_checkup.add_argument("--now", help="ISO-8601 timestamp for a reproducible report date")
     p_checkup.set_defaults(func=_cmd_checkup)
+
+    p_attest = sub.add_parser(
+        "attest-health", help="publish a signed transparency attestation to /proof (EXP-01)"
+    )
+    p_attest.add_argument("--root", required=True)
+    p_attest.add_argument(
+        "--signing-key",
+        help="path to an SSH private key to sign with (ssh-keygen -Y); "
+        "overrides the config's attestation_signing_key",
+    )
+    p_attest.add_argument("--now", help="ISO-8601 timestamp for a reproducible attestation")
+    p_attest.set_defaults(func=_cmd_attest_health)
 
     p_demo = sub.add_parser("demo", help="run the scripted end-to-end no-outing proof")
     p_demo.set_defaults(func=_cmd_demo)
