@@ -172,6 +172,14 @@ class Config:
     # Empty means "unconfigured": attestations still publish, just unsigned, so a
     # fresh archive is never blocked on key setup (default to runnable).
     attestation_signing_key: str = ""
+    # Legal-process transparency (EXP-10, warrant canary): an optional path to a
+    # ``TransparencyLog`` file the steward re-attests to on ``transparency_cadence_
+    # days``. Empty (the default) means the /transparency page renders an honest
+    # "no attestation on file" state rather than a fabricated one — this feature is
+    # opt-in because the statement's wording is gated on counsel review (see
+    # docs/TRANSPARENCY.md), not something ledger can turn on safely by default.
+    transparency_log_path: str = ""
+    transparency_cadence_days: int = 90
     schema_version: int = CONFIG_SCHEMA_VERSION
 
     def validate(self) -> None:
@@ -210,6 +218,8 @@ class Config:
         self._validate_lockdown()
         if self.objection_response_days < 0:
             raise ConfigError("objection_response_days must not be negative")
+        if self.transparency_cadence_days < 1:
+            raise ConfigError("transparency_cadence_days must be at least 1")
         for location in self.locations:
             location.validate()
 
@@ -268,6 +278,8 @@ class Config:
             **({"lockdown": self.lockdown.to_dict()} if self.lockdown is not None else {}),
             "objection_response_days": self.objection_response_days,
             "attestation_signing_key": self.attestation_signing_key,
+            "transparency_log_path": self.transparency_log_path,
+            "transparency_cadence_days": self.transparency_cadence_days,
         }
 
     def save(self, path: Path) -> None:
@@ -354,6 +366,8 @@ class Config:
             lockdown=lockdown,
             objection_response_days=int(str(migrated.get("objection_response_days", 0))),
             attestation_signing_key=str(migrated.get("attestation_signing_key", "")),
+            transparency_log_path=str(migrated.get("transparency_log_path", "")),
+            transparency_cadence_days=int(str(migrated.get("transparency_cadence_days", 90))),
             schema_version=CONFIG_SCHEMA_VERSION,
         )
         config.validate()

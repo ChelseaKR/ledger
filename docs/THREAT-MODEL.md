@@ -183,6 +183,14 @@ information directed at a steward or a host.*
   `docs/GOVERNANCE.md` and the takedown/consent machinery; this section concerns
   identity specifically. Stewards facing a demand should consult counsel; this document
   is a description of the software, not legal advice.
+- **Community transparency instrument.** This section tells a steward what to do;
+  it gives the *community* no way to see that a demand happened. `/transparency`
+  (EXP-10, `docs/TRANSPARENCY.md`) is an opt-in, dated, hash-chained legal-demand
+  attestation a steward re-attests to on a cadence — a warrant canary in the
+  established sense, where a stale or missing attestation is itself the signal.
+  It ships as mechanism only: the statement's wording is a legal instrument whose
+  safety and effect vary by jurisdiction, so ledger never publishes wording
+  claiming legal effect until a steward marks it counsel-reviewed.
 
 ### 4.3 Doxxing
 

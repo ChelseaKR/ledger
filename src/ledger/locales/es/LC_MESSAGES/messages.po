@@ -669,6 +669,9 @@ msgstr "Para retirarlo, vaya a"
 msgid "Transcript"
 msgstr "Transcripción"
 
+msgid "Transparency"
+msgstr "Transparencia"
+
 msgid "Type"
 msgstr "Tipo"
 

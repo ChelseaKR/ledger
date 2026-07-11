@@ -652,6 +652,9 @@ msgstr "To withdraw it, go to"
 msgid "Transcript"
 msgstr "Transcript"
 
+msgid "Transparency"
+msgstr "Transparency"
+
 msgid "Type"
 msgstr "Type"
 

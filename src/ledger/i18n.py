@@ -107,6 +107,7 @@ def _messages(translation: gettext.NullTranslations) -> dict[str, str]:
         "nav_overview": _("Overview"),
         "nav_status": _("Status"),
         "nav_about": _("About"),
+        "nav_transparency": _("Transparency"),
         "overview_heading": _("Collection overview"),
         "overview_intro": _(
             "An at-a-glance summary of the public records in this archive — the topics, kinds, and languages they cover. Every number counts only what is publicly visible."
