@@ -12,7 +12,7 @@ PY   ?= $(if $(wildcard $(VENV)/bin/python),$(VENV)/bin/python,python3)
 
 .DEFAULT_GOAL := help
 .PHONY: help venv install lock lint format type test cov audit accessibility acr demo serve \
-        i18n i18n-compile claims secret-scan workflow-lint container mutation verify clean
+        i18n i18n-compile claims secret-scan workflow-lint perf container mutation verify clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -127,6 +127,14 @@ workflow-lint: ## Static analysis of the workflow YAML itself (zizmor) — mirro
 	@if [ -x "$(VENV)/bin/zizmor" ]; then "$(VENV)/bin/zizmor" .github/workflows; \
 	elif command -v zizmor >/dev/null 2>&1; then zizmor .github/workflows; \
 	else echo "zizmor not found; run 'make install' (or 'pip install zizmor')"; exit 1; fi
+
+perf: ## Performance budgets (QM-02): CAS, fixity, ingest, browse must clear their time budgets
+	# Not part of `verify`: timing is meaningful relative to the machine it runs
+	# on, and a contributor's laptop under load is not that machine. CI's `perf`
+	# job (ci.yml) — a fixed, roughly consistent runner — is the gate of record;
+	# this target just lets a contributor run the same budgets locally out of
+	# curiosity or to reproduce a CI failure.
+	$(PY) tools/perf_budget.py
 
 container: ## Build the self-host image and scan it for CRITICAL/HIGH CVEs (Trivy)
 	# Not part of `verify`: it needs a working Docker daemon, which not every

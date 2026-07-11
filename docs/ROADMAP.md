@@ -41,9 +41,9 @@ tracked."
 | Accessibility | A11Y-11, 12, 16, 18 | No dated screen-reader/keyboard walkthrough artifact or `docs/a11y/STATEMENT.md` | Open | P2-3 |
 | Responsible Tech | RTF-03 | Review draft exists; accountable-owner review is pending | Open — [`docs/audits/bias-representational-harm.md`](audits/bias-representational-harm.md) (draft 2026-07-07) | P2-2 |
 | Responsible Tech | RTF-04 | DPIA draft exists; accountable-owner review is pending | Open — [`docs/audits/dpia.md`](audits/dpia.md), draft dated 2026-07-07 | P2-2 |
-| Quality & Metrics | QM-02 | No performance budgets/benchmarks in CI (README claim already removed pending this — see CHANGELOG) | Open | P3-5 |
-| Quality & Metrics | QM-11, QM-18 | No DORA delivery-health review artifact; no root `DEFINITION_OF_DONE.md` | Open | P2-5 |
-| Code Quality | CQ-01 | Python floor is `>=3.11`, not the `>=3.12` the standard's drift-remediation note names for ledger | Open | P1-2 |
+| Quality & Metrics | QM-02 | Performance budgets/benchmarks now run in CI (`perf` job, `tools/perf_budget.py`: CAS put/get, fixity hashing, ingest, browse) | Closed | P3-5 |
+| Quality & Metrics | QM-11, QM-18 | DORA delivery-health review and root definition of done are committed | Closed — [`docs/DORA-DELIVERY-HEALTH-REVIEW.md`](DORA-DELIVERY-HEALTH-REVIEW.md), [`DEFINITION_OF_DONE.md`](../DEFINITION_OF_DONE.md) | P2-5 |
+| Code Quality | CQ-01 | Python floor is `>=3.12` in project metadata and CI | Closed | P1-2 |
 | Code Quality | CQ-47 | No mutation testing on safety modules (`access/`, `identity.py`, `fixity.py`) | Closed — [`docs/MUTATION-TESTING.md`](MUTATION-TESTING.md), advisory `make mutation` / weekly CI, baseline dated 2026-07-07 | P3-3 |
 | Code Quality | CQ-05 (partial) | Complexity gate is now enforced (`ruff` C901, max 10); 7 pre-existing functions exceed it and are waived with dated `# noqa: C901` comments pending a deliberate, fully-retested split — not rushed under audit time pressure on safety-adjacent code | Open (waived) | See `# noqa: C901` sites in `accessibility_check.py`, `bag.py`, `cli.py`, `contribute.py`, `ingest.py`, `server.py` |
 
