@@ -1109,6 +1109,25 @@ class Archive:
         """
         return catalog_index.rebuild(self.index_path, self.records_dir)
 
+    def all_records_for_aggregation(self) -> list[Record]:
+        """The full corpus, grant-independent, for steward-side aggregate engines only.
+
+        Unlike :meth:`browse`, this is **not** a disclosure path: it returns raw
+        :class:`~ledger.models.Record` objects — including records no ordinary grant
+        may even list (``SEALED_UNTIL``/``SEALED_CONDITIONAL``/absolute-``SEALED``
+        defaults) — because an aggregate-count engine (EXP-14's reading-room enclave)
+        needs to count across the *whole* sealed corpus without ever disclosing one
+        record. Callers must never return an item from this list, or any per-field
+        value from it, to an untrusted caller; only k-anonymity-floored aggregate
+        counts derived from :attr:`~ledger.models.Record.dublin_core` (already
+        collection-level, not per-field sealed — see
+        :func:`ledger.access.policy.disclose`) may leave the boundary. This is a
+        thin, explicit wrapper over :meth:`_all_records` so that boundary has one
+        named, documented crossing point instead of every caller reaching into a
+        private method (least privilege, auditability).
+        """
+        return self._all_records()
+
     def browse(self, grant: Grant, now: str | None = None) -> list[DisclosedRecord]:
         """List, as safe disclosed records, everything ``grant`` may see at ``now``.
 

@@ -39,8 +39,18 @@ __all__ = ["ACTIONS", "ActionProposal", "ProposalStore"]
 # contributor's death, a group's dissolution); like the others it must be proposed
 # and approved by distinct stewards so no one steward can declare such a thing alone
 # (see :mod:`ledger.attest`).
+# "aggregate-query" (EXP-14) gates a reading-room enclave query: an aggregate-only
+# question over the sealed corpus, never a disclosure of any one record.
 ACTIONS: frozenset[str] = frozenset(
-    {"takedown", "unseal", "publish", "attest", "lockdown", "stand-up"}
+    {
+        "takedown",
+        "unseal",
+        "publish",
+        "attest",
+        "lockdown",
+        "stand-up",
+        "aggregate-query",
+    }
 )
 
 _OPEN = "open"

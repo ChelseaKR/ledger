@@ -150,6 +150,7 @@ class PremisEventType(StrEnum):
     REKEY = "key rotation"
     LOCKDOWN = "lockdown"
     STANDUP = "stand-up"
+    QUERY = "query"  # EXP-14 reading-room enclave: an aggregate query, answered or refused
 
 
 @dataclass(frozen=True)
