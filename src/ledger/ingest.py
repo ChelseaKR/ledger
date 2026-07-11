@@ -35,6 +35,7 @@ from ledger.access import disclose, is_listable
 from ledger.attest import attested_conditions
 from ledger.bag import atomic_write_text, refresh_tag_manifests, validate_bag, write_bag
 from ledger.cas import ContentStore
+from ledger.chain import GENESIS_HASH, ChainVerification
 from ledger.config import Config
 from ledger.errors import BagValidationError, LedgerError, ObjectNotFound
 from ledger.fixity import AuditReport, hash_file_multi
@@ -1213,13 +1214,24 @@ class Archive:
         abort the sweep: it is turned into a report with one failing result naming
         the structural problem, so one bad bag never hides the health of the rest
         (degradability, failure transparency).
+
+        Also verifies the bag's PREMIS hash chain (FIX-06) and folds any break into
+        the same report as an additional failing result. This catches what plain
+        BagIt fixity cannot: a steward with raw disk access can edit ``premis.json``
+        *and* regenerate the tag manifest to match, so byte-level fixity alone would
+        still report the bag as valid. The chain break is real tamper evidence for
+        that case; a full guarantee additionally needs the chain *head* compared
+        against another replica (:func:`ledger.replicate.verify_replicas`) or
+        published for community cross-checking (``/proof``), since a single copy
+        can still be rewritten self-consistently by an attacker who reruns this
+        same chaining logic.
         """
         if not self.bags_dir.exists():
             return []
         reports: list[tuple[str, AuditReport]] = []
         for bag_path in sorted(p for p in self.bags_dir.iterdir() if p.is_dir()):
             try:
-                reports.append((bag_path.name, validate_bag(bag_path)))
+                report = validate_bag(bag_path)
             except BagValidationError as exc:
                 synthetic = FixityResult(
                     path=bag_path.name,
@@ -1228,7 +1240,102 @@ class Archive:
                     actual=f"invalid: {exc}",
                 )
                 reports.append((bag_path.name, AuditReport(results=[synthetic])))
+                continue
+            chain_result = self._verify_premis_chain(bag_path / _PREMIS_FILENAME)
+            if chain_result is not None and not chain_result.ok:
+                broken = chain_result.broken_at
+                chain_failure = FixityResult(
+                    path=_PREMIS_FILENAME,
+                    algo=HashAlgo.SHA256,
+                    expected="unbroken PREMIS hash chain",
+                    actual=f"chain broken at entry {broken}" if broken is not None else "broken",
+                )
+                report = AuditReport(results=[*report.results, chain_failure])
+            reports.append((bag_path.name, report))
         return reports
+
+    @staticmethod
+    def _verify_premis_chain(premis_path: Path) -> ChainVerification | None:
+        """Read and chain-verify a ``premis.json`` file, or ``None`` if unreadable.
+
+        Mirrors the "one unreadable log never aborts the sweep" degradability rule
+        used elsewhere in this class: a log that cannot be parsed is a finding for
+        the caller to surface, not a crash (failure transparency).
+        """
+        if not premis_path.exists():
+            return None
+        try:
+            return PremisLog.read(premis_path).verify_chain()
+        except (LedgerError, ValueError, OSError):
+            return ChainVerification(ok=False, broken_at=0, head=GENESIS_HASH)
+
+    def audit_log_chains(self) -> list[tuple[str, ChainVerification]]:
+        """Verify the hash chain of every archive-level PREMIS log (FIX-06).
+
+        Per-bag ``premis.json`` chains are checked by :meth:`audit_fixity`; this
+        covers the archive-wide logs that live in ``logs/`` instead of inside a
+        bag (currently ``takedowns.premis.json`` and ``key-rotations.premis.json``,
+        via :meth:`log_takedown` and the rekey path) — the same tamper-evidence
+        gap applies to them, and they are not part of any single bag's manifest.
+        One unreadable log is reported as broken rather than aborting the sweep
+        (degradability, failure transparency).
+        """
+        if not self.logs_dir.exists():
+            return []
+        results: list[tuple[str, ChainVerification]] = []
+        for log_path in sorted(self.logs_dir.glob("*.premis.json")):
+            verification = self._verify_premis_chain(log_path)
+            if verification is not None:
+                results.append((log_path.name, verification))
+        return results
+
+    def premis_chain_heads(self) -> dict[str, str]:
+        """Every PREMIS chain head this archive currently holds, by name.
+
+        Bags are keyed by bag (record) id; archive-level logs by filename. Used to
+        anchor replication (:func:`ledger.replicate.verify_replicas` compares a
+        replica's bag head against the value here) and to compute
+        :meth:`chain_head_summary` for public cross-checking (FIX-06).
+        """
+        heads: dict[str, str] = {}
+        if self.bags_dir.exists():
+            for bag_path in sorted(p for p in self.bags_dir.iterdir() if p.is_dir()):
+                premis_path = bag_path / _PREMIS_FILENAME
+                if premis_path.exists():
+                    try:
+                        heads[bag_path.name] = PremisLog.read(premis_path).head
+                    except (LedgerError, ValueError, OSError):
+                        continue
+        if self.logs_dir.exists():
+            for log_path in sorted(self.logs_dir.glob("*.premis.json")):
+                try:
+                    heads[log_path.name] = PremisLog.read(log_path).head
+                except (LedgerError, ValueError, OSError):
+                    continue
+        return heads
+
+    def premis_chain_head(self, bag_name: str) -> str | None:
+        """The current PREMIS chain head for one bag, or ``None`` if it has no log."""
+        premis_path = self.bags_dir / bag_name / _PREMIS_FILENAME
+        if not premis_path.exists():
+            return None
+        try:
+            return PremisLog.read(premis_path).head
+        except (LedgerError, ValueError, OSError):
+            return None
+
+    def chain_head_summary(self) -> str:
+        """A single opaque commitment over every PREMIS chain head in the archive.
+
+        SHA-256 of the canonical JSON of every :meth:`premis_chain_heads` value,
+        sorted. Safe to publish to anyone (``/proof``): it changes the instant any
+        bag's or archive-level log's history is rewritten, but — unlike the heads
+        themselves — reveals neither how many bags exist nor which ones they are
+        (no-outing / P2-2: absolute counts stay steward-only elsewhere in this
+        codebase, and this value carries none).
+        """
+        heads = sorted(self.premis_chain_heads().values())
+        return hashlib.sha256(canonical_json(heads).encode("utf-8")).hexdigest()
 
 
 # --- module helpers ---------------------------------------------------------

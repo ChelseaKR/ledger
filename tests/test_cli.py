@@ -21,6 +21,8 @@ from pathlib import Path
 import pytest
 
 from ledger import cli
+from ledger.fixity import hash_file
+from ledger.models import HashAlgo
 
 # A loud, obviously-fake contributor identity. A leak of this string to any CLI
 # output stream would be unmistakable (safety).
@@ -32,6 +34,28 @@ _VAULT_KEY = "0123456789abcdef0123456789abcdef0123456789a="
 
 # Fixed timestamp so ingest is byte-reproducible (determinism).
 _NOW = "2026-06-16T12:00:00Z"
+
+
+def _reseal_tagmanifests(bag_dir: Path) -> None:
+    """Recompute every ``tagmanifest-<algo>.txt`` from the bag's current tag files.
+
+    A test-local stand-in for what a sophisticated attacker with the archive's own
+    hashing logic (but no dedicated "reseal" tool) could do by hand after editing a
+    tag file directly: keeps each manifest's existing list of tag-file paths, just
+    recomputes their digests, so byte-level BagIt fixity passes again.
+    """
+    for tagmanifest_path in sorted(bag_dir.glob("tagmanifest-*.txt")):
+        algo = HashAlgo(tagmanifest_path.stem.split("-", 1)[1])
+        entries: list[tuple[str, str]] = []
+        for raw in tagmanifest_path.read_text(encoding="utf-8").splitlines():
+            line = raw.strip()
+            if not line:
+                continue
+            _digest, _, relpath = line.partition("  ")
+            entries.append((relpath, hash_file(bag_dir / relpath, algo)))
+        body = "".join(f"{digest}  {relpath}\n" for relpath, digest in entries)
+        tagmanifest_path.write_text(body, encoding="utf-8", newline="\n")
+
 
 _FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
@@ -160,6 +184,64 @@ def test_audit_returns_nonzero_when_object_corrupted(
 
     rc = cli.main(["audit", "--root", str(root)])
     assert rc != 0, "audit must report failure after corruption"
+    out = capsys.readouterr().out
+    assert "FAIL" in out
+
+
+def test_audit_detects_premis_history_rewrite_even_after_reseal(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``audit`` catches a rewritten PREMIS history even when the tag manifest is
+    regenerated to match (FIX-06).
+
+    This is the threat plain BagIt fixity cannot catch on its own: a steward with
+    raw disk access can edit ``premis.json`` *and* recompute the tag manifest with
+    the archive's own tooling, so byte-level fixity alone reports the bag as
+    valid. The hash chain still breaks, because the edited entry's stored
+    ``prevHash``/content no longer matches what the next entry in the chain
+    committed to — and unlike the tag manifest, nothing in this test recomputes
+    that chain to hide the edit.
+    """
+    root = tmp_path / "arc"
+    assert _init(root) == 0
+    payload = _FIXTURES / "public.txt"
+    assert (
+        cli.main(
+            [
+                "ingest",
+                "--root",
+                str(root),
+                "--title",
+                "History rewrite",
+                "--now",
+                _NOW,
+                str(payload),
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()  # drain
+
+    assert cli.main(["audit", "--root", str(root)]) == 0
+    capsys.readouterr()
+
+    bag = _only_bag(root)
+    premis_path = bag / "premis.json"
+    data = json.loads(premis_path.read_text(encoding="utf-8"))
+    assert data["entries"], "expected at least one PREMIS entry"
+    # Rewrite the first entry's detail in place — the chain-breaking edit — but
+    # leave its recorded prevHash untouched, exactly what a disk-level editor
+    # would do without re-deriving the chain by hand.
+    data["entries"][0]["eventDetail"] = "rewritten by an attacker with disk access"
+    premis_path.write_text(json.dumps(data, sort_keys=True, separators=(",", ":")))
+
+    # Re-seal the bag's tag manifest with the archive's own tooling, exactly as a
+    # sophisticated attacker who has the ledger codebase could do — plain BagIt
+    # fixity now passes.
+    _reseal_tagmanifests(bag)
+
+    rc = cli.main(["audit", "--root", str(root)])
+    assert rc != 0, "audit must still report failure: the hash chain caught the rewrite"
     out = capsys.readouterr().out
     assert "FAIL" in out
 

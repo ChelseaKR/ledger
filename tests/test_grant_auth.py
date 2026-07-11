@@ -285,8 +285,9 @@ def test_concurrent_grant_uses_all_audited(tmp_path: Path, monkeypatch: pytest.M
             thread.join(timeout=30)
     assert not errors
     log_path = archive.logs_dir / "grant-uses.premis.json"
-    events = json.loads(log_path.read_text(encoding="utf-8"))
-    assert len(events) == request_count
+    log_data = json.loads(log_path.read_text(encoding="utf-8"))
+    # FIX-06: logs are a schema-versioned, hash-chained envelope, not a bare list.
+    assert len(log_data["entries"]) == request_count
 
 
 def test_no_secret_configured_rejects_every_token(

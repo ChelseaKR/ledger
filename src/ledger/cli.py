@@ -358,6 +358,13 @@ def _cmd_audit(args: argparse.Namespace) -> int:
     Returns non-zero if any bag fails, so a cron or CI gate can branch on the
     exit code (operability, failure transparency). Only bag names and counts are
     printed — never a payload byte or an identity (no-outing rule).
+
+    Each bag's report already folds in its PREMIS hash-chain check
+    (:meth:`~ledger.ingest.Archive.audit_fixity`, FIX-06), so a rewritten history
+    inside a bag shows as FAIL here too. Archive-level logs (takedowns, key
+    rotations) live outside any bag, so their chains are checked separately via
+    :meth:`~ledger.ingest.Archive.audit_log_chains` and folded into the same
+    PASS/FAIL summary and exit code.
     """
     archive = _open_archive(Path(args.root))
     reports = archive.audit_fixity()
@@ -370,6 +377,11 @@ def _cmd_audit(args: argparse.Namespace) -> int:
         if not ok:
             failures += 1
         print(f"{'PASS' if ok else 'FAIL'}\t{name}\t({report.checked} file(s) checked)")
+    for name, chain_result in archive.audit_log_chains():
+        ok = chain_result.ok
+        if not ok:
+            failures += 1
+        print(f"{'PASS' if ok else 'FAIL'}\t{name}\t(hash chain)")
     summary = "PASS" if failures == 0 else "FAIL"
     print(f"{summary}: {len(reports)} bag(s) audited, {failures} failed")
     return 0 if failures == 0 else 1
@@ -867,14 +879,19 @@ def _cmd_replicas(args: argparse.Namespace) -> int:
     """``replicas`` — report the health of one bag's replicas across locations.
 
     A convenience read over :func:`ledger.replicate.verify_replicas`: one line
-    per location with ``ok``/``FAIL`` and a per-replica file count, never a
-    payload byte (inspectability, no-outing rule).
+    per location with ``ok``/``FAIL``, a per-replica file count, and (FIX-06)
+    whether the replica's PREMIS hash chain agrees with this archive's own copy
+    — never a payload byte (inspectability, no-outing rule).
     """
     archive = _open_archive(Path(args.root))
-    statuses = verify_replicas(args.id, archive.config.locations)
+    source_head = archive.premis_chain_head(args.id)
+    statuses = verify_replicas(args.id, archive.config.locations, source_head=source_head)
     for status in statuses:
         flag = "ok" if status.ok else "FAIL"
-        print(f"{flag}\t{status.location}\t({status.report.checked} file(s) checked)")
+        chain = "ok" if status.chain_ok else "DIVERGED"
+        print(
+            f"{flag}\t{status.location}\t({status.report.checked} file(s) checked)\tchain={chain}"
+        )
     return 0
 
 

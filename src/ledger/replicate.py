@@ -15,6 +15,13 @@ rules, each tied to a named quality attribute:
 * **Never trust a divergent copy** -> integrity: healing only ever copies *from* a
   replica that has just passed full RFC 8493 validation, and :func:`heal` refuses
   to act at all when no replica validates — there is nothing trustworthy to copy.
+* **Chain heads travel with the bag, and are compared** -> tamper-evidence
+  (FIX-06): ``premis.json`` is copied verbatim as part of the bag, so its hash
+  chain (:mod:`ledger.chain`) rides along on every transfer for free. A replica
+  whose own chain no longer verifies, or whose head disagrees with the source's,
+  is reported unhealthy exactly like a replica with divergent bytes — this is
+  what catches a steward who edited history *and* regenerated the bag's tag
+  manifest to hide it, which byte-level fixity alone cannot.
 
 Tolerating an unreachable location (:func:`verify_replicas` reports ``ok=False``
 rather than raising) serves degradability / availability: one offline mirror must
@@ -57,9 +64,12 @@ from cryptography.fernet import Fernet, InvalidToken
 
 from ledger.bag import validate_bag
 from ledger.config import StorageLocation
-from ledger.errors import BagValidationError, FixityError, ReplicationError
+from ledger.errors import BagValidationError, FixityError, LedgerError, ReplicationError
 from ledger.fixity import AuditReport
+from ledger.metadata.premis import PremisLog
 from ledger.models import PremisEvent, PremisEventType
+
+_PREMIS_FILENAME = "premis.json"
 
 _QUARANTINE_DIR = "quarantine"
 _SEALED_SUFFIX = ".sealed"
@@ -85,17 +95,27 @@ def _rejected(message: str, event: PremisEvent) -> ReplicationError:
 class ReplicaStatus:
     """The health of one replica of a bag at one location (inspectability).
 
-    ``ok`` is true only when the replica exists, is structurally a bag, and every
-    payload file matches every manifest digest. ``report`` is the per-file audit
-    when one could be produced, or an empty :class:`~ledger.fixity.AuditReport`
-    when the replica was missing or unreadable — so a missing copy and a corrupt
-    copy are both representable without raising (failure transparency).
+    ``ok`` is true only when the replica exists, is structurally a bag, every
+    payload file matches every manifest digest, and (FIX-06) its PREMIS chain both
+    verifies on its own and — when a ``source_head`` was supplied to
+    :func:`verify_replicas` — agrees with it. ``report`` is the per-file audit when
+    one could be produced, or an empty :class:`~ledger.fixity.AuditReport` when the
+    replica was missing or unreadable — so a missing copy and a corrupt copy are
+    both representable without raising (failure transparency).
+
+    ``chain_head`` is the replica's own PREMIS chain head (``None`` when the
+    replica has no ``premis.json``, e.g. a bag built without preservation events in
+    a test fixture). ``chain_ok`` is false when the replica's chain fails to
+    verify, or diverges from the ``source_head`` given to :func:`verify_replicas` —
+    the cross-copy check a single-replica byte comparison cannot make on its own.
     """
 
     location: str
     bag: str
     report: AuditReport
     ok: bool
+    chain_head: str | None = None
+    chain_ok: bool = True
 
 
 def _replica_path(location_path: str, bag_name: str) -> Path:
@@ -221,9 +241,36 @@ def replicate_bag(
     )
 
 
+def _replica_chain_status(replica: Path, source_head: str | None) -> tuple[bool, str | None]:
+    """The ``(chain_ok, chain_head)`` pair for one replica's ``premis.json``.
+
+    No ``premis.json`` (a bag built without preservation events, e.g. in a test
+    fixture) is not a chain failure — there is nothing to verify, so ``chain_ok``
+    stays true and ``chain_head`` is ``None``. A present log that fails to parse or
+    whose stored links no longer verify is a chain failure (FIX-06 tamper
+    evidence). When ``source_head`` is given, a replica whose head disagrees with
+    it is also a chain failure — the cross-copy check that catches a rewrite which
+    stayed locally self-consistent.
+    """
+    premis_path = replica / _PREMIS_FILENAME
+    if not premis_path.exists():
+        return True, None
+    try:
+        verification = PremisLog.read(premis_path).verify_chain()
+    except (LedgerError, ValueError, OSError):
+        return False, None
+    if not verification.ok:
+        return False, verification.head
+    if source_head is not None and verification.head != source_head:
+        return False, verification.head
+    return True, verification.head
+
+
 def verify_replicas(
     bag_name: str,
     locations: Sequence[StorageLocation],
+    *,
+    source_head: str | None = None,
 ) -> list[ReplicaStatus]:
     """Validate every replica of ``bag_name`` across ``locations``.
 
@@ -233,6 +280,14 @@ def verify_replicas(
     absent mirror must not hide the health of the others (degradability /
     availability, failure transparency). A replica whose files drift is reported
     with ``ok=False`` and the per-file report that proves it (inspectability).
+
+    Also verifies each replica's PREMIS hash chain (FIX-06) — ``premis.json`` is
+    copied as part of the bag, so its chain rides along on every transfer for
+    free. Pass ``source_head`` (e.g. from
+    :meth:`ledger.ingest.Archive.premis_chain_head`) to additionally require every
+    replica's chain head to agree with the source's: divergent history then
+    surfaces exactly like divergent bytes, even for a replica whose own chain is
+    locally self-consistent (the attack a single-copy check cannot catch alone).
     """
     statuses: list[ReplicaStatus] = []
     for location in locations:
@@ -260,12 +315,15 @@ def verify_replicas(
                 )
             )
             continue
+        chain_ok, chain_head = _replica_chain_status(replica, source_head)
         statuses.append(
             ReplicaStatus(
                 location=location.name,
                 bag=bag_name,
                 report=report,
-                ok=report.ok,
+                ok=report.ok and chain_ok,
+                chain_head=chain_head,
+                chain_ok=chain_ok,
             )
         )
     return statuses

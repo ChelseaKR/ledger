@@ -25,6 +25,8 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from ledger.chain import GENESIS_HASH, ChainVerification, build_chain, chain_head
+from ledger.chain import verify_chain as _verify_chain
 from ledger.errors import LedgerError, ModerationError
 from ledger.models import (
     AccessPolicy,
@@ -41,6 +43,12 @@ if TYPE_CHECKING:
 # The vocabulary of accountable actions. Kept small and documented so the audit
 # trail is predictable and the meaning of each entry is unambiguous.
 _ACTIONS: frozenset[str] = frozenset({"warn", "takedown", "restore", "consent-change", "appeal"})
+
+# Schema history — mirrors ledger.metadata.premis.PremisLog:
+#   1 — a bare JSON array of action dicts (no chaining).
+#   2 — {"schemaVersion": 2, "entries": [...]}, each entry an action dict plus a
+#       "prevHash" chain-link field (FIX-06: tamper-evident hash-chained logs).
+_SCHEMA_VERSION = 2
 
 
 def _require_reason(reason: str) -> str:
@@ -130,46 +138,112 @@ class ModerationAction:
 
 
 class ModerationLog:
-    """An append-only log of accountable moderation decisions.
+    """An append-only, hash-chained log of accountable moderation decisions.
 
     Append-only is the core property: actions are added, never edited or removed,
     so the history of who decided what cannot be silently rewritten
     (auditability, tamper-evidence). Serialization is canonical (sorted keys,
     compact) and writes are atomic, so the persisted log is byte-reproducible and
     a crash mid-write cannot truncate it (reproducibility, fault-tolerance).
+
+    Each action also carries a chain link (a ``prevHash`` computed by
+    :mod:`ledger.chain`, mirroring :class:`~ledger.metadata.premis.PremisLog`) so
+    silently editing a past decision changes :attr:`head`, detectable by
+    :meth:`verify_chain` and by comparing heads across replicas (FIX-06).
     """
 
-    def __init__(self, actions: list[ModerationAction] | None = None) -> None:
-        """Create a log, optionally seeded from existing actions (e.g. on load)."""
+    def __init__(
+        self,
+        actions: list[ModerationAction] | None = None,
+        prev_hashes: list[str] | None = None,
+    ) -> None:
+        """Create a log, optionally seeded from existing actions (e.g. on load).
+
+        ``prev_hashes`` is normally left to be derived (see
+        :meth:`~ledger.metadata.premis.PremisLog.__init__` for the same pattern);
+        pass it only to preserve chain links read verbatim off disk.
+        """
         self._actions: list[ModerationAction] = list(actions) if actions else []
+        if prev_hashes is not None:
+            if len(prev_hashes) != len(self._actions):
+                raise ValueError("prev_hashes must have the same length as actions")
+            self._prev_hashes: list[str] = list(prev_hashes)
+        else:
+            self._prev_hashes = build_chain([a.to_dict() for a in self._actions])
 
     def record(self, action: ModerationAction) -> None:
-        """Append one decision, rejecting any with an empty reason.
+        """Append one decision, chained to the current head, rejecting any with
+        an empty reason.
 
         The reason is re-checked here as well as in the constructor so that the
         log itself enforces the justification invariant for every entry it holds
-        (accountability).
+        (accountability). Chaining -> tamper-evidence (FIX-06).
         """
         _require_reason(action.reason)
+        prev = self.head
         self._actions.append(action)
+        self._prev_hashes.append(prev)
 
     @property
     def actions(self) -> list[ModerationAction]:
         """A defensive copy of the recorded actions (the log stays append-only)."""
         return list(self._actions)
 
+    @property
+    def head(self) -> str:
+        """The chain hash of the most recent action, or :data:`GENESIS_HASH` if empty.
+
+        Recomputed from the actions' content alone (see
+        :meth:`~ledger.metadata.premis.PremisLog.head` for why this — not the
+        stored ``prevHash`` on the last action — is what makes an edit anywhere in
+        history, not just the latest decision, move this value.
+        """
+        return chain_head([a.to_dict() for a in self._actions])
+
+    def verify_chain(self) -> ChainVerification:
+        """Recompute the chain from the actions and compare it to their stored links.
+
+        See :func:`ledger.chain.verify_chain` and
+        :meth:`~ledger.metadata.premis.PremisLog.verify_chain`.
+        """
+        return _verify_chain([a.to_dict() for a in self._actions], self._prev_hashes)
+
     def to_json(self) -> str:
-        """Canonical JSON for the whole log (deterministic, hashes identically)."""
-        return canonical_json([a.to_dict() for a in self._actions])
+        """Canonical JSON for the whole log: a schema-versioned envelope over each
+        action's dict form plus its chain link (deterministic, hashes identically)."""
+        entries = [
+            {**action.to_dict(), "prevHash": prev}
+            for action, prev in zip(self._actions, self._prev_hashes, strict=True)
+        ]
+        return canonical_json({"schemaVersion": _SCHEMA_VERSION, "entries": entries})
 
     @classmethod
     def from_json(cls, text: str) -> ModerationLog:
-        """Parse a log from canonical JSON, re-validating each entry."""
+        """Parse a log from canonical JSON, re-validating each entry.
+
+        Also reads the legacy (schema 1) bare-array format written before
+        chaining existed, adopting it into the chained format the same way
+        :meth:`ledger.metadata.premis.PremisLog.from_json` does (evolvability,
+        with the documented migration risk: pre-chain history is not itself
+        provable, only history recorded or migrated from here on).
+        """
         raw = json.loads(text)
-        if not isinstance(raw, list):
-            raise ModerationError("moderation log must be a JSON array")
-        actions = [ModerationAction.from_dict(entry) for entry in raw]
-        return cls(actions)
+        if isinstance(raw, list):
+            actions = [ModerationAction.from_dict(entry) for entry in raw]
+            return cls(actions)
+        if isinstance(raw, dict):
+            version = raw.get("schemaVersion")
+            if version != _SCHEMA_VERSION:
+                raise ModerationError(f"unsupported moderation log schema_version: {version!r}")
+            entries = raw.get("entries")
+            if not isinstance(entries, list):
+                raise ModerationError("moderation log 'entries' must be a list")
+            actions = [ModerationAction.from_dict(entry) for entry in entries]
+            prev_hashes = [str(entry.get("prevHash", GENESIS_HASH)) for entry in entries]
+            return cls(actions, prev_hashes=prev_hashes)
+        raise ModerationError(
+            "moderation log must be a JSON array (legacy) or a schema-versioned object"
+        )
 
     def write(self, path: Path) -> None:
         """Persist the log atomically (write-temp-then-rename -> fault-tolerance).
