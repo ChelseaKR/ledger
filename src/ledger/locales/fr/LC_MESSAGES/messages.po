@@ -164,6 +164,9 @@ msgstr ""
 "Comparaison de l’enregistrement actuel avec une version antérieure "
 "enregistrée. Enregistrement {id}."
 
+msgid "Consent tokens for the people named in this record"
+msgstr "Jetons de consentement pour les personnes nommées dans cet enregistrement"
+
 msgid "Contact (optional, sealed)"
 msgstr "Contact (facultatif, scellé)"
 
@@ -520,8 +523,8 @@ msgid ""
 "Removal: {confirmed} of {total} storage location(s) have confirmed the "
 "takedown."
 msgstr ""
-"Retrait : {confirmed} emplacement(s) de stockage sur {total} ont confirmé "
-"le retrait."
+"Retrait : {confirmed} emplacement(s) de stockage sur {total} ont confirmé"
+" le retrait."
 
 msgid "Request status"
 msgstr "État de la demande"
@@ -532,6 +535,14 @@ msgstr "Demande : {kind}"
 
 msgid "Resolved — a steward has acted on it."
 msgstr "Résolue — un·e responsable l’a traitée."
+
+#, python-brace-format
+msgid "Responded {when}"
+msgstr "Réponse apportée {when}"
+
+#, python-brace-format
+msgid "Response due by {when}"
+msgstr "Réponse attendue au plus tard le {when}"
 
 msgid "Save changes"
 msgstr "Enregistrer les modifications"
@@ -684,6 +695,9 @@ msgstr "À"
 msgid "To withdraw it, go to"
 msgstr "Pour le retirer, rendez-vous sur"
 
+msgid "Token for a named person"
+msgstr "Jeton pour une personne nommée"
+
 msgid "Transcript"
 msgstr "Transcription"
 
@@ -795,6 +809,19 @@ msgstr ""
 "peuvent être scellés au-dessus de votre accès ; leur absence ici ne "
 "signifie pas qu’ils n’existent pas."
 
+msgid ""
+"You said this record names other people. Give each of them one of the "
+"tokens below, privately and in person where you can. Anyone who holds a "
+"token can object to being named and a steward will treat their objection "
+"as confirmed. These are shown only once and are not stored in a form "
+"anyone can read — copy them now:"
+msgstr ""
+"Vous avez indiqué que cet enregistrement nomme d’autres personnes. Donnez à "
+"chacune l’un des jetons ci-dessous, en privé et en personne si possible. Toute "
+"personne détenant un jeton peut s’opposer à être nommée, et un·e responsable "
+"traitera son objection comme confirmée. Ces jetons ne sont affichés qu’une fois "
+"et ne sont pas stockés sous une forme lisible — copiez-les maintenant :"
+
 msgid "Your account"
 msgstr "Votre compte"
 
@@ -873,6 +900,9 @@ msgstr "la page de retrait"
 
 msgid "tighten access"
 msgstr "restreindre l’accès"
+
+msgid "verified objection from a named subject (token confirmed)"
+msgstr "objection vérifiée d’une personne nommée (jeton confirmé)"
 
 msgid "withdraw / take down"
 msgstr "retirer / supprimer"
