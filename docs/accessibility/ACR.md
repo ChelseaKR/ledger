@@ -30,7 +30,7 @@ The automated accessibility gate (`ledger.accessibility_check`) enforces the str
 
 This report rests on two committed, recurring sources of evidence — neither adds a runtime dependency, both run against the same canonical pages:
 
-- **Automated.** The stdlib static gate (`python -m ledger.accessibility_check web`) runs on every commit, and a browser-real **axe-core** job (the `accessibility-browser` CI job) drives the served site in a headless Chromium under both the light and dark colour schemes, asserting no serious or critical violations.
+- **Automated.** The stdlib static gate (`python -m ledger.accessibility_check web`) runs on every commit, and a browser-real **axe-core** job (the `accessibility-browser` CI job) drives the served site in a headless Chromium under both the light and dark colour schemes, asserting no WCAG-tagged axe violations.
 - **Manual.** A committed quarterly (and pre-release) **NVDA and VoiceOver** review covers what no scan can judge — reading order, content-warning announcement, `aria-live` status, and spoken form errors. Its cadence, checklist, and results log live in [`MANUAL-REVIEW-CADENCE.md`](./MANUAL-REVIEW-CADENCE.md); manual findings are reflected back into the remarks below.
 
 ## Tables

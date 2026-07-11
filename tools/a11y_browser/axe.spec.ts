@@ -9,9 +9,8 @@ import { expect, test, type APIRequestContext, type Page } from "@playwright/tes
  *
  * For each page we run axe-core under BOTH the light and dark colour schemes
  * (ledger honours `prefers-color-scheme`, so contrast must hold either way) and
- * assert there are **no serious or critical** violations. Lower-impact findings
- * are surfaced in the report but do not fail the build — the static gate remains
- * the hard structural floor; this job adds engine-backed depth on top.
+ * assert there are **no WCAG-tagged violations**, regardless of axe's impact
+ * label. Impact is triage metadata, not permission to merge an AA violation.
  *
  * The record routes are resolved at runtime from `/api/records` because a
  * record id is minted per seed, not fixed. One of the two seeded records carries
@@ -40,7 +39,7 @@ async function recordIds(
 
 /**
  * Navigate to `path`, then run axe under each colour scheme and assert no
- * serious/critical violations. `label` names the page in failure output.
+ * WCAG-tagged violations. `label` names the page in failure output.
  */
 async function auditPage(page: Page, path: string, label: string): Promise<void> {
   const response = await page.goto(path, { waitUntil: "networkidle" });
@@ -50,15 +49,13 @@ async function auditPage(page: Page, path: string, label: string): Promise<void>
   for (const scheme of SCHEMES) {
     await page.emulateMedia({ colorScheme: scheme });
     const results = await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze();
-    const blocking = results.violations.filter(
-      (v) => v.impact === "serious" || v.impact === "critical",
-    );
+    const blocking = results.violations;
     const detail = blocking
       .map((v) => `  [${v.impact}] ${v.id}: ${v.help} (${v.nodes.length} node(s))`)
       .join("\n");
     expect(
       blocking,
-      `${label} (${path}) @ ${scheme}: serious/critical axe violations:\n${detail}`,
+      `${label} (${path}) @ ${scheme}: WCAG axe violations:\n${detail}`,
     ).toEqual([]);
   }
 }

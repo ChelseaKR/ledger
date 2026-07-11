@@ -41,7 +41,7 @@ from ledger.errors import BagValidationError, LedgerError, ObjectNotFound
 from ledger.fixity import AuditReport, hash_file_multi
 from ledger.identity import ContributorIdentity, IdentityVault
 from ledger.metadata.dublincore import to_json as dublincore_to_json
-from ledger.metadata.pid import mint_ark
+from ledger.metadata.pid import mint_urn
 from ledger.metadata.premis import PremisLog
 from ledger.models import (
     AccessPolicy,
@@ -249,14 +249,6 @@ def _assert_identity_free(text: str, identity: ContributorIdentity | None, where
 # --- rights + persistent identifiers ----------------------------------------
 
 
-# The preservation acts a record's rights statement grants by default. These are the
-# archive's own custodial acts (make it discoverable, keep redundant copies), so a
-# partner repository reading the PREMIS rights knows it may do the same. They are NOT
-# an access decision — who may *see* a record is the disclosure policy's job; rights
-# describe the terms of *reuse* (separation of concerns).
-_DEFAULT_GRANTED_ACTS: tuple[str, ...] = ("disseminate", "replicate")
-
-
 def rights_for_record(record: Record) -> PremisRights:
     """Derive a PREMIS rights statement from a record's declared rights/license.
 
@@ -267,9 +259,10 @@ def rights_for_record(record: Record) -> PremisRights:
     (standards-compliance, interoperability).
 
     When the record declares a licence, the basis is ``"license"`` and the note is
-    the declared value; otherwise it falls back to a conservative, honest default —
-    basis ``"other"`` with the note *"as declared by contributing collective"* — so
-    every record carries an explicit statement rather than a silent gap (completeness).
+    the declared value. ledger does not infer PREMIS granted acts from free text: a
+    downstream repository must evaluate the actual licence instead of being told it
+    may disseminate or replicate when those permissions were never recorded. With no
+    declaration, the statement explicitly says that rights are undetermined.
 
     No-outing rule: the statement is built only from collection-level Dublin Core
     ``rights`` and the opaque record id; it names no contributor and no rights holder.
@@ -279,13 +272,11 @@ def rights_for_record(record: Record) -> PremisRights:
         return PremisRights(
             rights_basis="license",
             rights_note="; ".join(declared),
-            granted_acts=_DEFAULT_GRANTED_ACTS,
             linked_object=record.record_id,
         )
     return PremisRights(
         rights_basis="other",
-        rights_note="as declared by contributing collective",
-        granted_acts=_DEFAULT_GRANTED_ACTS,
+        rights_note="rights undetermined; no licence or permission was declared",
         linked_object=record.record_id,
     )
 
@@ -445,13 +436,13 @@ def ingest_sip(  # noqa: C901
     if not record.dublin_core.format and identified_media_types:
         record.dublin_core.format = sorted(set(identified_media_types))
 
-    # Mint a deterministic, archive-local persistent identifier from the record id and
+    # Mint a deterministic UUID URN from the record id and
     # record it as a Dublin Core `identifier` (the standard home for a resource's
     # identifiers), so a record has a stable, quotable handle for scholarship that does
     # not change if the archive moves hosts (RM5; user research P2-3). The mint is a
     # pure function of the opaque record id, so it is byte-reproducible and carries no
     # identity. Added only when absent, so a re-derivation never duplicates it.
-    pid = mint_ark(record.record_id)
+    pid = mint_urn(record.record_id)
     if pid not in record.dublin_core.identifier:
         record.dublin_core.identifier = [*record.dublin_core.identifier, pid]
 

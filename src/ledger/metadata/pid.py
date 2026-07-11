@@ -1,28 +1,38 @@
-"""Locally-minted persistent identifiers (ARK-style PIDs).
+"""Persistent identifiers for offline community archives.
 
 Scholarship needs a *stable, quotable* handle for a record that does not change if
 the archive moves hosts or reorganizes its URLs (user research P2-3, D1). This
-module mints an `ARK <https://arks.org/>`_-style identifier deterministically from
-a record's opaque id, so:
+module mints a UUID URN deterministically from a record's opaque UUID, so:
 
 * it is **pure and offline** — no network call, no external minting authority, no
   clock; the same record id always yields the same PID (reproducibility);
-* it is **archive-local** — the archive is its own naming authority under a
-  placeholder NAAN and shoulder, so a collective can stand one up "in an
-  afternoon" without registering with a global resolver (affordability); and
+* it needs **no naming-authority claim** — a collective can stand one up without
+  registering a resolver or borrowing an example ARK namespace; and
 * it is **discoverable** — the PID is added to the record's Dublin Core
   ``identifier`` element, the standard home for a resource's identifiers, so a
   general-purpose catalogue indexes it (interoperability, standards-compliance).
 
-No-outing rule: a PID is derived only from the record's already-opaque id, which
-is itself never an identity. This module introduces no contributor information.
+Registered ARKs remain supported as an explicit interoperability option. The
+``99999`` example namespace is available only through :func:`mint_ark`; ingest
+does not present it as a production persistent identifier.
+
+No-outing rule: a PID is derived only from the record's already-opaque id.
 """
 
 from __future__ import annotations
 
 import re
+import uuid
 
-__all__ = ["ARK_PREFIX", "DEFAULT_NAAN", "DEFAULT_SHOULDER", "is_ark", "mint_ark"]
+__all__ = [
+    "ARK_PREFIX",
+    "DEFAULT_NAAN",
+    "DEFAULT_SHOULDER",
+    "is_ark",
+    "is_pid",
+    "mint_ark",
+    "mint_urn",
+]
 
 # The ARK scheme prefix. An ARK looks like ``ark:/<NAAN>/<name>`` (some registries
 # also accept ``ark:<NAAN>/<name>``); we emit the widely-used slashed form.
@@ -80,3 +90,40 @@ def is_ark(value: str) -> bool:
     that has registered its own NAAN still has its PIDs recognised.
     """
     return value.startswith(f"{ARK_PREFIX}/") and value.count("/") >= 2
+
+
+def mint_urn(record_id: str) -> str:
+    """Mint a globally unique, authority-free URN from a UUID record id.
+
+    Unlike the ``99999`` example ARK namespace, a UUID URN is a real persistent
+    identifier without pretending that a collective registered a naming authority
+    or operates a resolver. Native ledger ids keep their UUID exactly. Stable
+    non-UUID ids from importers are mapped through UUIDv5 under a fixed namespace.
+    """
+    try:
+        parsed = uuid.UUID(record_id)
+    except (AttributeError, TypeError, ValueError):
+        if not isinstance(record_id, str) or not record_id.strip():
+            raise ValueError("record id must not be empty") from None
+        parsed = uuid.uuid5(
+            uuid.NAMESPACE_URL,
+            f"https://github.com/ChelseaKR/ledger/record-id/{record_id}",
+        )
+    return parsed.urn
+
+
+def is_pid(value: str) -> bool:
+    """Return whether ``value`` is a supported persistent identifier.
+
+    UUID URNs are ledger's safe default. ARKs remain supported for deployments
+    that deliberately configure and operate a registered naming authority.
+    """
+    if is_ark(value):
+        return True
+    if not value.startswith("urn:uuid:"):
+        return False
+    try:
+        uuid.UUID(value.removeprefix("urn:uuid:"))
+    except (AttributeError, TypeError, ValueError):
+        return False
+    return True

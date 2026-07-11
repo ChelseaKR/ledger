@@ -30,14 +30,16 @@ from ledger.metadata.dublincore import (
 )
 from ledger.metadata.ead import to_ead_xml
 from ledger.metadata.mets import to_mets_xml
-from ledger.metadata.pid import is_ark, mint_ark
+from ledger.metadata.pid import is_ark, is_pid, mint_ark, mint_urn
 from ledger.metadata.premis import PremisLog, to_premis_xml
 
 __all__ = [
     "PremisLog",
     "from_json",
     "is_ark",
+    "is_pid",
     "mint_ark",
+    "mint_urn",
     "read_sidecar",
     "to_ead_xml",
     "to_json",
