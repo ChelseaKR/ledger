@@ -43,6 +43,7 @@ from dataclasses import dataclass, field
 from hashlib import sha256
 from pathlib import Path
 
+from ledger._filelock import file_lock
 from ledger.errors import LedgerError
 from ledger.models import now_iso
 
@@ -214,12 +215,23 @@ class ConsentRequestStore:
         """Append ``req`` to the queue and persist atomically (append-only).
 
         Reads the current queue, appends, and rewrites the whole list under an
-        atomic rename. The message content is persisted but never logged
-        (no-outing rule).
+        atomic rename. The read-modify-write runs under a single-host advisory lock
+        (:func:`ledger._filelock.file_lock`) so two concurrent requests -- normal
+        under the threaded server -- cannot each read the same queue and clobber one
+        another; a dropped request here could be a lost *withdrawal*, the worst
+        failure class this project has (consent integrity). The message content is
+        persisted but never logged (no-outing rule).
         """
-        requests = self._read()
-        requests.append(req)
-        self._write(requests)
+        try:
+            with file_lock(self._path):
+                requests = self._read()
+                requests.append(req)
+                self._write(requests)
+        except OSError as exc:
+            # Covers a lock-acquisition failure (e.g. a read-only store directory)
+            # the same way `_write`'s own OSError is translated below, so every
+            # write-path failure surfaces one consistent, no-outing-safe message.
+            raise LedgerError(f"consent store could not be written: {self._path}") from exc
 
     def resolve(self, request_id: str, status: str, *, now: str | None = None) -> None:
         """Advance the request with ``request_id`` to ``status`` and persist.
@@ -239,29 +251,36 @@ class ConsentRequestStore:
             raise LedgerError(
                 "consent request can only be resolved to 'acknowledged' or 'resolved'"
             )
-        requests = self._read()
-        found = False
-        updated: list[ConsentRequest] = []
-        for req in requests:
-            if req.request_id == request_id:
-                found = True
-                updated.append(
-                    ConsentRequest(
-                        record_id=req.record_id,
-                        kind=req.kind,
-                        message=req.message,
-                        request_id=req.request_id,
-                        status=status,
-                        created_at=req.created_at,
-                        due_by=req.due_by,
-                        resolved_at=(now or now_iso()) if status == "resolved" else req.resolved_at,
-                    )
-                )
-            else:
-                updated.append(req)
-        if not found:
-            raise LedgerError(f"no consent request with id {request_id!r}")
-        self._write(updated)
+        try:
+            with file_lock(self._path):
+                requests = self._read()
+                found = False
+                updated: list[ConsentRequest] = []
+                for req in requests:
+                    if req.request_id == request_id:
+                        found = True
+                        updated.append(
+                            ConsentRequest(
+                                record_id=req.record_id,
+                                kind=req.kind,
+                                message=req.message,
+                                request_id=req.request_id,
+                                status=status,
+                                created_at=req.created_at,
+                                due_by=req.due_by,
+                                resolved_at=(
+                                    (now or now_iso()) if status == "resolved" else req.resolved_at
+                                ),
+                            )
+                        )
+                    else:
+                        updated.append(req)
+                if not found:
+                    raise LedgerError(f"no consent request with id {request_id!r}")
+                self._write(updated)
+        except OSError as exc:
+            # Same lock-acquisition-failure translation as `add` (see there).
+            raise LedgerError(f"consent store could not be written: {self._path}") from exc
 
     def _read(self) -> list[ConsentRequest]:
         """Load and parse the JSON list; a missing file is an empty queue."""
@@ -378,15 +397,19 @@ class SubjectTokenStore:
         """Record the subject-token ``hashes`` for ``record_id`` (append/merge)."""
         if not hashes:
             return
-        data = self._read()
-        existing = data.get(record_id, [])
-        # Preserve order and drop duplicates so re-registering is idempotent.
-        merged = list(existing)
-        for h in hashes:
-            if h not in merged:
-                merged.append(h)
-        data[record_id] = merged
-        self._write(data)
+        try:
+            with file_lock(self._path):
+                data = self._read()
+                existing = data.get(record_id, [])
+                # Preserve order and drop duplicates so re-registering is idempotent.
+                merged = list(existing)
+                for h in hashes:
+                    if h not in merged:
+                        merged.append(h)
+                data[record_id] = merged
+                self._write(data)
+        except OSError as exc:
+            raise LedgerError(f"subject-token store could not be written: {self._path}") from exc
 
     def hashes_for(self, record_id: str) -> list[str]:
         """The stored subject-token hashes for ``record_id`` (empty if none)."""
