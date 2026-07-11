@@ -19,8 +19,9 @@ name: release
 #      PyPI's Trusted Publishing guide so publish approval/URL is scoped and
 #      auditable) — see `docs/adr/` if a protection-rule ADR is warranted.
 # Until those exist, `publish-pypi` below will fail with an OIDC/audience error;
-# every other job (build, SBOM, cosign signing, SLSA provenance, GitHub Release)
-# works with no additional setup.
+# the jobs upstream of it (verify, build, SBOM, cosign signing, SLSA provenance)
+# work with no additional setup, while `verify-published` and the GitHub Release
+# are gated behind the publish and so wait for the one-time setup too.
 on:
   push:
     tags:
@@ -39,7 +40,7 @@ concurrency:
 
 jobs:
   verify:
-    name: verify (lint · type · test)
+    name: verify (tag · changelog · full merge gate)
     runs-on: ubuntu-latest
     steps:
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
@@ -48,28 +49,60 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           persist-credentials: false
-      # No `cache: pip` here: this workflow ends in a real publish (PyPI +
-      # GitHub Release), and Actions' pip cache is fillable by any workflow
-      # run in the repo — restoring it into the job that ships artifacts is a
-      # cache-poisoning vector a build-only CI job doesn't have to worry about.
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
+          # The tag *object* (not just the commit it points at) is what REL-08
+          # inspects below, so fetch tags explicitly.
+          fetch-tags: true
+      # REL-08: only a signed annotated tag ships a release — asserted, not
+      # assumed. A lightweight tag has no tag object and no signature; reject
+      # both cases before spending a single CPU-second on the gate. Signature
+      # *presence* is what can be checked in CI today; verifying the signer's
+      # identity needs a committed allowed-signers file (tracked in
+      # docs/ROADMAP.md) — until then this stops the "stray unsigned tag
+      # publishes anyway" failure mode without overclaiming identity pinning.
+      - name: Assert signed annotated tag (REL-08)
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          TYPE="$(git cat-file -t "refs/tags/${TAG}")"
+          if [ "$TYPE" != "tag" ]; then
+            echo "::error::${TAG} is a lightweight tag (object type: ${TYPE}); releases require a signed annotated tag"
+            exit 1
+          fi
+          if ! git cat-file tag "refs/tags/${TAG}" | grep -Eq -- "-----BEGIN (SSH|PGP) SIGNATURE-----"; then
+            echo "::error::${TAG} is annotated but carries no SSH/PGP signature; releases require a signed tag"
+            exit 1
+          fi
+          echo "${TAG}: signed annotated tag"
+      # REL-10: a release must have release notes. A vX.Y.Z tag whose version has
+      # no matching `## [X.Y.Z]` section in CHANGELOG.md is a cut-from-the-wrong-
+      # state mistake — fail before building, not after publishing.
+      - name: CHANGELOG has a section for this version (REL-10)
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          if ! grep -Fq "## [${VERSION}]" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no '## [${VERSION}]' section for tag ${GITHUB_REF_NAME}"
+            exit 1
+          fi
+          echo "CHANGELOG.md has a section for ${VERSION}"
+      # No dependency caching anywhere in this workflow: it ends in a real
+      # publish (PyPI + GitHub Release), and Actions' caches are fillable by any
+      # workflow run in the repo — restoring one into the pipeline that ships
+      # artifacts is a cache-poisoning vector a build-only CI job doesn't have.
+      - uses: astral-sh/setup-uv@f98e06938123ccabd21905ea5d0069192241f9f1  # v8.3.1
         with:
           python-version: "3.12"
-      - name: Install
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
-      # A tag is a promise of a working release; re-run the exact merge gate
-      # against the tagged commit rather than trusting that main was green when
-      # the tag was cut (branch protection can lapse, a tag can point anywhere).
-      - name: Lint (ruff)
-        run: |
-          ruff check src tests
-          ruff format --check src tests
-      - name: Type check (mypy strict)
-        run: mypy
-      - name: Test with coverage
-        run: pytest --cov --cov-report=term-missing
+          enable-cache: false
+      - name: Install (locked)
+        run: uv sync --locked --group dev
+      # REL-14: a tag is a promise of a working release; re-run the *complete*
+      # merge gate (`make verify` == lint, type, test, i18n, accessibility,
+      # pip-audit, secret-scan, claims — exactly CI's required-check set) against
+      # the tagged commit rather than trusting that main was green when the tag
+      # was cut, and rather than a hand-picked subset that could ship what
+      # ordinary CI would block.
+      - name: Full merge gate at the tagged commit (make verify)
+        run: make verify
 
   build:
     name: build sdist + wheel
@@ -264,12 +297,83 @@ jobs:
           packages-dir: dist
           print-hash: true
 
+  verify-published:
+    name: verify PyPI serves what was built
+    needs: [build, publish-pypi]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
+        with:
+          egress-policy: audit
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: dist
+          path: dist
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
+        with:
+          python-version: "3.12"
+      # REL-16: publishing is not the finish line — *serving* is. Download every
+      # file PyPI now lists for this version and compare its sha256 against the
+      # artifact this run built; a mismatch or a missing/extra file fails the
+      # release. Retries cover PyPI's propagation delay after upload.
+      - name: Downloaded-from-PyPI artifacts match the built ones (REL-16)
+        env:
+          # Env-var indirection rather than inline `${{ }}` expansion in the
+          # script (zizmor template-injection hygiene).
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          set -euo pipefail
+          python - "$VERSION" <<'EOF'
+          import hashlib
+          import json
+          import pathlib
+          import sys
+          import time
+          import urllib.request
+
+          version = sys.argv[1]
+          local = {
+              p.name: hashlib.sha256(p.read_bytes()).hexdigest()
+              for p in pathlib.Path("dist").iterdir()
+              if p.is_file()
+          }
+          url = f"https://pypi.org/pypi/ledger-archive/{version}/json"
+          data = None
+          for attempt in range(1, 11):
+              try:
+                  with urllib.request.urlopen(url, timeout=30) as response:
+                      data = json.load(response)
+                  break
+              except Exception as exc:  # propagation delay: retry, then fail loudly
+                  print(f"PyPI metadata not served yet ({exc}); attempt {attempt}/10")
+                  time.sleep(30)
+          if data is None:
+              sys.exit(f"PyPI never served metadata for ledger-archive=={version}")
+          served = {}
+          for entry in data["urls"]:
+              with urllib.request.urlopen(entry["url"], timeout=120) as response:
+                  served[entry["filename"]] = hashlib.sha256(response.read()).hexdigest()
+          missing = sorted(set(local) - set(served))
+          extra = sorted(set(served) - set(local))
+          if missing or extra:
+              sys.exit(f"file-set mismatch: not on PyPI {missing}; not built here {extra}")
+          for name in sorted(local):
+              if served[name] != local[name]:
+                  sys.exit(
+                      f"digest mismatch for {name}: built {local[name]}, PyPI serves {served[name]}"
+                  )
+              print(f"verified {name} sha256={local[name]}")
+          print("PyPI serves exactly what this run built")
+          EOF
+
   github-release:
     name: publish GitHub Release
-    needs: [build, sbom, provenance, sign, publish-pypi]
+    # verify-published gates the public release page: it only appears once PyPI
+    # is confirmed to serve exactly the bytes this run built.
+    needs: [build, sbom, provenance, sign, publish-pypi, verify-published]
     runs-on: ubuntu-latest
     permissions:
-      contents: write   # softprops/action-gh-release creates the GitHub Release + uploads assets
+      contents: write   # `gh release create` needs to create the Release + upload assets
     steps:
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
         with:
@@ -290,9 +394,19 @@ jobs:
       # release end to end (the sdist/wheel PyPI got, the SBOM, the cosign
       # detached signatures) ships as GitHub Release assets too, alongside the
       # GitHub-native attest-sbom/attest-build-provenance attestations recorded
-      # above (`gh attestation verify`).
-      - uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b  # v3.0.1
-        with:
-          files: release-assets/*
-          generate_release_notes: true
-          fail_on_unmatched_files: true
+      # above (`gh attestation verify`). The runner's own `gh` CLI does this in
+      # one auditable command — one less third-party action in the release path
+      # (zizmor superfluous-actions). `--verify-tag` refuses to invent a release
+      # for a tag that no longer exists; the un-nullglobbed `release-assets/*`
+      # makes gh fail loudly if the assets are missing rather than shipping an
+      # empty release.
+      - name: Publish GitHub Release with verification assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "$GITHUB_REF_NAME" release-assets/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes \
+            --verify-tag

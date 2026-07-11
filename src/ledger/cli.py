@@ -29,7 +29,15 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from ledger import acr_gen, attest, demo, dualcontrol, preservation, succession
-from ledger.access.grants import anonymous, community_member, steward
+from ledger.access.grants import (
+    anonymous,
+    community_member,
+    issue_grant_token,
+    load_grants,
+    load_revocations,
+    revoke_subject,
+    steward,
+)
 from ledger.access.redaction import redact_field, redact_payload
 from ledger.config import Config, StorageLocation
 from ledger.errors import LedgerError
@@ -258,6 +266,7 @@ def _cmd_serve(args: argparse.Namespace) -> int:
         raise LedgerError(f"port out of range (0-65535): {args.port}")
     archive = _open_archive(Path(args.root))
     grants_path = Path(args.grants) if args.grants else None
+    revocations_path = Path(args.revocations) if args.revocations else None
     if args.allow_contributions and not os.environ.get("LEDGER_VAULT_KEY"):
         # The contribution form offers an optional sealed contact, which must be
         # encrypted into the vault on submit. Refuse to enable the write path without
@@ -272,8 +281,74 @@ def _cmd_serve(args: argparse.Namespace) -> int:
         host=args.host,
         port=args.port,
         grants_path=grants_path,
+        revocations_path=revocations_path,
         allow_contributions=args.allow_contributions,
     )
+    return 0
+
+
+def _grant_secret_from_env() -> bytes:
+    """The grant-token signing secret from the environment, or a clean error.
+
+    Like the vault key, the secret travels only in ``LEDGER_GRANT_SECRET`` — never
+    on the command line, where it would land in shell history and the process table
+    (confidentiality). An unset secret is a hard error rather than a silent
+    unsigned token (fail closed)."""
+    raw = os.environ.get("LEDGER_GRANT_SECRET")
+    if not raw:
+        raise LedgerError(
+            "set LEDGER_GRANT_SECRET to the grant signing secret (via the environment, never argv)"
+        )
+    return raw.encode("utf-8")
+
+
+def _cmd_grant_issue(args: argparse.Namespace) -> int:
+    """``grant issue`` — mint an authenticated capability token for a subject.
+
+    The token is the *only* thing printed: it is a sealed bearer value, so the
+    signing secret is never echoed and nothing else is written to stdout (the
+    no-outing rule's no-secret-outing corollary). The subject must already have a
+    provisioned grant in the grants file for the token to authorise anything at the
+    server; issuing a token for an unprovisioned subject is harmless (it resolves to
+    anonymous), so this command does not require the grants file. ``--expires-at``
+    bounds the token to an ISO-8601 instant; omitted, the token does not expire."""
+    secret = _grant_secret_from_env()
+    token = issue_grant_token(args.subject, secret, expires_at=args.expires_at or "")
+    print(token)
+    return 0
+
+
+def _cmd_grant_revoke(args: argparse.Namespace) -> int:
+    """``grant revoke`` — add a subject to the revocation list.
+
+    Retracts every still-unexpired token for the subject the next time the server
+    reads the list, without rotating the shared secret (immediate, targeted
+    retraction). Idempotent. Never prints or needs the signing secret."""
+    path = Path(args.revocations)
+    revoke_subject(path, args.subject)
+    print(f"revoked {args.subject!r}; wrote {path}")
+    return 0
+
+
+def _cmd_grant_list(args: argparse.Namespace) -> int:
+    """``grant list`` — list provisioned grant subjects with their revoked flag.
+
+    Reads the grants file and the revocation list and prints one subject per line
+    with a ``[revoked]`` marker where applicable. Subjects that are revoked but no
+    longer provisioned are listed too, so a steward can see a dangling revocation.
+    Prints no token and no secret (only public subject identifiers)."""
+    grants_path = Path(args.grants) if args.grants else None
+    grants = load_grants(grants_path) if grants_path is not None else {}
+    revocations_path = Path(args.revocations) if args.revocations else None
+    revoked = load_revocations(revocations_path) if revocations_path is not None else set()
+    subjects = sorted(set(grants) | revoked)
+    if not subjects:
+        print("(no grants provisioned)")
+        return 0
+    for subject in subjects:
+        marker = " [revoked]" if subject in revoked else ""
+        provisioned = "" if subject in grants else " [not provisioned]"
+        print(f"{subject}{marker}{provisioned}")
     return 0
 
 
@@ -1063,11 +1138,36 @@ def _build_parser() -> argparse.ArgumentParser:
     p_serve.add_argument("--port", type=int, default=8000)
     p_serve.add_argument("--grants", help="path to a pre-provisioned grants JSON file")
     p_serve.add_argument(
+        "--revocations",
+        help="path to a revoked-subjects JSON file (default: revocations.json beside --grants)",
+    )
+    p_serve.add_argument(
         "--allow-contributions",
         action="store_true",
         help="enable the /contribute submission form (requires LEDGER_VAULT_KEY)",
     )
     p_serve.set_defaults(func=_cmd_serve)
+
+    p_grant = sub.add_parser("grant", help="mint, revoke, and list capability grant tokens")
+    grant_sub = p_grant.add_subparsers(dest="grant_command", required=True, metavar="SUBCOMMAND")
+    p_grant_issue = grant_sub.add_parser(
+        "issue", help="mint an authenticated token (secret via LEDGER_GRANT_SECRET)"
+    )
+    p_grant_issue.add_argument("--subject", required=True, help="subject the token authenticates")
+    p_grant_issue.add_argument("--expires-at", help="ISO-8601 expiry (default: never expires)")
+    p_grant_issue.set_defaults(func=_cmd_grant_issue)
+    p_grant_revoke = grant_sub.add_parser("revoke", help="add a subject to the revocation list")
+    p_grant_revoke.add_argument("--subject", required=True, help="subject to revoke")
+    p_grant_revoke.add_argument(
+        "--revocations", required=True, help="path to the revoked-subjects JSON file"
+    )
+    p_grant_revoke.set_defaults(func=_cmd_grant_revoke)
+    p_grant_list = grant_sub.add_parser(
+        "list", help="list provisioned subjects with their revoked flag"
+    )
+    p_grant_list.add_argument("--grants", help="path to the pre-provisioned grants JSON file")
+    p_grant_list.add_argument("--revocations", help="path to the revoked-subjects JSON file")
+    p_grant_list.set_defaults(func=_cmd_grant_list)
 
     p_audit = sub.add_parser("audit", help="validate every bag's fixity")
     p_audit.add_argument("--root", required=True)

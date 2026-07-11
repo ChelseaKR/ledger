@@ -20,6 +20,7 @@ from pathlib import Path
 
 import pytest
 
+from ledger.access.grants import issue_grant_token
 from ledger.config import Config
 from ledger.consent import ConsentRequestStore
 from ledger.ingest import Archive
@@ -27,6 +28,7 @@ from ledger.models import AccessPolicy, DublinCore, Field, Record
 from ledger.server import make_server
 
 _NOW = "2026-06-17T00:00:00Z"
+_GRANT_SECRET = b"object-test-grant-secret"
 _OBJECTION = "I am named in this and did not agree OBJECTION-NOTE-DO-NOT-ECHO"
 
 
@@ -42,7 +44,8 @@ def _grants_file(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def server(tmp_path: Path) -> Iterator[tuple[Archive, str, str]]:
+def server(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[Archive, str, str]]:
+    monkeypatch.setenv("LEDGER_GRANT_SECRET", _GRANT_SECRET.decode())
     archive = Archive.init(Config.default("Object Archive", tmp_path / "arc"))
     record = Record(
         title="A public account",
@@ -69,7 +72,7 @@ def _req(
     base: str, path: str, *, data: dict[str, str] | None = None, steward: bool = False
 ) -> tuple[int, str]:
     body = urllib.parse.urlencode(data).encode("utf-8") if data is not None else None
-    headers = {"X-Ledger-Grant": "steward-1"} if steward else {}
+    headers = {"X-Ledger-Grant": issue_grant_token("steward-1", _GRANT_SECRET)} if steward else {}
     if body is not None:
         headers["Content-Type"] = "application/x-www-form-urlencoded"
     req = urllib.request.Request(f"{base}{path}", data=body, headers=headers)  # noqa: S310

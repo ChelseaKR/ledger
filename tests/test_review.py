@@ -21,7 +21,7 @@ from pathlib import Path
 
 import pytest
 
-from ledger.access.grants import anonymous, community_member
+from ledger.access.grants import anonymous, community_member, issue_grant_token
 from ledger.config import Config
 from ledger.ingest import Archive
 from ledger.models import AccessPolicy
@@ -30,7 +30,13 @@ from ledger.server import make_server
 
 _SENTINEL = "SENTINEL-REVIEW-DO-NOT-LEAK-5R1T"
 _VAULT_KEY = "0123456789abcdef0123456789abcdef0123456789a="
+_GRANT_SECRET = b"review-test-grant-secret"
 _NOW = "2026-06-17T00:00:00Z"
+
+
+def _steward_header() -> dict[str, str]:
+    """An ``X-Ledger-Grant`` header carrying a valid signed token for ``steward-1``."""
+    return {"X-Ledger-Grant": issue_grant_token("steward-1", _GRANT_SECRET)}
 
 
 # --- unit: the queue --------------------------------------------------------
@@ -80,6 +86,7 @@ def _grants_file(tmp_path: Path) -> Path:
 def server(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[Archive, str]]:
     """A running server with contributions enabled, a vault key, and a steward grant."""
     monkeypatch.setenv("LEDGER_VAULT_KEY", _VAULT_KEY)
+    monkeypatch.setenv("LEDGER_GRANT_SECRET", _GRANT_SECRET.decode())
     archive = Archive.init(Config.default("Review Archive", tmp_path / "arc"))
     httpd = make_server(
         archive,
@@ -115,7 +122,7 @@ def _req(
     base: str, path: str, *, data: dict[str, str] | None = None, steward: bool = False
 ) -> tuple[int, str]:
     body = urllib.parse.urlencode(data).encode("utf-8") if data is not None else None
-    headers = {"X-Ledger-Grant": "steward-1"} if steward else {}
+    headers = _steward_header() if steward else {}
     if body is not None:
         headers["Content-Type"] = "application/x-www-form-urlencoded"
     req = urllib.request.Request(f"{base}{path}", data=body, headers=headers)  # noqa: S310
@@ -255,7 +262,7 @@ def test_bulk_withhold_holds_every_selected_submission(server: tuple[Archive, st
         f"{base}/steward/submissions/withhold",
         data=body,
         headers={
-            "X-Ledger-Grant": "steward-1",
+            **_steward_header(),
             "Content-Type": "application/x-www-form-urlencoded",
         },
     )

@@ -26,29 +26,38 @@ confidentiality — the no-outing rule, confirmed in depth below):
 * The static handler resolves and bounds every path under ``web/static`` so a
   ``../`` cannot escape the document root (securability — no path traversal).
 
-Grant resolution is deny-by-default: requests are anonymous unless an
-``X-Ledger-Grant: <subject>`` header names a *pre-provisioned* subject in the
-grants file. An unknown subject falls back to anonymous; the header is never
-trusted beyond looking up an existing grant (least privilege, securability).
+Grant resolution is deny-by-default and *authenticated*: requests are anonymous
+unless the ``X-Ledger-Grant`` header carries a valid HMAC-signed capability token
+(``subject:expiry:mac`` under ``LEDGER_GRANT_SECRET``) that mints a subject which
+is (a) not on the revocation list and (b) pre-provisioned in the grants file. A
+missing header, a missing secret, a forged/expired token, a revoked subject, or an
+unprovisioned subject all fall back to the same anonymous grant, so the header is
+never trusted beyond authenticating a lookup into an existing grant, and a bearer
+token by itself confers nothing (least privilege, securability). Each honoured
+grant use is recorded in a scrubbed audit line — subject and route class only,
+never the token (no-outing rule).
 """
 
 from __future__ import annotations
 
+import contextlib
 import gzip
 import hashlib
 import http.server
 import json
 import os
 import tempfile
+import threading
 import time
 from email import policy as email_policy
 from email.parser import BytesParser
 from pathlib import Path
+from typing import BinaryIO
 from urllib.parse import parse_qs, quote, unquote, urlsplit
 
 from ledger import consent, contribute, export, i18n, oai, pagination, review, search, upload
 from ledger.access import anonymous, disclose, is_listable
-from ledger.access.grants import load_grants
+from ledger.access.grants import load_grants, load_revocations, verify_grant_token
 from ledger.errors import (
     AccessDenied,
     LedgerError,
@@ -56,6 +65,7 @@ from ledger.errors import (
     ObjectNotFound,
     ValidationError,
 )
+from ledger.fixity import CHUNK_SIZE
 from ledger.ingest import Archive
 from ledger.lockdown import is_locked_down
 from ledger.models import (
@@ -89,10 +99,20 @@ from ledger.render import (
 _WEB_ROOT: Path = Path(__file__).resolve().parent.parent.parent / "web"
 _STATIC_ROOT: Path = (_WEB_ROOT / "static").resolve()
 
-# Header a reverse proxy or an authenticated session may set to name a subject.
-# It is only ever used as a *lookup key* into a pre-provisioned grants file; the
-# header itself confers nothing (deny by default, least privilege).
+# Header carrying an HMAC-signed capability token (``subject:expiry:mac``). The
+# server verifies the token under ``LEDGER_GRANT_SECRET`` and uses the authenticated
+# subject only as a *lookup key* into a pre-provisioned grants file; an unsigned or
+# forged header confers nothing (deny by default, least privilege).
 _GRANT_HEADER: str = "X-Ledger-Grant"
+
+# Serializes the grant-use audit log's read-modify-write. `log_grant_use` reads the
+# whole PREMIS log and writes it back; under the threaded server two concurrent
+# privileged requests could interleave and *lose* an audit line (the on-disk write
+# is atomic, which prevents corruption but not lost updates). A process-wide lock
+# is correct here — the log is per-archive but appends are quick, and a lock is a
+# synchronization primitive, not a per-archive dependency, so it does not violate
+# the attach-dependencies-to-the-server doctrine below.
+_GRANT_LOG_LOCK = threading.Lock()
 
 # A conservative allowlist of static file suffixes to content types. Anything not
 # listed is served as ``application/octet-stream`` rather than guessed, so the
@@ -186,13 +206,28 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
     # --- grant resolution (deny by default) --------------------------------
 
     def _resolve_grant(self) -> Grant:
-        """Resolve the viewer's grant — anonymous unless a known subject is named.
+        """Resolve the viewer's grant — anonymous unless an *authenticated* subject is named.
 
-        Reads the ``X-Ledger-Grant`` header and looks the subject up in the
-        pre-provisioned grants mapping bound to the server. An unknown (or absent)
-        subject yields the anonymous public grant, so trust is never conferred by
-        the header itself — only by a grant a steward provisioned ahead of time
-        (deny by default, least privilege, securability).
+        The ``X-Ledger-Grant`` header is no longer a bare subject string: it carries
+        an HMAC-signed capability token minting a subject and an expiry. Resolution
+        is deny-by-default at every step, and any failure collapses to the same
+        anonymous public grant so an attacker learns nothing from the difference:
+
+        * no header, or no server grant secret configured -> anonymous;
+        * a forged, malformed, or expired token (:func:`verify_grant_token` returns
+          ``None``) -> anonymous;
+        * a subject on the revocation list -> anonymous, even with a still-valid MAC
+          (immediate retraction without rotating the secret) — and a revocation list
+          that exists but cannot be read counts as revoking *everyone*, because
+          silently un-revoking on a corrupt file would be a fail-open (fail closed);
+        * a subject with no pre-provisioned grant -> anonymous (a valid token authors
+          nothing by itself; the grant is what a steward provisioned ahead of time).
+
+        Only when a token authenticates a subject that is *not* revoked *and* has a
+        provisioned grant is that grant returned — and a scrubbed grant-use line is
+        appended to the archive audit log first (subject + route class only, never
+        the token) so privileged access is accountable (least privilege, no-outing
+        rule).
 
         Duress override (EXP-02): while the archive is in **lockdown**, every request
         is forced down to the anonymous public grant regardless of the header, so no
@@ -203,13 +238,40 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         """
         if is_locked_down(self._archive()):
             return anonymous()
-        grants = self._grants()
-        subject = self.headers.get(_GRANT_HEADER)
-        if subject is not None:
-            grant = grants.get(subject)
-            if grant is not None:
-                return grant
-        return anonymous()
+        token = self.headers.get(_GRANT_HEADER)
+        if token is None:
+            return anonymous()
+        subject = verify_grant_token(token, self._grant_secret(), now=now_iso())
+        if subject is None:
+            return anonymous()
+        revocations = self._revocations()
+        if revocations is None or subject in revocations:
+            return anonymous()
+        grant = self._grants().get(subject)
+        if grant is None:
+            return anonymous()
+        # A grant-use audit write must never fail the read it is recording; the lock
+        # serializes the log's read-modify-write so concurrent privileged requests
+        # on the threaded server never interleave and lose an audit line.
+        with contextlib.suppress(OSError, LedgerError), _GRANT_LOG_LOCK:
+            self._archive().log_grant_use(subject, self._route_class())
+        return grant
+
+    def _route_class(self) -> str:
+        """A coarse, identity-free class for the current route (for the grant-use log).
+
+        Only the class of surface is recorded — ``api``, ``steward``, ``static``, or
+        ``browse`` — never the concrete path (which could carry a record id) or the
+        query string (which could carry a search term), so the audit line discloses
+        nothing (no-outing rule)."""
+        path = urlsplit(self.path).path
+        if path.startswith("/api/"):
+            return "api"
+        if path.startswith("/steward"):
+            return "steward"
+        if path.startswith("/static/"):
+            return "static"
+        return "browse"
 
     # --- typed access to the server-bound dependencies ---------------------
 
@@ -222,6 +284,35 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
     def _grants(self) -> dict[str, Grant]:
         grants = getattr(self.server, "grants", None)
         return grants if isinstance(grants, dict) else {}
+
+    def _grant_secret(self) -> bytes:
+        """The configured grant-token secret as bytes, or empty when none is set.
+
+        Mirrors :meth:`_claim_secret`: the secret lives only in the environment
+        (``LEDGER_GRANT_SECRET``), never in argv or a file the archive serves, and an
+        unset secret means *every* token is anonymous — no accidental trust when a
+        deployment forgot to configure one (deny by default, fail closed)."""
+        return os.environ.get("LEDGER_GRANT_SECRET", "").encode("utf-8")
+
+    def _revocations(self) -> set[str] | None:
+        """The current revoked-subject set, re-read from disk on every call.
+
+        Re-reading (rather than caching a set at startup) is what makes
+        ``ledger grant revoke`` an *immediate* retraction: the very next
+        authenticated request consults the updated file, with no server restart.
+        The file is tiny and only authenticated requests reach this point, so the
+        re-read costs one small file open on exactly the requests that must be
+        checked. A missing file is the empty set (nothing revoked); a file that
+        exists but cannot be read or parsed returns ``None`` so the caller fails
+        *closed* (anonymous) instead of silently un-revoking every subject.
+        """
+        path = getattr(self.server, "revocations_path", None)
+        if not isinstance(path, Path):
+            return set()
+        try:
+            return load_revocations(path)
+        except (OSError, ValueError):  # unreadable/malformed list -> deny, never trust
+            return None
 
     def _allow_contributions(self) -> bool:
         """Whether the contributor submission surface is enabled on this server.
@@ -2032,7 +2123,17 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         is an indistinguishable 404. Bytes are read from the content-addressed store
         by their address, so what is served is fixity-verified by construction
         (integrity). Records were previously unreadable — the filename was an inert
-        false affordance (user research C4)."""
+        false affordance (user research C4).
+
+        Streams the file in :data:`~ledger.fixity.CHUNK_SIZE` windows rather than
+        reading it whole into memory first (FIX-03): a multi-gigabyte oral-history
+        video must not cost gigabytes of RSS to serve on the "one inexpensive box"
+        the archive targets. A single ``Range: bytes=...`` request is honored with
+        a ``206 Partial Content`` response (RFC 9110 §14) so a browser can seek
+        within served audio/video instead of re-downloading the whole file; a
+        malformed unit, a multi-range request, or no header at all falls back to a
+        full ``200`` response, and an unsatisfiable range gets a clean ``416``.
+        """
         record_id = _decode_id(raw_id)
         filename = _decode_id(raw_name)
         grant = self._resolve_grant()
@@ -2045,14 +2146,55 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         if payload is None:
             self._handle_not_found()
             return
+        # get_path/stat/open are all inside the not-found mapping: if the object
+        # vanishes between any two of them (TOCTOU), the answer stays the same
+        # indistinguishable 404 as any other unfetchable record (anti-enumeration).
+        handle = None
         try:
-            data = self._archive().store.read_bytes(payload.address)
-        except (ObjectNotFound, LedgerError):
+            path = self._archive().store.get_path(payload.address)
+            size = path.stat().st_size
+            if self.command != "HEAD":
+                handle = path.open("rb")
+        except (ObjectNotFound, LedgerError, OSError):
+            if handle is not None:  # pragma: no cover - defensive
+                handle.close()
             self._handle_not_found()
             return
-        self.send_response(200)
+        try:
+            self._send_file_response(handle, payload, filename, size)
+        finally:
+            if handle is not None:
+                handle.close()
+
+    def _send_file_response(
+        self, handle: BinaryIO | None, payload: PayloadFile, filename: str, size: int
+    ) -> None:
+        """Write the (range-aware) file response headers, then stream the bytes.
+
+        ``handle`` is the already-open payload handle (``None`` for HEAD). A
+        syntactically valid but unsatisfiable ``Range`` gets a clean ``416``;
+        otherwise a single satisfiable range gets ``206`` and anything else the
+        full ``200`` (RFC 9110 §14). The caller owns closing ``handle``.
+        """
+        try:
+            byte_range = _parse_range(self.headers.get("Range"), size)
+        except ValueError:
+            self.send_response(416)
+            self.send_header("Content-Range", f"bytes */{size}")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.end_headers()
+            return
+        if byte_range is None:
+            status, start, end = 200, 0, size - 1
+        else:
+            status, (start, end) = 206, byte_range
+        length = end - start + 1
+        self.send_response(status)
         self.send_header("Content-Type", payload.media_type or "application/octet-stream")
-        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Content-Length", str(length))
+        self.send_header("Accept-Ranges", "bytes")
+        if status == 206:
+            self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
         self.send_header("X-Content-Type-Options", "nosniff")
         # RFC 6266: a percent-encoded filename* is a recognized-safe way to carry
         # the (already CR/LF/quote-stripped) name, and it renders non-ASCII names
@@ -2065,8 +2207,15 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Security-Policy", "default-src 'none'; sandbox")
         self.send_header("Referrer-Policy", "no-referrer")
         self.end_headers()
-        if self.command != "HEAD":
-            self.wfile.write(data)
+        if handle is not None:
+            handle.seek(start)
+            remaining = length
+            while remaining > 0:
+                chunk = handle.read(min(CHUNK_SIZE, remaining))
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+                remaining -= len(chunk)
 
     # --- consent (user research P0-2): the contributor's front door ---------
 
@@ -2253,6 +2402,62 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
 # --- module-level render helpers (shared by routes) -------------------------
 
 
+class _UnsatisfiableRange(ValueError):
+    """A syntactically valid ``Range`` header names bytes ``size`` doesn't have."""
+
+
+def _parse_suffix_range(end_s: str, size: int) -> tuple[int, int] | None:
+    """Parse the suffix form ``bytes=-N`` (the last N bytes of the resource).
+
+    A suffix range against an empty resource is unsatisfiable (RFC 9110 §14.1.2:
+    there is no last byte to name), so ``size == 0`` raises rather than yielding
+    a malformed ``206`` with an inverted ``Content-Range``."""
+    try:
+        suffix_len = int(end_s)
+    except ValueError:
+        return None
+    if size == 0 or suffix_len <= 0:
+        raise _UnsatisfiableRange("unsatisfiable suffix range")
+    return max(0, size - suffix_len), size - 1
+
+
+def _parse_bounded_range(start_s: str, end_s: str, size: int) -> tuple[int, int] | None:
+    """Parse the ``bytes=start-`` / ``bytes=start-end`` forms against ``size``."""
+    try:
+        start = int(start_s)
+        end = int(end_s) if end_s else size - 1
+    except ValueError:
+        return None
+    if start < 0 or start >= size or start > end:
+        raise _UnsatisfiableRange("unsatisfiable range")
+    return start, min(end, size - 1)
+
+
+def _parse_range(header: str | None, size: int) -> tuple[int, int] | None:
+    """Parse a single-range ``Range: bytes=start-end`` header against ``size``.
+
+    Returns an inclusive ``(start, end)`` byte range, or ``None`` if there is no
+    ``Range`` header, it names a unit other than ``bytes``, it requests more than
+    one range, or it is otherwise malformed — RFC 9110 §14.2 lets a server ignore
+    any Range request it does not want to honor, and falling back to a full
+    ``200`` response is always a valid (if less efficient) answer. Raises
+    :class:`_UnsatisfiableRange` only for a syntactically well-formed but
+    unsatisfiable range, so the caller can answer that case with a clean ``416``
+    instead of silently serving the wrong bytes.
+    """
+    if not header or not header.startswith("bytes="):
+        return None
+    spec = header[len("bytes=") :]
+    if "," in spec or "-" not in spec:
+        return None
+    start_s, _, end_s = spec.partition("-")
+    if start_s == "" and end_s == "":
+        return None
+    if start_s == "":
+        return _parse_suffix_range(end_s, size)
+    return _parse_bounded_range(start_s, end_s, size)
+
+
 def _safe_filename(name: str) -> str:
     """A filename safe to place in a ``Content-Disposition`` header.
 
@@ -2286,6 +2491,7 @@ def make_server(
     host: str = "127.0.0.1",
     port: int = 8000,
     grants_path: Path | None = None,
+    revocations_path: Path | None = None,
     allow_contributions: bool = False,
 ) -> http.server.HTTPServer:
     """Build (but do not start) the browse server bound to ``archive``.
@@ -2297,11 +2503,23 @@ def make_server(
     ``grants_path`` (an absent file yields no grants, so everyone is anonymous —
     deny by default) and attached to the server, where the handler reads it.
 
+    The revocation list lives at ``revocations_path`` when given, else at a
+    ``revocations.json`` sitting beside the grants file. Its *path* — not a
+    snapshot of its contents — is attached to the server, and the handler re-reads
+    it on each authenticated request, so ``ledger grant revoke`` takes effect
+    immediately with no restart (an absent file yields an empty set — nothing
+    revoked). It is still read once here so a malformed file fails the server at
+    startup rather than surfacing later as silent denials (fail fast).
+
     Dependencies are attached to the server instance rather than to module
     globals, so several archives can be served from one process without
     interfering (modularity, testability).
     """
     grants = load_grants(grants_path) if grants_path is not None else {}
+    if revocations_path is None and grants_path is not None:
+        revocations_path = grants_path.parent / "revocations.json"
+    if revocations_path is not None:
+        load_revocations(revocations_path)  # fail fast on an unreadable/malformed list
     # Threaded so the per-request response-time floor (which equalizes the timing of
     # a not-found vs a not-authorized record) never serializes other requests
     # (availability, responsiveness) — and so the site serves several readers at once.
@@ -2309,6 +2527,7 @@ def make_server(
     # Attach the dependencies the handler reads per request.
     httpd.archive = archive  # type: ignore[attr-defined]
     httpd.grants = grants  # type: ignore[attr-defined]
+    httpd.revocations_path = revocations_path  # type: ignore[attr-defined]
     httpd.allow_contributions = allow_contributions  # type: ignore[attr-defined]
     return httpd
 
@@ -2319,6 +2538,7 @@ def serve(
     host: str = "127.0.0.1",
     port: int = 8000,
     grants_path: Path | None = None,
+    revocations_path: Path | None = None,
     allow_contributions: bool = False,
 ) -> None:
     """Build and run the browse server until interrupted (blocking).
@@ -2332,6 +2552,7 @@ def serve(
         host=host,
         port=port,
         grants_path=grants_path,
+        revocations_path=revocations_path,
         allow_contributions=allow_contributions,
     )
     try:

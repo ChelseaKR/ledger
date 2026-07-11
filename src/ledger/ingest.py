@@ -22,6 +22,7 @@ depth).
 
 from __future__ import annotations
 
+import hashlib
 import json
 import mimetypes
 import os
@@ -32,13 +33,14 @@ from pathlib import Path
 
 from ledger.access import disclose, is_listable
 from ledger.attest import attested_conditions
-from ledger.bag import validate_bag, write_bag
+from ledger.bag import atomic_write_text, refresh_tag_manifests, validate_bag, write_bag
 from ledger.cas import ContentStore
 from ledger.config import Config
 from ledger.errors import BagValidationError, LedgerError, ObjectNotFound
 from ledger.fixity import AuditReport, hash_file_multi
 from ledger.identity import ContributorIdentity, IdentityVault
 from ledger.metadata.dublincore import to_json as dublincore_to_json
+from ledger.metadata.pid import mint_ark
 from ledger.metadata.premis import PremisLog
 from ledger.models import (
     AccessPolicy,
@@ -52,6 +54,7 @@ from ledger.models import (
     PayloadFile,
     PremisEvent,
     PremisEventType,
+    PremisRights,
     Record,
     canonical_json,
     now_iso,
@@ -242,6 +245,50 @@ def _assert_identity_free(text: str, identity: ContributorIdentity | None, where
             raise LedgerError(f"no-outing violation: contributor identity present in {where}")
 
 
+# --- rights + persistent identifiers ----------------------------------------
+
+
+# The preservation acts a record's rights statement grants by default. These are the
+# archive's own custodial acts (make it discoverable, keep redundant copies), so a
+# partner repository reading the PREMIS rights knows it may do the same. They are NOT
+# an access decision — who may *see* a record is the disclosure policy's job; rights
+# describe the terms of *reuse* (separation of concerns).
+_DEFAULT_GRANTED_ACTS: tuple[str, ...] = ("disseminate", "replicate")
+
+
+def rights_for_record(record: Record) -> PremisRights:
+    """Derive a PREMIS rights statement from a record's declared rights/license.
+
+    The archive already carries reuse terms in Dublin Core ``rights`` (the standard
+    home for a licence or rights statement). This lifts that collection-level value
+    into a first-class PREMIS :class:`~ledger.models.PremisRights` entity so the
+    terms are legible to a preservation system, not only a human reader
+    (standards-compliance, interoperability).
+
+    When the record declares a licence, the basis is ``"license"`` and the note is
+    the declared value; otherwise it falls back to a conservative, honest default —
+    basis ``"other"`` with the note *"as declared by contributing collective"* — so
+    every record carries an explicit statement rather than a silent gap (completeness).
+
+    No-outing rule: the statement is built only from collection-level Dublin Core
+    ``rights`` and the opaque record id; it names no contributor and no rights holder.
+    """
+    declared = [value for value in record.dublin_core.rights if value.strip()]
+    if declared:
+        return PremisRights(
+            rights_basis="license",
+            rights_note="; ".join(declared),
+            granted_acts=_DEFAULT_GRANTED_ACTS,
+            linked_object=record.record_id,
+        )
+    return PremisRights(
+        rights_basis="other",
+        rights_note="as declared by contributing collective",
+        granted_acts=_DEFAULT_GRANTED_ACTS,
+        linked_object=record.record_id,
+    )
+
+
 # --- the ingest pipeline ----------------------------------------------------
 
 
@@ -397,6 +444,16 @@ def ingest_sip(  # noqa: C901
     if not record.dublin_core.format and identified_media_types:
         record.dublin_core.format = sorted(set(identified_media_types))
 
+    # Mint a deterministic, archive-local persistent identifier from the record id and
+    # record it as a Dublin Core `identifier` (the standard home for a resource's
+    # identifiers), so a record has a stable, quotable handle for scholarship that does
+    # not change if the archive moves hosts (RM5; user research P2-3). The mint is a
+    # pure function of the opaque record id, so it is byte-reproducible and carries no
+    # identity. Added only when absent, so a re-derivation never duplicates it.
+    pid = mint_ark(record.record_id)
+    if pid not in record.dublin_core.identifier:
+        record.dublin_core.identifier = [*record.dublin_core.identifier, pid]
+
     # Absolute-SEALED fields are encrypted AT REST so a stolen disk or hostile
     # replica reveals nothing, not even to a steward (user research P2-4). Such a
     # field is never disclosed on any read path, so it is only ever encrypted, never
@@ -452,6 +509,11 @@ def ingest_sip(  # noqa: C901
             premis.record(event)
         for event in format_events:
             premis.record(event)
+        # Attach a PREMIS rights statement derived from the record's declared
+        # rights/licence, so the terms of reuse travel with the preservation log as a
+        # first-class entity (RM5; PREMIS v3 rights). It is collection-level and
+        # identity-free, and is still re-scanned below like every other artifact.
+        premis.set_rights(rights_for_record(record))
         premis_json = premis.to_json()
 
         # 4. Defense in depth: scan every artifact for the identity BEFORE a single
@@ -685,6 +747,26 @@ class Archive:
         already-identity-free manifest bytes and the CAS, so it adds no new no-outing
         surface and needs no bag reseal (the index lives under ``records/``, outside
         every bag).
+
+        Because ``record.json`` and ``premis.json`` are *tag* files covered by the
+        bag's tag manifests, rewriting them would leave the tag manifests stale and
+        the bag failing its own :func:`~ledger.bag.validate_bag` check — a lawful
+        change reading as tampering at the next audit. The bag is therefore resealed
+        via :func:`~ledger.bag.refresh_tag_manifests`, which recomputes only the tag
+        manifests (the payload manifests, the real content fixity, are untouched), so
+        an updated bag re-validates while genuine content rot is still caught
+        (integrity, failure transparency).
+
+        Every reseal is itself recorded: a PREMIS ``VALIDATION`` event carrying the
+        old and new ``record.json`` digests (and the pre-append ``premis.json``
+        digest) is appended alongside ``event`` before the tag manifests are
+        recomputed. A lawful reseal therefore leaves an auditable digest transition
+        in the log it reseals — it is never bit-for-bit indistinguishable from an
+        edit that skipped the log — giving the hash-chained log (FIX-06) a concrete
+        anchor for each tag-manifest generation (accountability, non-repudiation).
+        All file writes are atomic (temp + ``os.replace``); the residual risk is a
+        crash *between* files, a window this ordering keeps to the log-write and
+        reseal steps that the next ``audit_fixity`` surfaces rather than hides.
         """
         manifest = serialize_record(record)
         fast = self.records_dir / f"{record.record_id}.json"
@@ -698,17 +780,48 @@ class Archive:
             address = self.store.put_bytes(prior)
             self._append_version(record.record_id, str(address), event.event_type.value)
 
-        fast.write_text(manifest, encoding="utf-8", newline="\n")
+        atomic_write_text(fast, manifest)
 
         bag_dir = self.bags_dir / record.record_id
+        will_reseal = next(bag_dir.glob("tagmanifest-*.txt"), None) is not None
+        resealed = False
+        transitions: list[str] = []
         in_bag = bag_dir / _RECORD_FILENAME
         if in_bag.exists():
-            in_bag.write_text(manifest, encoding="utf-8", newline="\n")
+            old_digest = hashlib.sha256(in_bag.read_bytes()).hexdigest()
+            new_digest = hashlib.sha256(manifest.encode("utf-8")).hexdigest()
+            atomic_write_text(in_bag, manifest)
+            transitions.append(f"{_RECORD_FILENAME} sha256 {old_digest} -> {new_digest}")
+            resealed = True
         premis_path = bag_dir / _PREMIS_FILENAME
         if premis_path.exists():
+            old_premis = hashlib.sha256(premis_path.read_bytes()).hexdigest()
             log = PremisLog.read(premis_path)
             log.record(event)
+            if will_reseal:
+                # The digest-transition record: what changed and from/to which
+                # bytes. The new premis.json digest cannot name itself (it would
+                # be self-referential); the refreshed tag manifest carries it.
+                transitions.append(f"{_PREMIS_FILENAME} sha256 before append {old_premis}")
+                log.record(
+                    PremisEvent(
+                        event_type=PremisEventType.VALIDATION,
+                        agent=event.agent,
+                        outcome="success",
+                        detail="bag resealed after lawful manifest update: "
+                        + "; ".join(transitions),
+                        linked_object=record.record_id,
+                        event_datetime=event.event_datetime,
+                    )
+                )
             log.write(premis_path)
+            resealed = True
+
+        # Reseal: recompute the tag manifests so the rewritten tag files re-validate.
+        # Guarded by the presence of a tag manifest so a records-only update (no bag
+        # on disk) stays a no-op rather than raising (robustness).
+        if resealed and will_reseal:
+            refresh_tag_manifests(bag_dir)
 
     def _append_version(self, record_id: str, address: str, event_type: str) -> None:
         """Append one superseded-manifest snapshot to the record's version index.
@@ -777,6 +890,32 @@ class Archive:
         self.logs_dir.mkdir(parents=True, exist_ok=True)
         log = PremisLog.read(log_path) if log_path.exists() else PremisLog()
         log.record(event)
+        log.write(log_path)
+
+    def log_grant_use(self, subject: str, route_class: str, *, now: str | None = None) -> None:
+        """Append a scrubbed record that an authenticated grant was used on a request.
+
+        Written to ``logs/grant-uses.premis.json`` so a steward can see *that* a
+        provisioned subject exercised its capability and on *which class of route*
+        (e.g. ``browse``, ``api``, ``steward``) — accountability for privileged
+        access. It records only the grant ``subject`` (a pre-provisioned identifier,
+        never a real contributor name) and a coarse route class: never the bearer
+        token, never a record id, never a query string, so the audit trail itself
+        discloses nothing (no-outing rule — logs disclose nothing).
+        """
+        self.logs_dir.mkdir(parents=True, exist_ok=True)
+        log_path = self.logs_dir / "grant-uses.premis.json"
+        log = PremisLog.read(log_path) if log_path.exists() else PremisLog()
+        log.record(
+            PremisEvent(
+                event_type=PremisEventType.VALIDATION,
+                agent=subject,
+                outcome="success",
+                detail=f"authenticated grant used on {route_class} route",
+                linked_object=None,
+                event_datetime=now if now is not None else now_iso(),
+            )
+        )
         log.write(log_path)
 
     def remove_all_copies(self, record_id: str) -> tuple[int, bool]:
