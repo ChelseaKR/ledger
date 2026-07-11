@@ -38,27 +38,29 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           persist-credentials: false
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
+      # SEC-13/CQ-09/CQ-27: install from the committed, hash-locked `uv.lock`
+      # (`--locked` fails the build rather than silently re-resolving) instead of
+      # an unpinned `pip install -e ".[dev]"` against version ranges — the same
+      # exact dependency graph on every contributor's machine and in CI.
+      - uses: astral-sh/setup-uv@f98e06938123ccabd21905ea5d0069192241f9f1  # v8.3.1
         with:
           python-version: ${{ matrix.python }}
-          cache: pip
+          enable-cache: true
       - name: Install
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+        run: uv sync --locked --group dev
       - name: Lint (ruff)
         run: |
-          ruff check src tests
-          ruff format --check src tests
+          uv run ruff check src tests
+          uv run ruff format --check src tests
       - name: Type check (mypy strict)
-        run: mypy
+        run: uv run mypy
       - name: Test with coverage
-        run: pytest --cov --cov-report=term-missing --cov-report=xml
+        run: uv run pytest --cov --cov-report=term-missing --cov-report=xml
       # Per-module floor (CODE-QUALITY-STANDARD, security/crypto-critical paths):
       # the access-policy, consent, and dual-control modules must hold >=95%
       # branch coverage, above the 85% baseline. Mirrors `make cov`.
       - name: Per-module coverage floor (access/consent/dual-control >=95%)
-        run: coverage report --include="src/ledger/access/*,src/ledger/consent.py,src/ledger/dualcontrol.py" --fail-under=95
+        run: uv run coverage report --include="src/ledger/access/*,src/ledger/consent.py,src/ledger/dualcontrol.py" --fail-under=95
       - name: Upload coverage
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
@@ -79,18 +81,16 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           persist-credentials: false
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
-        with:
-          python-version: "3.12"
-          cache: pip
       # msgfmt (G7 PO-compilation gate) is a system gettext binary, not a pip
       # dependency — installed here just like the supply-chain job installs a
-      # non-pip scanner. babel/pybabel come from the dev extras below.
+      # non-pip scanner. babel/pybabel come from the locked `dev` group below.
       - name: Install gettext (msgfmt)
         run: sudo apt-get update && sudo apt-get install -y gettext
-      - run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+      - uses: astral-sh/setup-uv@f98e06938123ccabd21905ea5d0069192241f9f1  # v8.3.1
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - run: uv sync --locked --group dev
       # Exactly what `make verify` runs locally (no local/CI drift): G2-lite (POT
       # committed & current), G7 (msgfmt --check), G6/G5 (EN/ES key-parity +
       # completeness + placeholder parity), G3 (BCP 47 tag validity).
@@ -111,17 +111,15 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           persist-credentials: false
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
+      - uses: astral-sh/setup-uv@f98e06938123ccabd21905ea5d0069192241f9f1  # v8.3.1
         with:
           python-version: "3.12"
-          cache: pip
-      - run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+          enable-cache: true
+      - run: uv sync --locked --group dev
       # This gate runs the disclosure tests on their own so a regression in the
       # core safety guarantee is unmistakable in the checks list, not buried.
       - name: Contributor identity never leaks
-        run: pytest -m disclosure -q
+        run: uv run pytest -m disclosure -q
 
   accessibility:
     name: accessibility gate (WCAG 2.2 AA)
@@ -137,18 +135,16 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           persist-credentials: false
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
+      - uses: astral-sh/setup-uv@f98e06938123ccabd21905ea5d0069192241f9f1  # v8.3.1
         with:
           python-version: "3.12"
-          cache: pip
-      - run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+          enable-cache: true
+      - run: uv sync --locked --group dev
       # Static accessibility checks (landmarks, labels, lang, alt text, contrast
       # tokens) run with no browser. The full axe + manual screen-reader review is
       # documented in docs/accessibility/ and recorded in the committed ACR.
       - name: Static a11y checks on the web surface
-        run: python -m ledger.accessibility_check web
+        run: uv run python -m ledger.accessibility_check web
 
   accessibility-browser:
     name: accessibility (browser axe over the served site)
@@ -211,14 +207,17 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
+      - uses: astral-sh/setup-uv@f98e06938123ccabd21905ea5d0069192241f9f1  # v8.3.1
         with:
           python-version: "3.12"
-      - run: |
-          python -m pip install --upgrade pip
-          pip install pip-audit
+          enable-cache: true
+      # Audit exactly the graph pinned in `uv.lock` (`--locked` fails rather than
+      # re-resolving), not whatever an unpinned `pip install pip-audit` happens to
+      # pull that day — the scan target and the shipped lockfile are now the same
+      # artifact (SEC-13).
+      - run: uv sync --locked --group dev
       - name: Vulnerable dependency scan (pip-audit)
-        run: pip-audit -r <(pip freeze)
+        run: uv run pip-audit
       - name: Secret scan (gitleaks)
         # Run the pinned gitleaks binary directly. The gitleaks-action v2 crashes
         # on pull_request events (internal GitHub API RequestError) before it ever
