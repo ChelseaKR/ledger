@@ -110,9 +110,42 @@ services:
         max-size: "10m"
         max-file: "5"
 
+  # --- OPTIONAL: scheduled encrypted off-box backup (RM10) -------------------
+  # ledger ships NO backup daemon: on a one-cheap-box deployment the host's cron or
+  # systemd timer is already there and is the recommended path (see
+  # docs/BACKUP-RUNBOOK.md). This commented sidecar is an OPT-IN example of the same
+  # pattern for operators who prefer to keep everything in compose. It mounts the
+  # archive volume read-only plus a separate backups volume, and runs `ledger backup`
+  # on an interval. Uncomment, then set LEDGER_BACKUP_PASSPHRASE (and, for the
+  # vault-readability check, LEDGER_VAULT_KEY) in infra/.env — NEVER in this file, and
+  # NEVER stored next to the backups. Copy the backups OFF this box (rsync/rclone/
+  # restic) for the off-box guarantee; a local-only backup is not off-box.
+  #
+  # backup:
+  #   image: ledger:local
+  #   depends_on: [ledger]
+  #   restart: unless-stopped
+  #   env_file: [.env]     # provides LEDGER_BACKUP_PASSPHRASE (+ optional LEDGER_VAULT_KEY)
+  #   volumes:
+  #     - archive-data:/data:ro          # the live archive, read-only
+  #     - archive-backups:/backups       # encrypted *.tar.fernet output
+  #   entrypoint: ["/bin/sh", "-c"]
+  #   command:
+  #     - >
+  #       while true; do
+  #         ledger backup --root /data --dest /backups --keep 14 || echo "backup FAILED";
+  #         sleep 86400;
+  #       done
+  #   security_opt: [no-new-privileges:true]
+
 volumes:
   # Named, Docker-managed volume. To put the archive on a specific disk (e.g. a
   # larger or more durable mount), replace this with a bind mount or a `driver_opts`
   # device — but keep the sensitivity and backup warnings above in mind.
   archive-data:
     name: ledger-archive-data
+
+  # Backups written by the optional `backup` sidecar above. Uncomment together with
+  # that service. These are ENCRYPTED (*.tar.fernet); still copy them off-box.
+  # archive-backups:
+  #   name: ledger-archive-backups

@@ -206,8 +206,10 @@ are running what the maintainers actually shipped.
 Because the records are de-risked by the open BagIt format (§2), dormancy is survivable.
 Concretely, a community should:
 
-1. keep its off-box replicas and scheduled fixity audits running — these need no upstream
-   releases (`docs/ADOPTING.md`);
+1. keep its off-box replicas, scheduled fixity audits, and scheduled encrypted backups
+   running — these need no upstream releases (`docs/ADOPTING.md`; the backup, key-backup,
+   and restore-drill procedure is in `docs/BACKUP-RUNBOOK.md`, and the *location* of the
+   vault key and the separate backup passphrase should be recorded for a successor here);
 2. pin and keep the last signed release it verified, rather than tracking an unsigned
    `main`;
 3. retain the ability to read and verify bags with standard tools, independent of ledger;

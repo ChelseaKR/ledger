@@ -69,7 +69,10 @@ model §4.4, §4.5; user research §7). The final item makes this explicit.
 - [ ] **Back up `store/`, `bags/`, and the vault.** The vault backup is useless without
       its key (that is by design), so it is safe to replicate the ciphertext — but treat
       the *key* as the crown jewel and back it up separately and securely (threat model
-      §4.1).
+      §4.1). Automate this with `ledger backup` (scheduled, encrypted, off-box) and prove
+      it recovers with `ledger restore-backup` — the full procedure, cron/timer examples,
+      the key-backup steps, and restore-drill cadence are in
+      [`docs/BACKUP-RUNBOOK.md`](BACKUP-RUNBOOK.md).
 - [ ] **Replicate the moderation/audit log off-box.** The append-only log is append-only
       *as enforced by the application*; an attacker with raw write access can tamper with
       the on-disk file, so off-box copies and fixity matter (threat model §4.4).
