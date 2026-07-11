@@ -127,7 +127,7 @@ def sync_and_read(path: Path, records_dir: Path) -> list[str]:
     conn = _connect(Path(path))
     try:
         cached = {
-            row[0]: (row[1], row[2], row[3])
+            row[0]: (row[1], row[2], row[3], row[4])
             for row in conn.execute(
                 "SELECT record_id, manifest, mtime_ns, ctime_ns, size FROM records"
             )
@@ -136,12 +136,7 @@ def sync_and_read(path: Path, records_dir: Path) -> list[str]:
         upserts: list[tuple[str, str, int, int, int]] = []
         for record_id, (file, mtime_ns, ctime_ns, size) in on_disk.items():
             hit = cached.get(record_id)
-            if (
-                hit is not None
-                and hit[1] == mtime_ns
-                and hit[2] == ctime_ns
-                and hit[3] == size
-            ):
+            if hit is not None and hit[1] == mtime_ns and hit[2] == ctime_ns and hit[3] == size:
                 texts.append(hit[0])
                 continue
             try:
