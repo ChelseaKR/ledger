@@ -269,9 +269,7 @@ class ConsentRequestStore:
                                 created_at=req.created_at,
                                 due_by=req.due_by,
                                 resolved_at=(
-                                    (now or now_iso())
-                                    if status == "resolved"
-                                    else req.resolved_at
+                                    (now or now_iso()) if status == "resolved" else req.resolved_at
                                 ),
                             )
                         )
