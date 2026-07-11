@@ -119,6 +119,10 @@ def is_visible(
             # grant satisfies it — there is no read path on which it is disclosed
             # (the "seal from everyone" tier; such values are encrypted at rest).
             return False
+        case _:
+            # Unknown enum-like values are never visible. This explicit fallback
+            # preserves the deny-by-default contract for malformed runtime input.
+            return False  # type: ignore[unreachable]
 
 
 def is_listable(

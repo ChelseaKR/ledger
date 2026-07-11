@@ -191,9 +191,10 @@ def test_contribution_flow_is_localized(open_server: tuple[Archive, str]) -> Non
 def test_summary_becomes_dublin_core_description(open_server: tuple[Archive, str]) -> None:
     """An optional summary lands in dc:description, giving listings/feed a real teaser."""
     archive, base = open_server
-    _status, form = _get(base, "/contribute")
+    status, form = _get(base, "/contribute")
+    assert status == 200
     assert 'id="summary"' in form and 'for="summary"' in form  # the field is offered
-    _status, _body = _post(
+    status, body = _post(
         base,
         "/contribute",
         {
@@ -204,6 +205,8 @@ def test_summary_becomes_dublin_core_description(open_server: tuple[Archive, str
             "visibility": "public",
         },
     )
+    assert status == 200
+    assert "Thank you" in body
     record = archive._all_records()[0]
     assert record.dublin_core.description == ["A first-hand account of the May march."]
     # The account body stays in its own policy-gated field, not the public teaser.

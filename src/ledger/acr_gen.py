@@ -600,14 +600,14 @@ def render() -> str:
         f"Last verified: {_LAST_VERIFIED} · Recheck cadence: {_RECHECK_CADENCE}",
         "",
         "This report describes the accessibility conformance of ledger's public "
-        "browse/search surface against WCAG 2.x (Levels A and AA, including the "
-        "WCAG 2.2 additions), the Revised Section 508 software and support-"
-        "documentation requirements, and the Functional Performance Criteria.",
+        + "browse/search surface against WCAG 2.x (Levels A and AA, including the "
+        + "WCAG 2.2 additions), the Revised Section 508 software and support-"
+        + "documentation requirements, and the Functional Performance Criteria.",
         "",
         "ledger is a pre-1.0 reference implementation. This ACR is deliberately "
-        "candid: where support is genuinely partial or aspirational it says "
-        '"Partially Supports" with a specific remark, rather than overstating '
-        "conformance. An honest report is more useful than a uniformly green one.",
+        + "candid: where support is genuinely partial or aspirational it says "
+        + '"Partially Supports" with a specific remark, rather than overstating '
+        + "conformance. An honest report is more useful than a uniformly green one.",
         "",
         "### Conformance Levels",
         "",
@@ -624,9 +624,9 @@ def render() -> str:
         f"- Not Applicable: {counts[_NA]}",
         "",
         "The automated accessibility gate (`ledger.accessibility_check`) enforces "
-        'the structural floor behind many "Supports" rows on every commit; the '
-        '"Partially Supports" rows name the specific work still owed before a full '
-        "claim is warranted.",
+        + 'the structural floor behind many "Supports" rows on every commit; the '
+        + '"Partially Supports" rows name the specific work still owed before a full '
+        + "claim is warranted.",
         "",
         "### Evidence basis",
         "",

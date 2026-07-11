@@ -98,7 +98,6 @@ from ledger.replicate import verify_replicas
 from ledger.server import serve
 
 _CONFIG_FILENAME = "config.json"
-_PREMIS_FILENAME = "premis.json"
 
 
 # --- shared helpers ---------------------------------------------------------
