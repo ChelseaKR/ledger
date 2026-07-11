@@ -246,12 +246,31 @@ def test_on_disk_artifacts_never_contain_sentinel(ingested: IngestedArchive) -> 
         _assert_clean(text, f"on-disk {name}")
 
 
+def test_catalog_index_never_contains_sentinel(ingested: IngestedArchive) -> None:
+    """FIX-04: the sqlite catalog index caches record manifests -- audit it too.
+
+    The index (:mod:`ledger.catalog_index`) is a cache of the same identity-free
+    ``records/*.json`` text every other read path already trusts, but it is a new
+    on-disk artifact, so it gets its own explicit sentinel scan rather than relying
+    only on the whole-tree sweep below (belt and suspenders on the single riskiest
+    new surface FIX-04 adds). ``browse`` is called first so the index is actually
+    built before the file is inspected.
+    """
+    ingested.archive.browse(steward("steward"), now=_NOW)
+    index_file = ingested.archive.index_path
+    assert index_file.exists(), "browse() must have built the catalog index"
+    raw = index_file.read_bytes().decode("latin-1")
+    _assert_clean(raw, "catalog index (sqlite)")
+
+
 def test_whole_store_tree_never_contains_sentinel(ingested: IngestedArchive) -> None:
     """Defense in depth: NO clear-text file anywhere under the store leaks the sentinel.
 
     The vault itself is excluded because it legitimately holds the (encrypted) identity;
-    every other file — manifests, tag files, payload, config — is scanned.
+    every other file — manifests, tag files, payload, config, and the catalog index
+    (browse is called first so it exists to be scanned) — is scanned.
     """
+    ingested.archive.browse(steward("steward"), now=_NOW)
     vault_path = Path(ingested.archive.vault_path).resolve()
     for path in ingested.store_root.rglob("*"):
         if not path.is_file() or path.resolve() == vault_path:

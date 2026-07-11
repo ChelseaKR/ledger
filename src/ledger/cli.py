@@ -389,6 +389,21 @@ def _cmd_audit(args: argparse.Namespace) -> int:
     return 0 if failures == 0 else 1
 
 
+def _cmd_reindex(args: argparse.Namespace) -> int:
+    """``reindex`` -- rebuild the sqlite catalog index from ``records/`` (FIX-04).
+
+    Deterministic and safe to run any time, including after ``rm -rf
+    store/index``: it never changes ``records/`` (the source of truth), only the
+    cache that browse/search/OAI/sitemap read from for speed. Prints only a
+    count -- never a record id or title -- so this command stays clean under the
+    no-outing rule even piped into a log.
+    """
+    archive = _open_archive(Path(args.root))
+    count = archive.reindex()
+    print(f"reindexed {count} record(s)")
+    return 0
+
+
 def _persist_record(archive: Archive, record: Record, event: PremisEvent) -> None:
     """Persist an updated record manifest and PREMIS event via the archive.
 
@@ -1298,6 +1313,12 @@ def _build_parser() -> argparse.ArgumentParser:
     p_audit = sub.add_parser("audit", help="validate every bag's fixity")
     p_audit.add_argument("--root", required=True)
     p_audit.set_defaults(func=_cmd_audit)
+
+    p_reindex = sub.add_parser(
+        "reindex", help="rebuild the catalog index from records/ (FIX-04, deterministic)"
+    )
+    p_reindex.add_argument("--root", required=True)
+    p_reindex.set_defaults(func=_cmd_reindex)
 
     p_verify_backup = sub.add_parser(
         "verify-backup", help="prove a restored backup is intact (cron-friendly)"
