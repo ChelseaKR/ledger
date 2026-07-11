@@ -52,14 +52,19 @@ no-outing audit). A pull request that violates it will be closed and, if needed,
 
 ## Getting set up
 
-ledger targets Python 3.12+ and a single runtime dependency. One command installs everything:
+ledger targets Python 3.12+ and a single runtime dependency. Dependencies are managed with
+[uv](https://docs.astral.sh/uv/) and pinned in the committed [`uv.lock`](uv.lock); one command
+installs everything:
 
 ```sh
 make install
 ```
 
-This creates a virtual environment in `.venv` and installs ledger plus the dev tooling
-(ruff, mypy, pytest, pip-audit) in editable mode. Run `make help` to see every target.
+This creates a virtual environment in `.venv` and installs ledger plus the dev tooling (ruff,
+mypy, pytest, pip-audit — the PEP 735 `dev` dependency group in `pyproject.toml`) from the
+locked, hash-pinned graph in `uv.lock` (`uv sync --locked`), not a fresh version-range resolve.
+If you add or bump a dependency, run `make lock` to regenerate `uv.lock` and commit the result
+alongside the `pyproject.toml` change. Run `make help` to see every target.
 
 Optionally, install the pre-commit hooks so lint/format/secret issues are caught before they
 leave your machine, not just in CI:
