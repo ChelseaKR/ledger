@@ -268,9 +268,26 @@ def test_apply_update_reseals_bag_so_audit_fixity_stays_green(tmp_path: Path) ->
     )
     archive.apply_update(updated, event)
 
+    # The update actually took effect (a no-op apply_update must not pass this
+    # test): the next read reflects the tightened policy.
+    assert archive.get(rid).default_policy is AccessPolicy.STEWARDS
+
     # The change is durably recorded in the bag's PREMIS log...
     premis = PremisLog.read(archive.bags_dir / rid / "premis.json")
     assert any(e.event_type is PremisEventType.CONSENT_CHANGE for e in premis.events)
+
+    # ...the reseal itself is recorded as a VALIDATION event carrying the
+    # record.json digest transition, so a lawful reseal is never bit-for-bit
+    # indistinguishable from an edit that skipped the log...
+    reseal_events = [
+        e
+        for e in premis.events
+        if e.event_type is PremisEventType.VALIDATION and "resealed" in e.detail
+    ]
+    assert len(reseal_events) == 1
+    assert "record.json sha256" in reseal_events[0].detail
+    assert " -> " in reseal_events[0].detail
+    assert reseal_events[0].linked_object == rid
 
     # ...and, crucially, the bag still re-validates: the lawful edit does not read
     # as tampering at the next audit (the FIX-01 guarantee).

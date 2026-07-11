@@ -252,12 +252,59 @@ def test_refresh_tag_manifests_matches_write_bag_output(
         payload_sources,
         extra_tag_files={"record.json": b'{"policy": "public"}'},
     )
-    before = (bag.path / "tagmanifest-sha256.txt").read_text(encoding="utf-8")
+    manifests = ["tagmanifest-sha256.txt", "tagmanifest-blake2b.txt"]
+    before = {name: (bag.path / name).read_text(encoding="utf-8") for name in manifests}
 
     refresh_tag_manifests(bag.path)
 
-    after = (bag.path / "tagmanifest-sha256.txt").read_text(encoding="utf-8")
-    assert before == after
+    after = {name: (bag.path / name).read_text(encoding="utf-8") for name in manifests}
+    assert before == after  # byte-identical under BOTH algorithms
+
+
+@pytest.mark.preservation
+def test_refresh_tag_manifests_ignores_stray_files(
+    tmp_path: Path, payload_sources: dict[str, Path]
+) -> None:
+    """A stray file at bag root is never sealed into the refreshed manifests.
+
+    The tag set is what the bag's manifests already declare, not whatever drifted
+    in beside them: an OS index file (``.DS_Store``-alike) must not become part of
+    the archive's integrity claim, and its later disappearance must not fail a
+    validation it was never part of.
+    """
+    bag = write_bag(
+        tmp_path / "bag",
+        payload_sources,
+        extra_tag_files={"record.json": b'{"policy": "public"}'},
+    )
+    stray = bag.path / ".DS_Store"
+    stray.write_bytes(b"finder litter")
+
+    refresh_tag_manifests(bag.path)
+
+    sealed = (bag.path / "tagmanifest-sha256.txt").read_text(encoding="utf-8")
+    assert ".DS_Store" not in sealed
+    stray.unlink()  # its disappearance is a non-event
+    assert validate_bag(bag.path).ok
+
+
+@pytest.mark.preservation
+def test_refresh_tag_manifests_refuses_missing_declared_tag_file(
+    tmp_path: Path, payload_sources: dict[str, Path]
+) -> None:
+    """A declared tag file missing on disk fails the reseal closed.
+
+    A reseal must never paper over a vanished tag file by quietly dropping it
+    from the manifests it refreshes.
+    """
+    bag = write_bag(
+        tmp_path / "bag",
+        payload_sources,
+        extra_tag_files={"record.json": b'{"policy": "public"}'},
+    )
+    (bag.path / "record.json").unlink()
+    with pytest.raises(BagValidationError, match="declared tag file absent"):
+        refresh_tag_manifests(bag.path)
 
 
 @pytest.mark.preservation
