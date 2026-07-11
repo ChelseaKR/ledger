@@ -426,6 +426,11 @@ dependencies = [
     { name = "cryptography" },
 ]
 
+[package.optional-dependencies]
+print = [
+    { name = "segno" },
+]
+
 [package.dev-dependencies]
 dev = [
     { name = "babel" },
@@ -435,12 +440,13 @@ dev = [
     { name = "pytest-cov" },
     { name = "ruff" },
 ]
-print = [
-    { name = "segno" },
-]
 
 [package.metadata]
-requires-dist = [{ name = "cryptography", specifier = ">=42,<50" }]
+requires-dist = [
+    { name = "cryptography", specifier = ">=42,<50" },
+    { name = "segno", marker = "extra == 'print'", specifier = ">=1.5,<2" },
+]
+provides-extras = ["print"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -451,7 +457,6 @@ dev = [
     { name = "pytest-cov", specifier = ">=5" },
     { name = "ruff", specifier = ">=0.15" },
 ]
-print = [{ name = "segno", specifier = ">=1.5,<2" }]
 
 [[package]]
 name = "librt"

@@ -42,6 +42,21 @@ Homepage = "https://github.com/ChelseaKR/ledger"
 Source = "https://github.com/ChelseaKR/ledger"
 Issues = "https://github.com/ChelseaKR/ledger/issues"
 
+# Published extras stay under `[project.optional-dependencies]` — they ship in the
+# wheel's metadata and remain installable by any consumer. `print` is a documented
+# user-facing install path (ADR-0008, `pip install ledger-archive[print]`), so it
+# must NOT move to a PEP 735 dependency group (groups are never published).
+#
+# Opt-in only (EXP-08): `ledger print-edition` renders its accessible HTML booklet
+# and the always-present plain-text fixity digest with no extra dependency at all;
+# this extra adds the scannable QR-code image alongside that text. `segno` is a
+# pure-Python, zero-dependency QR/SVG generator, so installing it keeps the "no
+# heavy dependency tree" property even for the machines that opt in.
+[project.optional-dependencies]
+print = [
+    "segno>=1.5,<2",
+]
+
 # Deployability/installability: `pipx install ledger-archive` then `ledger ...`.
 [project.scripts]
 ledger = "ledger.cli:main"
@@ -67,14 +82,6 @@ dev = [
     # i18n gates. Pure Python (no PyICU/native ICU build), so ledger keeps its
     # "run on one inexpensive box, no heavy dependency tree" property.
     "babel>=2.16",
-]
-# Opt-in only (EXP-08): `ledger print-edition` renders its accessible HTML booklet
-# and the always-present plain-text fixity digest with no extra dependency at all;
-# this extra adds the scannable QR-code image alongside that text. `segno` is a
-# pure-Python, zero-dependency QR/SVG generator, so installing it keeps the "no
-# heavy dependency tree" property even for the machines that opt in.
-print = [
-    "segno>=1.5,<2",
 ]
 
 [tool.ruff]
