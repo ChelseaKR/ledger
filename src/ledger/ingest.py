@@ -62,6 +62,7 @@ from ledger.models import (
 )
 from ledger.oais import AIP, SIP
 from ledger.preservation import identify_file
+from ledger.tombstones import PRIMARY_LOCATION, TombstoneStore
 
 # Names of the metadata artifacts written beside ``data/`` inside every bag. They
 # are tag files (covered by the tag manifest), so their integrity is part of the
@@ -910,7 +911,26 @@ class Archive:
         )
         log.write(log_path)
 
-    def remove_all_copies(self, record_id: str) -> tuple[int, bool]:
+    def _revoke_identity_if_present(self, record_id: str) -> bool:
+        """Revoke ``record_id``'s sealed identity from the vault, if it has one.
+
+        Returns whether an identity was actually revoked. Best-effort: a missing
+        record or vault failure just means nothing to revoke, not an error — the
+        caller (a destructive removal) must proceed regardless (no-outing rule:
+        removal itself never depends on identity being resolvable)."""
+        try:
+            identity_ref = self.get(record_id).identity_ref
+        except LedgerError:
+            return False
+        if identity_ref is None:
+            return False
+        try:
+            self._open_vault(None).revoke(identity_ref)
+            return True
+        except LedgerError:
+            return False
+
+    def remove_all_copies(self, record_id: str, *, now: str | None = None) -> tuple[int, bool]:
         """Physically remove every stored copy of ``record_id`` and revoke its identity.
 
         The shared *effect* behind a steward takedown and a contributor's withdrawal
@@ -920,6 +940,16 @@ class Archive:
         report counts without naming anything (no-outing rule). It records *no* audit
         decision itself — the caller owns the accountable "why", recording it before
         calling this so the reason outlives the data (separation of concerns).
+
+        It *does* persist a durable takedown tombstone (:mod:`ledger.tombstones`) as
+        a side effect and marks confirmed every location whose copy it just cleared —
+        the primary store plus each reachable replica. A replica that is offline at
+        takedown time is deleted here (its path does not exist, so nothing is removed
+        and it is left *unconfirmed*), and stays pending in the tombstone until the
+        replication sweep applies the removal on reattach (:func:`ledger.replicate.
+        apply_tombstones`). This is what makes a takedown propagate to a mirror that
+        was unreachable when the decision was made. The tombstone holds only the
+        opaque id and location names — no titles, no identity (no-outing rule).
 
         Because this builds the paths it ``rmtree``s from ``record_id``, the id is
         first validated to be a single safe path component (no separators, not ``.``
@@ -934,21 +964,11 @@ class Archive:
             or any(sep in record_id for sep in ("/", "\\", "\x00"))
         ):
             raise LedgerError("invalid record id")
-        identity_ref: str | None = None
-        try:
-            identity_ref = self.get(record_id).identity_ref
-        except LedgerError:
-            identity_ref = None
-
-        revoked = False
-        if identity_ref is not None:
-            try:
-                self._open_vault(None).revoke(identity_ref)
-                revoked = True
-            except LedgerError:
-                revoked = False
+        stamp = now if now is not None else now_iso()
+        revoked = self._revoke_identity_if_present(record_id)
 
         removed = 0
+        cleared_locations: list[str] = []
         bag_dir = self.bags_dir / record_id
         if bag_dir.exists():
             shutil.rmtree(bag_dir)
@@ -968,6 +988,17 @@ class Archive:
             if replica.exists() and replica != bag_dir:
                 shutil.rmtree(replica)
                 removed += 1
+                cleared_locations.append(location.name)
+
+        # Persist the tombstone and confirm every location the removal just cleared.
+        # The primary store is always cleared here, so it is always confirmed; each
+        # reachable replica that held a copy is confirmed too. Any replica offline
+        # now is left pending, to be confirmed by the reattach sweep (propagation).
+        store = TombstoneStore(self.logs_dir)
+        store.add(record_id, stamp)
+        store.confirm(record_id, PRIMARY_LOCATION, stamp)
+        for name in cleared_locations:
+            store.confirm(record_id, name, stamp)
         return removed, revoked
 
     def disclose(

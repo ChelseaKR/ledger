@@ -234,6 +234,11 @@ def _messages(translation: gettext.NullTranslations) -> dict[str, str]:
         "cs_status_open": _("Received — a steward has not acted on it yet."),
         "cs_status_acknowledged": _("Seen by a steward and under consideration."),
         "cs_status_resolved": _("Resolved — a steward has acted on it."),
+        "cs_takedown_progress": _(
+            "Removal: {confirmed} of {total} storage location(s) have confirmed the takedown."
+        ),
+        "cs_takedown_pending": _("Still pending at: {locations}."),
+        "cs_takedown_complete": _("The takedown is confirmed at every storage location."),
         "cs_ref_label": _("Your request reference"),
         "cs_button": _("Check status"),
         "rec_cw_review": _(

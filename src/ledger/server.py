@@ -92,6 +92,7 @@ from ledger.render import (
     _page,
     _record_main_html,
 )
+from ledger.tombstones import PRIMARY_LOCATION, TombstoneStore
 
 # Where the bundled, framework-free web assets live, resolved relative to this
 # module so the server works from any working directory (portability). The static
@@ -2026,6 +2027,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
                     f"      <p>{_esc(i18n.t(lang, 'cs_filed_label', when=req.created_at))}</p>\n"
                     f"      <p><strong>{_esc(i18n.t(lang, 'cs_status_label', status=status))}"
                     "</strong></p>\n"
+                    f"{self._takedown_progress_html(lang, req.record_id)}"
                     "    </section>\n"
                 )
         main_html = (
@@ -2044,6 +2046,55 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             200,
             _page(i18n.t(lang, "cs_heading"), lang=lang, main_html=main_html, nav_html=self._nav()),
         )
+
+    def _takedown_progress_html(self, lang: str, record_id: str) -> str:
+        """Per-location takedown completion for ``record_id``, or "" if none.
+
+        For a record that has actually been taken down there is a durable tombstone
+        recording which storage locations have confirmed the removal. This renders
+        that honestly — "2 of 3 locations have confirmed; mirror-b pending" — so a
+        contributor is never told a removal is complete while an offline replica
+        still holds a copy (user research T4/B2, "revocable was true in the room").
+        It shows only counts and location *names*, never any record content
+        (no-outing rule). A record with no tombstone yields the empty string, so a
+        non-takedown request renders exactly as before.
+        """
+        archive = self._archive()
+        confirmed = TombstoneStore(archive.logs_dir).status(record_id)
+        if confirmed is None:
+            return ""
+        # The full set of copy locations: the authoritative primary store plus every
+        # configured mirror, in a stable order, unioned with any location that has a
+        # receipt but is no longer configured (so the count never understates).
+        known = [PRIMARY_LOCATION, *(loc.name for loc in archive.config.locations)]
+        seen: set[str] = set()
+        expected: list[str] = []
+        for name in [*known, *confirmed]:
+            if name not in seen:
+                seen.add(name)
+                expected.append(name)
+        pending = [name for name in expected if name not in confirmed]
+        lines = [
+            "      <p>"
+            + _esc(
+                i18n.t(
+                    lang,
+                    "cs_takedown_progress",
+                    confirmed=len(expected) - len(pending),
+                    total=len(expected),
+                )
+            )
+            + "</p>\n"
+        ]
+        if pending:
+            lines.append(
+                "      <p>"
+                + _esc(i18n.t(lang, "cs_takedown_pending", locations=", ".join(pending)))
+                + "</p>\n"
+            )
+        else:
+            lines.append("      <p>" + _esc(i18n.t(lang, "cs_takedown_complete")) + "</p>\n")
+        return "".join(lines)
 
     # --- plain-language safety surface (user research P0-4) -----------------
 

@@ -454,6 +454,12 @@ msgstr ""
 msgid "Relevance"
 msgstr ""
 
+#, python-brace-format
+msgid ""
+"Removal: {confirmed} of {total} storage location(s) have confirmed the "
+"takedown."
+msgstr ""
+
 msgid "Request status"
 msgstr ""
 
@@ -531,6 +537,10 @@ msgstr ""
 msgid "Steward console"
 msgstr ""
 
+#, python-brace-format
+msgid "Still pending at: {locations}."
+msgstr ""
+
 msgid "Subjects"
 msgstr ""
 
@@ -570,6 +580,9 @@ msgid "That submission is too long."
 msgstr ""
 
 msgid "The language of the material, e.g. English or Spanish."
+msgstr ""
+
+msgid "The takedown is confirmed at every storage location."
 msgstr ""
 
 msgid "There are no public records yet."

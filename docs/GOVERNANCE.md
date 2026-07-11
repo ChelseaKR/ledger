@@ -247,6 +247,21 @@ Consent is revocable and recorded, and a downstream mirror may not lawfully igno
   record's copies and pushes the removal to every configured replica location. Separating
   the *decision record* from the *effect* keeps the audit trail complete even if
   propagation must be retried against a temporarily unreachable mirror.
+- **A takedown leaves a durable tombstone so an offline replica cannot resurrect a
+  copy.** `Archive.remove_all_copies` writes a tombstone (`src/ledger/tombstones.py`,
+  `logs/tombstones.json`) recording that an opaque record id was taken down and which
+  storage locations have confirmed the removal. A mirror that was offline at takedown
+  time is left *pending*; when it reattaches, the replication sweep
+  (`replicate.apply_tombstones`, invoked from `verify_replicas`/`heal`) deletes the stale
+  copy it still holds, writes a per-location PREMIS `TAKEDOWN` receipt, and marks the
+  location confirmed — and `heal` refuses to re-copy a tombstoned bag back from a replica
+  that missed the takedown, so a removal cannot be silently undone. `/consent-status` then
+  reports honestly which locations have applied the removal and which are still pending.
+  The deliberate trade-off (per the threat model's residual-risk note): a tombstone is
+  *retained removal metadata* — to guarantee a takedown propagates, the system must
+  remember the takedown happened. It is engineered to hold only the minimum that
+  guarantees propagation — the opaque id, the action, and per-location confirmation
+  timestamps — and never a title, a field value, or a contributor identity.
 - **A mirror cannot be allowed to be stale silently.** Replication re-verifies bags on
   arrival, and fixity audits run on a schedule across every location
   (`src/ledger/replicate.py`, `src/ledger/fixity.py`); an unreachable or divergent

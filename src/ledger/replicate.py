@@ -67,12 +67,105 @@ from ledger.config import StorageLocation
 from ledger.errors import BagValidationError, FixityError, LedgerError, ReplicationError
 from ledger.fixity import AuditReport
 from ledger.metadata.premis import PremisLog
-from ledger.models import PremisEvent, PremisEventType
+from ledger.models import PremisEvent, PremisEventType, now_iso
+from ledger.tombstones import TombstoneStore
 
 _PREMIS_FILENAME = "premis.json"
 
 _QUARANTINE_DIR = "quarantine"
 _SEALED_SUFFIX = ".sealed"
+
+#: The archive-level takedown log a per-location TAKEDOWN receipt is appended to,
+#: the same file :meth:`ledger.ingest.Archive.log_takedown` writes the accountable
+#: decision to. Kept in sync by name so a receipt and its decision live together.
+_TAKEDOWNS_LOG = "takedowns.premis.json"
+
+#: The PREMIS agent recorded on a receipt written by the reattach propagation sweep.
+_TOMBSTONE_AGENT = "ledger.replicate.tombstone"
+
+
+def _is_safe_component(name: str) -> bool:
+    """True if ``name`` is a single safe path component (no traversal, no NUL).
+
+    Mirrors the guard in :meth:`ledger.ingest.Archive.remove_all_copies`: this
+    module builds the paths it ``rmtree``s from a stored ``record_id``, so a crafted
+    id must never be allowed to escape a location's directory (defense in depth on a
+    destructive primitive). A real record id is opaque hex and always passes.
+    """
+    return (
+        bool(name)
+        and name not in {".", ".."}
+        and not any(sep in name for sep in ("/", "\\", "\x00"))
+    )
+
+
+def _append_takedown_receipt(log_path: Path, event: PremisEvent) -> None:
+    """Append one TAKEDOWN receipt to the archive takedown log (append-only)."""
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log = PremisLog.read(log_path) if log_path.exists() else PremisLog()
+    log.record(event)
+    log.write(log_path)
+
+
+def apply_tombstones(
+    locations: Sequence[StorageLocation],
+    store: TombstoneStore,
+    *,
+    agent: str = _TOMBSTONE_AGENT,
+    now: str | None = None,
+) -> list[PremisEvent]:
+    """Enforce every takedown tombstone at each *reachable* location.
+
+    This is the reattach propagation sweep: a replica that was offline when a record
+    was taken down still holds the stale copy, and the tombstone remembers that the
+    removal is pending there. For each location whose directory is present (reachable)
+    this deletes any tombstoned bag it still holds, appends a per-location PREMIS
+    ``TAKEDOWN`` receipt naming only the opaque record id and the location, and marks
+    that location confirmed in the store — so a copy can never quietly resurrect and
+    ``/consent-status`` can report honestly which locations have applied a removal.
+
+    Degradability: a location whose directory is absent is treated as unreachable and
+    skipped, leaving its tombstones pending — one offline mirror must not be recorded
+    as confirmed. Every sweep also re-checks previously confirmed tombstones. This is
+    essential because a restored backup or remounted stale disk can make a deleted
+    bag reappear after its first receipt; confirmation is historical evidence, not
+    permission to stop enforcing deletion.
+
+    Integrity/no-outing: a stored id that is not a safe path component is skipped
+    rather than deleted (it can never be a real id), and receipts carry only the
+    opaque id and location name — never a title, field, or identity. ``now`` stamps
+    every receipt so runs are reproducible.
+    """
+    stamp = now if now is not None else now_iso()
+    receipts: list[PremisEvent] = []
+    takedowns_path = store.logs_dir / _TAKEDOWNS_LOG
+    for location in locations:
+        root = Path(location.path)
+        if not root.exists():
+            # Unreachable/offline: leave every tombstone pending here.
+            continue
+        for tombstone in store.all():
+            record_id = tombstone.record_id
+            if not _is_safe_component(record_id):
+                continue
+            replica = root / record_id
+            if replica.exists():
+                shutil.rmtree(replica)
+                event = PremisEvent(
+                    event_type=PremisEventType.TAKEDOWN,
+                    agent=agent,
+                    outcome="success",
+                    detail=(
+                        f"tombstoned record {record_id!r} removed from location "
+                        f"{location.name!r} on reattach"
+                    ),
+                    linked_object=record_id,
+                    event_datetime=stamp,
+                )
+                _append_takedown_receipt(takedowns_path, event)
+                receipts.append(event)
+            store.confirm(record_id, location.name, stamp)
+    return receipts
 
 
 def _rejected(message: str, event: PremisEvent) -> ReplicationError:
@@ -271,6 +364,9 @@ def verify_replicas(
     locations: Sequence[StorageLocation],
     *,
     source_head: str | None = None,
+    tombstones: TombstoneStore | None = None,
+    agent: str = _TOMBSTONE_AGENT,
+    now: str | None = None,
 ) -> list[ReplicaStatus]:
     """Validate every replica of ``bag_name`` across ``locations``.
 
@@ -288,7 +384,15 @@ def verify_replicas(
     replica's chain head to agree with the source's: divergent history then
     surfaces exactly like divergent bytes, even for a replica whose own chain is
     locally self-consistent (the attack a single-copy check cannot catch alone).
+
+    When a :class:`~ledger.tombstones.TombstoneStore` is supplied, pending takedowns
+    are applied to every reachable location first (:func:`apply_tombstones`): a
+    replica that was offline at takedown time and still holds the stale copy has it
+    removed and a per-location TAKEDOWN receipt written *before* verification, so a
+    tombstoned bag is honestly reported as gone rather than as a healthy replica.
     """
+    if tombstones is not None:
+        apply_tombstones(locations, tombstones, agent=agent, now=now)
     statuses: list[ReplicaStatus] = []
     for location in locations:
         replica = _replica_path(location.path, bag_name)
@@ -335,8 +439,17 @@ def heal(
     *,
     agent: str,
     now: str,
+    tombstones: TombstoneStore | None = None,
 ) -> list[PremisEvent]:
     """Rebuild every failing or missing replica of ``bag_name`` from a good one.
+
+    Takedown wins over healing (safety): when a
+    :class:`~ledger.tombstones.TombstoneStore` is supplied, pending takedowns are
+    applied to every reachable location first, and if ``bag_name`` is itself
+    tombstoned the heal returns immediately with the removal receipts it produced —
+    it must NEVER re-copy a taken-down bag back from a replica that was offline at
+    takedown time and still holds a stale copy. Without this guard a takedown could
+    be silently undone by the next heal.
 
     Recoverability / resilience: :func:`verify_replicas` first sorts the replicas
     into trustworthy and untrustworthy. If at least one replica validates, each
@@ -377,6 +490,15 @@ def heal(
        gives an auditor the evidence to *detect* such a resurrection after the
        fact.
     """
+    receipts: list[PremisEvent] = []
+    if tombstones is not None:
+        receipts = apply_tombstones(locations, tombstones, agent=agent, now=now)
+        if tombstones.is_tombstoned(bag_name):
+            # This bag has been taken down. The sweep above already removed any stale
+            # copy from every reachable location; healing it would resurrect it, so we
+            # stop here and return only the removal receipts (never a REPLICATION).
+            return receipts
+
     statuses = verify_replicas(bag_name, locations)
     paired = list(zip(locations, statuses, strict=True))
 
