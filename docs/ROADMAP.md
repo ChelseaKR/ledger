@@ -42,7 +42,9 @@ tracked."
 | Responsible Tech | RTF-03 | Review draft exists; accountable-owner review is pending | Open — [`docs/audits/bias-representational-harm.md`](audits/bias-representational-harm.md) (draft 2026-07-07) | P2-2 |
 | Responsible Tech | RTF-04 | DPIA draft exists; accountable-owner review is pending | Open — [`docs/audits/dpia.md`](audits/dpia.md), draft dated 2026-07-07 | P2-2 |
 | Quality & Metrics | QM-02 | No performance budgets/benchmarks in CI (README claim already removed pending this — see CHANGELOG) | Open | P3-5 |
-| Code Quality | CQ-47 | No mutation testing on safety modules (`access/`, `identity.py`, `fixity.py`) | Open | P3-3 |
+| Quality & Metrics | QM-11, QM-18 | No DORA delivery-health review artifact; no root `DEFINITION_OF_DONE.md` | Open | P2-5 |
+| Code Quality | CQ-01 | Python floor is `>=3.11`, not the `>=3.12` the standard's drift-remediation note names for ledger | Open | P1-2 |
+| Code Quality | CQ-47 | No mutation testing on safety modules (`access/`, `identity.py`, `fixity.py`) | Closed — [`docs/MUTATION-TESTING.md`](MUTATION-TESTING.md), advisory `make mutation` / weekly CI, baseline dated 2026-07-07 | P3-3 |
 | Code Quality | CQ-05 (partial) | Complexity gate is now enforced (`ruff` C901, max 10); 7 pre-existing functions exceed it and are waived with dated `# noqa: C901` comments pending a deliberate, fully-retested split — not rushed under audit time pressure on safety-adjacent code | Open (waived) | See `# noqa: C901` sites in `accessibility_check.py`, `bag.py`, `cli.py`, `contribute.py`, `ingest.py`, `server.py` |
 
 ## Drafted conformance artifacts
@@ -59,6 +61,7 @@ tracked."
 | Branch coverage | 86.4% (floor: 85%, `fail_under` in `pyproject.toml`) | `make cov` | 2026-07-05 |
 | Tier-1 mechanical score | 8/11 (pre-remediation); coverage floor + Makefile-mute items in this pass address 2 of the 3 failing checks | `STANDARDS/automation` Tier-1 check | 2026-07-05 |
 | `make verify` == CI required checks | Yes, as of this pass (lint, type, test, i18n, accessibility, audit, secret-scan) | manual trace of `ci.yml` jobs to `Makefile` targets | 2026-07-05 |
+| Mutation score, safety core (advisory, not a gate) | 76.5% (406/531 killed) across `access/`, `identity.py`, `fixity.py` | `make mutation` (mutmut); see `docs/MUTATION-TESTING.md` | 2026-07-07 |
 
 DORA five-metric delivery-health review: established 2026-07-07, reviewed quarterly —
 [`docs/DORA-DELIVERY-HEALTH-REVIEW.md`](DORA-DELIVERY-HEALTH-REVIEW.md) (QM-11). Deployment

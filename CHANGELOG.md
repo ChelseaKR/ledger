@@ -81,6 +81,15 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   undone. `/consent-status` now reports honest per-location completion ("2 of 3 confirmed;
   mirror-c pending", localized EN/ES) and never overstates it. Tombstones hold only opaque
   ids, an action, and location names — never a title, field, or identity (no-outing).
+- **Advisory mutation testing on the safety-critical core (CQ-47).** `make mutation`
+  (mutmut, its own `.[mutation]` extra so the audited dependency surface is unchanged)
+  scoped to `access/`, `identity.py`, and `fixity.py`, reusing the `disclosure`/
+  `preservation` pytest markers as its kill oracle. Never a merge gate — advisory only,
+  run weekly and on demand via `.github/workflows/mutation.yml`. The first run found
+  `access/grants.py`'s `load_grants` (the function that reads subject → grant mappings
+  from an on-disk JSON file) had zero existing tests; `tests/test_grants_load.py` closes
+  that gap, raising `grants.py` from 55% to 91.3% mutation score. See
+  `docs/MUTATION-TESTING.md` for the full baseline and how to read survivors.
 - **Disclosure-policy workflow.** First-class, accountable steward commands to set and
   apply a disclosure policy on an already-archived item, enforced by the core engine and
   honoured by the reading-room:

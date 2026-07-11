@@ -1,0 +1,60 @@
+name: mutation (advisory)
+
+# ledger — ADVISORY mutation testing on the safety-critical core (CQ-47).
+#
+# This workflow is intentionally NOT part of the merge gate. It never runs on
+# `pull_request` or `push`, so it can never block a PR. It runs only:
+#   * on demand   (workflow_dispatch), and
+#   * once a week (schedule), as a slow-drift signal on the correctness of
+#     access/, identity.py, and fixity.py — the modules a no-outing or
+#     corruption bug would hide in if coverage alone were the only signal.
+#
+# Mutation score is a health signal, not a gate: `make mutation` swallows a
+# non-zero exit, and this job is `continue-on-error` on top of that, so a dip in
+# the score surfaces in the run summary WITHOUT ever turning a required check
+# red. The blocking correctness/disclosure gates remain `gate` and
+# `no-outing-audit` in ci.yml. See docs/MUTATION-TESTING.md for the baseline and
+# how to read survivors.
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    # Mondays at 07:00 UTC. Weekly cadence — mutation runs are slow and advisory.
+    - cron: "0 7 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mutation-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mutation:
+    name: mutation (mutmut on access/, identity.py, fixity.py — advisory, non-blocking)
+    runs-on: ubuntu-latest
+    # Belt-and-suspenders: even though this workflow never runs on a PR, mark the
+    # job non-failing so it can never be wired up as a required check by mistake.
+    continue-on-error: true
+    permissions:
+      contents: read
+    steps:
+      # Harden-Runner (SEC-04): observe/audit egress before anything else runs,
+      # matching every other job in this repo's CI.
+      - uses: step-security/harden-runner@5c7944e73c4c2a096b17a9cb74d65b6c2bbafbde  # v2.9.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@f98e06938123ccabd21905ea5d0069192241f9f1  # v8.3.1
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - name: Install dev + mutation dependencies
+        run: uv sync --locked --group dev --extra mutation
+      - name: Run advisory mutation testing (mutmut, scoped to the safety core)
+        # `make mutation` is advisory by construction (it never returns non-zero
+        # on surviving mutants); the extra `|| true` documents that this step is
+        # a signal, not a gate.
+        run: make mutation

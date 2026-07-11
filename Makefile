@@ -12,7 +12,7 @@ PY   ?= $(if $(wildcard $(VENV)/bin/python),$(VENV)/bin/python,python3)
 
 .DEFAULT_GOAL := help
 .PHONY: help venv install lock lint format type test cov audit accessibility acr demo serve \
-        i18n i18n-compile claims secret-scan workflow-lint container verify clean
+        i18n i18n-compile claims secret-scan workflow-lint container mutation verify clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -136,6 +136,19 @@ container: ## Build the self-host image and scan it for CRITICAL/HIGH CVEs (Triv
 	# unconditionally on every push/PR — this target just mirrors it locally.
 	docker build -f infra/Dockerfile -t ledger:local-scan .
 	trivy image --severity CRITICAL,HIGH --ignore-unfixed --exit-code 1 ledger:local-scan
+
+mutation: ## ADVISORY (never a merge gate): mutation-test the safety-critical core (CQ-47)
+	@echo "mutation: ADVISORY ONLY — this is NOT part of 'make verify' and never gates a PR."
+	@echo "          Scoped to access/, identity.py, fixity.py — see docs/MUTATION-TESTING.md."
+	@# Install the isolated mutation extra on demand while honoring the lockfile.
+	@# Scope (which files get mutated) and kill oracle (which tests run) live in
+	@# [tool.mutmut] in pyproject.toml.
+	@$(PY) -c "import mutmut" 2>/dev/null || uv sync --locked --group dev --extra mutation
+	@# `-` prefixes keep this target advisory: a surviving mutant never fails the build.
+	-$(PY) -m mutmut run
+	-$(PY) -m mutmut results
+	@echo "mutation: advisory run complete. Review any survivors above against the"
+	@echo "          documented baseline in docs/MUTATION-TESTING.md (equivalent mutants noted)."
 
 # The full gate. Determinism + reproducibility: same inputs, same result, every run.
 # Matches CI's required-check set byte-for-byte (CICD-27): the `gate`, `i18n`,
