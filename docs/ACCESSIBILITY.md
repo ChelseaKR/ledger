@@ -120,7 +120,7 @@ the build. The gate has two parts.
    static floor. The `accessibility-browser` job in `.github/workflows/ci.yml`
    seeds a throwaway demo archive, serves it with `ledger serve`, and drives the
    canonical pages in a headless Chromium running **axe-core** — under **both** the
-   light and dark colour schemes — asserting no serious or critical violations, plus
+   light and dark colour schemes — asserting no WCAG-tagged axe violations, plus
    a keyboard-only traversal of the contribute form. This catches what a
    standard-library HTML scan cannot: rendered colour contrast in each theme,
    computed accessible names, and focus order. It is **CI/dev-only** — Playwright,

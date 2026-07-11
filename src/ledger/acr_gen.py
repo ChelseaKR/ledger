@@ -637,7 +637,7 @@ def render() -> str:
         "(`python -m ledger.accessibility_check web`) runs on every commit, and a "
         "browser-real **axe-core** job (the `accessibility-browser` CI job) drives "
         "the served site in a headless Chromium under both the light and dark colour "
-        "schemes, asserting no serious or critical violations.",
+        "schemes, asserting no WCAG-tagged axe violations.",
         "- **Manual.** A committed quarterly (and pre-release) **NVDA and VoiceOver** "
         "review covers what no scan can judge — reading order, content-warning "
         "announcement, `aria-live` status, and spoken form errors. Its cadence, "

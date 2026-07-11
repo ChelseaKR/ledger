@@ -17,7 +17,7 @@ from collections.abc import Iterable
 from urllib.parse import parse_qsl, quote, urlencode, urlsplit
 
 from ledger import i18n, pagination, search
-from ledger.metadata.pid import is_ark
+from ledger.metadata.pid import is_pid
 from ledger.models import AccessPolicy, DisclosedRecord, Grant, PayloadFile, Record
 
 # The site's one stylesheet, linked from every page.
@@ -624,8 +624,8 @@ def _citation_html(record: DisclosedRecord, *, base_url: str, archive_name: str,
     Scholarship needs a stable, quotable reference (user research P2-3). The citation
     is ``Title. [Date.] Archive. [PID.] URL`` built from already-disclosed metadata
     (the archive name falls back to the record's Dublin Core ``publisher``), so it
-    carries no identity. The persistent identifier is the archive-local ARK minted at
-    ingest and carried in Dublin Core ``identifier`` (RM5), included in the formatted
+    carries no identity. The persistent identifier is the UUID URN minted at ingest
+    and carried in Dublin Core ``identifier`` (RM5), included in the formatted
     citation and shown on its own line so a reader can quote the stable handle rather
     than the host-dependent URL. The permalink and the ``Available at`` URL are the
     record's public address; a "download metadata" link points at the JSON API for
@@ -638,10 +638,10 @@ def _citation_html(record: DisclosedRecord, *, base_url: str, archive_name: str,
     dates = record.dublin_core.get("date") or []
     date_part = f" {_esc(dates[0])}." if dates and dates[0] else ""
     archive_part = f" {_esc(archive)}." if archive else ""
-    # The persistent identifier: the first ARK-style value in Dublin Core `identifier`
+    # The persistent identifier: the first supported PID in Dublin Core `identifier`
     # (minted at ingest). Surfacing it in the citation gives scholarship a stable
     # handle that outlives any URL (RM5, user research P2-3).
-    pid = next((value for value in record.dublin_core.get("identifier", []) if is_ark(value)), "")
+    pid = next((value for value in record.dublin_core.get("identifier", []) if is_pid(value)), "")
     pid_sentence = f" {_esc(pid)}." if pid else ""
     citation = (
         f"{_esc(record.title)}.{date_part}{archive_part}{pid_sentence} "

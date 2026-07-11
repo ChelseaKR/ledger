@@ -21,7 +21,7 @@ from ledger.metadata.dublincore import (
     to_oai_dc_xml,
     write_sidecar,
 )
-from ledger.metadata.pid import ARK_PREFIX, is_ark, mint_ark
+from ledger.metadata.pid import ARK_PREFIX, is_ark, is_pid, mint_ark, mint_urn
 from ledger.metadata.premis import PremisLog, to_premis_xml
 from ledger.models import DublinCore, PremisEvent, PremisEventType, PremisRights
 
@@ -418,3 +418,18 @@ def test_is_ark_rejects_non_ark_identifiers() -> None:
     assert not is_ark("rec-abc123")
     assert not is_ark("https://example.org/record/1")
     assert not is_ark("ark:")
+
+
+def test_mint_urn_is_a_real_uuid_pid() -> None:
+    """The default identifier needs no placeholder naming authority or resolver."""
+    pid = mint_urn("dbe112099f50481cbf7bc688a8305076")
+    assert pid == "urn:uuid:dbe11209-9f50-481c-bf7b-c688a8305076"
+    assert is_pid(pid)
+    assert not is_pid("urn:uuid:not-a-uuid")
+
+
+def test_mint_urn_maps_stable_imported_ids_deterministically() -> None:
+    """Non-UUID imported ids receive a deterministic UUIDv5 URN."""
+    assert mint_urn("rec-audit") == mint_urn("rec-audit")
+    assert mint_urn("rec-audit") != mint_urn("rec-other")
+    assert is_pid(mint_urn("rec-audit"))

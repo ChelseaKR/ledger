@@ -105,21 +105,21 @@ def test_full_lifecycle_ingest_disclose_replicate_consent(tmp_path: Path) -> Non
     assert PremisEventType.INGESTION in event_types
     assert PremisEventType.FIXITY_CHECK in event_types
 
-    # RM5: the DC sidecar carries a minted, deterministic ARK persistent identifier.
+    # RM5: the DC sidecar carries a minted, deterministic UUID URN.
     from ledger.metadata.dublincore import read_sidecar
-    from ledger.metadata.pid import is_ark, mint_ark
+    from ledger.metadata.pid import is_pid, mint_urn
 
     dc = read_sidecar(aip.dc_path)
-    expected_pid = mint_ark(rid)
+    expected_pid = mint_urn(rid)
     assert expected_pid in dc.identifier
-    assert any(is_ark(v) for v in dc.identifier)
+    assert any(is_pid(v) for v in dc.identifier)
 
     # RM5: the PREMIS log carries a rights statement (basis + granted acts), and it
     # survives the on-disk round trip. The record declared no licence, so it falls back
     # to the honest default basis.
     assert premis.rights is not None
     assert premis.rights.rights_basis == "other"
-    assert "disseminate" in premis.rights.granted_acts
+    assert premis.rights.granted_acts == ()
     assert premis.rights.linked_object == rid
 
     # The stored bag is structurally valid (audit passes). audit_fixity now returns

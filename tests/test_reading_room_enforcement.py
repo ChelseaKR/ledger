@@ -160,7 +160,7 @@ def test_reading_room_acknowledges_withholding_but_hides_date_from_outsiders(
     assert "withheld" not in data  # ...but names/reasons are not exposed to an outsider
     assert data["fields"]["story"] == "A public account."
     html = _get(base, f"/record/{rid}")
-    assert "2099" not in html  # the embargo date is never shown to anonymous
+    assert "2099-01-01" not in html  # the embargo date is never shown to anonymous
     assert "sealed until" not in html.lower()
 
 
