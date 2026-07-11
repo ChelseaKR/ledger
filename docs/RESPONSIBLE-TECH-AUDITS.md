@@ -193,9 +193,21 @@ Applicability decisions and the N/A for AI-Evaluation live in
   be handed to that reviewer before RM2 broadens at-rest encryption on top of
   these choices. **The review itself has not happened** — this is prep, not a
   closed gap; do not read the design doc's existence as sign-off.
-- **Signed off:** 2026-07-05 — Chelsea Kelly-Reif. *(The FIX-11 sealing-layer
-  design doc above was added after this date and is explicitly excluded from this
-  sign-off — it is awaiting its own, separate, external review.)*
+- **Cryptographic embargo design exploration (EXP-12):** `SEALED_UNTIL`'s
+  temporal embargo is enforced by a software check on plaintext, not by
+  encryption — a seized disk yields embargoed content immediately regardless of
+  how far away its unseal date is. Whether a genuine cryptographic time-lock
+  (federated threshold share-escrow, or a published timelock service) can close
+  that gap without introducing worse failure modes (irrecoverable loss,
+  compulsion of a differently-shaped trust set) is analyzed in
+  [`docs/audits/crypto-design-review-embargo-timelock.md`](audits/crypto-design-review-embargo-timelock.md).
+  **This is a research exploration, not a closed gap and not a committed
+  roadmap item** — its own recommendation is that implementation stay blocked
+  on FIX-11's review, RM1 shipping, and a real community design partner before
+  any prototype is built.
+- **Review state:** the FIX-11 and EXP-12 design artifacts were added after the
+  2026-07-05 audit. Neither has external-cryptographer or project-owner sign-off;
+  both remain review inputs rather than approved implementation decisions.
 
 ---
 
@@ -210,6 +222,7 @@ Applicability decisions and the N/A for AI-Evaluation live in
 - [`docs/audits/dpia.md`](audits/dpia.md) — Data Protection Impact Assessment draft (dated 2026-07-07; human review pending)
 - [`docs/audits/bias-representational-harm.md`](audits/bias-representational-harm.md) — dated review draft, six findings and a tracked recommendations table (human review pending)
 - [`docs/audits/crypto-design-review-sealing-layer.md`](audits/crypto-design-review-sealing-layer.md) — FIX-11 key-hierarchy/envelope design doc, drafted for an external cryptographer; **review pending, not yet committed as a sign-off**
+- [`docs/audits/crypto-design-review-embargo-timelock.md`](audits/crypto-design-review-embargo-timelock.md) — EXP-12 cryptographic-embargo design exploration; **research-first, not a build decision, not externally reviewed**
 - **Not yet created** (tracked in [`docs/ROADMAP.md`](ROADMAP.md#open-conformance-gaps)): `docs/audits/residual-risk-register.md`
 
 No LLM or model inference exists anywhere in ledger (ingest, fixity, access policy,

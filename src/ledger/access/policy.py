@@ -97,6 +97,14 @@ def is_visible(
                 # stewards, until the date passes — then it opens to all. A steward
                 # who must reach embargoed content before the date does so through an
                 # explicit, logged mechanism, not by silently bypassing the seal
+                #
+                # NOTE: this is a policy check on plaintext, not an encryption
+                # boundary — a seized disk yields the value immediately regardless
+                # of how far away unseal_at is (unlike absolute SEALED, which is
+                # encrypted at rest; see ingest.py). Whether a genuine
+                # cryptographic time-lock could close that gap is explored,
+                # research-first and not yet a build decision, in
+                # docs/audits/crypto-design-review-embargo-timelock.md (EXP-12).
                 # (fail-closed; honours the date the contributor was promised).
                 return _unseal_reached(now, unseal_at)
             # An indefinite seal (no date) is an access-level seal a steward may
