@@ -39,7 +39,6 @@ our export is itself stable and diffable across runs).
 
 from __future__ import annotations
 
-import re
 from collections.abc import Sequence
 from xml.sax.saxutils import escape as _sax_escape
 
@@ -49,16 +48,25 @@ from ledger.models import DisclosedRecord, DublinCore, HashAlgo, PremisEvent
 
 __all__ = ["to_mets_xml"]
 
+
 # Characters XML 1.0 forbids even when escaped. Descriptive text and filenames can
 # carry arbitrary operator- or contributor-supplied content, so strip these before
 # escaping to keep the emitted XML well-formed (standards compliance,
 # interoperability, robustness) -- the same rule the sibling metadata modules apply.
-_ILLEGAL_XML = re.compile("[^\x09\x0a\x0d\x20-\ud7ff\ue000-\ufffd\U00010000-\U0010ffff]")
+def _xml_text(value: str) -> str:
+    return "".join(
+        char
+        for char in value
+        if (code := ord(char)) in (0x9, 0xA, 0xD)
+        or 0x20 <= code <= 0xD7FF
+        or 0xE000 <= code <= 0xFFFD
+        or 0x10000 <= code <= 0x10FFFF
+    )
 
 
 def escape(value: str) -> str:
     """XML-escape ``value`` after removing characters XML 1.0 disallows."""
-    return _sax_escape(_ILLEGAL_XML.sub("", value))
+    return _sax_escape(_xml_text(value))
 
 
 _METS_NS = "http://www.loc.gov/METS/"

@@ -33,11 +33,13 @@ import json
 import os
 import secrets
 import shutil
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from ledger.errors import ConfigError, LedgerError
+from ledger.config import Config, LockdownConfig
+from ledger.errors import LedgerError
+from ledger.ingest import Archive
 from ledger.metadata.premis import PremisLog
 from ledger.models import PremisEvent, PremisEventType
 
@@ -87,93 +89,8 @@ class ArchiveLike(Protocol):
     vault_path: Path
 
     @property
-    def config(self) -> object: ...
-
-
-@dataclass(frozen=True)
-class LockdownConfig:
-    """How this archive behaves under lockdown (declarative, off by default).
-
-    ``stop_disclosure`` gates the disclosure freeze; ``shred_vault`` gates the
-    irreversible local-vault destruction and is **off unless a steward turns it on**,
-    so a misread config can never destroy a vault by default (safety: default to
-    narrowest). ``required_replica_locations`` are paths to off-box *backup roots*
-    (each holding ``store/`` + ``identity.vault``); ``min_verified_replicas`` of them
-    must restore clean before any shred proceeds.
-    """
-
-    stop_disclosure: bool = True
-    shred_vault: bool = False
-    required_replica_locations: list[str] = field(default_factory=list)
-    min_verified_replicas: int = 1
-
-    def validate(self, *, archive_locations: tuple[str | Path, ...] = ()) -> None:
-        """Raise :class:`LedgerError` if the lockdown policy is self-contradictory.
-
-        Correctness: a ``shred_vault`` posture with no replica to verify against, or a
-        replica threshold that can never be met, is caught here rather than at the
-        dangerous moment a steward triggers a duress shred.
-
-        ``archive_locations`` are the live archive's own on-box paths (its root,
-        ``store_root``, ``vault_path``, ...) when known to the caller. A
-        ``required_replica_locations`` entry that resolves to one of them is not an
-        off-box replica at all — it is the archive pointing at itself — so
-        ``min_verified_replicas`` could be satisfied while providing *no* real
-        redundancy (a duress shred could proceed having "verified" nothing but the
-        copy it is about to destroy). Checked unconditionally, not just when
-        ``shred_vault`` is on, since a self-referential replica is equally useless
-        for stand-up's restore path.
-        """
-        if self.min_verified_replicas < 1:
-            raise ConfigError("lockdown.min_verified_replicas must be at least 1")
-        if self.shred_vault:
-            if not self.required_replica_locations:
-                raise ConfigError(
-                    "lockdown.shred_vault requires at least one required_replica_locations "
-                    "entry to verify before destroying the local vault"
-                )
-            if self.min_verified_replicas > len(self.required_replica_locations):
-                raise ConfigError(
-                    "lockdown.min_verified_replicas exceeds the number of configured "
-                    "required_replica_locations; the shred could never be authorized"
-                )
-        if archive_locations and self.required_replica_locations:
-            live = {Path(loc).expanduser().resolve() for loc in archive_locations}
-            for location in self.required_replica_locations:
-                if Path(location).expanduser().resolve() in live:
-                    raise ConfigError(
-                        f"lockdown.required_replica_locations entry {location!r} is the "
-                        "live archive's own location, not an off-box replica — this "
-                        "provides no real redundancy; point it at a genuinely separate copy"
-                    )
-
-    def to_dict(self) -> dict[str, object]:
-        """Serialize to a plain JSON-/TOML-ready mapping (deterministic order)."""
-        return {
-            "stop_disclosure": self.stop_disclosure,
-            "shred_vault": self.shred_vault,
-            "required_replica_locations": list(self.required_replica_locations),
-            "min_verified_replicas": self.min_verified_replicas,
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict[str, object]) -> LockdownConfig:
-        """Rebuild from a mapping, coercing scalars and rejecting malformed shapes."""
-        raw_locations = data.get("required_replica_locations", [])
-        if not isinstance(raw_locations, list):
-            raise ConfigError("lockdown.required_replica_locations must be a list")
-        try:
-            min_verified = int(str(data.get("min_verified_replicas", 1)))
-        except ValueError as exc:
-            raise ConfigError("lockdown.min_verified_replicas must be an integer") from exc
-        config = cls(
-            stop_disclosure=bool(data.get("stop_disclosure", True)),
-            shred_vault=bool(data.get("shred_vault", False)),
-            required_replica_locations=[str(loc) for loc in raw_locations],
-            min_verified_replicas=min_verified,
-        )
-        config.validate()
-        return config
+    def config(self) -> object:
+        raise NotImplementedError
 
 
 @dataclass(frozen=True)
@@ -218,11 +135,6 @@ def verify_backup_location(backup: Path) -> BackupVerification:
     identity — it reports only readability, per-bag fixity, and whether a vault file
     exists (no-outing rule).
     """
-    # Local imports break the config -> lockdown -> ingest -> config import cycle:
-    # LockdownConfig (used by config.py) needs none of these, so they load lazily.
-    from ledger.config import Config
-    from ledger.ingest import Archive
-
     backup = Path(backup)
     config_path = backup / "store" / _CONFIG_FILENAME
     if not config_path.exists():

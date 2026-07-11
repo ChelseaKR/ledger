@@ -738,7 +738,7 @@ class Archive:
 
     def _record_path(self, record_id: str) -> Path:
         """The fast-lookup manifest path for ``record_id`` under ``records/``."""
-        return self.records_dir / f"{record_id}.json"
+        return self.records_dir / f"{_safe_record_component(record_id)}.json"
 
     def get(self, record_id: str) -> Record:
         """Load the stored, identity-free record manifest for ``record_id``.
@@ -751,14 +751,15 @@ class Archive:
         fast = self._record_path(record_id)
         if fast.exists():
             return deserialize_record(fast.read_text(encoding="utf-8"))
-        in_bag = self.bags_dir / record_id / _RECORD_FILENAME
+        component = _safe_record_component(record_id)
+        in_bag = self.bags_dir / component / _RECORD_FILENAME
         if in_bag.exists():
             return deserialize_record(in_bag.read_text(encoding="utf-8"))
         raise ObjectNotFound(record_id)
 
     def _versions_path(self, record_id: str) -> Path:
         """The append-only version-index path for ``record_id`` under ``records/``."""
-        return self.records_dir / f"{record_id}{_VERSIONS_SUFFIX}"
+        return self.records_dir / f"{_safe_record_component(record_id)}{_VERSIONS_SUFFIX}"
 
     def apply_update(self, record: Record, event: PremisEvent) -> None:
         """Persist an updated record manifest and append a PREMIS event to its bag.
@@ -996,29 +997,24 @@ class Archive:
         turn a removal into a directory traversal that deletes outside the archive
         (defense in depth on a destructive primitive).
         """
-        if (
-            not record_id
-            or record_id in {".", ".."}
-            or any(sep in record_id for sep in ("/", "\\", "\x00"))
-        ):
-            raise LedgerError("invalid record id")
+        component = _safe_record_component(record_id)
         stamp = now if now is not None else now_iso()
-        revoked = self._revoke_identity_if_present(record_id)
+        revoked = self._revoke_identity_if_present(component)
 
         removed = 0
         cleared_locations: list[str] = []
-        bag_dir = self.bags_dir / record_id
+        bag_dir = self.bags_dir / component
         if bag_dir.exists():
             shutil.rmtree(bag_dir)
             removed += 1
-        fast = self.records_dir / f"{record_id}.json"
+        fast = self.records_dir / f"{component}.json"
         if fast.exists():
             fast.unlink()
         # Remove the append-only version index too, so a takedown leaves no dangling
         # history pointer. The snapshot bytes it referenced are content-addressed and
         # identity-free; they are left to normal store maintenance rather than chased
         # here, keeping this destructive primitive simple.
-        versions = self._versions_path(record_id)
+        versions = self._versions_path(component)
         if versions.exists():
             versions.unlink()
         # The catalog index (FIX-04) notices the fast-lookup file is gone the next
@@ -1026,7 +1022,7 @@ class Archive:
         # needed here (see ledger.catalog_index), so a removed record cannot linger
         # in browse/search results.
         for location in self.config.locations:
-            replica = Path(location.path) / record_id
+            replica = Path(location.path) / component
             if replica.exists() and replica != bag_dir:
                 shutil.rmtree(replica)
                 removed += 1
@@ -1037,10 +1033,10 @@ class Archive:
         # reachable replica that held a copy is confirmed too. Any replica offline
         # now is left pending, to be confirmed by the reattach sweep (propagation).
         store = TombstoneStore(self.logs_dir)
-        store.add(record_id, stamp)
-        store.confirm(record_id, PRIMARY_LOCATION, stamp)
+        store.add(component, stamp)
+        store.confirm(component, PRIMARY_LOCATION, stamp)
         for name in cleared_locations:
-            store.confirm(record_id, name, stamp)
+            store.confirm(component, name, stamp)
         return removed, revoked
 
     def disclose(
@@ -1455,3 +1451,15 @@ def _vault_key_from_env() -> bytes | None:
     """
     raw = os.environ.get(_VAULT_KEY_ENV)
     return raw.encode("ascii") if raw else None
+
+
+def _safe_record_component(record_id: str) -> str:
+    """Return a single allowlisted path component or reject the identifier."""
+    component = Path(record_id).name
+    if (
+        component != record_id
+        or component in {"", ".", ".."}
+        or re.fullmatch(r"[A-Za-z0-9_-]+", component) is None
+    ):
+        raise LedgerError("invalid record id")
+    return component

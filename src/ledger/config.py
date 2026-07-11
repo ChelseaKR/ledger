@@ -30,7 +30,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from ledger.errors import ConfigError
-from ledger.lockdown import LockdownConfig
 from ledger.models import AccessPolicy
 
 # Current on-disk schema version. Bumped whenever the serialized shape changes; the
@@ -40,6 +39,68 @@ CONFIG_SCHEMA_VERSION: int = 1
 # The roles a storage location may play. ``local`` is the authoritative on-box copy;
 # ``mirror`` is a replica target (replication/redundancy).
 _KNOWN_KINDS: frozenset[str] = frozenset({"local", "mirror"})
+
+
+@dataclass(frozen=True)
+class LockdownConfig:
+    """Declarative duress posture, kept with configuration to avoid import cycles."""
+
+    stop_disclosure: bool = True
+    shred_vault: bool = False
+    required_replica_locations: list[str] = field(default_factory=list)
+    min_verified_replicas: int = 1
+
+    def validate(self, *, archive_locations: tuple[str | Path, ...] = ()) -> None:
+        """Reject a destructive or self-referential lockdown configuration."""
+        if self.min_verified_replicas < 1:
+            raise ConfigError("lockdown.min_verified_replicas must be at least 1")
+        if self.shred_vault:
+            if not self.required_replica_locations:
+                raise ConfigError(
+                    "lockdown.shred_vault requires at least one required_replica_locations "
+                    "entry to verify before destroying the local vault"
+                )
+            if self.min_verified_replicas > len(self.required_replica_locations):
+                raise ConfigError(
+                    "lockdown.min_verified_replicas exceeds the number of configured "
+                    "required_replica_locations; the shred could never be authorized"
+                )
+        if archive_locations and self.required_replica_locations:
+            live = {Path(loc).expanduser().resolve() for loc in archive_locations}
+            for location in self.required_replica_locations:
+                if Path(location).expanduser().resolve() in live:
+                    raise ConfigError(
+                        f"lockdown.required_replica_locations entry {location!r} is the "
+                        "live archive's own location, not an off-box replica — this "
+                        "provides no real redundancy; point it at a genuinely separate copy"
+                    )
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "stop_disclosure": self.stop_disclosure,
+            "shred_vault": self.shred_vault,
+            "required_replica_locations": list(self.required_replica_locations),
+            "min_verified_replicas": self.min_verified_replicas,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, object]) -> LockdownConfig:
+        raw_locations = data.get("required_replica_locations", [])
+        if not isinstance(raw_locations, list):
+            raise ConfigError("lockdown.required_replica_locations must be a list")
+        try:
+            min_verified = int(str(data.get("min_verified_replicas", 1)))
+        except ValueError as exc:
+            raise ConfigError("lockdown.min_verified_replicas must be an integer") from exc
+        config = cls(
+            stop_disclosure=bool(data.get("stop_disclosure", True)),
+            shred_vault=bool(data.get("shred_vault", False)),
+            required_replica_locations=[str(loc) for loc in raw_locations],
+            min_verified_replicas=min_verified,
+        )
+        config.validate()
+        return config
+
 
 # A small, opinionated starter vocabulary for content warnings. It is intentionally
 # editable: stewards extend it for their community, but a fresh archive is never
