@@ -150,14 +150,14 @@ class CheckupReport:
             CheckStatus.UNVERIFIED: "CHECK",
         }
         intro = " ".join(
-            [
+            (
                 "This report checks a live deployment against the operational controls in",
                 "`docs/ADOPTING.md`. It is advisory: it changes nothing and sets no defaults,",
                 "and it records only operational facts (paths, device ids, counts, a bound",
                 "host) — never a contributor identity, a sealed value, or the vault key",
                 "(no-outing rule). A `CHECK` result is a control this tool could not verify",
                 "from the box it ran on; confirm it by hand rather than assuming it is fine.",
-            ]
+            )
         )
         lines = [
             f"# ledger readiness checkup — {self.generated_date}",
@@ -175,13 +175,13 @@ class CheckupReport:
             cell = " ".join(r.explanation.split())
             lines.append(f"| {r.title} | {symbol[r.status]} | {cell} |")
         closing = " ".join(
-            [
+            (
                 "Most residual risk in the threat model is reduced by these operational",
                 "choices. ledger holds the line it can hold in code; this checklist is the",
                 "line you hold in deployment. Consult `docs/ADOPTING.md` and",
                 "`docs/THREAT-MODEL.md` in full before trusting the system with records",
                 "that can endanger the people who made them.",
-            ]
+            )
         )
         lines.extend(
             [

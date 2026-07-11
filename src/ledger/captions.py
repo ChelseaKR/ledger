@@ -96,13 +96,37 @@ __all__ = [
 # (an optional dot-separated class list before the annotation). The annotation —
 # everything up to the closing '>' — is the voice name (WebVTT spec §"WebVTT cue
 # voice span").
-_VOICE_TAG = re.compile(r"<v(?:\.[^>.\s]+)*[ \t]+([^>]+)>")
-
 # Any WebVTT cue-span tag: <v ...>, </v>, <b>, <i>, <u>, <c>, <lang ...>, or a
 # cue-internal timestamp tag like <00:00:01.000>. Stripped from cue payload text
 # after the voice (if any) has been pulled out, so the stored text is plain prose,
 # not markup.
 _ANY_TAG = re.compile(r"<[^>]*>")
+
+
+def _voice_annotation(raw: str) -> str | None:
+    """Return the first valid ``<v[.class] annotation>`` annotation, linearly."""
+    offset = 0
+    while (start := raw.find("<v", offset)) >= 0:
+        cursor = start + 2
+        offset = cursor
+        while cursor < len(raw) and raw[cursor] == ".":
+            cursor += 1
+            class_start = cursor
+            while cursor < len(raw) and raw[cursor] not in ".> \t\r\n":
+                cursor += 1
+            if cursor == class_start:
+                break
+        if cursor >= len(raw) or raw[cursor] not in " \t":
+            continue
+        while cursor < len(raw) and raw[cursor] in " \t":
+            cursor += 1
+        end = raw.find(">", cursor)
+        if end >= 0:
+            annotation = raw[cursor:end].strip()
+            if annotation:
+                return annotation
+    return None
+
 
 # WebVTT timestamp (spec: hours optional-but-required-if-nonzero, minutes/seconds
 # always 2 digits 00-59, milliseconds always 3 digits, '.' before the milliseconds).
@@ -179,8 +203,7 @@ def _extract_voice(payload_lines: list[str]) -> tuple[str | None, str]:
     plain prose.
     """
     raw = "\n".join(payload_lines).strip()
-    match = _VOICE_TAG.search(raw)
-    speaker = match.group(1).strip() if match else None
+    speaker = _voice_annotation(raw)
     cleaned = _ANY_TAG.sub("", raw)
     text = " ".join(cleaned.split())
     return speaker, text

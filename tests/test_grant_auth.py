@@ -16,6 +16,7 @@ shape; every failure mode leaves it in the anonymous shape.
 
 from __future__ import annotations
 
+import hmac
 import json
 import threading
 import urllib.request
@@ -267,12 +268,12 @@ def test_concurrent_grant_uses_all_audited(tmp_path: Path, monkeypatch: pytest.M
     httpd = make_server(archive, host="127.0.0.1", port=0, grants_path=_write_grants(tmp_path))
     token = issue_grant_token(_SUBJECT, _SECRET, expires_at=_FUTURE)
     request_count = 8
-    errors: list[BaseException] = []
+    errors: list[Exception] = []
 
     def _hit(base: str) -> None:
         try:
             assert _authenticated(base, rid, token) is True
-        except BaseException as exc:  # surfaced to the main thread below
+        except Exception as exc:  # surfaced to the main thread below
             errors.append(exc)
 
     with _running(httpd) as base:
@@ -340,16 +341,14 @@ def test_verify_round_trip_and_failures() -> None:
 
 def test_verify_uses_constant_time_compare(monkeypatch: pytest.MonkeyPatch) -> None:
     """Verification goes through :func:`hmac.compare_digest` (no early-exit compare)."""
-    import ledger.access.grants as grants_mod
-
     calls: list[int] = []
-    real = grants_mod.hmac.compare_digest
+    real = hmac.compare_digest
 
     def _counting(a: object, b: object) -> bool:
         calls.append(1)
         return real(a, b)
 
-    monkeypatch.setattr(grants_mod.hmac, "compare_digest", _counting)
+    monkeypatch.setattr(hmac, "compare_digest", _counting)
     token = issue_grant_token(_SUBJECT, _SECRET, expires_at=_FUTURE)
     assert verify_grant_token(token, _SECRET, now=_NOW) == _SUBJECT
     assert calls, "verify_grant_token must compare the MAC with hmac.compare_digest"

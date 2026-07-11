@@ -83,46 +83,23 @@ def is_visible(
     """
     effective = PUBLIC_GRANT if grant.is_expired(now) else grant
 
-    match policy:
-        case AccessPolicy.PUBLIC:
-            return True
-        case AccessPolicy.COMMUNITY:
-            return effective.is_steward or AccessPolicy.COMMUNITY in effective.levels
-        case AccessPolicy.STEWARDS:
-            return effective.is_steward
-        case AccessPolicy.SEALED_UNTIL:
-            if unseal_at is not None:
-                # A *temporal* seal ("sealed until <date>") is an embargo: a promise
-                # made to time, not an access level. It binds EVERY tier, including
-                # stewards, until the date passes — then it opens to all. A steward
-                # who must reach embargoed content before the date does so through an
-                # explicit, logged mechanism, not by silently bypassing the seal
-                #
-                # NOTE: this is a policy check on plaintext, not an encryption
-                # boundary — a seized disk yields the value immediately regardless
-                # of how far away unseal_at is (unlike absolute SEALED, which is
-                # encrypted at rest; see ingest.py). Whether a genuine
-                # cryptographic time-lock could close that gap is explored,
-                # research-first and not yet a build decision, in
-                # docs/audits/crypto-design-review-embargo-timelock.md (EXP-12).
-                # (fail-closed; honours the date the contributor was promised).
-                return _unseal_reached(now, unseal_at)
-            # An indefinite seal (no date) is an access-level seal a steward may
-            # read, as the threat model documents.
-            return effective.is_steward
-        case AccessPolicy.SEALED_CONDITIONAL:
-            if effective.is_steward:
-                return True
-            return unseal_condition is not None and unseal_condition in conditions_met
-        case AccessPolicy.SEALED:
-            # An ABSOLUTE seal: restricted from everyone, including stewards. No
-            # grant satisfies it — there is no read path on which it is disclosed
-            # (the "seal from everyone" tier; such values are encrypted at rest).
-            return False
-        case _:
-            # Unknown enum-like values are never visible. This explicit fallback
-            # preserves the deny-by-default contract for malformed runtime input.
-            return False  # type: ignore[unreachable]
+    if policy is AccessPolicy.PUBLIC:
+        return True
+    if policy is AccessPolicy.COMMUNITY:
+        return effective.is_steward or AccessPolicy.COMMUNITY in effective.levels
+    if policy is AccessPolicy.STEWARDS:
+        return effective.is_steward
+    if policy is AccessPolicy.SEALED_UNTIL:
+        if unseal_at is not None:
+            # A temporal seal is a promise to time and binds every viewer tier.
+            return _unseal_reached(now, unseal_at)
+        return effective.is_steward
+    if policy is AccessPolicy.SEALED_CONDITIONAL:
+        return effective.is_steward or (
+            unseal_condition is not None and unseal_condition in conditions_met
+        )
+    # SEALED and malformed runtime values are both denied by default.
+    return False
 
 
 def is_listable(
@@ -263,19 +240,17 @@ def withheld_reason(policy: AccessPolicy, unseal_at: str | None, *, now: str | N
     a dated temporal seal, a live countdown ("opens in N days") is appended so the
     embargo is an honest promise to a time, not just a label (C2).
     """
-    match policy:
-        case AccessPolicy.COMMUNITY:
-            return "shared with community members"
-        case AccessPolicy.STEWARDS:
-            return "restricted to stewards"
-        case AccessPolicy.SEALED_UNTIL:
-            if unseal_at:
-                countdown = _embargo_countdown(now, unseal_at) if now else ""
-                return f"sealed until {unseal_at[:10]}{countdown}"
-            return "sealed (no opening date set)"
-        case AccessPolicy.SEALED_CONDITIONAL:
-            return "sealed until a condition is met"
-        case AccessPolicy.SEALED:
-            return "sealed from everyone, including stewards"
-        case _:
-            return "restricted"
+    if policy is AccessPolicy.COMMUNITY:
+        return "shared with community members"
+    if policy is AccessPolicy.STEWARDS:
+        return "restricted to stewards"
+    if policy is AccessPolicy.SEALED_UNTIL:
+        if unseal_at:
+            countdown = _embargo_countdown(now, unseal_at) if now else ""
+            return f"sealed until {unseal_at[:10]}{countdown}"
+        return "sealed (no opening date set)"
+    if policy is AccessPolicy.SEALED_CONDITIONAL:
+        return "sealed until a condition is met"
+    if policy is AccessPolicy.SEALED:
+        return "sealed from everyone, including stewards"
+    return "restricted"

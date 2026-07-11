@@ -221,8 +221,6 @@ def test_dublin_core_json_round_trip() -> None:
 @pytest.mark.preservation
 def test_dublin_core_json_drops_empty_elements() -> None:
     """Empty DC elements are absent from the JSON (compact, deterministic sidecar)."""
-    import json
-
     dc = DublinCore(title=["Only a title"])
     parsed = json.loads(to_json(dc))
     assert parsed == {"title": ["Only a title"]}
@@ -291,8 +289,6 @@ def test_premis_log_without_rights_serializes_without_rights_key() -> None:
     ``test_old_rightsless_log_still_reads_back`` — but everything written from
     FIX-06 on is the schema-versioned, hash-chained envelope.
     """
-    import json
-
     log = PremisLog(_sample_events())
     parsed = json.loads(log.to_json())
     assert isinstance(parsed, dict)

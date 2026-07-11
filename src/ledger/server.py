@@ -2516,8 +2516,6 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             if self.command != "HEAD":
                 handle = path.open("rb")
         except (ObjectNotFound, LedgerError, OSError):
-            if handle is not None:  # pragma: no cover - defensive
-                handle.close()
             self._handle_not_found()
             return
         try:
@@ -2559,11 +2557,9 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         # RFC 6266: a percent-encoded filename* is a recognized-safe way to carry
         # the (already CR/LF/quote-stripped) name, and it renders non-ASCII names
         # correctly for a bilingual archive. Keep an ASCII filename= fallback.
-        safe_name = _safe_filename(filename)
-        self.send_header(
-            "Content-Disposition",
-            f"inline; filename=\"{safe_name}\"; filename*=UTF-8''{quote(safe_name, safe='')}",
-        )
+        # The human filename appears on the already-escaped record page. Keep the
+        # transport header wholly literal so request input cannot become a header.
+        self.send_header("Content-Disposition", 'inline; filename="download"')
         self.send_header("Content-Security-Policy", "default-src 'none'; sandbox")
         self.send_header("Referrer-Policy", "no-referrer")
         self.end_headers()
