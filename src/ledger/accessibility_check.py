@@ -322,8 +322,8 @@ def _render_sample_pages() -> dict[str, str]:
             _page,
             _places_html,
             _record_main_html,
-            transparency_main_html,
             _timeline_html,
+            transparency_main_html,
         )
         from ledger.transparency import TransparencyLog
 
