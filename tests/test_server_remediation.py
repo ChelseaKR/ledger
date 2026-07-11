@@ -20,6 +20,7 @@ from pathlib import Path
 
 import pytest
 
+from ledger.access.grants import issue_grant_token
 from ledger.config import Config
 from ledger.consent import issue_claim_token
 from ledger.identity import ContributorIdentity
@@ -30,6 +31,7 @@ from ledger.server import make_server
 _SENTINEL = "SENTINEL-REMEDIATION-DO-NOT-LEAK-Q9"
 _VAULT_KEY = b"0123456789abcdef0123456789abcdef0123456789a="
 _CLAIM_SECRET = "test-claim-secret"  # noqa: S105 - test fixture, not a real secret
+_GRANT_SECRET = b"remediation-test-grant-secret"
 _NOW = "2026-06-16T12:00:00Z"
 
 
@@ -39,11 +41,14 @@ def site(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[str,
     community record (+file); yields (base_url, public_id, community_id)."""
     monkeypatch.setenv("LEDGER_VAULT_KEY", _VAULT_KEY.decode())
     monkeypatch.setenv("LEDGER_CLAIM_SECRET", _CLAIM_SECRET)
+    monkeypatch.setenv("LEDGER_GRANT_SECRET", _GRANT_SECRET.decode())
     config = Config.default("Remediation Test Archive", tmp_path / "arc")
     archive = Archive.init(config)
 
     pub_file = tmp_path / "flyer.txt"
     pub_file.write_text("Pride march 1991, library steps, noon.")
+    empty_file = tmp_path / "empty.txt"
+    empty_file.write_text("")  # zero-length payloads can enter the CAS
     pub = Record(
         title="Flyer 1991",
         default_policy=AccessPolicy.PUBLIC,
@@ -51,7 +56,7 @@ def site(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[str,
         fields=[Field("text", "public", AccessPolicy.PUBLIC)],
     )
     archive.ingest(
-        {pub_file.name: pub_file},
+        {pub_file.name: pub_file, empty_file.name: empty_file},
         pub,
         identity=ContributorIdentity(name=_SENTINEL),
         vault_key=_VAULT_KEY,
@@ -92,6 +97,11 @@ def site(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[str,
             httpd.server_close()
 
 
+def _grant_header(subject: str) -> str:
+    """A signed capability token for ``subject`` (the header is now authenticated)."""
+    return issue_grant_token(subject, _GRANT_SECRET)
+
+
 def _get(
     base: str,
     path: str,
@@ -101,7 +111,7 @@ def _get(
 ) -> tuple[int, str, dict[str, str]]:
     req = urllib.request.Request(f"{base}{path}")  # noqa: S310 - loopback
     if grant:
-        req.add_header("X-Ledger-Grant", grant)
+        req.add_header("X-Ledger-Grant", _grant_header(grant))
     for name, value in (headers or {}).items():
         req.add_header(name, value)
     try:
@@ -125,7 +135,7 @@ def _post(
     body = urllib.parse.urlencode(data).encode()
     req = urllib.request.Request(f"{base}{path}", data=body)  # noqa: S310 - loopback
     if grant:
-        req.add_header("X-Ledger-Grant", grant)
+        req.add_header("X-Ledger-Grant", _grant_header(grant))
     try:
         with urllib.request.urlopen(req, timeout=10) as r:  # noqa: S310
             return int(r.status), r.read().decode("utf-8")
@@ -198,6 +208,23 @@ def test_file_download_rejects_unsatisfiable_range(site: tuple[str, str, str]) -
     )
     assert status == 416
     assert headers["content-range"].startswith("bytes */")
+
+
+def test_empty_file_suffix_range_is_unsatisfiable(site: tuple[str, str, str]) -> None:
+    """RFC 9110 §14.1.2: a suffix range against a zero-length resource has no
+    last byte to name — it must be a ``416``, never a malformed ``206`` with an
+    inverted ``Content-Range`` (``bytes 0--1/0``)."""
+    base, pub, _comm = site
+    status, _body, headers = _get(
+        base, f"/record/{pub}/file/empty.txt", headers={"Range": "bytes=-5"}
+    )
+    assert status == 416
+    assert headers["content-range"] == "bytes */0"
+    # and a plain GET of the empty payload still succeeds
+    status, body, headers = _get(base, f"/record/{pub}/file/empty.txt")
+    assert status == 200
+    assert body == ""
+    assert headers["content-length"] == "0"
 
 
 # --- OAI-PMH + sitemap (P2-3), public only ----------------------------------

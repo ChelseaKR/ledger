@@ -791,3 +791,65 @@ msgstr "{when}, ref {ref}"
 msgid "— every recorded action across the archive."
 msgstr "— every recorded action across the archive."
 
+
+msgid "A moderation decision needs a non-empty reason. Go back and supply a rationale, then try again."
+msgstr "A moderation decision needs a non-empty reason. Go back and supply a rationale, then try again."
+
+msgid "Action not recorded"
+msgstr "Action not recorded"
+
+msgid "Add content warning"
+msgstr "Add content warning"
+
+msgid "Back to the record"
+msgstr "Back to the record"
+
+#, python-brace-format
+msgid "Comparing the current record with an earlier saved version. Record {id}."
+msgstr "Comparing the current record with an earlier saved version. Record {id}."
+
+msgid "Content warnings"
+msgstr "Content warnings"
+
+msgid "Current"
+msgstr "Current"
+
+msgid "Default access"
+msgstr "Default access"
+
+msgid "Description"
+msgstr "Description"
+
+msgid "Field"
+msgstr "Field"
+
+msgid "Field-by-field comparison of the current record and the selected earlier version"
+msgstr "Field-by-field comparison of the current record and the selected earlier version"
+
+msgid "No earlier versions."
+msgstr "No earlier versions."
+
+msgid "Previous version"
+msgstr "Previous version"
+
+msgid "Reason (required)"
+msgstr "Reason (required)"
+
+msgid "Saved versions"
+msgstr "Saved versions"
+
+msgid "Take down"
+msgstr "Take down"
+
+msgid "Version history"
+msgstr "Version history"
+
+msgid "changed"
+msgstr "changed"
+
+msgid "selected"
+msgstr "selected"
+
+#, python-brace-format
+msgid "{when} — superseded by {event}"
+msgstr "{when} — superseded by {event}"

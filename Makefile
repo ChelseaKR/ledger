@@ -12,7 +12,7 @@ PIP  := $(PY) -m pip
 
 .DEFAULT_GOAL := help
 .PHONY: help venv install lint format type test cov audit accessibility acr demo serve \
-        i18n i18n-compile secret-scan container verify clean
+        i18n i18n-compile claims secret-scan container verify clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -39,8 +39,12 @@ type: ## Strict type checking (mypy)
 test: ## Run the test suite (preservation + disclosure + no-outing audit)
 	$(PY) -m pytest
 
-cov: ## Run tests with coverage
+cov: ## Run tests with coverage (95% floor on the access/consent/dual-control core)
 	$(PY) -m pytest --cov --cov-report=term-missing
+	# Per-module floor (CODE-QUALITY-STANDARD, security/crypto-critical paths): the
+	# access-policy, consent, and dual-control modules must hold >=95% branch
+	# coverage, above the 85% baseline. Scoped re-report over the .coverage data.
+	$(PY) -m coverage report --include="src/ledger/access/*,src/ledger/consent.py,src/ledger/dualcontrol.py" --fail-under=95
 
 backup-test: ## Exercise the full back-up -> wipe -> restore disaster-recovery cycle
 	$(PY) -m pytest -m recovery
@@ -91,6 +95,9 @@ i18n-compile: ## Compile the committed PO catalogs to MO (run after editing a .p
 		src/ledger/locales/es/LC_MESSAGES/messages.po
 	@echo "i18n-compile: refreshed messages.mo for en, es."
 
+claims: ## Truthfulness gate: verify README/doc factual claims against the repo
+	$(PY) tools/check_claims.py
+
 secret-scan: ## Secret scan (gitleaks) — mirrors ci.yml's supply-chain job locally
 	# CI-authoritative: CI pins and downloads gitleaks 8.30.1 itself
 	# (.github/workflows/ci.yml, supply-chain job) regardless of what is on this
@@ -118,7 +125,7 @@ container: ## Build the self-host image and scan it for CRITICAL/HIGH CVEs (Triv
 # green here means green in CI. (The `no-outing-audit` job is `test`'s own
 # `disclosure`-marked subset, run standalone in CI for visibility, not a distinct
 # local gate; `container` is intentionally excluded — see its own target comment.)
-verify: lint type test i18n accessibility audit secret-scan ## Run the complete merge gate (== CI's required checks)
+verify: lint type test i18n accessibility audit secret-scan claims ## Run the complete merge gate (== CI's required checks)
 	@echo "verify: all gates green"
 
 clean: ## Remove caches and build artifacts (never touches an archive's data)

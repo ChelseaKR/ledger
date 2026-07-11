@@ -19,6 +19,7 @@ from pathlib import Path
 
 import pytest
 
+from ledger.access.grants import issue_grant_token
 from ledger.config import Config
 from ledger.ingest import Archive
 from ledger.models import AccessPolicy, DublinCore, Field, PremisEventType, Record
@@ -26,6 +27,7 @@ from ledger.server import make_server
 
 _SENTINEL = "SENTINEL-AUDIT-DO-NOT-LEAK-3K7P"
 _VAULT_KEY = "0123456789abcdef0123456789abcdef0123456789a="
+_GRANT_SECRET = b"audit-test-grant-secret"
 _NOW = "2026-06-17T00:00:00Z"
 
 
@@ -43,6 +45,7 @@ def _grants_file(tmp_path: Path) -> Path:
 @pytest.fixture
 def server(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[Archive, str]]:
     monkeypatch.setenv("LEDGER_VAULT_KEY", _VAULT_KEY)
+    monkeypatch.setenv("LEDGER_GRANT_SECRET", _GRANT_SECRET.decode())
     archive = Archive.init(Config.default("Audit Archive", tmp_path / "arc"))
     from ledger.identity import ContributorIdentity
 
@@ -68,7 +71,7 @@ def server(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[Ar
 
 
 def _get(base: str, path: str, *, steward: bool = False) -> tuple[int, str]:
-    headers = {"X-Ledger-Grant": "steward-1"} if steward else {}
+    headers = {"X-Ledger-Grant": issue_grant_token("steward-1", _GRANT_SECRET)} if steward else {}
     req = urllib.request.Request(f"{base}{path}", headers=headers)  # noqa: S310
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310
