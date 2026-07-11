@@ -37,6 +37,13 @@ msgid "(change access),"
 msgstr "(modifier l’accès),"
 
 msgid ""
+"A moderation decision needs a non-empty reason. Go back and supply a "
+"rationale, then try again."
+msgstr ""
+"Une décision de modération exige un motif non vide. Revenez en arrière, "
+"fournissez une justification, puis réessayez."
+
+msgid ""
 "A steward reviews every submission before anything becomes visible — "
 "nothing is published automatically."
 msgstr ""
@@ -57,6 +64,12 @@ msgstr "Maltraitance — décrit un préjudice ou de mauvais traitements continu
 
 msgid "Action a request with the audited CLI:"
 msgstr "Traitez une demande avec la CLI auditée :"
+
+msgid "Action not recorded"
+msgstr "Action non enregistrée"
+
+msgid "Add content warning"
+msgstr "Ajouter un avertissement de contenu"
 
 msgid "Agent"
 msgstr "Agent"
@@ -106,6 +119,9 @@ msgstr "Retour aux enregistrements"
 msgid "Back to the archive"
 msgstr "Retour à l’archive"
 
+msgid "Back to the record"
+msgstr "Retour à l’enregistrement"
+
 msgid "Back to the steward console"
 msgstr "Retour à la console de responsable"
 
@@ -142,11 +158,20 @@ msgstr "Communauté seulement — membres vérifiés"
 msgid "Community only — vetted members of this community"
 msgstr "Communauté seulement — membres vérifiés de cette communauté"
 
+#, python-brace-format
+msgid "Comparing the current record with an earlier saved version. Record {id}."
+msgstr ""
+"Comparaison de l’enregistrement actuel avec une version antérieure "
+"enregistrée. Enregistrement {id}."
+
 msgid "Contact (optional, sealed)"
 msgstr "Contact (facultatif, scellé)"
 
 msgid "Content warning"
 msgstr "Avertissement de contenu"
+
+msgid "Content warnings"
+msgstr "Avertissements de contenu"
 
 msgid "Content warnings (optional)"
 msgstr "Avertissements de contenu (facultatif)"
@@ -174,6 +199,9 @@ msgstr ""
 "demandée par le contributeur ; le retenir le conserve pour révision. "
 "Chaque choix est consigné."
 
+msgid "Current"
+msgstr "Actuel"
+
 msgid "Date"
 msgstr "Date"
 
@@ -183,8 +211,14 @@ msgstr "Morinom — désigne une personne par un nom qu’elle n’utilise plus"
 msgid "Death — describes the death of a person"
 msgstr "Mort — décrit le décès d’une personne"
 
+msgid "Default access"
+msgstr "Accès par défaut"
+
 msgid "Deportation — describes removal from a country or its threat"
 msgstr "Expulsion — décrit le renvoi d’un pays ou sa menace"
+
+msgid "Description"
+msgstr "Description"
 
 msgid ""
 "Descriptive details make this record findable by topic and browsable by "
@@ -236,6 +270,16 @@ msgstr ""
 "Chaque action consignée dans l’archive, la plus récente d’abord. Ce "
 "journal ne contient aucune identité de contributeur ni valeur scellée — "
 "seulement ce qui s’est passé, qui a agi et le résultat."
+
+msgid "Field"
+msgstr "Champ"
+
+msgid ""
+"Field-by-field comparison of the current record and the selected earlier "
+"version"
+msgstr ""
+"Comparaison champ par champ de l’enregistrement actuel et de la version "
+"antérieure sélectionnée"
 
 msgid "File"
 msgstr "Fichier"
@@ -337,6 +381,9 @@ msgstr "Suivant"
 msgid "No"
 msgstr "Non"
 
+msgid "No earlier versions."
+msgstr "Aucune version antérieure."
+
 msgid "No open requests."
 msgstr "Aucune demande en cours."
 
@@ -410,6 +457,9 @@ msgstr ""
 msgid "Permanent link"
 msgstr "Lien permanent"
 
+msgid "Persistent identifier"
+msgstr "Identifiant pérenne"
+
 msgid "Police violence — describes harm or force by police"
 msgstr ""
 "Violence policière — décrit un préjudice ou l’usage de la force par la "
@@ -424,6 +474,9 @@ msgstr "Aperçu — ce qu’un inconnu verrait"
 msgid "Previous"
 msgstr "Précédent"
 
+msgid "Previous version"
+msgstr "Version précédente"
+
 msgid "Public — anyone may read it"
 msgstr "Public — tout le monde peut le lire"
 
@@ -434,6 +487,9 @@ msgstr ""
 
 msgid "Publish (as requested)"
 msgstr "Publier (comme demandé)"
+
+msgid "Reason (required)"
+msgstr "Motif (obligatoire)"
 
 msgid "Received — a steward has not acted on it yet."
 msgstr "Reçue — un·e responsable ne l’a pas encore traitée."
@@ -459,6 +515,14 @@ msgstr "Enregistrements liés"
 msgid "Relevance"
 msgstr "Pertinence"
 
+#, python-brace-format
+msgid ""
+"Removal: {confirmed} of {total} storage location(s) have confirmed the "
+"takedown."
+msgstr ""
+"Retrait : {confirmed} emplacement(s) de stockage sur {total} ont confirmé "
+"le retrait."
+
 msgid "Request status"
 msgstr "État de la demande"
 
@@ -471,6 +535,9 @@ msgstr "Résolue — un·e responsable l’a traitée."
 
 msgid "Save changes"
 msgstr "Enregistrer les modifications"
+
+msgid "Saved versions"
+msgstr "Versions enregistrées"
 
 msgid "Sealed — keep it withheld for now"
 msgstr "Scellé — le garder retenu pour l’instant"
@@ -539,6 +606,10 @@ msgstr "État : {status}"
 msgid "Steward console"
 msgstr "Console de responsable"
 
+#, python-brace-format
+msgid "Still pending at: {locations}."
+msgstr "Toujours en attente sur : {locations}."
+
 msgid "Subjects"
 msgstr "Sujets"
 
@@ -560,6 +631,9 @@ msgstr "Résumé"
 msgid "Summary (optional)"
 msgstr "Résumé (facultatif)"
 
+msgid "Take down"
+msgstr "Retirer"
+
 msgid "Thank you — your contribution was received"
 msgstr "Merci — votre contribution a été reçue"
 
@@ -576,6 +650,9 @@ msgstr "Cet envoi est trop long."
 
 msgid "The language of the material, e.g. English or Spanish."
 msgstr "La langue du matériel, p. ex. anglais ou espagnol."
+
+msgid "The takedown is confirmed at every storage location."
+msgstr "Le retrait est confirmé sur chaque emplacement de stockage."
 
 msgid "There are no public records yet."
 msgstr "Il n’y a pas encore d’enregistrements publics."
@@ -615,6 +692,9 @@ msgstr "Type"
 
 msgid "Types"
 msgstr "Types"
+
+msgid "Version history"
+msgstr "Historique des versions"
 
 msgid "View the audit log"
 msgstr "Consulter le journal d’audit"
@@ -760,6 +840,9 @@ msgstr "et saisissez les deux."
 msgid "ask a steward to make contact"
 msgstr "demander à un·e responsable de prendre contact"
 
+msgid "changed"
+msgstr "modifié"
+
 msgid "community members only"
 msgstr "membres de la communauté seulement"
 
@@ -774,6 +857,9 @@ msgstr "objection d’une personne nommée dans l’enregistrement"
 
 msgid "on record"
 msgstr "au dossier"
+
+msgid "selected"
+msgstr "sélectionné"
 
 #, python-brace-format
 msgid "submitted {when}"
@@ -812,9 +898,12 @@ msgid "{count} public record(s)."
 msgstr "{count} enregistrement(s) public(s)."
 
 #, python-brace-format
+msgid "{when} — superseded by {event}"
+msgstr "{when} — remplacé par {event}"
+
+#, python-brace-format
 msgid "{when}, ref {ref}"
 msgstr "{when}, réf {ref}"
 
 msgid "— every recorded action across the archive."
 msgstr "— chaque action consignée dans l’archive."
-
