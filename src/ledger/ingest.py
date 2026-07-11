@@ -748,12 +748,13 @@ class Archive:
         Raises :class:`~ledger.errors.ObjectNotFound` naming only the record id if
         no manifest exists (no-outing rule).
         """
-        fast = self._record_path(record_id)
-        if fast.exists():
-            return deserialize_record(fast.read_text(encoding="utf-8"))
         component = _safe_record_component(record_id)
-        in_bag = self.bags_dir / component / _RECORD_FILENAME
-        if in_bag.exists():
+        fast = _existing_child(self.records_dir, f"{component}.json")
+        if fast is not None and fast.is_file():
+            return deserialize_record(fast.read_text(encoding="utf-8"))
+        bag = _existing_child(self.bags_dir, component)
+        in_bag = _existing_child(bag, _RECORD_FILENAME) if bag is not None else None
+        if in_bag is not None and in_bag.is_file():
             return deserialize_record(in_bag.read_text(encoding="utf-8"))
         raise ObjectNotFound(record_id)
 
@@ -1003,27 +1004,27 @@ class Archive:
 
         removed = 0
         cleared_locations: list[str] = []
-        bag_dir = self.bags_dir / component
-        if bag_dir.exists():
+        bag_dir = _existing_child(self.bags_dir, component)
+        if bag_dir is not None and bag_dir.is_dir():
             shutil.rmtree(bag_dir)
             removed += 1
-        fast = self.records_dir / f"{component}.json"
-        if fast.exists():
+        fast = _existing_child(self.records_dir, f"{component}.json")
+        if fast is not None and fast.is_file():
             fast.unlink()
         # Remove the append-only version index too, so a takedown leaves no dangling
         # history pointer. The snapshot bytes it referenced are content-addressed and
         # identity-free; they are left to normal store maintenance rather than chased
         # here, keeping this destructive primitive simple.
-        versions = self._versions_path(component)
-        if versions.exists():
+        versions = _existing_child(self.records_dir, f"{component}{_VERSIONS_SUFFIX}")
+        if versions is not None and versions.is_file():
             versions.unlink()
         # The catalog index (FIX-04) notices the fast-lookup file is gone the next
         # time it self-syncs and drops the cached row then -- no explicit call
         # needed here (see ledger.catalog_index), so a removed record cannot linger
         # in browse/search results.
         for location in self.config.locations:
-            replica = Path(location.path) / component
-            if replica.exists() and replica != bag_dir:
+            replica = _existing_child(Path(location.path), component)
+            if replica is not None and replica.is_dir() and replica != bag_dir:
                 shutil.rmtree(replica)
                 removed += 1
                 cleared_locations.append(location.name)
@@ -1463,3 +1464,11 @@ def _safe_record_component(record_id: str) -> str:
     ):
         raise LedgerError("invalid record id")
     return component
+
+
+def _existing_child(parent: Path, name: str) -> Path | None:
+    """Select an existing direct child by name without constructing a tainted path."""
+    try:
+        return next((child for child in parent.iterdir() if child.name == name), None)
+    except OSError:
+        return None
