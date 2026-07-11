@@ -91,6 +91,8 @@ dev = [
     # "run on one inexpensive box, no heavy dependency tree" property.
     # G12: a new major may change CLDR plural/locale data and needs explicit review.
     "babel>=2.16,<3",
+    # FIX-09 property-based fuzzing of parsers at the anonymous-contribution edge.
+    "hypothesis>=6.100",
 ]
 
 [tool.ruff]
