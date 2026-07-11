@@ -30,7 +30,7 @@ from pathlib import Path
 import pytest
 
 from ledger import cli, dualcontrol
-from ledger.access.grants import build_grant, steward
+from ledger.access.grants import build_grant, issue_grant_token, steward
 from ledger.config import Config
 from ledger.errors import ConfigError
 from ledger.identity import ContributorIdentity
@@ -46,6 +46,9 @@ _COMMUNITY = "SENTINEL-COMMUNITY-FIELD-5B1P"
 _VAULT_KEY = b"0123456789abcdef0123456789abcdef0123456789a="
 _NOW = "2026-07-02T00:00:00Z"
 _GRANT_HEADER = "X-Ledger-Grant"
+# The grant header now carries an HMAC-signed capability token (FIX-02), so the
+# lockdown drill authenticates the steward the same way a real deployment would.
+_GRANT_SECRET = b"lockdown-test-grant-secret"
 
 
 def _build_archive(root: Path, *, replica: Path) -> tuple[Archive, str]:
@@ -137,8 +140,11 @@ def _premis_event_types(root: Path) -> list[PremisEventType]:
 
 
 @pytest.fixture
-def served(tmp_path: Path) -> Iterator[tuple[str, str, Path, Archive]]:
+def served(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[tuple[str, str, Path, Archive]]:
     """A running reading-room over the armed archive; yields (base_url, rid, root, archive)."""
+    monkeypatch.setenv("LEDGER_GRANT_SECRET", _GRANT_SECRET.decode())
     root = tmp_path / "arc"
     replica = tmp_path / "replica"
     archive, rid = _build_archive(root, replica=replica)
@@ -165,8 +171,9 @@ def served(tmp_path: Path) -> Iterator[tuple[str, str, Path, Archive]]:
 
 def _steward_fields(base: str, rid: str) -> dict[str, object]:
     """The steward-visible fields of one record's disclosed JSON."""
+    token = issue_grant_token("a-steward", _GRANT_SECRET, expires_at="2027-01-01T00:00:00Z")
     req = urllib.request.Request(  # noqa: S310 - loopback URL we constructed
-        f"{base}/api/record/{rid}", headers={_GRANT_HEADER: "a-steward"}
+        f"{base}/api/record/{rid}", headers={_GRANT_HEADER: token}
     )
     with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310
         return dict(json.loads(resp.read().decode("utf-8"))["fields"])

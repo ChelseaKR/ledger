@@ -779,6 +779,32 @@ class Archive:
         log.record(event)
         log.write(log_path)
 
+    def log_grant_use(self, subject: str, route_class: str, *, now: str | None = None) -> None:
+        """Append a scrubbed record that an authenticated grant was used on a request.
+
+        Written to ``logs/grant-uses.premis.json`` so a steward can see *that* a
+        provisioned subject exercised its capability and on *which class of route*
+        (e.g. ``browse``, ``api``, ``steward``) — accountability for privileged
+        access. It records only the grant ``subject`` (a pre-provisioned identifier,
+        never a real contributor name) and a coarse route class: never the bearer
+        token, never a record id, never a query string, so the audit trail itself
+        discloses nothing (no-outing rule — logs disclose nothing).
+        """
+        self.logs_dir.mkdir(parents=True, exist_ok=True)
+        log_path = self.logs_dir / "grant-uses.premis.json"
+        log = PremisLog.read(log_path) if log_path.exists() else PremisLog()
+        log.record(
+            PremisEvent(
+                event_type=PremisEventType.VALIDATION,
+                agent=subject,
+                outcome="success",
+                detail=f"authenticated grant used on {route_class} route",
+                linked_object=None,
+                event_datetime=now if now is not None else now_iso(),
+            )
+        )
+        log.write(log_path)
+
     def remove_all_copies(self, record_id: str) -> tuple[int, bool]:
         """Physically remove every stored copy of ``record_id`` and revoke its identity.
 
