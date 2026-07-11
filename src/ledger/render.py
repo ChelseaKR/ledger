@@ -17,6 +17,7 @@ from collections.abc import Iterable
 from urllib.parse import parse_qsl, quote, urlencode, urlsplit
 
 from ledger import i18n, pagination, search
+from ledger.metadata.pid import is_ark
 from ledger.models import AccessPolicy, DisclosedRecord, Grant, PayloadFile, Record
 
 # The site's one stylesheet, linked from every page.
@@ -621,11 +622,15 @@ def _citation_html(record: DisclosedRecord, *, base_url: str, archive_name: str,
     """A "Cite this record" block: a formatted citation, a permalink, a metadata link.
 
     Scholarship needs a stable, quotable reference (user research P2-3). The citation
-    is ``Title. [Date.] Archive. URL`` built from already-disclosed metadata (the
-    archive name falls back to the record's Dublin Core ``publisher``), so it carries
-    no identity. The permalink and the ``Available at`` URL are the record's public
-    address; a "download metadata" link points at the JSON API for machine reuse.
-    Everything is escaped, and the URL is quoted, so no value can break the markup."""
+    is ``Title. [Date.] Archive. [PID.] URL`` built from already-disclosed metadata
+    (the archive name falls back to the record's Dublin Core ``publisher``), so it
+    carries no identity. The persistent identifier is the archive-local ARK minted at
+    ingest and carried in Dublin Core ``identifier`` (RM5), included in the formatted
+    citation and shown on its own line so a reader can quote the stable handle rather
+    than the host-dependent URL. The permalink and the ``Available at`` URL are the
+    record's public address; a "download metadata" link points at the JSON API for
+    machine reuse. Everything is escaped, and the URL is quoted, so no value can break
+    the markup."""
     root = base_url.rstrip("/")
     permalink = f"{root}/record/{quote(record.record_id)}"
     publisher = record.dublin_core.get("publisher") or []
@@ -633,14 +638,25 @@ def _citation_html(record: DisclosedRecord, *, base_url: str, archive_name: str,
     dates = record.dublin_core.get("date") or []
     date_part = f" {_esc(dates[0])}." if dates and dates[0] else ""
     archive_part = f" {_esc(archive)}." if archive else ""
+    # The persistent identifier: the first ARK-style value in Dublin Core `identifier`
+    # (minted at ingest). Surfacing it in the citation gives scholarship a stable
+    # handle that outlives any URL (RM5, user research P2-3).
+    pid = next((value for value in record.dublin_core.get("identifier", []) if is_ark(value)), "")
+    pid_sentence = f" {_esc(pid)}." if pid else ""
     citation = (
-        f"{_esc(record.title)}.{date_part}{archive_part} "
+        f"{_esc(record.title)}.{date_part}{archive_part}{pid_sentence} "
         f"{_esc(i18n.t(lang, 'cite_available_at'))} {_esc(permalink)}"
+    )
+    pid_line = (
+        f'      <p>{_esc(i18n.t(lang, "cite_pid"))}: <span class="pid">{_esc(pid)}</span></p>\n'
+        if pid
+        else ""
     )
     return (
         '    <section aria-labelledby="cite-heading">\n'
         f'      <h2 id="cite-heading">{_esc(i18n.t(lang, "cite_heading"))}</h2>\n'
         f'      <p class="citation">{citation}</p>\n'
+        f"{pid_line}"
         f"      <p>{_esc(i18n.t(lang, 'cite_permalink'))}: "
         f'<a href="{_esc(permalink)}">{_esc(permalink)}</a></p>\n'
         f'      <p><a href="/api/record/{quote(record.record_id)}">'

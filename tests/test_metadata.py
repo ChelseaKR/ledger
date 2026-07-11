@@ -19,8 +19,9 @@ from ledger.metadata.dublincore import (
     to_oai_dc_xml,
     write_sidecar,
 )
+from ledger.metadata.pid import ARK_PREFIX, is_ark, mint_ark
 from ledger.metadata.premis import PremisLog, to_premis_xml
-from ledger.models import DublinCore, PremisEvent, PremisEventType
+from ledger.models import DublinCore, PremisEvent, PremisEventType, PremisRights
 
 
 def _sample_events() -> list[PremisEvent]:
@@ -170,3 +171,156 @@ def test_dublin_core_from_json_rejects_non_list_element() -> None:
     """A scalar where a list is expected is rejected (robustness)."""
     with pytest.raises(ValueError, match="must be a list"):
         from_json('{"title": "not a list"}')
+
+
+# --- PREMIS rights entity (RM5) ---------------------------------------------
+
+
+def _sample_rights() -> PremisRights:
+    """A licence-basis rights statement with granted acts and a restriction."""
+    return PremisRights(
+        rights_basis="license",
+        rights_note="CC-BY-SA-4.0",
+        granted_acts=("disseminate", "replicate"),
+        restrictions=("attribution required",),
+        linked_object="rec-0000000000000000",
+    )
+
+
+@pytest.mark.preservation
+def test_premis_rights_json_round_trips_in_log() -> None:
+    """A log carrying a rights statement serializes and reads back with it intact."""
+    log = PremisLog(_sample_events(), rights=_sample_rights())
+    restored = PremisLog.from_json(log.to_json())
+    assert restored.events == log.events
+    assert restored.rights == _sample_rights()
+
+
+@pytest.mark.preservation
+def test_premis_log_without_rights_serializes_as_bare_list() -> None:
+    """With no rights, the log is still a bare JSON list (backward compatible)."""
+    import json
+
+    log = PremisLog(_sample_events())
+    parsed = json.loads(log.to_json())
+    assert isinstance(parsed, list)
+    assert log.rights is None
+
+
+@pytest.mark.preservation
+def test_old_rightsless_log_still_reads_back() -> None:
+    """An old log written as a bare event list reads back with no rights (round-trip)."""
+    legacy = PremisLog(_sample_events()).to_json()  # the historical bare-list shape
+    restored = PremisLog.from_json(legacy)
+    assert restored.events == _sample_events()
+    assert restored.rights is None
+
+
+@pytest.mark.preservation
+def test_set_rights_replaces_not_appends() -> None:
+    """Rights are a standing fact: re-declaring supersedes rather than accumulating."""
+    log = PremisLog(_sample_events())
+    log.set_rights(PremisRights(rights_basis="other"))
+    log.set_rights(_sample_rights())
+    assert log.rights == _sample_rights()
+
+
+@pytest.mark.preservation
+def test_premis_xml_includes_rights_statement() -> None:
+    """``to_premis_xml`` emits a PREMIS v3 rights statement with basis, act, restriction."""
+    import xml.etree.ElementTree as ET
+
+    xml = to_premis_xml(_sample_events(), _sample_rights())
+    root = ET.fromstring(xml)  # noqa: S314 - our own trusted, identity-free output
+    ns = "{http://www.loc.gov/premis/v3}"
+    statements = root.findall(f"{ns}rights/{ns}rightsStatement")
+    assert len(statements) == 1
+    statement = statements[0]
+    assert statement.findtext(f"{ns}rightsBasis") == "license"
+    granted = statement.find(f"{ns}rightsGranted")
+    assert granted is not None
+    assert [a.text for a in granted.findall(f"{ns}act")] == ["disseminate", "replicate"]
+    assert [r.text for r in granted.findall(f"{ns}restriction")] == ["attribution required"]
+
+
+@pytest.mark.preservation
+def test_premis_xml_without_rights_has_no_rights_element() -> None:
+    """No rights argument means no ``premis:rights`` element (unchanged old output)."""
+    import xml.etree.ElementTree as ET
+
+    root = ET.fromstring(to_premis_xml(_sample_events()))  # noqa: S314 - trusted output
+    ns = "{http://www.loc.gov/premis/v3}"
+    assert root.findall(f"{ns}rights") == []
+
+
+@pytest.mark.preservation
+def test_premis_rights_carries_no_identity_fields() -> None:
+    """No-outing: a rights statement has no rights-holder or agent field, only terms.
+
+    Structural guarantee — the entity models the collection's *terms of use*, so any
+    real person stays in the vault. If someone ever adds a ``rights_holder`` or
+    ``agent`` field this test fails, flagging a no-outing regression.
+    """
+    fields = set(PremisRights.__dataclass_fields__)
+    assert fields == {
+        "rights_basis",
+        "rights_note",
+        "granted_acts",
+        "restrictions",
+        "linked_object",
+    }
+
+
+# --- persistent identifiers (RM5) -------------------------------------------
+
+
+@pytest.mark.preservation
+def test_mint_ark_is_deterministic_and_pure() -> None:
+    """The same record id always mints the same ARK (offline, reproducible)."""
+    assert mint_ark("rec-abc123") == mint_ark("rec-abc123")
+
+
+@pytest.mark.preservation
+def test_mint_ark_has_expected_form() -> None:
+    """An ARK is ``ark:/<naan>/<shoulder><record_id>`` and passes :func:`is_ark`."""
+    pid = mint_ark("deadbeef")
+    assert pid.startswith(f"{ARK_PREFIX}/99999/")
+    assert pid == "ark:/99999/ldeadbeef"
+    assert is_ark(pid)
+
+
+@pytest.mark.preservation
+def test_mint_ark_distinct_ids_distinct_pids() -> None:
+    """Distinct record ids mint distinct PIDs (no collisions for distinct inputs)."""
+    assert mint_ark("rec-a") != mint_ark("rec-b")
+
+
+@pytest.mark.preservation
+def test_mint_ark_custom_naan_and_shoulder() -> None:
+    """A deployment can supply its own registered NAAN and shoulder."""
+    pid = mint_ark("x9", naan="12345", shoulder="k2")
+    assert pid == "ark:/12345/k2x9"
+    assert is_ark(pid)
+
+
+@pytest.mark.preservation
+def test_mint_ark_strips_unsafe_characters() -> None:
+    """Reserved/whitespace characters in a crafted id cannot break the ARK structure."""
+    pid = mint_ark("a/b c?d")
+    assert pid == "ark:/99999/labcd"
+    assert is_ark(pid)
+
+
+@pytest.mark.preservation
+def test_mint_ark_rejects_empty_id() -> None:
+    """An empty (or all-unsafe) record id has no meaningful PID — fail closed."""
+    with pytest.raises(ValueError, match="empty record id"):
+        mint_ark("   ")
+
+
+@pytest.mark.preservation
+def test_is_ark_rejects_non_ark_identifiers() -> None:
+    """A plain identifier (e.g. a bare record id or URL) is not mistaken for an ARK."""
+    assert not is_ark("rec-abc123")
+    assert not is_ark("https://example.org/record/1")
+    assert not is_ark("ark:")

@@ -105,6 +105,23 @@ def test_full_lifecycle_ingest_disclose_replicate_consent(tmp_path: Path) -> Non
     assert PremisEventType.INGESTION in event_types
     assert PremisEventType.FIXITY_CHECK in event_types
 
+    # RM5: the DC sidecar carries a minted, deterministic ARK persistent identifier.
+    from ledger.metadata.dublincore import read_sidecar
+    from ledger.metadata.pid import is_ark, mint_ark
+
+    dc = read_sidecar(aip.dc_path)
+    expected_pid = mint_ark(rid)
+    assert expected_pid in dc.identifier
+    assert any(is_ark(v) for v in dc.identifier)
+
+    # RM5: the PREMIS log carries a rights statement (basis + granted acts), and it
+    # survives the on-disk round trip. The record declared no licence, so it falls back
+    # to the honest default basis.
+    assert premis.rights is not None
+    assert premis.rights.rights_basis == "other"
+    assert "disseminate" in premis.rights.granted_acts
+    assert premis.rights.linked_object == rid
+
     # The stored bag is structurally valid (audit passes). audit_fixity now returns
     # (bag_name, report) pairs so a broken bag can be reported without aborting.
     reports = archive.audit_fixity()
@@ -193,6 +210,34 @@ def test_full_lifecycle_ingest_disclose_replicate_consent(tmp_path: Path) -> Non
     except AccessDenied:
         anon_denied = True
     assert anon_denied, "anonymous disclose must be denied after tightening consent"
+
+
+def test_declared_licence_becomes_a_license_basis_rights_statement(tmp_path: Path) -> None:
+    """A record declaring a Dublin Core licence yields a ``license``-basis rights entity.
+
+    The declared rights value is lifted into the PREMIS rights statement's note, so the
+    reuse terms travel with the preservation log rather than living only in the
+    descriptive sidecar (RM5).
+    """
+    from ledger.metadata.premis import PremisLog as _PremisLog
+
+    config = Config.default("Licence Archive", tmp_path / "arc")
+    archive = Archive.init(config)
+    record = Record(
+        title="A CC-licensed zine",
+        default_policy=AccessPolicy.PUBLIC,
+        dublin_core=DublinCore(
+            title=["A CC-licensed zine"],
+            rights=["CC-BY-SA-4.0"],
+        ),
+    )
+    aip = archive.ingest({}, record, now=_NOW_INGEST)
+
+    rights = _PremisLog.read(aip.premis_path).rights
+    assert rights is not None
+    assert rights.rights_basis == "license"
+    assert rights.rights_note == "CC-BY-SA-4.0"
+    assert rights.linked_object == record.record_id
 
 
 def test_sealed_until_field_unseals_on_its_date(tmp_path: Path) -> None:
