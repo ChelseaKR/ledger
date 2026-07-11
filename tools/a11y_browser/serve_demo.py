@@ -16,11 +16,16 @@ Usage (normally started/stopped by Playwright's ``webServer`` config)::
     python -m serve_demo            # seed ./local-archive then serve on :8099
 
 Environment:
-    LEDGER_A11Y_ARCHIVE   archive root to (re)create   (default: ./local-archive)
-    LEDGER_A11Y_HOST      bind host                    (default: 127.0.0.1)
-    LEDGER_A11Y_PORT      bind port                    (default: 8099)
-    LEDGER_VAULT_KEY      urlsafe-base64 vault key; a fixed dev key is set if unset
-                          so the /contribute write path (sealed contact) is enabled.
+    LEDGER_A11Y_ARCHIVE    archive root to (re)create   (default: ./local-archive)
+    LEDGER_A11Y_HOST       bind host                    (default: 127.0.0.1)
+    LEDGER_A11Y_PORT       bind port                    (default: 8099)
+    LEDGER_A11Y_TOKEN_FILE where the signed steward grant token is written for the
+                           specs (default: ./.steward-token, gitignored)
+    LEDGER_VAULT_KEY       urlsafe-base64 vault key; a fixed dev key is set if unset
+                           so the /contribute write path (sealed contact) is enabled.
+    LEDGER_GRANT_SECRET    grant-token HMAC secret (FIX-02); a fixed dev secret is
+                           set if unset so the steward console is testable through
+                           the real authenticated grant path.
 """
 
 from __future__ import annotations
@@ -29,6 +34,7 @@ import os
 import shutil
 from pathlib import Path
 
+from ledger.access.grants import issue_grant_token
 from ledger.config import Config
 from ledger.demo import _build_demo_record
 from ledger.identity import ContributorIdentity
@@ -41,6 +47,12 @@ from ledger.server import serve
 # the seed deterministic and enables the /contribute sealed-contact path so the
 # contribute form is a genuine write surface under test.
 _DEV_VAULT_KEY = "0123456789abcdef0123456789abcdef0123456789a="
+
+# A fixed dev grant-signing secret (FIX-02: X-Ledger-Grant headers carry an
+# HMAC-signed token, never a bare subject). Like the vault key above it protects
+# nothing real; it exists so the browser run exercises the real authenticated
+# grant path instead of a disabled or mocked one.
+_DEV_GRANT_SECRET = "a11y-demo-grant-secret-not-real"  # noqa: S105 - synthetic dev value
 
 # Fixed timestamps so the seeded bags/manifests are byte-reproducible run to run.
 _NOW = "2026-06-16T12:00:00Z"
@@ -80,8 +92,10 @@ def seed_archive(root: Path) -> Archive:
     Seeds two public records — one carrying a content warning (via the demo's
     ``_build_demo_record``, which exercises the CW interstitial) and one without —
     plus a ``grants.json`` naming a steward subject so the gated steward console is
-    reachable with an ``X-Ledger-Grant: steward-1`` header. The contributor
-    identity is a throwaway sentinel sealed into the vault, exactly as the demo does.
+    reachable with a *signed* ``X-Ledger-Grant`` token for ``steward-1`` (written
+    to the token sidecar file by :func:`main`; bare subjects are rejected since
+    FIX-02). The contributor identity is a throwaway sentinel sealed into the
+    vault, exactly as the demo does.
     """
     if root.exists():
         shutil.rmtree(root)
@@ -128,8 +142,18 @@ def main() -> int:
     port = int(os.environ.get("LEDGER_A11Y_PORT", "8099"))
     # Enable the contribute write path with a fixed dev key when none is provided.
     os.environ.setdefault("LEDGER_VAULT_KEY", _DEV_VAULT_KEY)
+    # FIX-02: grant headers are HMAC-authenticated; a bare subject is rejected.
+    # Sign a real steward token with the (dev) secret and hand it to the
+    # Playwright specs through a gitignored sidecar file, so the axe run drives
+    # the same authenticated grant path production uses.
+    os.environ.setdefault("LEDGER_GRANT_SECRET", _DEV_GRANT_SECRET)
 
     archive = seed_archive(root)
+    token = issue_grant_token("steward-1", os.environ["LEDGER_GRANT_SECRET"].encode("utf-8"))
+    token_file = Path(
+        os.environ.get("LEDGER_A11Y_TOKEN_FILE", str(Path(__file__).with_name(".steward-token")))
+    )
+    token_file.write_text(token + "\n", encoding="utf-8")
     print(f"seeded demo archive at {root}; serving on http://{host}:{port}", flush=True)
     serve(
         archive,

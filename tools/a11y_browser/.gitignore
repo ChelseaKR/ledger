@@ -6,3 +6,5 @@ node_modules/
 /playwright-report/
 /blob-report/
 /.playwright/
+# Signed dev steward grant token, written by serve_demo.py for the specs.
+/.steward-token

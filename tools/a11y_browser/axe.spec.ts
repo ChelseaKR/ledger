@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 
@@ -85,10 +88,19 @@ test("axe: record view — after proceeding past the warning", async ({ page, re
   await auditPage(page, `/record/${warned}?proceed=1`, "record (proceeded)");
 });
 
-// The steward console is deny-by-default; a pre-provisioned grant is named via the
-// X-Ledger-Grant header (the demo seed provisions `steward-1`).
+// The steward console is deny-by-default and grant headers are HMAC-authenticated
+// (FIX-02): a bare subject is rejected. serve_demo.py signs a token for the
+// provisioned `steward-1` grant and hands it over through a gitignored sidecar
+// file, so this audit exercises the real authenticated grant path. auditPage's
+// status assertion doubles as the auth check: a rejected token would render the
+// neutral 404, not the console.
+const stewardToken = readFileSync(
+  process.env.LEDGER_A11Y_TOKEN_FILE ?? join(__dirname, ".steward-token"),
+  "utf-8",
+).trim();
+
 test.describe("steward console (provisioned grant)", () => {
-  test.use({ extraHTTPHeaders: { "X-Ledger-Grant": "steward-1" } });
+  test.use({ extraHTTPHeaders: { "X-Ledger-Grant": stewardToken } });
 
   test("axe: steward console", async ({ page }) => {
     await auditPage(page, "/steward", "steward console");
