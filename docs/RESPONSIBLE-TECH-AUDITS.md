@@ -77,9 +77,7 @@ Applicability decisions and the N/A for AI-Evaluation live in
 - **Lawful basis / consent model:** consent-based and revocable by design — a
   contributor decides what is public, community, steward-only, or sealed, and can
   tighten access or request takedown at any time; the system honors it across
-  replicas and records the change as a PREMIS event (README "Hard rules" §4). This
-  is largely descriptive of a mechanism that already exists, which is exactly why a
-  DPIA is inexpensive to write and correspondingly overdue.
+  replicas and records the change as a PREMIS event (README "Hard rules" §4).
 - **Handling:** self-hosted, no hosted-service dependency; identity lives only in
   the encrypted vault, never inline with the record; redaction is a first-class,
   logged transform, and the unredacted original stays access-controlled.
@@ -91,14 +89,14 @@ Applicability decisions and the N/A for AI-Evaluation live in
   specific rights-request SLA.
 - **Commitment:** no telemetry, no analytics, no third-party data sharing; the only
   network egress is what a deployer explicitly configures (replication targets).
-- **Gap — the highest-priority open item in this repo:** ledger is an ASVS L2, PII-
-  handling archive whose entire purpose is sensitive personal data, and it has **no
-  DPIA** as a distinct, dated artifact (RTF-04). `docs/THREAT-MODEL.md` covers
-  adversarial exposure thoroughly; a DPIA (lawful basis, data-subject rights,
-  retention schedule, cross-replica takedown propagation, residual risk from a
-  data-protection rather than an adversary lens) is different work and is tracked
-  as the top item in [`docs/ROADMAP.md`](ROADMAP.md#open-conformance-gaps).
-- **Signed off:** 2026-07-05 — Chelsea Kelly-Reif (mechanism reviewed; DPIA owed).
+- **DPIA draft:** committed as a distinct, dated review artifact — [`docs/audits/dpia.md`](audits/dpia.md).
+  RTF-04 remains open pending accountable-owner review. `docs/THREAT-MODEL.md` covers adversarial exposure
+  thoroughly; the DPIA is the complementary data-protection lens (lawful basis,
+  data-subject rights, retention schedule, cross-replica takedown propagation,
+  residual risk stated from a data-subject rather than an adversary angle) and
+  names its own remaining gaps honestly (no rights-request SLA, no self-service
+  export) rather than claiming completeness.
+- **Human sign-off:** pending; automated contributors must not complete it.
 
 ## D. Transparency & explainability
 
@@ -192,7 +190,8 @@ Applicability decisions and the N/A for AI-Evaluation live in
 - [`docs/adr/0006-standards-applicability.md`](adr/0006-standards-applicability.md), [`docs/adr/0007-withhold-not-403.md`](adr/0007-withhold-not-403.md) — the two decisions this audit required
 - [`docs/audits/crypto-agility-pq-posture.md`](audits/crypto-agility-pq-posture.md) — harvest-now-decrypt-later analysis and algorithm-lifecycle policy for the identity vault and sealed content (EXP-13)
 - [`docs/audits/ethics-consequence-scan.md`](audits/ethics-consequence-scan.md) — review-ready draft; human sign-off pending (RTF-01)
-- **Not yet created** (tracked in [`docs/ROADMAP.md`](ROADMAP.md#open-conformance-gaps)): `docs/audits/dpia.md`, `docs/audits/bias-representational-harm.md`, `docs/audits/residual-risk-register.md`
+- [`docs/audits/dpia.md`](audits/dpia.md) — Data Protection Impact Assessment draft (dated 2026-07-07; human review pending)
+- **Not yet created** (tracked in [`docs/ROADMAP.md`](ROADMAP.md#open-conformance-gaps)): `docs/audits/bias-representational-harm.md`, `docs/audits/residual-risk-register.md`
 
 No LLM or model inference exists anywhere in ledger (ingest, fixity, access policy,
 and disclosure are deterministic), so AI-Evaluation is **N/A** — see
