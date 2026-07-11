@@ -1,11 +1,13 @@
 name: codeql
 
-# Vulnerability management: static security analysis on every pull request into main
-# and on a weekly schedule, so a newly-discovered class of bug is caught even with no
-# code change (security-aware maintenance). The post-merge push run is redundant with
-# the pull-request run and is dropped to save Actions minutes.
+# Vulnerability management: analyze pull requests before merge and the resulting
+# default-branch commit after merge. The latter is required for GitHub to update the
+# canonical ``refs/heads/main`` alert state; PR-only uploads cannot close that backlog.
+# A weekly run still catches newly-discovered query classes with no code change.
 on:
   pull_request:
+    branches: [main]
+  push:
     branches: [main]
   schedule:
     - cron: "27 4 * * 1" # Mondays, 04:27 UTC
