@@ -39,7 +39,7 @@ tracked."
 | Release & Versioning | REL-03 | CHANGELOG declares `0.1.0` "released" 2026-06-16; no matching git tag exists | Open — claim corrected in CHANGELOG.md pending real cut (P2-6) |  |
 | Accessibility | A11Y-01–03, 07, 09 | axe-core / Lighthouse / pa11y / Playwright keyboard+reflow specs not run in CI (structural checker + manual review substitute today) | Open | P3-7 |
 | Accessibility | A11Y-11, 12, 16, 18 | No dated screen-reader/keyboard walkthrough artifact or `docs/a11y/STATEMENT.md` | Open | P2-3 |
-| Responsible Tech | RTF-03 | No dated bias / representational-harm review artifact | Open | P2-2 |
+| Responsible Tech | RTF-03 | Review draft exists; accountable-owner review is pending | Open — [`docs/audits/bias-representational-harm.md`](audits/bias-representational-harm.md) (draft 2026-07-07) | P2-2 |
 | Responsible Tech | RTF-04 | DPIA draft exists; accountable-owner review is pending | Open — [`docs/audits/dpia.md`](audits/dpia.md), draft dated 2026-07-07 | P2-2 |
 | Quality & Metrics | QM-02 | No performance budgets/benchmarks in CI (README claim already removed pending this — see CHANGELOG) | Open | P3-5 |
 | Code Quality | CQ-47 | No mutation testing on safety modules (`access/`, `identity.py`, `fixity.py`) | Open | P3-3 |

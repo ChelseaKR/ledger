@@ -62,10 +62,17 @@ Applicability decisions and the N/A for AI-Evaluation live in
   steward action logged for accountability.
 - **Commitment:** default to the most protective policy, never the most convenient
   one; moderation decisions are appealable and logged, not final and silent.
-- **Gap:** no dated, committed bias / representational-harm review artifact (content-
-  warning taxonomy audit, moderation-pattern review) exists yet — tracked in
-  [`docs/ROADMAP.md`](ROADMAP.md#open-conformance-gaps) (RTF-03).
-- **Signed off:** 2026-07-05 — Chelsea Kelly-Reif (substance reviewed; dated artifact owed).
+- **Dated review draft:** [`docs/audits/bias-representational-harm.md`](audits/bias-representational-harm.md)
+  (2026-07-07) — a draft structural review of the content-warning vocabulary, search
+  relevance ranking, descriptive-metadata design, moderation-pattern
+  accountability, language coverage, and governance-composition scope, with six
+  findings and a tracked recommendations table. RTF-03 remains open pending human
+  review; the small follow-ups
+  the review recommends (content-warning vocabulary parity, a moderation
+  aggregate-report tool, an ADR on the no-controlled-vocabulary decision) are
+  intentionally left as separate, future-scoped changes rather than bundled
+  into the review itself.
+- **Human sign-off:** pending; automated contributors must not complete it.
 
 ## C. Privacy & data-protection
 
@@ -191,7 +198,8 @@ Applicability decisions and the N/A for AI-Evaluation live in
 - [`docs/audits/crypto-agility-pq-posture.md`](audits/crypto-agility-pq-posture.md) — harvest-now-decrypt-later analysis and algorithm-lifecycle policy for the identity vault and sealed content (EXP-13)
 - [`docs/audits/ethics-consequence-scan.md`](audits/ethics-consequence-scan.md) — review-ready draft; human sign-off pending (RTF-01)
 - [`docs/audits/dpia.md`](audits/dpia.md) — Data Protection Impact Assessment draft (dated 2026-07-07; human review pending)
-- **Not yet created** (tracked in [`docs/ROADMAP.md`](ROADMAP.md#open-conformance-gaps)): `docs/audits/bias-representational-harm.md`, `docs/audits/residual-risk-register.md`
+- [`docs/audits/bias-representational-harm.md`](audits/bias-representational-harm.md) — dated review draft, six findings and a tracked recommendations table (human review pending)
+- **Not yet created** (tracked in [`docs/ROADMAP.md`](ROADMAP.md#open-conformance-gaps)): `docs/audits/residual-risk-register.md`
 
 No LLM or model inference exists anywhere in ledger (ingest, fixity, access policy,
 and disclosure are deterministic), so AI-Evaluation is **N/A** — see
