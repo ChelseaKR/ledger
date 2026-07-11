@@ -47,16 +47,14 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           persist-credentials: false
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
+      - uses: astral-sh/setup-uv@f98e06938123ccabd21905ea5d0069192241f9f1  # v8.3.1
         with:
           python-version: "3.12"
-          cache: pip
+          enable-cache: true
       - name: Install dev + mutation dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev,mutation]"
+        run: uv sync --locked --group dev --extra mutation
       - name: Run advisory mutation testing (mutmut, scoped to the safety core)
         # `make mutation` is advisory by construction (it never returns non-zero
         # on surviving mutants); the extra `|| true` documents that this step is
         # a signal, not a gate.
-        run: make mutation || true
+        run: make mutation

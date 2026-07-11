@@ -140,11 +140,10 @@ container: ## Build the self-host image and scan it for CRITICAL/HIGH CVEs (Triv
 mutation: ## ADVISORY (never a merge gate): mutation-test the safety-critical core (CQ-47)
 	@echo "mutation: ADVISORY ONLY — this is NOT part of 'make verify' and never gates a PR."
 	@echo "          Scoped to access/, identity.py, fixity.py — see docs/MUTATION-TESTING.md."
-	@# Install the isolated mutation extra on demand (kept OUT of the dev extra so
-	@# the audit gate's dependency surface, and CI's default install, are unchanged).
+	@# Install the isolated mutation extra on demand while honoring the lockfile.
 	@# Scope (which files get mutated) and kill oracle (which tests run) live in
 	@# [tool.mutmut] in pyproject.toml.
-	@$(PY) -c "import mutmut" 2>/dev/null || $(PIP) install -e ".[mutation]"
+	@$(PY) -c "import mutmut" 2>/dev/null || uv sync --locked --group dev --extra mutation
 	@# `-` prefixes keep this target advisory: a surviving mutant never fails the build.
 	-$(PY) -m mutmut run
 	-$(PY) -m mutmut results
