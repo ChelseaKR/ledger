@@ -155,6 +155,25 @@ def test_attestation_json_round_trip(tmp_path: Path) -> None:
     assert restored == original
 
 
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("schema_version", "1"),
+        ("fixity_ok", "false"),
+        ("chain_head_summary", "not-a-digest"),
+    ],
+)
+def test_attestation_json_rejects_mistyped_security_fields(
+    tmp_path: Path, field: str, value: object
+) -> None:
+    """Malformed public state fails closed instead of being coerced into health."""
+    archive = _seed_archive(tmp_path)
+    body = build_attestation(archive, now=_NOW).to_dict()
+    body[field] = value
+    with pytest.raises(ValueError):
+        HealthAttestation.from_json(json.dumps(body))
+
+
 # --- signing (ssh-keygen -Y) --------------------------------------------------
 
 _SSH_KEYGEN = shutil.which("ssh-keygen")

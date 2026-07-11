@@ -128,6 +128,27 @@ def chain_head_summary(archive: Archive) -> str:
     return hashlib.sha256(canonical_json(heads).encode("utf-8")).hexdigest()
 
 
+def _required_string(data: dict[str, object], field: str) -> str:
+    value = data.get(field)
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"attestation field {field!r} must be a non-empty string")
+    return value
+
+
+def _parse_signature(value: object) -> tuple[str | None, str | None]:
+    if value is None:
+        return None, None
+    if not isinstance(value, dict):
+        raise ValueError("attestation signature must be an object")
+    signature = value.get("value")
+    signature_format = value.get("format")
+    if not isinstance(signature, str) or not signature:
+        raise ValueError("attestation signature value must be a non-empty string")
+    if signature_format != "ssh":
+        raise ValueError("unsupported attestation signature format")
+    return signature, signature_format
+
+
 @dataclass(frozen=True)
 class HealthAttestation:
     """A dated, publishable statement of archive health (EXP-01).
@@ -195,21 +216,23 @@ class HealthAttestation:
         data = json.loads(text)
         if not isinstance(data, dict):
             raise ValueError("attestation JSON must be an object")
-        sig = data.get("signature")
-        signature = None
-        signature_format = None
-        if isinstance(sig, dict):
-            signature = sig.get("value")
-            signature_format = sig.get("format")
+        if type(data.get("schema_version")) is not int or data["schema_version"] != 1:
+            raise ValueError("unsupported attestation schema_version")
+        if type(data.get("fixity_ok")) is not bool:
+            raise ValueError("attestation field 'fixity_ok' must be a boolean")
+        chain_head = _required_string(data, "chain_head_summary")
+        if len(chain_head) != 64 or any(c not in "0123456789abcdef" for c in chain_head):
+            raise ValueError("attestation chain_head_summary must be a SHA-256 hex digest")
+        signature, signature_format = _parse_signature(data.get("signature"))
         return cls(
-            schema_version=int(data["schema_version"]),
-            archive_name=str(data["archive_name"]),
-            generated_at=str(data["generated_at"]),
-            software_version=str(data["software_version"]),
-            fixity_ok=bool(data["fixity_ok"]),
-            chain_head_summary=str(data["chain_head_summary"]),
-            signature=str(signature) if signature is not None else None,
-            signature_format=str(signature_format) if signature_format is not None else None,
+            schema_version=data["schema_version"],
+            archive_name=_required_string(data, "archive_name"),
+            generated_at=_required_string(data, "generated_at"),
+            software_version=_required_string(data, "software_version"),
+            fixity_ok=data["fixity_ok"],
+            chain_head_summary=chain_head,
+            signature=signature,
+            signature_format=signature_format,
         )
 
 
@@ -249,21 +272,26 @@ def sign_attestation(attestation: HealthAttestation, key_path: Path) -> HealthAt
     with tempfile.TemporaryDirectory() as tmp_dir:
         data_path = Path(tmp_dir) / "attestation.json"
         data_path.write_bytes(payload)
-        result = subprocess.run(  # noqa: S603 - resolved executable, fixed argv, no shell
-            [
-                ssh_keygen,
-                "-Y",
-                "sign",
-                "-f",
-                str(key_path),
-                "-n",
-                SIGNATURE_NAMESPACE,
-                str(data_path),
-            ],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        try:
+            result = subprocess.run(  # noqa: S603 - resolved executable, fixed argv, no shell
+                [
+                    ssh_keygen,
+                    "-Y",
+                    "sign",
+                    "-f",
+                    str(key_path),
+                    "-n",
+                    SIGNATURE_NAMESPACE,
+                    str(data_path),
+                ],
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=30,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise LedgerError("ssh-keygen signing timed out") from exc
         if result.returncode != 0:
             detail = result.stderr.strip() or result.stdout.strip() or "unknown error"
             raise LedgerError(f"ssh-keygen signing failed: {detail}")
