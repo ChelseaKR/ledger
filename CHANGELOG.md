@@ -17,6 +17,15 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **DORA delivery-health review + root `DEFINITION_OF_DONE.md` (2026-07-07).**
+  `docs/DORA-DELIVERY-HEALTH-REVIEW.md` instantiates QM-11: Deployment Frequency and
+  Change Lead Time computed from real merged-PR history (`gh pr list`), with Change
+  Fail Rate, Failed-Deployment Recovery Time, and Deployment Rework Rate recorded
+  explicitly N/A pending the tag-triggered release workflow (REL-08) that gives them
+  something to measure, rather than filled in with invented numbers. Root
+  `DEFINITION_OF_DONE.md` instantiates QM-18, tracing every AUTO/REVIEW/RELEASE-GATE
+  item to what `ci.yml`/`Makefile` actually enforce today and to the `docs/ROADMAP.md`
+  row tracking what doesn't exist yet.
 - **Tag-triggered release workflow (`.github/workflows/release.yml`).** Pushing a
   `vX.Y.Z` tag now re-runs the full lint/type/test gate against the tagged commit,
   builds the sdist/wheel, fails closed if the tag doesn't match `pyproject.toml`'s
