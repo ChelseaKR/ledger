@@ -17,6 +17,14 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Portfolio-standards conformance remediation (2026-07-11).** Closed all five
+  current Tier-1 checker failures with a Python runtime pin, complete CFF metadata,
+  canonical README applicability declarations, ADR 0000, and a discoverable
+  packaged-catalog marker. Added OpenSSF Scorecard, incident-response conventions
+  and GitHub labels, L3 data-governance/data-card documentation, and a dated
+  residual-risk register. Enabled GitHub private vulnerability reporting and
+  converted every remaining human/account-setting conformance blocker into a
+  linked issue rather than an untracked roadmap assertion.
 - **DORA delivery-health review + root `DEFINITION_OF_DONE.md` (2026-07-07).**
   `docs/DORA-DELIVERY-HEALTH-REVIEW.md` instantiates QM-11: Deployment Frequency and
   Change Lead Time computed from real merged-PR history (`gh pr list`), with Change

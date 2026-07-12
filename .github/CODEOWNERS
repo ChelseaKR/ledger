@@ -19,3 +19,7 @@
 # places where a bug is a safety incident, not just a defect.
 /src/ledger/access/       @ChelseaKR
 /src/ledger/identity.py   @ChelseaKR
+
+# The merge/release contract itself is a guardrail and must not drift without
+# the same explicit review as workflow and safety-critical code.
+/DEFINITION_OF_DONE.md    @ChelseaKR
