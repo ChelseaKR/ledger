@@ -20,6 +20,7 @@ from pathlib import Path
 
 import pytest
 
+from ledger import server
 from ledger.access.grants import issue_grant_token
 from ledger.config import Config
 from ledger.consent import issue_claim_token
@@ -284,6 +285,21 @@ def test_static_is_cacheable(site: tuple[str, str, str]) -> None:
     _, _, headers = _get(base, "/static/app.css")
     assert "max-age" in headers.get("cache-control", "")
     assert headers.get("etag")
+
+
+def test_static_root_resolution_prefers_installed_package(tmp_path: Path) -> None:
+    """Wheel installs use packaged CSS, independent of checkout/cwd layout."""
+    module_root = tmp_path / "site-packages" / "ledger"
+    packaged = module_root / "static"
+    source = tmp_path / "web" / "static"
+    source.mkdir(parents=True)
+    (source / "app.css").write_text("source", encoding="utf-8")
+
+    assert server._resolve_static_root(module_root) == source.resolve()
+
+    packaged.mkdir(parents=True)
+    (packaged / "app.css").write_text("installed", encoding="utf-8")
+    assert server._resolve_static_root(module_root) == packaged.resolve()
 
 
 def test_static_rejects_traversal_and_unknown_names(site: tuple[str, str, str]) -> None:
