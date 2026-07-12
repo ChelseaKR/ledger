@@ -1,6 +1,6 @@
 # Responsible-Tech Audits — ledger
 
-> **Last verified: 2026-07-05 · Recheck cadence: per release**, matching
+> **Last verified: 2026-07-11 · Recheck cadence: per release**, matching
 > `docs/ROADMAP.md`'s own cadence note (DOC-15). Re-date a section when its content
 > is substantively re-reviewed, not on every unrelated repo edit.
 
@@ -9,7 +9,7 @@ time, never committed here) for ledger. Read this alongside
 [`docs/THREAT-MODEL.md`](THREAT-MODEL.md) (the adversary-by-adversary detail this
 file summarizes) and [`docs/GOVERNANCE.md`](GOVERNANCE.md) (who decides what).
 Applicability decisions and the N/A for AI-Evaluation live in
-[`docs/adr/0006-standards-applicability.md`](adr/0006-standards-applicability.md).
+[`docs/adr/0009-expand-standards-applicability.md`](adr/0009-expand-standards-applicability.md).
 
 ---
 
@@ -148,13 +148,14 @@ Applicability decisions and the N/A for AI-Evaluation live in
   design departs from a literal ASVS V4 `403` in favor of withhold-and-acknowledge
   (anti-enumeration), documented and justified in
   `docs/adr/0007-withhold-not-403.md`.
-- **Container scanning:** not yet enabled. `infra/Dockerfile` exists; base image is
-  pinned by tag, not digest; no Trivy/Grype job runs against it. Tracked in
-  [`docs/ROADMAP.md`](ROADMAP.md#open-conformance-gaps) (SEC-28).
-- **SBOM + signing:** not yet enabled — ledger **is** a release-producing repo
-  (PyPI, `ledger-archive`, mandatory per RELEASE-AND-VERSIONING-STANDARD §1), so
-  this is not `N/A`; it is the repo's largest tracked gap (no release workflow has
-  shipped at all yet). Tracked in `docs/ROADMAP.md` (REL-13..20, SEC-27/29).
+- **Container scanning:** `infra/Dockerfile` pins its Python base by digest and
+  CI builds and scans the resulting image with blocking Trivy CRITICAL/HIGH
+  thresholds (SEC-28).
+- **SBOM + signing:** ledger **is** a release-producing repo. The tag workflow
+  generates a CycloneDX SBOM, keyless cosign signatures, and SLSA provenance,
+  then verifies published bytes. It remains unexercised until the owner completes
+  issue #80 and cuts the first signed tag; that is not represented as a shipped
+  release today.
 - **Secret-management policy:** secrets (the identity-vault key, any deploy
   credential) are supplied via environment variable or an external keystore, never
   committed; `.gitleaks.toml` allowlists only literal placeholder test fixtures by
@@ -179,12 +180,10 @@ Applicability decisions and the N/A for AI-Evaluation live in
   companion envelope/key-hierarchy design must accommodate. No cryptographic
   code changes ship with it — both remain pending external-cryptographer
   review.
-- **Residual-risk register:** the per-adversary residual risk is stated inline in
-  `docs/THREAT-MODEL.md` §4 (e.g., "a steward who never uses dual-control and is
-  never audited can still act quietly for a time" for the malicious-steward case);
-  a *distinct*, regenerated-per-release register extracted from those paragraphs
-  with owner + date does not exist yet as its own artifact. Tracked in
-  `docs/ROADMAP.md` (RTF-06, QM-09).
+- **Residual-risk register:**
+  [`docs/audits/residual-risk-register.md`](audits/residual-risk-register.md)
+  extracts the threat model's open risks with owner, mitigation, decision, and
+  review date. Accountable-owner/independent sign-off is pending in issue #82.
 - **Sealing-layer crypto design (FIX-11):** the identity vault's Fernet-key reuse
   across identity and content ciphertext, and the `enc:` string-prefix envelope,
   are internal design choices, not yet blessed by an external cryptographer.
@@ -216,14 +215,14 @@ Applicability decisions and the N/A for AI-Evaluation live in
 - [`docs/THREAT-MODEL.md`](THREAT-MODEL.md) — adversary-by-adversary threat model with residual risk stated per case (dated 2026-07-05)
 - [`docs/accessibility/ACR.md`](accessibility/ACR.md) — VPAT 2.5 ACR, regenerable via `make acr` (dated 2026-07-05)
 - [`docs/GOVERNANCE.md`](GOVERNANCE.md) — stewardship, moderation, and dispute-resolution process (dated 2026-07-05)
-- [`docs/adr/0006-standards-applicability.md`](adr/0006-standards-applicability.md), [`docs/adr/0007-withhold-not-403.md`](adr/0007-withhold-not-403.md) — the two decisions this audit required
+- [`docs/adr/0009-expand-standards-applicability.md`](adr/0009-expand-standards-applicability.md), [`docs/adr/0007-withhold-not-403.md`](adr/0007-withhold-not-403.md) — current applicability and anti-enumeration decisions
 - [`docs/audits/crypto-agility-pq-posture.md`](audits/crypto-agility-pq-posture.md) — harvest-now-decrypt-later analysis and algorithm-lifecycle policy for the identity vault and sealed content (EXP-13)
 - [`docs/audits/ethics-consequence-scan.md`](audits/ethics-consequence-scan.md) — review-ready draft; human sign-off pending (RTF-01)
 - [`docs/audits/dpia.md`](audits/dpia.md) — Data Protection Impact Assessment draft (dated 2026-07-07; human review pending)
 - [`docs/audits/bias-representational-harm.md`](audits/bias-representational-harm.md) — dated review draft, six findings and a tracked recommendations table (human review pending)
 - [`docs/audits/crypto-design-review-sealing-layer.md`](audits/crypto-design-review-sealing-layer.md) — FIX-11 key-hierarchy/envelope design doc, drafted for an external cryptographer; **review pending, not yet committed as a sign-off**
 - [`docs/audits/crypto-design-review-embargo-timelock.md`](audits/crypto-design-review-embargo-timelock.md) — EXP-12 cryptographic-embargo design exploration; **research-first, not a build decision, not externally reviewed**
-- **Not yet created** (tracked in [`docs/ROADMAP.md`](ROADMAP.md#open-conformance-gaps)): `docs/audits/residual-risk-register.md`
+- [`docs/audits/residual-risk-register.md`](audits/residual-risk-register.md) — dated register prepared 2026-07-11 from the threat model's residual-risk rows; accountable-owner and independent-reviewer sign-off remain explicitly pending
 
 No LLM or model inference exists anywhere in ledger (ingest, fixity, access policy,
 and disclosure are deterministic), so AI-Evaluation is **N/A** — see

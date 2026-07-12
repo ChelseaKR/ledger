@@ -13,6 +13,7 @@ license: AGPL-3.0-or-later
 repository-code: "https://github.com/ChelseaKR/ledger"
 url: "https://github.com/ChelseaKR/ledger"
 version: "0.1.0"
+date-released: 2026-06-16
 keywords:
   - digital-preservation
   - community-archives

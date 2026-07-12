@@ -1,6 +1,6 @@
 # Roadmap and conformance gap tracker
 
-Last verified: 2026-07-05 · Recheck cadence: per release
+Last verified: 2026-07-11 · Recheck cadence: per release and quarterly
 
 This file has two jobs: the feature roadmap belongs in
 [`docs/RESEARCH-ROADMAP.md`](RESEARCH-ROADMAP.md); this file is the **standards
@@ -13,54 +13,47 @@ Each row below traces to a specific control in the portfolio's `STANDARDS/` and 
 the remediation item that will close it. Where a row's status changes, update it
 here rather than letting the README table go stale.
 
-**A note on tracking mechanism.** The standard's own worked examples link a GitHub
-issue per gap. This repo tracks gaps here instead: opening a batch of GitHub issues
-is a live write against a real repository that this remediation pass deliberately
-did not perform (see `ledger-REMEDIATION.md` Execution Log, 2026-07-05). If the
-maintainer later opens issues for any of these, replace the row's link with the
-issue URL; until then, this table is the source of truth for "is this actually
-tracked."
+Each open row links a live GitHub issue, as DOC-13 requires. Closed controls link
+their committed evidence; a roadmap sentence alone is not treated as a waiver.
 
 ## Open conformance gaps
 
 | Standard | Control(s) | Gap | Status | Closes when |
 |---|---|---|---|---|
-| Security & Supply Chain | SEC-28, REL-18 | No container CVE scan; base image pinned by tag, not digest | Open | Trivy job + digest pin (P1-1) |
-| Security & Supply Chain | SEC-07 | No Semgrep; SAST coverage today is CodeQL + ruff-S only | Closed — [`.github/workflows/semgrep.yml`](../.github/workflows/semgrep.yml) runs Semgrep's `p/ci` ruleset on every PR and weekly, SARIF uploaded to the Security tab | P1-3 |
-| Security & Supply Chain | SEC-19 | No scheduled full-history secret scan (TruffleHog) | Closed — [`.github/workflows/secret-scan-scheduled.yml`](../.github/workflows/secret-scan-scheduled.yml) runs TruffleHog over the full git history weekly and on manual dispatch, independent of gitleaks' per-push/PR scan | P1-3 |
-| Security & Supply Chain | SEC-04 | No Harden-Runner egress policy on any workflow | Open | P1-7 |
-| Security & Supply Chain | SEC-17 | No pre-commit hooks | Open | P1-4 |
-| Security & Supply Chain | SEC-27, SEC-29 | ~~No SBOM, signing, or provenance workflow~~ Closed 2026-07-10: `release.yml` generates a CycloneDX SBOM, cosign-signs (keyless) every artifact, and records SLSA build-provenance + SBOM attestations on every tagged release | Closed | 2026-07-10 (`.github/workflows/release.yml`) |
-| Security & Supply Chain | SEC-35, SEC-36, SEC-37 | No OpenSSF Scorecard workflow (§6.5 checks: Signed-Releases, Vulnerabilities, aggregate score) | Open | P1-6b |
-| CI/CD | CICD-12, CQ-37/38/39/40/43, SEC-15 | No committed branch-protection/ruleset export; server-side settings unverifiable offline | Open | P2-4 — **⛔ requires the repo owner to export/enable via `gh api repos/ChelseaKR/ledger/rulesets` themselves** (write-effect GitHub API call, out of scope for an automated pass) |
-| CI/CD | CICD-19, CICD-20 | ~~No zizmor workflow-linter job; CodeQL doesn't analyze `language: actions`~~ Closed 2026-07-11 — `workflow-lint` job (zizmor) in `ci.yml` + `make workflow-lint` in `verify`; `actions` added to the CodeQL language matrix in `codeql.yml` | Closed | 2026-07-11 (`ci.yml`, `codeql.yml`) |
-| Release & Versioning | REL-08, REL-13–17, REL-20 | ~~No tag-triggered release workflow~~ Closed 2026-07-10, gates hardened 2026-07-11: `release.yml` triggers on `v*` tags, asserts a **signed annotated tag** (lightweight/unsigned fail closed; signature *presence* is checked — signer-identity pinning still needs a committed allowed-signers file, next row), requires a matching `## [X.Y.Z]` **CHANGELOG section**, re-runs the **complete `make verify` merge gate** at the tagged commit from the locked graph (`uv sync --locked`), verifies tag/version consistency, builds, generates SBOM+provenance, cosign-signs, publishes to PyPI via Trusted Publishing (OIDC), **verifies PyPI serves byte-identical artifacts** (sha256 vs the build), and only then mirrors artifacts to a GitHub Release. Registering the PyPI Trusted Publisher + `pypi` GitHub Environment is a one-time manual step for the project owner (workflow header); no `vX.Y.Z` tag has been pushed yet, so the pipeline is unexercised end-to-end (REL-03 below) | Closed (unexercised pending first tag) | 2026-07-11 (`.github/workflows/release.yml`) |
-| Release & Versioning | REL-08 (signer identity) | Release gate checks that the tag carries an SSH/PGP signature but cannot yet verify *whose*: no committed allowed-signers file to pin the trusted key | Open | Owner: commit an allowed-signers file, then wire `git tag -v`-grade verification into `release.yml`'s verify job |
-| Release & Versioning | REL-03 | CHANGELOG declares `0.1.0` "released" 2026-06-16; no matching git tag exists | Open — claim corrected in CHANGELOG.md pending real cut (P2-6) |  |
-| Accessibility | A11Y-01–03, 07, 09 | axe-core / Lighthouse / pa11y / Playwright keyboard+reflow specs not run in CI (structural checker + manual review substitute today) | Open | P3-7 |
-| Accessibility | A11Y-11, 12, 16, 18 | No dated screen-reader/keyboard walkthrough artifact or `docs/a11y/STATEMENT.md` | Open | P2-3 |
-| Responsible Tech | RTF-03 | Review draft exists; accountable-owner review is pending | Open — [`docs/audits/bias-representational-harm.md`](audits/bias-representational-harm.md) (draft 2026-07-07) | P2-2 |
-| Responsible Tech | RTF-04 | DPIA draft exists; accountable-owner review is pending | Open — [`docs/audits/dpia.md`](audits/dpia.md), draft dated 2026-07-07 | P2-2 |
-| Quality & Metrics | QM-02 | Performance budgets/benchmarks now run in CI (`perf` job, `tools/perf_budget.py`: CAS put/get, fixity hashing, ingest, browse) | Closed | P3-5 |
-| Quality & Metrics | QM-11, QM-18 | DORA delivery-health review and root definition of done are committed | Closed — [`docs/DORA-DELIVERY-HEALTH-REVIEW.md`](DORA-DELIVERY-HEALTH-REVIEW.md), [`DEFINITION_OF_DONE.md`](../DEFINITION_OF_DONE.md) | P2-5 |
-| Code Quality | CQ-01 | Python floor is `>=3.12` in project metadata and CI | Closed | P1-2 |
-| Code Quality | CQ-47 | No mutation testing on safety modules (`access/`, `identity.py`, `fixity.py`) | Closed — [`docs/MUTATION-TESTING.md`](MUTATION-TESTING.md), advisory `make mutation` / weekly CI, baseline dated 2026-07-07 | P3-3 |
-| Code Quality | CQ-05 (partial) | Complexity gate is now enforced (`ruff` C901, max 10); 7 pre-existing functions exceed it and are waived with dated `# noqa: C901` comments pending a deliberate, fully-retested split — not rushed under audit time pressure on safety-adjacent code | Open (waived) | See `# noqa: C901` sites in `accessibility_check.py`, `bag.py`, `cli.py`, `contribute.py`, `ingest.py`, `server.py` |
+| Security & Supply-Chain | SEC-04 | Harden-Runner is present on every job but still observes egress in `audit` mode rather than enforcing per-job allowlists | Open — [#78](https://github.com/ChelseaKR/ledger/issues/78) | Derive allowlists from real runs, switch every job to `block`, and rerun all workflow shapes |
+| Security & Supply-Chain / CI/CD | SEC-11/13, CICD-27 | pip-audit is blocking, but OSV lockfile scanning and local Semgrep parity are not yet in `make verify` | Open — [#84](https://github.com/ChelseaKR/ledger/issues/84) | Add locked OSV/Semgrep tooling and preserve fail-closed local/CI parity |
+| CI/CD | CICD-10–16, CQ-37–43, SEC-15 | Live `protect-main` ruleset blocks deletion/force-push and requires checks, but checks are non-strict and PR/review/CODEOWNER/signed-commit rules are absent; Dependabot security updates are disabled | Open — [#79](https://github.com/ChelseaKR/ledger/issues/79) | Owner selects a solo-maintainer-safe review model and commits/exports the effective ruleset |
+| Release & Versioning | REL-03/08/17/20 | Release workflow exists, but signer identity, PyPI Trusted Publisher/environment, and first end-to-end release remain owner actions | Open — [#80](https://github.com/ChelseaKR/ledger/issues/80) | First signed tag publishes and verifies successfully with an approved signer |
+| Accessibility / Quality | A11Y-02/03/09/11/12/16/18, QM-04 | Axe + Chromium keyboard traversal are live; Lighthouse, pa11y, 320px reflow, statement, and first real NVDA/VoiceOver evidence remain | Open — [#81](https://github.com/ChelseaKR/ledger/issues/81) | Automated additions pass and human AT rows are dated by actual reviewers |
+| Responsible Tech | RTF-01/03/04/06, QM-09 | Ethics, bias, DPIA, crypto, and residual-risk artifacts are prepared but accountable-owner/independent sign-off cannot be automated | Open — [#82](https://github.com/ChelseaKR/ledger/issues/82) | Named humans review and sign the artifacts; no Production claim before then |
+| Code Quality | CQ-05/08/34/35 | Published-library coverage remains 85% and existing complexity/lint/type suppressions have not all been removed or issue-linked | Open — [#83](https://github.com/ChelseaKR/ledger/issues/83) | Reach 90% branch coverage and eliminate or explicitly track each suppression |
+
+## Closed in the 2026-07-11 conformance pass
+
+- Official Tier-1 failures closed: `.python-version`, valid citation release date,
+  canonical README declarations, ADR 0000, and discoverable packaged catalogs.
+- Container Trivy scanning + digest-pinned base, pre-commit gitleaks/ruff/mypy,
+  Semgrep, scheduled TruffleHog, CodeQL Actions analysis, zizmor, performance
+  budgets, SBOM/cosign/SLSA release stages, and OpenSSF Scorecard are present.
+- Private vulnerability reporting is enabled; `incident`, `sev1`–`sev4`, and
+  `deploy-caused` labels exist.
+- Incident-response, data-governance/data-card, and residual-risk artifacts are
+  committed; human sign-off fields remain honest and issue-backed.
 
 ## Drafted conformance artifacts
 
 | Standard | Control(s) | Gap | Closed | Artifact |
 |---|---|---|---|---|
-| Responsible Tech | RTF-01 | Ethics/consequence scan substance exists, but accountable-owner review is still required | Pending | [`docs/audits/ethics-consequence-scan.md`](audits/ethics-consequence-scan.md) — review-ready draft; not a human sign-off |
+| Responsible Tech | RTF-01/03/04/06 | Review substance exists, but accountable-owner/independent review is still required | Pending — [#82](https://github.com/ChelseaKR/ledger/issues/82) | [`docs/audits/`](audits/) contains the review-ready artifacts, including the residual-risk register |
 
 ## Metrics (QUALITY-AND-METRICS-STANDARD, CICD-29)
 
 | Metric | Value | Measured by | Date |
 |---|---|---|---|
-| Test suite | 528 passed | `make test` | 2026-07-05 |
+| Test suite | 980 passed | `make test` | 2026-07-11 |
 | Branch coverage | 86.4% (floor: 85%, `fail_under` in `pyproject.toml`) | `make cov` | 2026-07-05 |
-| Tier-1 mechanical score | 8/11 (pre-remediation); coverage floor + Makefile-mute items in this pass address 2 of the 3 failing checks | `STANDARDS/automation` Tier-1 check | 2026-07-05 |
-| `make verify` == CI required checks | Yes, as of this pass (lint, type, test, i18n, accessibility, audit, secret-scan) | manual trace of `ci.yml` jobs to `Makefile` targets | 2026-07-05 |
+| Tier-1 mechanical score | 31/31 after remediation | `portfolio-standards/automation/conformance_check.py --repo . --strict` | 2026-07-11 |
+| `make verify` portable gate | Green: lint, strict types, 980 tests, i18n, structural accessibility, dependency/secret scans, truthfulness, zizmor | `make verify` | 2026-07-11 |
 | Mutation score, safety core (advisory, not a gate) | 76.5% (406/531 killed) across `access/`, `identity.py`, `fixity.py` | `make mutation` (mutmut); see `docs/MUTATION-TESTING.md` | 2026-07-07 |
 
 DORA five-metric delivery-health review: established 2026-07-07, reviewed quarterly —

@@ -2,7 +2,7 @@
 
 Instantiates `QUALITY-AND-METRICS-STANDARD.md`'s per-repo Definition of Done
 (QM-18) for ledger's actual shape: a Python CLI + self-hosted web archive
-server, bilingual (EN/ES) UI, no AI/LLM component, no maintainer-operated
+server, multilingual (EN/ES/FR/AR) UI, no AI/LLM component, no maintainer-operated
 production deployment (see `docs/DORA-DELIVERY-HEALTH-REVIEW.md`, QM-11, for
 why that last point matters to how "done" is measured over time). Reviewed
 quarterly alongside the DORA review; update this file in the same PR that
@@ -27,7 +27,8 @@ tracked below under "Branch protection."
    `access/`/consent/dual-control; cyclomatic complexity ≤ 10 (`ruff` `C901`,
    `max-complexity = 10`) — pre-existing functions over the limit are waived
    with dated `# noqa: C901` comments pending a deliberate split, tracked in
-   `docs/ROADMAP.md` (CQ-05).
+   `docs/ROADMAP.md` (CQ-05). The 90% published-library floor remains tracked
+   in issue #83; this file does not overstate the current 85% gate.
 4. **Security** — CodeQL (`python` + `actions`), Semgrep (`p/ci`, SARIF to
    the Security tab), and gitleaks (secret scan) run on every PR; `pip-audit`
    is blocking with no mute pattern (`SECURITY-AND-SUPPLY-CHAIN-STANDARD` §4
@@ -51,18 +52,19 @@ tracked below under "Branch protection."
    **Not yet gated:** Lighthouse / pa11y / reflow automation and the dated
    manual screen-reader walkthrough artifact. Tracked in `docs/ROADMAP.md`
    (A11Y-01–03/07/09, P3-7; A11Y-11/12/16/18, P2-3).
-7. **i18n (EN/ES, bilingual)** — `make i18n`, required in CI: POT extraction
-   is current (fails the build on drift), EN/ES key-parity and
-   placeholder-parity, both catalogs compile clean (`msgfmt --check
+7. **i18n (EN/ES/FR/AR, including RTL)** — `make i18n`, required in CI: POT extraction
+   is current (fails the build on drift), cross-locale key-parity and
+   placeholder-parity, all catalogs compile clean (`msgfmt --check
    --check-format --check-domain`), every authored locale tag is valid
    BCP-47.
 8. **AI-eval** — N/A. Ledger has no AI/LLM/RAG component
-   (`docs/adr/0006-standards-applicability.md`).
+   (`docs/adr/0009-expand-standards-applicability.md`).
 9. **Observability** — Tier C (structured-log opt-in, not a full OTel/SLO
    stack); no CI gate today beyond that declaration
    (`README.md#observability`). No `--log-format json` gate exists yet.
-10. **Performance** — no k6/Lighthouse budget gate exists yet. Tracked in
-    `docs/ROADMAP.md` (QM-02, P3-5).
+10. **Performance** — `tools/perf_budget.py` gates CAS, fixity, ingest, and
+    browse budgets in CI. Browser Lighthouse performance remains part of the
+    browser evidence tracked in issue #81.
 11. **Build** — the self-host container image builds and is scanned in
     `ci.yml`'s container job on every PR. A tag-triggered release workflow
     exists (`release.yml`: signed-annotated-tag assertion, CHANGELOG-section
@@ -72,6 +74,11 @@ tracked below under "Branch protection."
     pushed, and the PyPI Trusted Publisher registration is a one-time manual
     owner step — tracked in `docs/ROADMAP.md` (REL-03; REL-08
     signer-identity pinning still open).
+12. **Incident response** — repository labels and the severity/postmortem/
+    secret-leak convention are defined in `docs/INCIDENT-RESPONSE.md`.
+13. **Data governance** — L3 classification, contributor-directed retention,
+    replica deletion, and encrypted-backup controls are defined in
+    `docs/DATA-GOVERNANCE.md` and its data card.
 
 `make verify` runs stages 1, 2, 3, the structural half of 6, 7, the
 `pip-audit`/`gitleaks` half of 4, and the zizmor half of 5 locally
@@ -114,11 +121,11 @@ exists and enforces this section on every `v*` tag:
 
 ## Branch protection
 
-**Not yet enabled as a live GitHub ruleset** — this needs an interactive
-GitHub Settings / `gh api repos/ChelseaKR/ledger/rulesets` change, which is
-outside what this repo's files can express or what an automated remediation
-pass should do unattended (`docs/ROADMAP.md`, CICD-12/P2-4). The ruleset this
-Definition of Done assumes, once enabled: PR required (≥1 approval, ≥2 for
+An active `protect-main` GitHub ruleset now blocks deletion and force-push and
+requires the named CI checks. It is not yet the complete portfolio posture:
+strict/up-to-date checks, PR approval, stale-review dismissal, CODEOWNER review,
+signed commits, and linear history remain issue #79. The target posture is:
+PR required (≥1 approval, ≥2 for
 changes to `src/ledger/access/` or `identity.py`), last-pusher cannot
 self-approve, stale reviews dismissed on new pushes, CODEOWNERS review
 required on the routed paths above, required status checks in strict mode

@@ -299,8 +299,12 @@ them; they are fetched at CI time (`.github/workflows/standards.yml`, pinned to 
 never vendored into this repository. Per-repo *values* (measured coverage, ASVS level, ACR rows,
 DPIA status) live in [`docs/ROADMAP.md`](docs/ROADMAP.md) and
 [`docs/RESPONSIBLE-TECH-AUDITS.md`](docs/RESPONSIBLE-TECH-AUDITS.md), not here. The applicability
-reasoning and the one N/A decision below are recorded in
-[`docs/adr/0006-standards-applicability.md`](docs/adr/0006-standards-applicability.md).
+reasoning and the N/A decisions below are recorded in
+[`docs/adr/0009-expand-standards-applicability.md`](docs/adr/0009-expand-standards-applicability.md),
+which supersedes ADR 0006.
+
+Last verified: 2026-07-11 · Recheck cadence: per standards release and before
+each ledger release.
 
 **Release-producing:** yes — intended as a PyPI package (`ledger-archive`, `pipx install`-able),
 pre-1.0. A tag-triggered release workflow now exists (`.github/workflows/release.yml`: build, SBOM,
@@ -308,24 +312,25 @@ cosign signing, SLSA provenance, PyPI Trusted Publishing), but **no release has 
 tag has been cut, and the PyPI Trusted Publisher registration is a one-time manual step only the
 project owner can do (tracked below).
 
-| Standard | Applies | This repo's posture |
+| Standard | State | This repo's posture |
 |---|---|---|
-| Code Quality | Applies | `ruff` (incl. `C901` complexity, max 10) + `mypy --strict`; branch coverage floor 85% (measured 86%); src layout; CODEOWNERS; Python floor `>=3.12`; hash-locked `uv.lock` + PEP 735 `[dependency-groups]` — [`docs/ROADMAP.md`](docs/ROADMAP.md) |
-| Security & Supply Chain | Applies — **ASVS L2** (touches PII/identity) | pip-audit + gitleaks + CodeQL all blocking in CI and in `make verify`, plus Semgrep (`p/ci`) blocking in CI and a weekly full-history TruffleHog scan (`secret-scan-scheduled.yml`, non-blocking), zero muted gates; SHA-pinned Actions with Renovate digest-pinning; `uv.lock` pins the full dependency graph and `uv sync --locked` fails the build on drift. **Gap:** no container scan, Harden-Runner, or SBOM/signing yet — [`docs/ROADMAP.md`](docs/ROADMAP.md) |
-| CI/CD | Applies | Single `ci.yml`, least-privilege tokens, SHA-pinned actions, `make verify` now reproduces CI's full required-check set (lint, type, test, i18n, accessibility, audit, secret-scan). **Gap:** no committed branch-protection/ruleset artifact (server-side settings are unverifiable from the repo alone) — ⛔ see `docs/ROADMAP.md`, requires the repo owner |
-| Release & Versioning | Applies — **mandatory** (published-library repo) | SemVer intent stated; Keep-a-Changelog `CHANGELOG.md`. Tag-triggered release workflow ships SBOM (CycloneDX), keyless cosign signatures, and GitHub-native SLSA build-provenance + SBOM attestations on every `v*` tag, then publishes to PyPI over Trusted Publishing. **Gap:** the PyPI Trusted Publisher itself still needs one-time manual registration by the project owner, and no tag has been cut yet — the CHANGELOG's `[0.1.0] — 2026-06-16` section describes prepared, not shipped, work — [`docs/ROADMAP.md`](docs/ROADMAP.md) |
-| Accessibility | Applies | WCAG 2.2 AA target; merge-blocking structural gate (`ledger.accessibility_check`); committed, dated, candid VPAT 2.5 ACR (`docs/accessibility/ACR.md`, 46 Supports / 6 Partially / 21 N/A). **Gap:** axe-core/Lighthouse/pa11y/Playwright not run in CI yet; no dated screen-reader/keyboard walkthrough artifact — [`docs/ROADMAP.md`](docs/ROADMAP.md) |
-| Observability | Applies — **Tier C** (library/CLI) | See `## Observability` below |
-| Internationalization | Applies | Full gettext catalog pipeline (EN/ES), five merge-blocking gates (POT-current, BCP-47, key-parity, completeness, `msgfmt --check`) — the repo's strongest standard |
-| AI Evaluation | **N/A** | No model inference in any user-facing or decision path (ingest, fixity, access policy, and disclosure are all deterministic). Reason and the re-trigger condition recorded in `docs/adr/0006-standards-applicability.md` |
-| Quality & Metrics | Applies | CI `perf` job enforces performance budgets (`tools/perf_budget.py`); metrics ledger + conformance gap tracker in `docs/ROADMAP.md`; dated DORA delivery-health review (`docs/DORA-DELIVERY-HEALTH-REVIEW.md`, QM-11) and root `DEFINITION_OF_DONE.md` (QM-18) |
-| Documentation | Applies | This README + ADRs (`docs/adr/`) + `docs/ROADMAP.md` + CHANGELOG + CITATION.cff, kept current; dated currency stamps on THREAT-MODEL/ACCESSIBILITY/GOVERNANCE/ACR |
-| Responsible Tech | Applies | The no-outing sentinel suite is this standard's own named exemplar for misuse-resistance testing (RTF-02); review-ready drafts for the [ethics scan](docs/audits/ethics-consequence-scan.md), [DPIA](docs/audits/dpia.md), and [bias / representational-harm review](docs/audits/bias-representational-harm.md). **Gap:** accountable-owner review/sign-off remains open in `docs/ROADMAP.md` |
+| Responsible-Tech Framework | Applies | The no-outing sentinel suite enforces misuse resistance; dated ethics, DPIA, bias, threat-model, and residual-risk artifacts live under [`docs/audits/`](docs/audits/) and retain explicit human-review status. |
+| Code Quality | Applies | `ruff` (including `C901`, max 10), `mypy --strict`, pytest branch coverage, src layout, CODEOWNERS, Python `>=3.12` with `.python-version`, and a hash-locked `uv.lock`. |
+| Security & Supply-Chain | Applies — **ASVS L2** | Blocking pip-audit, gitleaks, Semgrep, CodeQL, zizmor, Trivy, and no-outing gates; SHA-pinned Actions; digest-pinned container base; SBOM, keyless signing, and SLSA provenance on tagged releases. |
+| CI/CD | Applies | Least-privilege workflow tokens, SHA-pinned actions, Harden-Runner on every job, a live `main` ruleset, and local `make verify` parity with the portable merge gates. Ruleset evidence is recorded in [`docs/ROADMAP.md`](docs/ROADMAP.md). |
+| Observability | Applies — **Tier C** | The non-tiered no-PII-in-logs control and a degraded `/healthz` path are tested. Tier A tracing, metrics, SLO, and alert controls are outside this local-first library/CLI tier; see [Observability](#observability). |
+| Accessibility | Applies | The human-facing HTML surface is checked structurally and with Playwright + axe in Chromium; keyboard traversal, a dated ACR, and a manual assistive-technology review cadence are committed under [`docs/accessibility/`](docs/accessibility/). |
+| Internationalization | Applies | Packaged gettext catalogs ship complete EN/ES/FR/AR translations, including Arabic RTL, with blocking extraction, BCP-47, parity, completeness, compilation, pseudolocale, and response-header checks. |
+| AI Evaluation | N/A — no model or LLM component | Ingest, fixity, access policy, and disclosure are deterministic. ADR 0009 records that the first model dependency reopens this decision before merge. |
+| Documentation | Applies | README, ADR log, roadmap/metrics ledger, changelog, citation, security, contribution, incident, data-governance, and responsible-tech artifacts are committed and currency-stamped where externally dependent. |
+| Quality & Metrics | Applies | CI enforces functional, safety, performance, maintainability, container, accessibility, and i18n signals; the dated DORA review and root `DEFINITION_OF_DONE.md` hold the human-review side. |
+| Release & Versioning | Applies — **mandatory** | Pre-1.0 SemVer contract; tag-triggered verification, build, CycloneDX SBOM, cosign/SLSA attestation, PyPI Trusted Publishing, and published-byte verification. No release tag has been cut yet. |
+| Incident Response | Applies | [`docs/INCIDENT-RESPONSE.md`](docs/INCIDENT-RESPONSE.md) defines the local-first severity ladder, issue-label convention, secret-leak sequence, and committed postmortem template. |
+| Data Governance | Applies — **L3 identity-sensitive** | [`docs/DATA-GOVERNANCE.md`](docs/DATA-GOVERNANCE.md) classifies archive and identity stores, defines contributor-directed retention and encrypted-backup rules, and links the community-contribution data card. |
 
-No standard is a bare `N/A` — the one that is (AI Evaluation) carries its reason above and in the
-linked ADR. Every "Gap" above is tracked, dated, and owned in
-[`docs/ROADMAP.md`](docs/ROADMAP.md#open-conformance-gaps) rather than asserted and left to go
-stale; re-verify this table against that tracker at the cadence stated there.
+No standard is a bare `N/A`: AI Evaluation carries both a reason and a re-entry
+trigger. Any remaining review or account-setting work is tracked, dated, and
+owned in [`docs/ROADMAP.md`](docs/ROADMAP.md#open-conformance-gaps).
 
 ## Observability
 
@@ -366,7 +371,7 @@ schema with a deprecation policy, **semver**, **ADRs**, and audit-as-artifact do
 release workflow (`.github/workflows/release.yml`) that builds, SBOMs, cosign-signs, and
 SLSA-attests every `v*` release before publishing to PyPI over Trusted Publishing — but **no release
 has shipped yet**, since no tag has been cut and the PyPI Trusted Publisher still needs one-time
-manual registration (see the Standards conformance table below and `docs/ROADMAP.md` for what's
+manual registration (see the applicability matrix above and `docs/ROADMAP.md` for what's
 tracked); Dependabot + Renovate.
 
 **License choice.** **AGPL-3.0** is chosen deliberately over a permissive license. ledger handles
