@@ -42,8 +42,9 @@ WORKDIR /app
 # for this Dockerfile is the repository root (see docker-compose.yml `build`).
 COPY pyproject.toml README.md LICENSE ./
 COPY src ./src
-# The browse server serves the bundled, framework-free web assets (web/static),
-# resolved relative to the installed package's parent. Ship them in the image.
+# Keep the source web tree in the build context for documentation and source-form
+# use. Hatch also embeds app.css under ledger/static in the installed wheel, which
+# is the path the production server uses.
 COPY web ./web
 RUN pip install . \
     && rm -rf /root/.cache

@@ -126,6 +126,19 @@ jobs:
           pip install build
       - name: Build sdist and wheel (hatchling)
         run: python -m build
+      - name: Wheel contains the public stylesheet
+        run: |
+          python - <<'PY'
+          import glob
+          import zipfile
+
+          wheel = glob.glob("dist/*.whl")
+          if len(wheel) != 1:
+              raise SystemExit(f"expected one wheel, found {wheel}")
+          with zipfile.ZipFile(wheel[0]) as archive:
+              if "ledger/static/app.css" not in archive.namelist():
+                  raise SystemExit("wheel is missing ledger/static/app.css")
+          PY
       # Integrity: a tag that doesn't match the package's own declared version is
       # almost always a cut-from-the-wrong-commit mistake, not an intentional
       # release — fail loudly instead of publishing a mislabeled artifact.

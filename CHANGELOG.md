@@ -153,6 +153,9 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Missing production stylesheet (2026-07-12).** Package `web/static/app.css`
+  inside wheel and container installs so `/static/app.css` no longer returns 404
+  when the server runs outside a source checkout.
 - **Cloud-init secret tracing (SEV2, 2026-07-12).** Removed shell xtrace from
   AWS first-boot provisioning after the initial synthetic demo deploy revealed
   that expanded secret assignments reached the IAM-restricted EC2 console log.

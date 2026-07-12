@@ -113,11 +113,23 @@ from ledger.render import (
 )
 from ledger.tombstones import PRIMARY_LOCATION, TombstoneStore
 
-# Where the bundled, framework-free web assets live, resolved relative to this
-# module so the server works from any working directory (portability). The static
-# root is the canonical boundary the traversal guard enforces.
-_WEB_ROOT: Path = Path(__file__).resolve().parent.parent.parent / "web"
-_STATIC_ROOT: Path = (_WEB_ROOT / "static").resolve()
+
+def _resolve_static_root(module_root: Path) -> Path:
+    """Locate static assets in an installed wheel or a source checkout.
+
+    Hatch places ``web/static`` inside ``ledger/static`` in built wheels. A
+    source checkout keeps the canonical editable files at repository-level
+    ``web/static``. Prefer the packaged location so an installed application
+    never depends on its build context or current working directory.
+    """
+    packaged = module_root / "static"
+    if packaged.is_dir():
+        return packaged.resolve()
+    return (module_root.parent.parent / "web" / "static").resolve()
+
+
+# The canonical boundary enforced by the traversal-safe static allowlist.
+_STATIC_ROOT: Path = _resolve_static_root(Path(__file__).resolve().parent)
 _STAGED_UPLOAD_FILENAME = "payload.bin"
 
 

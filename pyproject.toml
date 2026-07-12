@@ -69,6 +69,12 @@ ledger = "ledger.cli:main"
 [tool.hatch.build.targets.wheel]
 packages = ["src/ledger"]
 
+# The public server links this stylesheet at /static/app.css. Ship it inside the
+# Python package so wheel installs and containers do not depend on the repository
+# layout that happened to exist while the artifact was built.
+[tool.hatch.build.targets.wheel.force-include]
+"web/static/app.css" = "ledger/static/app.css"
+
 # SEC-13/CQ-09/CQ-27: dev tooling lives in a PEP 735 dependency group, not a
 # `[project.optional-dependencies]` extra. Extras ship in the built wheel's
 # metadata and are installable by any consumer (`pip install ledger-archive[dev]`);
