@@ -6,7 +6,10 @@
 # enter Terraform state and survive instance replacement), writes a root-only
 # .env, and brings up the ledger + Caddy stack. Caddy obtains a Let's Encrypt
 # certificate for the domain once DNS points at this box's elastic IP.
-set -euxo pipefail
+# Never enable xtrace here. This script retrieves generated credentials below;
+# `set -x` writes expanded assignment values to the IAM-readable EC2 console log.
+# Keep fail-fast/unset/pipe handling without command tracing (incident #86).
+set -euo pipefail
 
 REGION="${region}"
 BUCKET="${bucket}"

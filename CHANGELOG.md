@@ -25,6 +25,7 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   residual-risk register. Enabled GitHub private vulnerability reporting and
   converted every remaining human/account-setting conformance blocker into a
   linked issue rather than an untracked roadmap assertion.
+
 - **DORA delivery-health review + root `DEFINITION_OF_DONE.md` (2026-07-07).**
   `docs/DORA-DELIVERY-HEALTH-REVIEW.md` instantiates QM-11: Deployment Frequency and
   Change Lead Time computed from real merged-PR history (`gh pr list`), with Change
@@ -149,6 +150,16 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and asserts the embargoed, redacted, and sealed-identity sentinels appear on no
   anonymous surface (HTML, JSON record/list APIs, CSV export), while the withholding is
   still acknowledged honestly without exposing the embargo date to outsiders.
+
+### Fixed
+
+- **Cloud-init secret tracing (SEV2, 2026-07-12).** Removed shell xtrace from
+  AWS first-boot provisioning after the initial synthetic demo deploy revealed
+  that expanded secret assignments reached the IAM-restricted EC2 console log.
+  Both demo credentials were rotated, the synthetic archive was rebuilt, and a
+  regression test now forbids xtrace in the secret-bearing template. See
+  incident [#86](https://github.com/ChelseaKR/ledger/issues/86) and the committed
+  postmortem under `docs/incidents/`.
 
 ### Prepared as 0.1.0 (2026-06-16) — first reference implementation, not yet tagged
 
