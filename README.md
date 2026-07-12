@@ -77,25 +77,47 @@ first-class preservation requirement, equal to bit-integrity. ledger treats it t
 ledger/
 ├── README.md
 ├── src/ledger/
-│   ├── ingest.py                # accept item → fixity → BagIt bag → PREMIS/DC metadata → store
-│   ├── cas.py                   # content-addressed store (BLAKE2b/SHA-256 addressing, dedupe)
-│   ├── bag.py                   # BagIt write/validate; manifest + tagmanifest; bag-info
-│   ├── fixity.py                # checksum compute/verify; scheduled audit; quarantine on mismatch
-│   ├── metadata/                # premis.py (events, agents, fixity), dublincore.py, schema/
-│   ├── access/                  # policy model, grants, selective disclosure, redaction.py
-│   ├── identity.py              # contributor identity vault: separated, encrypted, grant-gated
-│   ├── replicate.py             # push/pull bags to configured locations; re-verify on arrival
-│   ├── moderate.py              # content-warning model + accountable moderation workflow
-│   ├── oais.py                  # SIP → AIP → DIP packaging per the OAIS reference model
-│   ├── server.py                # accessible archive browse/search + JSON API (read-gated)
-│   └── config.py                # storage locations, policies, prompts as versioned files
+│   ├── models.py / errors.py         # the shared contract: value objects + one exception hierarchy
+│   ├── ingest.py                     # accept item → fixity → BagIt bag → PREMIS/DC metadata → store
+│   ├── cas.py                        # content-addressed store (BLAKE2b/SHA-256 addressing, dedupe)
+│   ├── bag.py                        # BagIt write/validate; manifest + tagmanifest; bag-info
+│   ├── fixity.py                     # checksum compute/verify; scheduled audit; quarantine on mismatch
+│   ├── chain.py                      # hash-chained append-only logs (tamper evidence)
+│   ├── preservation.py               # format identification + preservation planning (OAIS)
+│   ├── metadata/                     # premis.py, dublincore.py, ead.py, mets.py, pid.py, schema/
+│   ├── access/                       # policy.py, grants.py, redaction.py — the one read-path gate
+│   ├── identity.py                   # contributor identity vault: separated, encrypted, grant-gated
+│   ├── consent.py / dualcontrol.py   # revocable consent capture; propose→approve→execute for risky ops
+│   ├── redact_suggest.py             # offline assistant flagging likely-identifying text at intake
+│   ├── replicate.py                  # push/pull bags to configured locations; re-verify on arrival
+│   ├── backup.py / export_drive.py   # scheduled encrypted off-box backups; sneakernet USB courier export
+│   ├── moderate.py                   # content-warning model + accountable moderation workflow
+│   ├── oais.py                       # SIP → AIP → DIP packaging per the OAIS reference model
+│   ├── oai.py                        # OAI-PMH 2.0 provider + sitemap + Atom feed (harvest/interop)
+│   ├── contribute.py / upload.py     # contributor-facing submission + safe binary-payload validation
+│   ├── oralhistory.py / captions.py  # oral-history session kit: manifests, WebVTT/SRT transcripts
+│   ├── export.py / print_edition.py  # CSV export; printable zine-style accessible editions
+│   ├── transparency.py / attest.py / attestation.py   # transparency log + 2-of-N sealed-conditional attestation
+│   ├── succession.py / tombstones.py # group hand-off continuity; durable takedown propagation
+│   ├── reading_room_enclave.py / lockdown.py  # supervised aggregate research access; duress mode
+│   ├── search.py / catalog_index.py / pagination.py / parsing.py / render.py  # browse/search server internals
+│   ├── i18n.py                       # gettext localization seam for the browse/contribute UI
+│   ├── accessibility_check.py / acr_gen.py  # WCAG CI gate + Accessibility Conformance Report generator
+│   ├── checkup.py / demo.py          # adoption-readiness checkup; deterministic end-to-end proof run
+│   ├── server.py                     # accessible archive browse/search + JSON API (read-gated)
+│   └── config.py                     # storage locations, policies, prompts as versioned files
 ├── web/                         # framework-free WCAG 2.2 AA archive UI (browse + list/table view)
-├── infra/                       # optional self-host deploy (compose/Terraform); no hosted dependency
+├── infra/                       # self-host deploy (Docker Compose, Terraform for AWS); no hosted dependency
 ├── tests/
 │   └── fixtures/                # tiny sample records (consented, synthetic) + one per access policy
-└── docs/                        # ARCHITECTURE, THREAT-MODEL, GOVERNANCE, ACCESSIBILITY, ADRs,
-                                  # ROADMAP (conformance gap tracker), accessibility/ (ACR)
+└── docs/                        # ARCHITECTURE (full layered design + data flow), THREAT-MODEL,
+                                  # GOVERNANCE, ACCESSIBILITY, ADRs, ROADMAP (conformance gap tracker),
+                                  # incidents/, accessibility/ (ACR)
 ```
+
+`src/ledger/` is ~54 modules today, grouped above by responsibility rather than listed
+file-by-file; see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full layered design,
+dependency direction, and data flow.
 
 Records move through the OAIS pipeline as Submission, Archival, and Dissemination Information
 Packages. Ingest produces a SIP, normalizes it into an AIP (a BagIt bag with PREMIS preservation
