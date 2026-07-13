@@ -34,7 +34,13 @@ from pathlib import Path
 from ledger import catalog_index
 from ledger.access import disclose, is_listable
 from ledger.attest import attested_conditions
-from ledger.bag import atomic_write_text, refresh_tag_manifests, validate_bag, write_bag
+from ledger.bag import (
+    _reject_unsafe_relpath,
+    atomic_write_text,
+    refresh_tag_manifests,
+    validate_bag,
+    write_bag,
+)
 from ledger.cas import ContentStore
 from ledger.chain import GENESIS_HASH, ChainVerification
 from ledger.config import Config
@@ -404,6 +410,13 @@ def ingest_sip(  # noqa: C901
                 raise LedgerError(
                     "a 'sealed' (absolute) payload requires a vault key for at-rest encryption"
                 )
+            # Validate BEFORE joining: `filename` is a bag-relative payload key that
+            # can originate from caller-supplied data (e.g. a session manifest's
+            # `payload_filename`), not only a trusted local file path. `write_bag`
+            # rejects an unsafe relpath too, but only much later — after this branch
+            # would already have written ciphertext to an absolute or traversal
+            # path via plain `Path` joining (a real arbitrary-write otherwise).
+            _reject_unsafe_relpath(filename, context="sealed payload")
             if sealed_tmp is None:
                 sealed_tmp = Path(tempfile.mkdtemp(prefix="ledger-sealed-"))
             store_source = sealed_tmp / filename
@@ -480,6 +493,15 @@ def ingest_sip(  # noqa: C901
     if pid not in record.dublin_core.identifier:
         record.dublin_core.identifier = [*record.dublin_core.identifier, pid]
 
+    # 2. Refuse a collision BEFORE sealing any identity OR field, so a failed
+    #    ingest cannot leave an orphaned, unreachable identity in the vault, or
+    #    silently overwrite the caller's in-memory sealed-field plaintext with
+    #    ciphertext it has no way to recover (#correctness, consent).
+    bag_dir = bags_dir / record.record_id
+    if bag_dir.exists():
+        # An item is bagged exactly once; refuse to clobber a prior AIP silently.
+        raise LedgerError(f"bag already exists for record {record.record_id}")
+
     # Absolute-SEALED fields are encrypted AT REST so a stolen disk or hostile
     # replica reveals nothing, not even to a steward (user research P2-4). Such a
     # field is never disclosed on any read path, so it is only ever encrypted, never
@@ -492,13 +514,6 @@ def ingest_sip(  # noqa: C901
         for fld in record.fields:
             if fld.policy is AccessPolicy.SEALED and not fld.value.startswith("enc:"):
                 fld.value = vault.encrypt_text(fld.value)
-
-    # 2. Refuse a collision BEFORE sealing any identity, so a failed ingest cannot
-    #    leave an orphaned, unreachable identity in the vault (#correctness, consent).
-    bag_dir = bags_dir / record.record_id
-    if bag_dir.exists():
-        # An item is bagged exactly once; refuse to clobber a prior AIP silently.
-        raise LedgerError(f"bag already exists for record {record.record_id}")
 
     # 3. Seal identity into the vault and replace it with an opaque ref. Everything
     #    after this point is wrapped so any failure revokes the ref (no orphan).
@@ -868,7 +883,10 @@ class Archive:
         entries = self._read_versions(path)
         entries.append({"address": address, "saved_at": now_iso(), "event_type": event_type})
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(canonical_json(entries), encoding="utf-8", newline="\n")
+        # Atomic (temp + os.replace), like every other write in this module: a
+        # crash mid-write must leave the prior index intact rather than a torn
+        # file that `_read_versions` would silently read back as empty history.
+        atomic_write_text(path, canonical_json(entries))
 
     @staticmethod
     def _read_versions(path: Path) -> list[dict[str, str]]:
