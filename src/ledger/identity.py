@@ -319,6 +319,9 @@ class IdentityVault:
         # docstring for why the unlocked temp-file write is unsafe).
         with file_lock(self._path):
             self._reload()
+            old_fernet = self._fernet
+            old_store = self._store
+            old_key_check = self._key_check
             # Re-encrypt into a fresh map first; only commit if every entry succeeds,
             # so a mid-rotation failure cannot leave a half-rotated vault -> integrity.
             rotated: dict[str, str] = {}
@@ -333,7 +336,16 @@ class IdentityVault:
             self._fernet = new_fernet
             self._store = rotated
             self._key_check = new_fernet.encrypt(_KEY_CHECK_PLAINTEXT).decode("ascii")
-            self._persist()
+            try:
+                self._persist()
+            except BaseException:
+                # The atomic replace may fail while the old file remains durable.
+                # Keep this live handle aligned with that old file as well; otherwise
+                # it would retain an uncommitted key/map until a later disk reload.
+                self._fernet = old_fernet
+                self._store = old_store
+                self._key_check = old_key_check
+                raise
             return len(rotated)
 
     # --- at-rest encryption of absolute-sealed content ----------------------
@@ -494,8 +506,9 @@ class IdentityVault:
             fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
             with os.fdopen(fd, "w", encoding="utf-8") as handle:
                 handle.write(payload)
+            # The temp inode was created owner-only; replacing the target preserves
+            # that mode and leaves no fallible mutation after the commit point.
             os.replace(tmp, self._path)
-            os.chmod(self._path, 0o600)
         except OSError as exc:
             tmp.unlink(missing_ok=True)
             raise IdentityVaultError(f"vault could not be written: {self._path}") from exc

@@ -367,6 +367,12 @@ def ingest_sip(  # noqa: C901
     clock, so a golden ingest is byte-reproducible (determinism).
     """
     record = sip.record
+    bag_dir = bags_dir / record.record_id
+    if bag_dir.exists():
+        # Refuse a duplicate before inspecting, encrypting, or storing any payload.
+        # A collision is a record-level precondition failure, so it must leave CAS,
+        # temporary ciphertext, caller-owned fields, and the identity vault untouched.
+        raise LedgerError(f"bag already exists for record {record.record_id}")
 
     # 1. Fixity + store. Preserve any per-file policy already declared on the
     #    record; otherwise default to the record's narrowest policy.
@@ -493,16 +499,7 @@ def ingest_sip(  # noqa: C901
     if pid not in record.dublin_core.identifier:
         record.dublin_core.identifier = [*record.dublin_core.identifier, pid]
 
-    # 2. Refuse a collision BEFORE sealing any identity OR field, so a failed
-    #    ingest cannot leave an orphaned, unreachable identity in the vault, or
-    #    silently overwrite the caller's in-memory sealed-field plaintext with
-    #    ciphertext it has no way to recover (#correctness, consent).
-    bag_dir = bags_dir / record.record_id
-    if bag_dir.exists():
-        # An item is bagged exactly once; refuse to clobber a prior AIP silently.
-        raise LedgerError(f"bag already exists for record {record.record_id}")
-
-    # Absolute-SEALED fields are encrypted AT REST so a stolen disk or hostile
+    # 2. Absolute-SEALED fields are encrypted AT REST so a stolen disk or hostile
     # replica reveals nothing, not even to a steward (user research P2-4). Such a
     # field is never disclosed on any read path, so it is only ever encrypted, never
     # decrypted here. It requires the vault, like an identity.
@@ -706,6 +703,11 @@ class Archive:
         of the stored record manifest is also written under ``records/`` for fast
         lookup by :meth:`get` without unpacking a bag (efficiency).
         """
+        if (self.bags_dir / record.record_id).exists():
+            # Preflight before even opening/creating the vault. ``ingest_sip``
+            # repeats this guard for direct callers, but the facade owns this
+            # earlier boundary because vault creation is itself a durable effect.
+            raise LedgerError(f"bag already exists for record {record.record_id}")
         stamp = now if now is not None else now_iso()
         self.bags_dir.mkdir(parents=True, exist_ok=True)
         self.records_dir.mkdir(parents=True, exist_ok=True)

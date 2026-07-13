@@ -169,6 +169,16 @@ def _format_atom_datetime(value: datetime) -> str:
     return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
 
+def _atom_datetime(value: str, fallback: str) -> datetime:
+    """Coerce a Dublin Core date into the aware instant Atom ordering needs."""
+    parsed = _parse_atom_datetime(value)
+    if parsed is None:
+        parsed = _parse_atom_datetime(fallback)
+    # Callers supply a valid RFC 3339 generation timestamp. Keep malformed
+    # programmatic inputs deterministic if both values are bad.
+    return parsed if parsed is not None else datetime(1970, 1, 1, tzinfo=UTC)
+
+
 def _atom_timestamp(value: str, fallback: str) -> str:
     """Coerce a Dublin Core date into an RFC 3339 instant Atom's ``<updated>`` needs.
 
@@ -177,15 +187,7 @@ def _atom_timestamp(value: str, fallback: str) -> str:
     requires a complete date-time, so a date-only value is widened to midnight UTC
     and anything unparseable falls back to ``fallback`` (the feed's generation time,
     already RFC 3339) rather than emitting an invalid feed."""
-    parsed = _parse_atom_datetime(value)
-    if parsed is None:
-        parsed = _parse_atom_datetime(fallback)
-    # Callers supply a valid RFC 3339 generation timestamp. Keep malformed
-    # programmatic inputs well-formed and deterministic rather than emitting a
-    # second invalid timestamp if both values are bad.
-    if parsed is None:
-        parsed = datetime(1970, 1, 1, tzinfo=UTC)
-    return _format_atom_datetime(parsed)
+    return _format_atom_datetime(_atom_datetime(value, fallback))
 
 
 def atom_feed_xml(
@@ -210,18 +212,18 @@ def atom_feed_xml(
     through the shared :func:`escape` boundary. ``now`` is the feed's generation time
     and the fallback timestamp, so output is deterministic for a given input.
 
-    The sort key is the same RFC 3339 instant :func:`_atom_timestamp` widens each
+    The sort key is the same aware instant :func:`_atom_datetime` widens each
     entry's date to for display (not the raw ``dc:date`` string): a ``dc:date`` is
     free text of varying granularity and padding (``"1994"``, ``"2021-5-1"``,
     ``"2021-12-01"``, ...), and comparing those as plain strings is lexicographic,
     not chronological — e.g. ``"2021-5-1" > "2021-12-01"`` as strings even though May
-    precedes December. Normalizing both to the same padded RFC 3339 form before
-    comparing keeps "most recent first" true for any date shape a contributor used,
+    precedes December. Parsing both as aware UTC datetimes before comparing keeps
+    "most recent first" true for any date shape or fractional precision in use,
     and keeps the sort key consistent with what ``<updated>`` actually displays."""
     root = base_url.rstrip("/")
     ordered = sorted(
         records,
-        key=lambda r: (_atom_timestamp(_datestamp(r, now), now), r.record_id),
+        key=lambda r: (_atom_datetime(_datestamp(r, now), now), r.record_id),
         reverse=True,
     )[: max(0, limit)]
 

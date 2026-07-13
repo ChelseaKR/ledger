@@ -120,6 +120,19 @@ def test_feed_normalizes_offsets_before_ordering_and_falls_back_on_invalid_dates
     assert feed.count(f"<updated>{_NOW}</updated>") >= 3  # feed + both invalid values
 
 
+def test_feed_orders_fractional_instants_after_the_same_whole_second() -> None:
+    """Datetime order wins where RFC 3339 string order puts ``Z`` before a fraction."""
+    records = [
+        _disclosed("whole", "Whole second", date=["2021-01-01T00:00:00Z"]),
+        _disclosed("fraction", "Fraction later", date=["2021-01-01T00:00:00.900000Z"]),
+    ]
+
+    feed = oai.atom_feed_xml(records, archive_name="A", base_url="http://x.org", now=_NOW)
+
+    assert feed.index("Fraction later") < feed.index("Whole second")
+    assert "<updated>2021-01-01T00:00:00.900000Z</updated>" in feed
+
+
 def test_feed_escapes_markup_in_titles_and_summaries() -> None:
     """Angle brackets and ampersands are escaped, so a title cannot break the XML."""
     feed = oai.atom_feed_xml(

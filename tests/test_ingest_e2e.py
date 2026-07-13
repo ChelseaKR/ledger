@@ -27,7 +27,7 @@ import pytest
 from ledger.access.grants import anonymous, build_grant, steward
 from ledger.config import Config, StorageLocation
 from ledger.errors import AccessDenied, BagValidationError, LedgerError
-from ledger.identity import ContributorIdentity, IdentityVault
+from ledger.identity import ContributorIdentity
 from ledger.ingest import Archive, serialize_record
 from ledger.metadata.premis import PremisLog
 from ledger.models import (
@@ -116,8 +116,10 @@ def test_sealed_payload_rejects_windows_escape_before_any_payload_write(
     assert not any(archive.bags_dir.iterdir())
 
 
-def test_record_collision_precedes_field_encryption_and_identity_sealing(tmp_path: Path) -> None:
-    """A duplicate id leaves caller plaintext and the identity vault untouched."""
+def test_record_collision_precedes_all_sealed_payload_and_identity_side_effects(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A duplicate id leaves payload temp/CAS, caller plaintext, and vault untouched."""
     archive = Archive.init(Config.default("Collision Archive", tmp_path / "arc"))
     original = Record(
         title="Original",
@@ -126,20 +128,42 @@ def test_record_collision_precedes_field_encryption_and_identity_sealing(tmp_pat
     )
     archive.ingest({}, original, now=_NOW_INGEST)
 
-    vault = archive._open_vault(_VAULT_KEY)
-    before_count = len(vault)
+    assert not archive.vault_path.exists()
+    before_tree = {
+        path.relative_to(archive.store_root): None if path.is_dir() else path.read_bytes()
+        for path in sorted(archive.store_root.rglob("*"))
+    }
     plaintext = "must remain recoverable by the rejected caller"
+    source = tmp_path / "sealed-source.bin"
+    source.write_bytes(b"must never be encrypted or copied on collision")
     duplicate = Record(
         record_id=original.record_id,
         title="Duplicate",
         default_policy=AccessPolicy.PUBLIC,
         dublin_core=DublinCore(title=["Duplicate"]),
         fields=[Field(name="sealed", value=plaintext, policy=AccessPolicy.SEALED)],
+        payloads=[
+            PayloadFile(
+                filename=source.name,
+                address=ContentAddress(HashAlgo.SHA256, "0" * 64),
+                media_type="application/octet-stream",
+                size_bytes=0,
+                policy=AccessPolicy.SEALED,
+            )
+        ],
     )
+
+    def unexpected_side_effect(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("collision reached sealed-payload processing")
+
+    monkeypatch.setattr(archive, "_open_vault", unexpected_side_effect)
+    monkeypatch.setattr("ledger.ingest.identify_file", unexpected_side_effect)
+    monkeypatch.setattr("ledger.ingest.tempfile.mkdtemp", unexpected_side_effect)
+    monkeypatch.setattr(archive.store, "put_file", unexpected_side_effect)
 
     with pytest.raises(LedgerError, match="bag already exists"):
         archive.ingest(
-            {},
+            {source.name: source},
             duplicate,
             identity=ContributorIdentity(name="not orphaned"),
             vault_key=_VAULT_KEY,
@@ -148,7 +172,12 @@ def test_record_collision_precedes_field_encryption_and_identity_sealing(tmp_pat
 
     assert duplicate.fields[0].value == plaintext
     assert duplicate.identity_ref is None
-    assert len(IdentityVault.open(archive.vault_path, _VAULT_KEY)) == before_count
+    assert not archive.vault_path.exists()
+    after_tree = {
+        path.relative_to(archive.store_root): None if path.is_dir() else path.read_bytes()
+        for path in sorted(archive.store_root.rglob("*"))
+    }
+    assert after_tree == before_tree
 
 
 def test_full_lifecycle_ingest_disclose_replicate_consent(tmp_path: Path) -> None:
