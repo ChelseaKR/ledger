@@ -254,3 +254,64 @@ def test_roundtrip_through_reopen_resolves(tmp_path: Path) -> None:
     reopened = IdentityVault.open(path, key)
     resolved = reopened.resolve(ref, _unseal_grant(ref), _NOW)
     assert resolved.name == _NAME
+
+
+def test_separate_vault_handles_do_not_overwrite_each_others_adds(tmp_path: Path) -> None:
+    """A stale whole-file snapshot cannot erase an add made by another handle."""
+    path = tmp_path / "identity.vault"
+    key = IdentityVault.generate_key()
+    first = IdentityVault.create(path, key)
+    second = IdentityVault.open(path, key)
+
+    ref_a = first.add(ContributorIdentity(name="A"))
+    ref_b = second.add(ContributorIdentity(name="B"))
+
+    reopened = IdentityVault.open(path, key)
+    assert len(reopened) == 2
+    assert reopened.resolve(ref_a, _unseal_grant(ref_a), _NOW).name == "A"
+    assert reopened.resolve(ref_b, _unseal_grant(ref_b), _NOW).name == "B"
+
+
+def test_stale_handle_revoke_preserves_another_handles_add(tmp_path: Path) -> None:
+    """A revoke reloads under lock, so it cannot resurrect/drop unrelated refs."""
+    path = tmp_path / "identity.vault"
+    key = IdentityVault.generate_key()
+    first = IdentityVault.create(path, key)
+    revoked_ref = first.add(ContributorIdentity(name="withdrawn"))
+    stale = IdentityVault.open(path, key)
+
+    retained_ref = first.add(ContributorIdentity(name="retained"))
+    stale.revoke(revoked_ref)
+
+    reopened = IdentityVault.open(path, key)
+    assert not reopened.contains(revoked_ref)
+    assert reopened.resolve(retained_ref, _unseal_grant(retained_ref), _NOW).name == "retained"
+
+
+def test_stale_handle_cannot_resolve_after_another_handle_revokes(tmp_path: Path) -> None:
+    """Durable consent revocation invalidates already-open vault handles too."""
+    path = tmp_path / "identity.vault"
+    key = IdentityVault.generate_key()
+    first = IdentityVault.create(path, key)
+    ref = first.add(_identity())
+    stale = IdentityVault.open(path, key)
+
+    first.revoke(ref)
+
+    with pytest.raises(IdentityVaultError):
+        stale.resolve(ref, _unseal_grant(ref), _NOW)
+
+
+def test_stale_handle_rekey_includes_entries_added_by_another_handle(tmp_path: Path) -> None:
+    """Rekey authenticates/reloads disk state before rotating the whole map."""
+    path = tmp_path / "identity.vault"
+    old_key = IdentityVault.generate_key()
+    new_key = IdentityVault.generate_key()
+    first = IdentityVault.create(path, old_key)
+    stale = IdentityVault.open(path, old_key)
+    ref = first.add(_identity())
+
+    assert stale.rekey(new_key) == 1
+
+    reopened = IdentityVault.open(path, new_key)
+    assert reopened.resolve(ref, _unseal_grant(ref), _NOW).name == _NAME

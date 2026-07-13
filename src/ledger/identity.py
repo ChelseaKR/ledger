@@ -158,10 +158,14 @@ class IdentityVault:
         """
         target = Path(path)
         vault = cls(target, key)
-        if target.exists():
-            raise IdentityVaultError(f"vault already exists: {target}")
-        vault._store = {}
-        vault._persist()
+        # Check-and-create under the same stable sibling lock used by mutations.
+        # Otherwise two processes can both observe an absent path and the second
+        # can silently replace the first process's newly-created vault.
+        with file_lock(target):
+            if target.exists():
+                raise IdentityVaultError(f"vault already exists: {target}")
+            vault._store = {}
+            vault._persist()
         return vault
 
     @classmethod
@@ -175,24 +179,12 @@ class IdentityVault:
         if not target.exists():
             raise IdentityVaultError(f"vault not found: {target}")
         vault = cls(target, key)
-        try:
-            raw = target.read_text(encoding="utf-8")
-            loaded = json.loads(raw)
-        except (OSError, ValueError) as exc:
-            raise IdentityVaultError(f"vault could not be read: {target}") from exc
-        if not isinstance(loaded, dict):
-            raise IdentityVaultError(f"vault is malformed: {target}")
-        store: dict[str, str] = {}
-        for ref, ciphertext in loaded.items():
-            if not isinstance(ref, str) or not isinstance(ciphertext, str):
-                raise IdentityVaultError(f"vault is malformed: {target}")
-            store[ref] = ciphertext
-        # Verify the key by decrypting one entry; a wrong key surfaces immediately
-        # rather than at first resolve -> failure transparency.
-        for ciphertext in store.values():
-            vault._decrypt(ciphertext)
-            break
-        vault._store = store
+        with file_lock(target):
+            # Re-check after acquiring the lock in case a concurrent operation
+            # removed/replaced the path between the optimistic check and here.
+            if not target.exists():
+                raise IdentityVaultError(f"vault not found: {target}")
+            vault._reload()
         return vault
 
     # --- mutation -----------------------------------------------------------
@@ -212,8 +204,14 @@ class IdentityVault:
         write the *same* temp path, and the second thread's truncating open can
         corrupt the first thread's in-flight write before either renames it into
         place (fault tolerance, integrity of the archive's most sensitive file).
+
+        The on-disk store is reloaded *inside* that lock. This matters when two
+        archive handles or processes have separate ``IdentityVault`` instances:
+        locking only each instance's stale in-memory dictionary would still let a
+        later writer erase the earlier writer's update.
         """
         with file_lock(self._path):
+            self._reload()
             ref = self._new_ref()
             token = self._encrypt(identity)
             self._store[ref] = token
@@ -240,10 +238,15 @@ class IdentityVault:
         if ref not in effective.identity_unseal:
             # Name the ref and the missing capability, never the protected value.
             raise AccessDenied(f"grant does not permit unsealing identity ref {ref}")
-        token = self._store.get(ref)
-        if token is None:
-            raise IdentityVaultError(f"unknown identity ref: {ref}")
-        return self._decrypt(token)
+        # Refresh under the same lock used by revoke. A long-lived archive handle
+        # must not keep disclosing an identity from stale memory after another
+        # process has durably revoked it.
+        with file_lock(self._path):
+            self._reload()
+            token = self._store.get(ref)
+            if token is None:
+                raise IdentityVaultError(f"unknown identity ref: {ref}")
+            return self._decrypt(token)
 
     def revoke(self, ref: str) -> None:
         """Remove the mapping for *ref*, persisting atomically.
@@ -255,17 +258,22 @@ class IdentityVault:
         the same temp file (see :meth:`add`'s docstring).
         """
         with file_lock(self._path):
+            self._reload()
             if ref in self._store:
                 del self._store[ref]
                 self._persist()
 
     def contains(self, ref: str) -> bool:
         """Return whether *ref* currently maps to a stored identity."""
-        return ref in self._store
+        with file_lock(self._path):
+            self._reload()
+            return ref in self._store
 
     def __len__(self) -> int:
         """Number of sealed identities in the vault (no contents revealed)."""
-        return len(self._store)
+        with file_lock(self._path):
+            self._reload()
+            return len(self._store)
 
     # --- key rotation -------------------------------------------------------
 
@@ -296,6 +304,7 @@ class IdentityVault:
         # concurrent add/revoke on the same vault file (see :meth:`add`'s
         # docstring for why the unlocked temp-file write is unsafe).
         with file_lock(self._path):
+            self._reload()
             # Re-encrypt into a fresh map first; only commit if every entry succeeds,
             # so a mid-rotation failure cannot leave a half-rotated vault -> integrity.
             rotated: dict[str, str] = {}
@@ -378,6 +387,32 @@ class IdentityVault:
 
     # --- internals ----------------------------------------------------------
 
+    def _reload(self) -> None:
+        """Replace the in-memory map with the current authenticated disk state.
+
+        Callers that need a linearizable read or mutation hold :func:`file_lock`
+        around this method and the rest of their operation. Reloading inside the
+        critical section prevents separate ``IdentityVault`` instances from
+        clobbering one another with stale whole-file snapshots.
+        """
+        try:
+            loaded = json.loads(self._path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise IdentityVaultError(f"vault could not be read: {self._path}") from exc
+        if not isinstance(loaded, dict):
+            raise IdentityVaultError(f"vault is malformed: {self._path}")
+        store: dict[str, str] = {}
+        for ref, ciphertext in loaded.items():
+            if not isinstance(ref, str) or not isinstance(ciphertext, str):
+                raise IdentityVaultError(f"vault is malformed: {self._path}")
+            store[ref] = ciphertext
+        # Verify the active key against one entry, surfacing a rekey performed by
+        # another process (or tampering) before this instance can overwrite it.
+        for ciphertext in store.values():
+            self._decrypt(ciphertext)
+            break
+        self._store = store
+
     @staticmethod
     def _new_ref() -> str:
         """Generate a fresh opaque ref from a CSPRNG -> unlinkability."""
@@ -397,9 +432,9 @@ class IdentityVault:
         """
         try:
             raw = self._fernet.decrypt(token.encode("ascii"))
-        except InvalidToken as exc:
+            return ContributorIdentity._from_json_bytes(raw)
+        except (InvalidToken, UnicodeError, ValueError, TypeError, AttributeError) as exc:
             raise IdentityVaultError("identity decryption failed (wrong key or tampering)") from exc
-        return ContributorIdentity._from_json_bytes(raw)
 
     def _persist(self) -> None:
         """Write the store to disk atomically (temp file then rename).

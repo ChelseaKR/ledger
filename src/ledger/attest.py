@@ -52,6 +52,7 @@ ATTEST_THRESHOLD: int = 2
 _PROPOSALS_FILENAME = "attestations.json"
 _ATTESTED_FILENAME = "attested-conditions.json"
 _PREMIS_FILENAME = "attestations.premis.json"
+_WORKFLOW_LOCK_FILENAME = "attestations.workflow"
 
 
 def _read_attested(path: Path) -> frozenset[str]:
@@ -135,12 +136,17 @@ class AttestStore:
         exactly on the approval that tipped the proposal over the threshold — the
         approval that writes the condition into the attested set and records the
         ``POLICY_CHANGE`` event."""
-        proposal = self._proposals.approve(proposal_id, steward)
-        if not proposal.is_ready(threshold):
-            return proposal, False
-        self._record_attested(proposal, agent=steward, now=now or now_iso())
-        self._proposals.mark(proposal.proposal_id, "executed")
-        return proposal, True
+        # Serialize approval through terminal marking, not just each individual
+        # JSON rewrite. Otherwise two stewards can both observe the same proposal
+        # as ready before either marks it executed, recording the outcome twice.
+        workflow_lock = self._dir / _WORKFLOW_LOCK_FILENAME
+        with file_lock(workflow_lock):
+            proposal = self._proposals.approve(proposal_id, steward)
+            if not proposal.is_ready(threshold):
+                return proposal, False
+            attested_now = self._record_attested(proposal, agent=steward, now=now or now_iso())
+            self._proposals.mark(proposal.proposal_id, "executed")
+            return proposal, attested_now
 
     # --- reads --------------------------------------------------------------
 
@@ -158,7 +164,7 @@ class AttestStore:
 
     # --- durable outcome ----------------------------------------------------
 
-    def _record_attested(self, proposal: ActionProposal, *, agent: str, now: str) -> None:
+    def _record_attested(self, proposal: ActionProposal, *, agent: str, now: str) -> bool:
         """Add the condition to the attested set and append a PREMIS ``POLICY_CHANGE``.
 
         The set is the machine-readable authority the access layer consults; the
@@ -172,7 +178,10 @@ class AttestStore:
         condition = proposal.target
         attested_path = self._dir / _ATTESTED_FILENAME
         with file_lock(attested_path):
-            _write_attested(attested_path, _read_attested(attested_path) | {condition})
+            prior = _read_attested(attested_path)
+            attested_now = condition not in prior
+            if attested_now:
+                _write_attested(attested_path, prior | {condition})
 
         event = PremisEvent(
             event_type=PremisEventType.POLICY_CHANGE,
@@ -188,6 +197,19 @@ class AttestStore:
             event_datetime=now,
         )
         log_path = self._dir / _PREMIS_FILENAME
-        log = PremisLog.read(log_path) if log_path.exists() else PremisLog()
-        log.record(event)
-        log.write(log_path)
+        # PREMIS is another whole-file read-modify-write and needs its own stable
+        # sibling lock. Also make this append idempotent by condition: if the set
+        # write succeeded but the log write failed, retry repairs the missing event;
+        # if both succeeded but terminal marking failed, retry never duplicates it.
+        event_prefix = f"condition attested and now met: {condition} ("
+        with file_lock(log_path):
+            log = PremisLog.read(log_path) if log_path.exists() else PremisLog()
+            already_logged = any(
+                candidate.event_type is PremisEventType.POLICY_CHANGE
+                and candidate.detail.startswith(event_prefix)
+                for candidate in log.events
+            )
+            if not already_logged:
+                log.record(event)
+                log.write(log_path)
+        return attested_now
