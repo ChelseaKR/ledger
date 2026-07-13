@@ -21,8 +21,9 @@ from __future__ import annotations
 import json
 import shutil
 import threading
+import time
 import urllib.request
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from pathlib import Path
@@ -30,12 +31,20 @@ from pathlib import Path
 import pytest
 
 from ledger import cli, dualcontrol
+from ledger import lockdown as lockdown_module
 from ledger.access.grants import build_grant, issue_grant_token, steward
 from ledger.config import Config
 from ledger.errors import ConfigError
 from ledger.identity import ContributorIdentity
 from ledger.ingest import Archive
-from ledger.lockdown import LockdownConfig, is_locked_down, lockdown_flag_path
+from ledger.lockdown import (
+    LockdownConfig,
+    LockdownResult,
+    execute_lockdown,
+    execute_stand_up,
+    is_locked_down,
+    lockdown_flag_path,
+)
 from ledger.metadata.premis import PremisLog
 from ledger.models import AccessPolicy, DublinCore, Field, PremisEventType, Record
 from ledger.server import make_server
@@ -137,6 +146,106 @@ def _premis_event_types(root: Path) -> list[PremisEventType]:
     if not log_path.exists():
         return []
     return [e.event_type for e in PremisLog.read(log_path).events]
+
+
+def test_stand_up_summary_reports_resumed_or_already_open_status() -> None:
+    """Stand-up never reuses lockdown's misleading stopped/unchanged wording."""
+    resumed = LockdownResult(
+        action="stand-up",
+        dry_run=False,
+        disclosure_stopped=True,
+        vault_shredded=False,
+        verified_replicas=0,
+        steps=(),
+    )
+    already_open = LockdownResult(
+        action="stand-up",
+        dry_run=False,
+        disclosure_stopped=False,
+        vault_shredded=False,
+        verified_replicas=0,
+        steps=(),
+    )
+
+    assert "disclosure resumed" in resumed.summary()
+    assert "disclosure was already open" in already_open.summary()
+    assert "disclosure stopped" not in resumed.summary()
+
+
+def test_concurrent_lockdown_and_stand_up_are_one_serial_transition(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Opposite transitions never overlap; the final flag matches the last audit event."""
+    root = tmp_path / "arc"
+    config = Config.default("Concurrent Duress Archive", root)
+    config.lockdown = LockdownConfig(stop_disclosure=True, shred_vault=False)
+    archive = Archive.init(config)
+
+    active = 0
+    maximum_active = 0
+    guard = threading.Lock()
+
+    real_lockdown = lockdown_module._execute_lockdown_locked
+    real_stand_up = lockdown_module._execute_stand_up_locked
+
+    def observed(
+        callable_: Callable[..., LockdownResult], *args: object, **kwargs: object
+    ) -> LockdownResult:
+        nonlocal active, maximum_active
+        with guard:
+            active += 1
+            maximum_active = max(maximum_active, active)
+        try:
+            time.sleep(0.03)
+            return callable_(*args, **kwargs)
+        finally:
+            with guard:
+                active -= 1
+
+    monkeypatch.setattr(
+        lockdown_module,
+        "_execute_lockdown_locked",
+        lambda *args, **kwargs: observed(real_lockdown, *args, **kwargs),
+    )
+    monkeypatch.setattr(
+        lockdown_module,
+        "_execute_stand_up_locked",
+        lambda *args, **kwargs: observed(real_stand_up, *args, **kwargs),
+    )
+
+    start = threading.Barrier(3)
+    errors: list[BaseException] = []
+
+    def run(action: str) -> None:
+        try:
+            start.wait(timeout=2)
+            if action == "lockdown":
+                execute_lockdown(archive, actor="lock", now=_NOW)
+            else:
+                execute_stand_up(archive, actor="stand", now=_NOW)
+        except BaseException as exc:  # pragma: no cover - asserted below
+            errors.append(exc)
+
+    threads = [threading.Thread(target=run, args=(action,)) for action in ("lockdown", "stand")]
+    for thread in threads:
+        thread.start()
+    start.wait(timeout=2)
+    for thread in threads:
+        thread.join(timeout=5)
+
+    assert errors == []
+    assert maximum_active == 1
+    log = PremisLog.read(root / "store" / "logs" / "lockdown.premis.json")
+    assert len(log.events) == 2
+    assert is_locked_down(archive) is (log.events[-1].event_type is PremisEventType.LOCKDOWN)
+
+    # Repeating the terminal action is state-idempotent.
+    if is_locked_down(archive):
+        execute_lockdown(archive, actor="lock-again", now=_NOW)
+        assert is_locked_down(archive)
+    else:
+        execute_stand_up(archive, actor="stand-again", now=_NOW)
+        assert not is_locked_down(archive)
 
 
 @pytest.fixture

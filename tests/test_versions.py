@@ -181,3 +181,29 @@ def test_version_index_is_append_only_canonical(tmp_path: Path) -> None:
     # Append-only: the earlier entry is preserved unchanged and a new one is added.
     assert second[0] == first[0]
     assert len(second) == 2
+
+
+def test_version_index_replace_failure_preserves_previous_complete_json(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failed atomic swap leaves the prior version index byte-for-byte intact."""
+    archive, rid = _archive_with_record(tmp_path)
+    archive.apply_update(
+        replace(archive.get(rid), title="One"),
+        _event(rid, PremisEventType.MODERATION, _NOW),
+    )
+    path = archive.records_dir / f"{rid}.versions.json"
+    before = path.read_bytes()
+
+    def fail_replace(_source: object, _target: object) -> None:
+        raise OSError("simulated crash before atomic swap")
+
+    monkeypatch.setattr("ledger.bag.os.replace", fail_replace)
+    with pytest.raises(OSError, match="simulated crash"):
+        archive._append_version(
+            rid,
+            "sha256:" + "f" * 64,
+            PremisEventType.CONSENT_CHANGE.value,
+        )
+
+    assert path.read_bytes() == before

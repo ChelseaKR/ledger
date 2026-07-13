@@ -22,16 +22,21 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from ledger.access.grants import anonymous, build_grant, steward
 from ledger.config import Config, StorageLocation
-from ledger.errors import AccessDenied
-from ledger.identity import ContributorIdentity
+from ledger.errors import AccessDenied, BagValidationError, LedgerError
+from ledger.identity import ContributorIdentity, IdentityVault
 from ledger.ingest import Archive, serialize_record
 from ledger.metadata.premis import PremisLog
 from ledger.models import (
     AccessPolicy,
+    ContentAddress,
     DublinCore,
     Field,
+    HashAlgo,
+    PayloadFile,
     PremisEvent,
     PremisEventType,
     Record,
@@ -70,6 +75,80 @@ def _build_record(archive_name: str) -> Record:
         ],
         content_warnings=["outing"],
     )
+
+
+@pytest.mark.parametrize(
+    "filename",
+    [r"..\escape.bin", r"C:\escape.bin", r"\rooted.bin"],
+)
+def test_sealed_payload_rejects_windows_escape_before_any_payload_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, filename: str
+) -> None:
+    """Windows traversal/drive/root forms fail before temp or CAS writes."""
+    archive = Archive.init(Config.default("Path Safety Archive", tmp_path / "arc"))
+    archive._open_vault(_VAULT_KEY)
+    source = tmp_path / "source.bin"
+    source.write_bytes(b"sensitive payload")
+    record = Record(
+        title="Hostile sealed path",
+        default_policy=AccessPolicy.PUBLIC,
+        dublin_core=DublinCore(title=["Hostile sealed path"]),
+        payloads=[
+            PayloadFile(
+                filename=filename,
+                address=ContentAddress(HashAlgo.SHA256, "0" * 64),
+                media_type="application/octet-stream",
+                size_bytes=0,
+                policy=AccessPolicy.SEALED,
+            )
+        ],
+    )
+
+    def unexpected_write(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("unsafe path reached a payload write boundary")
+
+    monkeypatch.setattr("ledger.ingest.tempfile.mkdtemp", unexpected_write)
+    monkeypatch.setattr(archive.store, "put_file", unexpected_write)
+
+    with pytest.raises(BagValidationError, match="unsafe path in sealed payload"):
+        archive.ingest({filename: source}, record, vault_key=_VAULT_KEY, now=_NOW_INGEST)
+
+    assert not any(archive.bags_dir.iterdir())
+
+
+def test_record_collision_precedes_field_encryption_and_identity_sealing(tmp_path: Path) -> None:
+    """A duplicate id leaves caller plaintext and the identity vault untouched."""
+    archive = Archive.init(Config.default("Collision Archive", tmp_path / "arc"))
+    original = Record(
+        title="Original",
+        default_policy=AccessPolicy.PUBLIC,
+        dublin_core=DublinCore(title=["Original"]),
+    )
+    archive.ingest({}, original, now=_NOW_INGEST)
+
+    vault = archive._open_vault(_VAULT_KEY)
+    before_count = len(vault)
+    plaintext = "must remain recoverable by the rejected caller"
+    duplicate = Record(
+        record_id=original.record_id,
+        title="Duplicate",
+        default_policy=AccessPolicy.PUBLIC,
+        dublin_core=DublinCore(title=["Duplicate"]),
+        fields=[Field(name="sealed", value=plaintext, policy=AccessPolicy.SEALED)],
+    )
+
+    with pytest.raises(LedgerError, match="bag already exists"):
+        archive.ingest(
+            {},
+            duplicate,
+            identity=ContributorIdentity(name="not orphaned"),
+            vault_key=_VAULT_KEY,
+            now=_NOW_INGEST,
+        )
+
+    assert duplicate.fields[0].value == plaintext
+    assert duplicate.identity_ref is None
+    assert len(IdentityVault.open(archive.vault_path, _VAULT_KEY)) == before_count
 
 
 def test_full_lifecycle_ingest_disclose_replicate_consent(tmp_path: Path) -> None:

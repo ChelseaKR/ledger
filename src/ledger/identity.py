@@ -72,6 +72,15 @@ _KEY_LEN = 32
 # carries no structure that could be linked back to an identity -> unlinkability.
 _REF_NBYTES = 32
 
+# Reserved on-disk entry that authenticates the active key even when the vault has
+# no contributor identities. Older vaults predate this marker; opening one with at
+# least one identity authenticates the supplied key against that identity before
+# migrating it, while an empty legacy vault necessarily establishes the supplied
+# key on its one-time migration (there was no ciphertext with which to distinguish
+# keys before this format version).
+_KEY_CHECK_REF = "__ledger_vault_key_check_v1__"
+_KEY_CHECK_PLAINTEXT = b"ledger.identity-vault:key-check:v1"
+
 
 @dataclass
 class ContributorIdentity:
@@ -140,6 +149,7 @@ class IdentityVault:
             # Do not echo the key or its bytes -> no-outing rule.
             raise IdentityVaultError("invalid Fernet key") from exc
         self._store: dict[str, str] = {}
+        self._key_check = ""
 
     def __repr__(self) -> str:
         """Redacted representation: path and count only, never contents."""
@@ -165,6 +175,7 @@ class IdentityVault:
             if target.exists():
                 raise IdentityVaultError(f"vault already exists: {target}")
             vault._store = {}
+            vault._key_check = vault._new_key_check()
             vault._persist()
         return vault
 
@@ -184,7 +195,8 @@ class IdentityVault:
             # removed/replaced the path between the optimistic check and here.
             if not target.exists():
                 raise IdentityVaultError(f"vault not found: {target}")
-            vault._reload()
+            if vault._reload():
+                vault._persist()
         return vault
 
     # --- mutation -----------------------------------------------------------
@@ -213,6 +225,8 @@ class IdentityVault:
         with file_lock(self._path):
             self._reload()
             ref = self._new_ref()
+            while ref == _KEY_CHECK_REF or ref in self._store:
+                ref = self._new_ref()
             token = self._encrypt(identity)
             self._store[ref] = token
             self._persist()
@@ -318,6 +332,7 @@ class IdentityVault:
                 rotated[ref] = new_fernet.encrypt(raw).decode("ascii")
             self._fernet = new_fernet
             self._store = rotated
+            self._key_check = new_fernet.encrypt(_KEY_CHECK_PLAINTEXT).decode("ascii")
             self._persist()
             return len(rotated)
 
@@ -387,13 +402,16 @@ class IdentityVault:
 
     # --- internals ----------------------------------------------------------
 
-    def _reload(self) -> None:
+    def _reload(self) -> bool:
         """Replace the in-memory map with the current authenticated disk state.
 
         Callers that need a linearizable read or mutation hold :func:`file_lock`
         around this method and the rest of their operation. Reloading inside the
         critical section prevents separate ``IdentityVault`` instances from
         clobbering one another with stale whole-file snapshots.
+
+        Returns ``True`` when a legacy marker-free vault needs to be persisted in
+        the authenticated v1 format by the caller holding the lock.
         """
         try:
             loaded = json.loads(self._path.read_text(encoding="utf-8"))
@@ -402,16 +420,34 @@ class IdentityVault:
         if not isinstance(loaded, dict):
             raise IdentityVaultError(f"vault is malformed: {self._path}")
         store: dict[str, str] = {}
+        key_check: str | None = None
         for ref, ciphertext in loaded.items():
             if not isinstance(ref, str) or not isinstance(ciphertext, str):
                 raise IdentityVaultError(f"vault is malformed: {self._path}")
+            if ref == _KEY_CHECK_REF:
+                key_check = ciphertext
+                continue
             store[ref] = ciphertext
-        # Verify the active key against one entry, surfacing a rekey performed by
-        # another process (or tampering) before this instance can overwrite it.
-        for ciphertext in store.values():
-            self._decrypt(ciphertext)
-            break
+        needs_migration = key_check is None
+        if key_check is not None:
+            try:
+                plaintext = self._fernet.decrypt(key_check.encode("ascii"))
+            except (InvalidToken, UnicodeError, ValueError, TypeError) as exc:
+                raise IdentityVaultError("vault key check failed (wrong key or tampering)") from exc
+            if plaintext != _KEY_CHECK_PLAINTEXT:
+                raise IdentityVaultError("vault key check failed (wrong key or tampering)")
+            self._key_check = key_check
+        else:
+            # Backward-compatible migration. A populated legacy vault can and must
+            # authenticate against an identity entry first. An empty legacy vault
+            # contains no cryptographic evidence of its former key, so its first
+            # successful opener establishes the marker for all subsequent opens.
+            for ciphertext in store.values():
+                self._decrypt(ciphertext)
+                break
+            self._key_check = self._new_key_check()
         self._store = store
+        return needs_migration
 
     @staticmethod
     def _new_ref() -> str:
@@ -422,6 +458,10 @@ class IdentityVault:
         """Encrypt an identity to a base64 Fernet token string."""
         plaintext = identity._to_canonical_json().encode("utf-8")
         return self._fernet.encrypt(plaintext).decode("ascii")
+
+    def _new_key_check(self) -> str:
+        """Return the authenticated format/key marker stored beside identity refs."""
+        return self._fernet.encrypt(_KEY_CHECK_PLAINTEXT).decode("ascii")
 
     def _decrypt(self, token: str) -> ContributorIdentity:
         """Decrypt a Fernet token; re-raise tampering/wrong-key as vault error.
@@ -444,7 +484,9 @@ class IdentityVault:
         vault intact -> integrity, fault tolerance.
         """
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        payload = canonical_json(self._store)
+        if not self._key_check:
+            self._key_check = self._new_key_check()
+        payload = canonical_json({_KEY_CHECK_REF: self._key_check, **self._store})
         tmp = self._path.with_name(f"{self._path.name}.{os.getpid()}.tmp")
         try:
             # Create owner-only (0o600) BEFORE writing any ciphertext, so the vault

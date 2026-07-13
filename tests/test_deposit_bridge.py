@@ -11,6 +11,7 @@ output regardless of what was withheld.
 from __future__ import annotations
 
 import xml.etree.ElementTree as ET
+from dataclasses import replace
 
 import pytest
 
@@ -30,6 +31,7 @@ from ledger.models import (
 
 _METS_NS = "{http://www.loc.gov/METS/}"
 _EAD_NS = "{urn:isbn:1-931666-22-9}"
+_XLINK_NS = "{http://www.w3.org/1999/xlink}"
 
 
 def _sample_record(*, with_withheld: bool = True) -> DisclosedRecord:
@@ -82,6 +84,26 @@ def test_mets_xml_is_well_formed_and_namespaced() -> None:
     root = ET.fromstring(xml)  # noqa: S314 - our own trusted, identity-free output
     assert root.tag == f"{_METS_NS}mets"
     assert root.attrib["OBJID"] == "rec-0000000000000001"
+
+
+@pytest.mark.preservation
+def test_mets_attribute_values_escape_quotes_and_round_trip() -> None:
+    """Crafted ids/titles/filenames cannot break METS attributes."""
+    original = _sample_record(with_withheld=False)
+    filename = 'scan "one\'s".jpg'
+    record = replace(
+        original,
+        record_id='rec-"quoted\'"',
+        title='A "quoted" collector\'s title',
+        payloads=(replace(original.payloads[0], filename=filename),),
+    )
+
+    root = ET.fromstring(to_mets_xml(record, created="2026-07-07T00:00:00Z"))  # noqa: S314
+    assert root.attrib["OBJID"] == record.record_id
+    assert root.find(f".//{_METS_NS}div").attrib["LABEL"] == record.title
+    flocat = root.find(f".//{_METS_NS}FLocat")
+    assert flocat is not None
+    assert flocat.attrib[f"{_XLINK_NS}title"] == filename
 
 
 @pytest.mark.preservation
@@ -168,6 +190,23 @@ def test_ead_xml_is_well_formed_and_namespaced() -> None:
     )
     root = ET.fromstring(xml)  # noqa: S314
     assert root.tag == f"{_EAD_NS}ead"
+
+
+@pytest.mark.preservation
+def test_ead_component_attribute_escapes_quotes_and_round_trips() -> None:
+    """A crafted record id remains one EAD attribute value, not injected markup."""
+    record = replace(_sample_record(with_withheld=False), record_id='rec-"quoted\'"')
+    xml = to_ead_xml(
+        "Quoted collection",
+        [record],
+        created="2026-07-07T00:00:00Z",
+        collection_id="quoted",
+    )
+
+    root = ET.fromstring(xml)  # noqa: S314
+    component = root.find(f".//{_EAD_NS}c01")
+    assert component is not None
+    assert component.attrib["id"] == f"c-{record.record_id}"
 
 
 @pytest.mark.preservation

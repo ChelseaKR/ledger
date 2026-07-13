@@ -26,7 +26,7 @@ import os
 import shutil
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from pathlib import Path, PurePosixPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from ledger.errors import BagValidationError
 from ledger.fixity import CHUNK_SIZE, AuditReport, hash_file, hash_file_multi, verify_file
@@ -49,12 +49,17 @@ def _reject_unsafe_relpath(relpath: str, *, context: str) -> None:
     or hash files outside the bag (a path-traversal vulnerability). Validation is
     purely lexical, so it holds before any file is touched (securability, safety).
     """
-    pure = PurePosixPath(relpath)
+    posix = PurePosixPath(relpath)
+    windows = PureWindowsPath(relpath)
     if (
         not relpath
         or relpath.startswith("/")
-        or pure.is_absolute()
-        or ".." in pure.parts
+        or "\\" in relpath
+        or posix.is_absolute()
+        or windows.is_absolute()
+        or bool(windows.drive)
+        or ".." in posix.parts
+        or ".." in windows.parts
         or "\x00" in relpath
     ):
         raise BagValidationError(f"unsafe path in {context}: {relpath!r}")

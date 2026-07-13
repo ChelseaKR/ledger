@@ -62,6 +62,10 @@ _FLAG_FILENAME = "lockdown.flag"
 # The append-only PREMIS log for lockdown/stand-up decisions, kept beside the other
 # archive-level logs so the duress history outlives the data it protected.
 _LOCKDOWN_PREMIS = "lockdown.premis.json"
+# One stable mutex for the *entire* lockdown/stand-up state transition. Locking
+# only the PREMIS append still allowed flag/vault/log operations from opposite
+# transitions to interleave into a contradictory terminal state.
+_LOCKDOWN_WORKFLOW = "lockdown.workflow"
 _CONFIG_FILENAME = "config.json"
 # Overwrite the vault in fixed-size chunks so shredding a large vault never pulls it
 # all into memory (efficiency, minimal computing).
@@ -205,6 +209,11 @@ class LockdownResult:
 def lockdown_flag_path(archive: ArchiveLike) -> Path:
     """Where the lockdown marker lives for ``archive`` (its ``logs/`` state dir)."""
     return archive.logs_dir / _FLAG_FILENAME
+
+
+def _workflow_lock_path(archive: ArchiveLike) -> Path:
+    """Stable path whose sibling lock serializes duress state transitions."""
+    return archive.logs_dir / _LOCKDOWN_WORKFLOW
 
 
 def is_locked_down(archive: ArchiveLike) -> bool:
@@ -353,6 +362,17 @@ def _recovery_runbook(archive: ArchiveLike, config: LockdownConfig, *, vault_shr
 
 
 def execute_lockdown(archive: ArchiveLike, *, actor: str, now: str) -> LockdownResult:
+    """Serialize and execute one complete lockdown transition.
+
+    The stable workflow lock covers flag creation, replica verification, optional
+    vault shredding, and PREMIS recording as one transition. A concurrent stand-up
+    therefore runs wholly before or wholly after this operation, never through it.
+    """
+    with file_lock(_workflow_lock_path(archive)):
+        return _execute_lockdown_locked(archive, actor=actor, now=now)
+
+
+def _execute_lockdown_locked(archive: ArchiveLike, *, actor: str, now: str) -> LockdownResult:
     """Execute the duress posture: stop disclosure, then conditionally shred the vault.
 
     Order is deliberate and fail-safe. The disclosure freeze is applied *first* (write
@@ -440,6 +460,12 @@ def execute_lockdown(archive: ArchiveLike, *, actor: str, now: str) -> LockdownR
 
 
 def execute_stand_up(archive: ArchiveLike, *, actor: str, now: str) -> LockdownResult:
+    """Serialize and execute one complete stand-up transition."""
+    with file_lock(_workflow_lock_path(archive)):
+        return _execute_stand_up_locked(archive, actor=actor, now=now)
+
+
+def _execute_stand_up_locked(archive: ArchiveLike, *, actor: str, now: str) -> LockdownResult:
     """Lift the duress posture: restore the vault from a verified replica, drop the flag.
 
     The exact inverse of :func:`execute_lockdown`. If the local vault was shredded, it

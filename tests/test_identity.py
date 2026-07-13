@@ -10,6 +10,7 @@ the vault ever leaks its contents through ``repr`` (confidentiality, integrity, 
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -315,3 +316,41 @@ def test_stale_handle_rekey_includes_entries_added_by_another_handle(tmp_path: P
 
     reopened = IdentityVault.open(path, new_key)
     assert reopened.resolve(ref, _unseal_grant(ref), _NOW).name == _NAME
+
+
+def test_empty_vault_rejects_the_wrong_key_immediately(tmp_path: Path) -> None:
+    """The authenticated format marker makes even a zero-entry vault key-bound."""
+    path = tmp_path / "identity.vault"
+    IdentityVault.create(path, IdentityVault.generate_key())
+
+    with pytest.raises(IdentityVaultError, match="wrong key or tampering"):
+        IdentityVault.open(path, IdentityVault.generate_key())
+
+
+def test_stale_old_key_handle_cannot_add_after_empty_vault_rekey(tmp_path: Path) -> None:
+    """Rotating an empty vault invalidates already-open old-key handles too."""
+    path = tmp_path / "identity.vault"
+    old_key = IdentityVault.generate_key()
+    new_key = IdentityVault.generate_key()
+    current = IdentityVault.create(path, old_key)
+    stale = IdentityVault.open(path, old_key)
+
+    assert current.rekey(new_key) == 0
+    with pytest.raises(IdentityVaultError, match="wrong key or tampering"):
+        stale.add(ContributorIdentity(name="must not persist under the old key"))
+
+    assert len(IdentityVault.open(path, new_key)) == 0
+
+
+def test_empty_legacy_vault_migrates_to_an_authenticated_marker(tmp_path: Path) -> None:
+    """A marker-free empty legacy map establishes its supplied key exactly once."""
+    path = tmp_path / "identity.vault"
+    path.write_text("{}", encoding="utf-8")
+    key = IdentityVault.generate_key()
+
+    migrated = IdentityVault.open(path, key)
+    assert len(migrated) == 0
+    assert len(json.loads(path.read_text(encoding="utf-8"))) == 1
+
+    with pytest.raises(IdentityVaultError, match="wrong key or tampering"):
+        IdentityVault.open(path, IdentityVault.generate_key())
