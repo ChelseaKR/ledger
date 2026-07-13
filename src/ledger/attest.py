@@ -34,6 +34,7 @@ import json
 import os
 from pathlib import Path
 
+from ledger._filelock import file_lock
 from ledger.dualcontrol import ActionProposal, ProposalStore
 from ledger.metadata.premis import PremisLog
 from ledger.models import PremisEvent, PremisEventType, now_iso
@@ -162,10 +163,16 @@ class AttestStore:
 
         The set is the machine-readable authority the access layer consults; the
         append-only PREMIS event is the accountable, replica-checkable *why*. Both are
-        no-outing safe — a condition string plus steward ids, never an identity."""
+        no-outing safe — a condition string plus steward ids, never an identity.
+
+        The attested-set read-modify-write is locked (:func:`ledger._filelock.file_lock`)
+        so two approvals that each cross the threshold for a *different* condition at
+        nearly the same moment cannot race and silently drop one (a lost attestation is
+        as serious a bug here as a lost consent withdrawal elsewhere in the archive)."""
         condition = proposal.target
         attested_path = self._dir / _ATTESTED_FILENAME
-        _write_attested(attested_path, _read_attested(attested_path) | {condition})
+        with file_lock(attested_path):
+            _write_attested(attested_path, _read_attested(attested_path) | {condition})
 
         event = PremisEvent(
             event_type=PremisEventType.POLICY_CHANGE,

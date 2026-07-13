@@ -56,6 +56,7 @@ from pathlib import Path
 from cryptography.fernet import Fernet, InvalidToken
 from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
 
+from ledger._filelock import file_lock
 from ledger.errors import AccessDenied, IdentityVaultError
 from ledger.models import PUBLIC_GRANT, Grant, canonical_json
 
@@ -202,12 +203,22 @@ class IdentityVault:
         Returns the new opaque ``identity_ref``. The ref is generated from a CSPRNG
         and is independent of the identity contents, so it carries no identifying
         signal and may safely live in a record -> unlinkability.
+
+        Locked (:func:`ledger._filelock.file_lock`) around the mutate-then-persist
+        step: the threaded browse server can run concurrent ingests against the
+        same ``Archive`` (and so the same vault instance), and :meth:`_persist`'s
+        temp filename is derived only from ``os.getpid()`` -- identical across
+        threads in one process. Without a lock, two concurrent calls open and
+        write the *same* temp path, and the second thread's truncating open can
+        corrupt the first thread's in-flight write before either renames it into
+        place (fault tolerance, integrity of the archive's most sensitive file).
         """
-        ref = self._new_ref()
-        token = self._encrypt(identity)
-        self._store[ref] = token
-        self._persist()
-        return ref
+        with file_lock(self._path):
+            ref = self._new_ref()
+            token = self._encrypt(identity)
+            self._store[ref] = token
+            self._persist()
+            return ref
 
     def resolve(self, ref: str, grant: Grant, now: str) -> ContributorIdentity:
         """Decrypt and return the identity for *ref*, gated by *grant* at *now*.
@@ -239,10 +250,14 @@ class IdentityVault:
 
         Idempotent: revoking an absent ref is a no-op so a takedown can be retried
         safely. Honours consent revocation / takedown -> autonomy, consent.
+
+        Locked like :meth:`add` so a concurrent takedown and ingest never race on
+        the same temp file (see :meth:`add`'s docstring).
         """
-        if ref in self._store:
-            del self._store[ref]
-            self._persist()
+        with file_lock(self._path):
+            if ref in self._store:
+                del self._store[ref]
+                self._persist()
 
     def contains(self, ref: str) -> bool:
         """Return whether *ref* currently maps to a stored identity."""
@@ -277,21 +292,25 @@ class IdentityVault:
             new_fernet = Fernet(new_key)
         except (ValueError, TypeError) as exc:
             raise IdentityVaultError("invalid Fernet key") from exc
-        # Re-encrypt into a fresh map first; only commit if every entry succeeds, so
-        # a mid-rotation failure cannot leave a half-rotated vault -> integrity.
-        rotated: dict[str, str] = {}
-        for ref, token in self._store.items():
-            try:
-                raw = self._fernet.decrypt(token.encode("ascii"))
-            except InvalidToken as exc:
-                raise IdentityVaultError(
-                    "identity decryption failed during rekey (wrong key or tampering)"
-                ) from exc
-            rotated[ref] = new_fernet.encrypt(raw).decode("ascii")
-        self._fernet = new_fernet
-        self._store = rotated
-        self._persist()
-        return len(rotated)
+        # Locked like :meth:`add`/:meth:`revoke` so a rotation can never race a
+        # concurrent add/revoke on the same vault file (see :meth:`add`'s
+        # docstring for why the unlocked temp-file write is unsafe).
+        with file_lock(self._path):
+            # Re-encrypt into a fresh map first; only commit if every entry succeeds,
+            # so a mid-rotation failure cannot leave a half-rotated vault -> integrity.
+            rotated: dict[str, str] = {}
+            for ref, token in self._store.items():
+                try:
+                    raw = self._fernet.decrypt(token.encode("ascii"))
+                except InvalidToken as exc:
+                    raise IdentityVaultError(
+                        "identity decryption failed during rekey (wrong key or tampering)"
+                    ) from exc
+                rotated[ref] = new_fernet.encrypt(raw).decode("ascii")
+            self._fernet = new_fernet
+            self._store = rotated
+            self._persist()
+            return len(rotated)
 
     # --- at-rest encryption of absolute-sealed content ----------------------
 
