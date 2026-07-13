@@ -56,8 +56,14 @@ def _xml_text(value: str) -> str:
 
 
 def escape(value: str) -> str:
-    """XML-escape ``value`` after removing characters XML 1.0 disallows."""
-    return _sax_escape(_xml_text(value))
+    """XML-escape ``value`` after removing characters XML 1.0 disallows.
+
+    Also escapes ``"`` and ``'`` (beyond ``xml.sax.saxutils.escape``'s default
+    ``&``/``<``/``>``): this module interpolates escaped record ids directly into
+    a double-quoted ``id="c-..."`` attribute, so a literal quote in that value
+    must not be able to break out of the attribute and produce malformed XML.
+    """
+    return _sax_escape(_xml_text(value), {'"': "&quot;", "'": "&apos;"})
 
 
 _EAD_NS = "urn:isbn:1-931666-22-9"  # the EAD 2002 namespace, per the LC schema

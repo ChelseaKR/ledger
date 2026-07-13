@@ -128,6 +128,21 @@ def test_attested_set_survives_a_fresh_archive_handle(tmp_path: Path) -> None:
     )
 
 
+def test_record_attested_is_idempotent_across_retry(tmp_path: Path) -> None:
+    """A retry after a partial workflow write never duplicates its PREMIS event."""
+    logs_dir = tmp_path / "logs"
+    store = attest.AttestStore(logs_dir)
+    proposal = store.propose(_CONDITION, "steward-A", now=_NOW)
+    proposal, attested_now = store.approve(proposal.proposal_id, "steward-B", now=_NOW)
+    assert attested_now is True
+
+    assert store._record_attested(proposal, agent="steward-B", now=_NOW) is False
+
+    premis = attest.PremisLog.read(logs_dir / "attestations.premis.json")
+    matching = [event for event in premis.events if _CONDITION in event.detail]
+    assert len(matching) == 1
+
+
 @pytest.mark.disclosure
 def test_cli_attest_flow_and_invalid_condition_rejected(tmp_path: Path) -> None:
     """The CLI drives the same flow, and a condition outside the vocabulary is rejected."""

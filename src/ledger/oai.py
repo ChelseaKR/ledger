@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Sequence
+from datetime import UTC, datetime
 
 from ledger.metadata.dublincore import escape, to_oai_dc_xml
 from ledger.models import DisclosedRecord, DublinCore
@@ -140,6 +141,44 @@ def sitemap_xml(record_ids: Sequence[str], base_url: str) -> str:
 _ATOM_NS = "http://www.w3.org/2005/Atom"
 
 
+def _parse_atom_datetime(value: str) -> datetime | None:
+    """Parse an accepted Dublin Core date shape into an aware UTC datetime."""
+    text = value.strip()
+    date_match = re.fullmatch(r"(\d{4})(?:-(\d{1,2})(?:-(\d{1,2}))?)?", text)
+    if date_match is not None:
+        year, month, day = date_match.groups()
+        try:
+            return datetime(int(year), int(month or 1), int(day or 1), tzinfo=UTC)
+        except ValueError:
+            return None
+
+    # ``datetime.fromisoformat`` validates calendar/time fields and understands
+    # RFC 3339 offsets. A timezone-less timestamp is interpreted as UTC for
+    # backward compatibility with contributor-entered ISO timestamps.
+    try:
+        parsed = datetime.fromisoformat(text[:-1] + "+00:00" if text.endswith("Z") else text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
+
+
+def _format_atom_datetime(value: datetime) -> str:
+    """Normalize an aware datetime to a UTC RFC 3339 string."""
+    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
+
+
+def _atom_datetime(value: str, fallback: str) -> datetime:
+    """Coerce a Dublin Core date into the aware instant Atom ordering needs."""
+    parsed = _parse_atom_datetime(value)
+    if parsed is None:
+        parsed = _parse_atom_datetime(fallback)
+    # Callers supply a valid RFC 3339 generation timestamp. Keep malformed
+    # programmatic inputs deterministic if both values are bad.
+    return parsed if parsed is not None else datetime(1970, 1, 1, tzinfo=UTC)
+
+
 def _atom_timestamp(value: str, fallback: str) -> str:
     """Coerce a Dublin Core date into an RFC 3339 instant Atom's ``<updated>`` needs.
 
@@ -148,16 +187,7 @@ def _atom_timestamp(value: str, fallback: str) -> str:
     requires a complete date-time, so a date-only value is widened to midnight UTC
     and anything unparseable falls back to ``fallback`` (the feed's generation time,
     already RFC 3339) rather than emitting an invalid feed."""
-    text = value.strip()
-    if "T" in text:
-        return text
-    if re.fullmatch(r"\d{4}", text):
-        return f"{text}-01-01T00:00:00Z"
-    if re.fullmatch(r"\d{4}-\d{2}", text):
-        return f"{text}-01T00:00:00Z"
-    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
-        return f"{text}T00:00:00Z"
-    return fallback
+    return _format_atom_datetime(_atom_datetime(value, fallback))
 
 
 def atom_feed_xml(
@@ -180,11 +210,20 @@ def atom_feed_xml(
     Entries are ordered newest first by their Dublin Core date (``record_id`` breaks
     ties for a deterministic feed) and capped at ``limit``. Every value is XML-escaped
     through the shared :func:`escape` boundary. ``now`` is the feed's generation time
-    and the fallback timestamp, so output is deterministic for a given input."""
+    and the fallback timestamp, so output is deterministic for a given input.
+
+    The sort key is the same aware instant :func:`_atom_datetime` widens each
+    entry's date to for display (not the raw ``dc:date`` string): a ``dc:date`` is
+    free text of varying granularity and padding (``"1994"``, ``"2021-5-1"``,
+    ``"2021-12-01"``, ...), and comparing those as plain strings is lexicographic,
+    not chronological — e.g. ``"2021-5-1" > "2021-12-01"`` as strings even though May
+    precedes December. Parsing both as aware UTC datetimes before comparing keeps
+    "most recent first" true for any date shape or fractional precision in use,
+    and keeps the sort key consistent with what ``<updated>`` actually displays."""
     root = base_url.rstrip("/")
     ordered = sorted(
         records,
-        key=lambda r: (_datestamp(r, now), r.record_id),
+        key=lambda r: (_atom_datetime(_datestamp(r, now), now), r.record_id),
         reverse=True,
     )[: max(0, limit)]
 

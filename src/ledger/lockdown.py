@@ -37,6 +37,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
+from ledger._filelock import file_lock
 from ledger.config import Config, LockdownConfig
 from ledger.errors import LedgerError
 from ledger.ingest import Archive
@@ -61,6 +62,10 @@ _FLAG_FILENAME = "lockdown.flag"
 # The append-only PREMIS log for lockdown/stand-up decisions, kept beside the other
 # archive-level logs so the duress history outlives the data it protected.
 _LOCKDOWN_PREMIS = "lockdown.premis.json"
+# One stable mutex for the *entire* lockdown/stand-up state transition. Locking
+# only the PREMIS append still allowed flag/vault/log operations from opposite
+# transitions to interleave into a contradictory terminal state.
+_LOCKDOWN_WORKFLOW = "lockdown.workflow"
 _CONFIG_FILENAME = "config.json"
 # Overwrite the vault in fixed-size chunks so shredding a large vault never pulls it
 # all into memory (efficiency, minimal computing).
@@ -187,7 +192,13 @@ class LockdownResult:
         """A single no-outing-safe status line for the CLI/audit surface."""
         if self.dry_run:
             return f"{self.action} DRY-RUN — {len(self.steps)} step(s) planned; nothing changed"
-        bits = [f"disclosure {'stopped' if self.disclosure_stopped else 'unchanged'}"]
+        if self.action == "stand-up":
+            # For stand-up, `disclosure_stopped` carries the inverse fact (did this
+            # run actually lift a freeze that was in place), so the wording must be
+            # its own, not "stopped"/"unchanged" (which describe a *lockdown*).
+            bits = [f"disclosure {'resumed' if self.disclosure_stopped else 'was already open'}"]
+        else:
+            bits = [f"disclosure {'stopped' if self.disclosure_stopped else 'unchanged'}"]
         if self.vault_shredded:
             bits.append(f"local vault shredded after {self.verified_replicas} verified replica(s)")
         elif self.action == "lockdown":
@@ -198,6 +209,11 @@ class LockdownResult:
 def lockdown_flag_path(archive: ArchiveLike) -> Path:
     """Where the lockdown marker lives for ``archive`` (its ``logs/`` state dir)."""
     return archive.logs_dir / _FLAG_FILENAME
+
+
+def _workflow_lock_path(archive: ArchiveLike) -> Path:
+    """Stable path whose sibling lock serializes duress state transitions."""
+    return archive.logs_dir / _LOCKDOWN_WORKFLOW
 
 
 def is_locked_down(archive: ArchiveLike) -> bool:
@@ -235,20 +251,25 @@ def _record_event(
     Kept in ``logs/lockdown.premis.json`` (append-only) so the duress decision is
     provable after the fact. The detail carries only counts and posture — never an
     identity or a vault byte (no-outing rule).
+
+    Locked (:func:`ledger._filelock.file_lock`) around the read-modify-write so a
+    lockdown/stand-up event can never be lost to a concurrent write to the same log
+    (accountability -- this is the audit trail for the archive's duress posture).
     """
     archive.logs_dir.mkdir(parents=True, exist_ok=True)
     log_path = archive.logs_dir / _LOCKDOWN_PREMIS
-    log = PremisLog.read(log_path) if log_path.exists() else PremisLog()
-    log.record(
-        PremisEvent(
-            event_type=event_type,
-            agent=actor,
-            outcome=outcome,
-            detail=detail,
-            event_datetime=now,
+    with file_lock(log_path):
+        log = PremisLog.read(log_path) if log_path.exists() else PremisLog()
+        log.record(
+            PremisEvent(
+                event_type=event_type,
+                agent=actor,
+                outcome=outcome,
+                detail=detail,
+                event_datetime=now,
+            )
         )
-    )
-    log.write(log_path)
+        log.write(log_path)
 
 
 def _verify_replicas(config: LockdownConfig) -> list[BackupVerification]:
@@ -341,6 +362,17 @@ def _recovery_runbook(archive: ArchiveLike, config: LockdownConfig, *, vault_shr
 
 
 def execute_lockdown(archive: ArchiveLike, *, actor: str, now: str) -> LockdownResult:
+    """Serialize and execute one complete lockdown transition.
+
+    The stable workflow lock covers flag creation, replica verification, optional
+    vault shredding, and PREMIS recording as one transition. A concurrent stand-up
+    therefore runs wholly before or wholly after this operation, never through it.
+    """
+    with file_lock(_workflow_lock_path(archive)):
+        return _execute_lockdown_locked(archive, actor=actor, now=now)
+
+
+def _execute_lockdown_locked(archive: ArchiveLike, *, actor: str, now: str) -> LockdownResult:
     """Execute the duress posture: stop disclosure, then conditionally shred the vault.
 
     Order is deliberate and fail-safe. The disclosure freeze is applied *first* (write
@@ -428,6 +460,12 @@ def execute_lockdown(archive: ArchiveLike, *, actor: str, now: str) -> LockdownR
 
 
 def execute_stand_up(archive: ArchiveLike, *, actor: str, now: str) -> LockdownResult:
+    """Serialize and execute one complete stand-up transition."""
+    with file_lock(_workflow_lock_path(archive)):
+        return _execute_stand_up_locked(archive, actor=actor, now=now)
+
+
+def _execute_stand_up_locked(archive: ArchiveLike, *, actor: str, now: str) -> LockdownResult:
     """Lift the duress posture: restore the vault from a verified replica, drop the flag.
 
     The exact inverse of :func:`execute_lockdown`. If the local vault was shredded, it
@@ -468,7 +506,8 @@ def execute_stand_up(archive: ArchiveLike, *, actor: str, now: str) -> LockdownR
         steps.append(f"restored local vault from verified replica at {clean[0].location}")
 
     flag = lockdown_flag_path(archive)
-    if flag.exists():
+    flag_removed = flag.exists()
+    if flag_removed:
         flag.unlink()
         steps.append("removed lockdown.flag — non-PUBLIC disclosure resumes")
     else:
@@ -479,13 +518,17 @@ def execute_stand_up(archive: ArchiveLike, *, actor: str, now: str) -> LockdownR
         event_type=PremisEventType.STANDUP,
         actor=actor,
         outcome="success",
-        detail=f"vault_restored={restored}; flag_removed=True",
+        detail=f"vault_restored={restored}; flag_removed={flag_removed}",
         now=now,
     )
     return LockdownResult(
         action="stand-up",
         dry_run=False,
-        disclosure_stopped=False,
+        # Repurposed for this action: whether the freeze was actually lifted just
+        # now (the flag existed and was removed), not "did this stop disclosure"
+        # (that phrasing belongs to lockdown; see `summary()`, which branches on
+        # `action` to render the right words for whichever fact this is).
+        disclosure_stopped=flag_removed,
         vault_shredded=False,
         verified_replicas=0,
         steps=tuple(steps),

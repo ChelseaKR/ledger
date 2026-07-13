@@ -65,8 +65,16 @@ def _xml_text(value: str) -> str:
 
 
 def escape(value: str) -> str:
-    """XML-escape ``value`` after removing characters XML 1.0 disallows."""
-    return _sax_escape(_xml_text(value))
+    """XML-escape ``value`` after removing characters XML 1.0 disallows.
+
+    Also escapes ``"`` and ``'`` (beyond ``xml.sax.saxutils.escape``'s default
+    ``&``/``<``/``>``): this module interpolates escaped values directly into
+    double-quoted attributes (``LABEL="..."``, ``xlink:href="..."``,
+    ``xlink:title="..."``) built from contributor-suppliable text such as a
+    record's title, so a literal quote in that text must not be able to break out
+    of the attribute and produce malformed XML.
+    """
+    return _sax_escape(_xml_text(value), {'"': "&quot;", "'": "&apos;"})
 
 
 _METS_NS = "http://www.loc.gov/METS/"
