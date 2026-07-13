@@ -214,7 +214,7 @@ def test_concurrent_lockdown_and_stand_up_are_one_serial_transition(
     )
 
     start = threading.Barrier(3)
-    errors: list[BaseException] = []
+    errors: list[Exception] = []
 
     def run(action: str) -> None:
         try:
@@ -223,7 +223,7 @@ def test_concurrent_lockdown_and_stand_up_are_one_serial_transition(
                 execute_lockdown(archive, actor="lock", now=_NOW)
             else:
                 execute_stand_up(archive, actor="stand", now=_NOW)
-        except BaseException as exc:  # pragma: no cover - asserted below
+        except Exception as exc:  # pragma: no cover - asserted below
             errors.append(exc)
 
     threads = [threading.Thread(target=run, args=(action,)) for action in ("lockdown", "stand")]

@@ -93,7 +93,9 @@ def test_vault_rekey_replace_failure_restores_live_handle_and_disk(
     assert vault._key_check == old_key_check
     assert vault.decrypt_text(old_token) == "still decryptable after rollback"
     grant = build_grant("unsealer", identity_unseal=[ref])
-    assert IdentityVault.open(path, old).resolve(ref, grant, _NOW).name == _SENTINEL
+    reopened = IdentityVault.open(path, old)
+    resolved = reopened.resolve(ref, grant, _NOW)
+    assert resolved.name == _SENTINEL
     with pytest.raises(IdentityVaultError):
         IdentityVault.open(path, new)
 

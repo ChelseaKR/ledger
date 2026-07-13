@@ -339,7 +339,8 @@ def test_stale_old_key_handle_cannot_add_after_empty_vault_rekey(tmp_path: Path)
     with pytest.raises(IdentityVaultError, match="wrong key or tampering"):
         stale.add(ContributorIdentity(name="must not persist under the old key"))
 
-    assert len(IdentityVault.open(path, new_key)) == 0
+    reopened = IdentityVault.open(path, new_key)
+    assert len(reopened) == 0
 
 
 def test_empty_legacy_vault_migrates_to_an_authenticated_marker(tmp_path: Path) -> None:
