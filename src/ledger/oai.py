@@ -180,11 +180,20 @@ def atom_feed_xml(
     Entries are ordered newest first by their Dublin Core date (``record_id`` breaks
     ties for a deterministic feed) and capped at ``limit``. Every value is XML-escaped
     through the shared :func:`escape` boundary. ``now`` is the feed's generation time
-    and the fallback timestamp, so output is deterministic for a given input."""
+    and the fallback timestamp, so output is deterministic for a given input.
+
+    The sort key is the same RFC 3339 instant :func:`_atom_timestamp` widens each
+    entry's date to for display (not the raw ``dc:date`` string): a ``dc:date`` is
+    free text of varying granularity and padding (``"1994"``, ``"2021-5-1"``,
+    ``"2021-12-01"``, ...), and comparing those as plain strings is lexicographic,
+    not chronological — e.g. ``"2021-5-1" > "2021-12-01"`` as strings even though May
+    precedes December. Normalizing both to the same padded RFC 3339 form before
+    comparing keeps "most recent first" true for any date shape a contributor used,
+    and keeps the sort key consistent with what ``<updated>`` actually displays."""
     root = base_url.rstrip("/")
     ordered = sorted(
         records,
-        key=lambda r: (_datestamp(r, now), r.record_id),
+        key=lambda r: (_atom_timestamp(_datestamp(r, now), now), r.record_id),
         reverse=True,
     )[: max(0, limit)]
 
