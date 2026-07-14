@@ -185,6 +185,7 @@ def _cmd_ingest(args: argparse.Namespace) -> int:  # noqa: C901
         dublin_core=DublinCore(
             title=[args.title],
             publisher=[archive.config.archive_name],
+            description=list(args.description or []),
         ),
         fields=fields,
         content_warnings=list(args.cw or []),
@@ -280,6 +281,17 @@ def _cmd_ingest(args: argparse.Namespace) -> int:  # noqa: C901
                 f"{fmt.recommendation}",
                 file=sys.stderr,
             )
+    # Minimal-metadata advisory: a record with no description is hard to discover
+    # and gives a reader (including a screen-reader user) no context beyond the
+    # title. Nudge the author to add one; do not block (RM8; Dublin Core; ACR 504
+    # authoring-tool support).
+    if not record.dublin_core.description:
+        print(
+            "note: this record has no description; add one with "
+            "--description '...' so it is discoverable and gives readers "
+            "(including screen-reader users) context beyond the title (RM8)",
+            file=sys.stderr,
+        )
     return 0
 
 
@@ -1462,6 +1474,13 @@ def _build_parser() -> argparse.ArgumentParser:
     p_ingest = sub.add_parser("ingest", help="ingest an item")
     p_ingest.add_argument("--root", required=True)
     p_ingest.add_argument("--title", required=True)
+    p_ingest.add_argument(
+        "--description",
+        action="append",
+        metavar="TEXT",
+        help="a short Dublin Core description (repeatable); improves discovery and "
+        "gives readers, including screen-reader users, context (RM8)",
+    )
     p_ingest.add_argument("files", nargs="*", help="payload files to ingest")
     p_ingest.add_argument(
         "--public-field", action="append", metavar="name=value", help="a PUBLIC field"

@@ -120,7 +120,7 @@ Criteria introduced in WCAG 2.2 at Levels A and AA.
 | 502.2.1 User Control of Accessibility Features | Not Applicable | ledger is not a platform and disables no platform accessibility feature. |
 | 503 Applications | Supports | The browse application uses native controls with correct names, roles, and values; user preferences (zoom, reduced motion) are honoured. |
 | 503.4 User Controls for Captions and Audio Description | Not Applicable | No media player is provided. |
-| 504 Authoring Tools | Partially Supports | The ingest CLI is the authoring path. It accepts structured, accessible metadata (titles, Dublin Core, content warnings) and the renderer produces conformant markup, but the CLI does not yet actively prompt an author to supply accessibility information (e.g. alt text for a future image payload), so authoring-tool support is partial. |
+| 504 Authoring Tools | Partially Supports | The ingest CLI is the authoring path. It accepts structured, accessible metadata (titles, Dublin Core description, content warnings, transcripts/captions) and the renderer produces conformant markup. It now actively prompts an author who omits a description (`--description`) or a transcript for an audio/video payload, nudging without blocking (RM8). Per-payload alt text for a future image payload type is not yet modeled, so authoring-tool support remains partial. |
 
 ### Revised Section 508 — Chapter 6: Support Documentation and Services
 
