@@ -16,6 +16,10 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 > actually pushed through the release workflow added below.
 
 ### Added
+- `ledger ingest --description ...` sets a Dublin Core description at authoring
+  time, and the ingest CLI now nudges (non-blocking) when a record has no
+  description, alongside the existing missing-transcript advisory — moving the
+  ACR 504 authoring-tool support forward (RM8).
 
 - **Portfolio-standards conformance remediation (2026-07-11).** Closed all five
   current Tier-1 checker failures with a Python runtime pin, complete CFF metadata,
