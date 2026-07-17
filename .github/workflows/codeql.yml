@@ -1,13 +1,14 @@
 name: codeql
 
-# Vulnerability management: analyze pull requests before merge and the resulting
-# default-branch commit after merge. The latter is required for GitHub to update the
-# canonical ``refs/heads/main`` alert state; PR-only uploads cannot close that backlog.
-# A weekly run still catches newly-discovered query classes with no code change.
+# Vulnerability management: analyze pull requests before merge; the weekly run
+# analyzes ``refs/heads/main`` directly, which both catches newly-discovered query
+# classes with no code change and refreshes the canonical default-branch alert
+# state (closing fixed alerts) that PR-only uploads cannot. Per-merge ``push: main``
+# analysis was dropped per CI-CD-STANDARD §11e — the PR run already gated the same
+# diff, so the only cost of relying on the weekly run for alert bookkeeping is up
+# to a week's latency in the Security tab, not a weaker merge gate.
 on:
   pull_request:
-    branches: [main]
-  push:
     branches: [main]
   schedule:
     - cron: "27 4 * * 1" # Mondays, 04:27 UTC
