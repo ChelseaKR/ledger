@@ -10,6 +10,11 @@ If you have not yet, read [`README.md`](README.md) for what the project is and w
 [`SECURITY.md`](SECURITY.md) for how to report a vulnerability. The
 [Code of Conduct](CODE_OF_CONDUCT.md) applies to every interaction.
 
+If you are offering community-archivist, threat-model, or manual accessibility
+feedback rather than code, start with the bounded, synthetic-data-only
+[`docs/reviews/`](docs/reviews/README.md) packet. It makes clear what evidence is
+being requested and what a review does not certify.
+
 ## Standards this repo is held to
 
 ledger is one repo in a personal portfolio governed by a shared set of engineering

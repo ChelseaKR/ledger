@@ -21,6 +21,16 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   description, alongside the existing missing-transcript advisory — moving the
   ACR 504 authoring-tool support forward (RM8).
 
+- **Public evaluation path for the first release candidate (2026-07-18).** The
+  README now begins with a five-minute, synthetic-data-only walkthrough instead of
+  making a prospective adopter infer the first useful command from the architecture
+  description. `docs/TRY-LEDGER.md` explains exactly what the executable demo proves
+  and what it does not. `docs/reviews/` adds bounded packets for a community
+  archivist pilot, an independent threat-model review, and a manual
+  assistive-technology review; none represent completed human review. The new
+  `docs/RELEASE-0.1.0.md` checklist separates repository-verifiable work from the
+  owner-controlled PyPI and human-review prerequisites before a real `v0.1.0` tag.
+
 - **Portfolio-standards conformance remediation (2026-07-11).** Closed all five
   current Tier-1 checker failures with a Python runtime pin, complete CFF metadata,
   canonical README applicability declarations, ADR 0000, and a discoverable

@@ -19,6 +19,41 @@ institutional customer.
 > against your own threat model before entrusting real, high-stakes records — see
 > [`SECURITY.md`](./SECURITY.md) and [`docs/THREAT-MODEL.md`](./docs/THREAT-MODEL.md).
 
+## Start here
+
+The fastest honest way to evaluate ledger is to run its synthetic end-to-end proof.
+It creates a temporary archive only; it never uses or contacts real people or real
+records.
+
+```sh
+git clone https://github.com/ChelseaKR/ledger.git
+cd ledger
+make install
+make demo
+```
+
+In a few minutes, the demo ingests a synthetic oral history, keeps a synthetic
+contributor identity in the encrypted vault, verifies a replicated BagIt bag, then
+checks every rendered HTML/JSON/log/metadata surface for an identity leak. It also
+shows a recorded consent change tightening public access. Read the expected output
+and what it does *not* prove in [the five-minute walkthrough](docs/TRY-LEDGER.md).
+
+If you are evaluating ledger for a community, use the right path for the question
+you are asking:
+
+| I want to… | Start with… |
+| --- | --- |
+| See the core safety and preservation flow work | [Five-minute synthetic walkthrough](docs/TRY-LEDGER.md) |
+| Assess it with a community archivist, using no real records | [Partner-pilot packet](docs/reviews/community-archivist-pilot.md) |
+| Review the threat model or accessibility claims | [Review packet](docs/reviews/README.md) |
+| Decide whether a real collective can adopt it | [Adoption checklist](docs/ADOPTING.md) and [threat model](docs/THREAT-MODEL.md) |
+| Self-host an archive | [Self-host runbook](infra/README.md) — after the adoption checklist |
+
+**What this is not:** a hosted service, a production-ready archive, legal advice, or
+evidence that a third party has audited ledger. The demo proves specific, automated
+properties over synthetic data; it does not establish safety for any particular
+community or deployment.
+
 **Why this domain.** Queer history is disproportionately undocumented, and the documentation that
 exists is fragile. It lives on a single laptop, a dead Facebook group, a hosted service that changes
 its terms, a shoebox under someone's bed. The people best placed to keep it are often the people
