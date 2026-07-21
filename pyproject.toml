@@ -7,7 +7,10 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ledger-archive"
-version = "0.1.0"
+# In development toward 0.1.0 — no `vX.Y.Z` tag has been cut, so this stays a PEP 440
+# developmental release (`.dev0`) to match the CHANGELOG "Unreleased" section. The
+# release workflow bumps this to the final `0.1.0` when the signed `v0.1.0` tag ships.
+version = "0.1.0.dev0"
 description = "A privacy-first community archive for queer histories and mutual-aid knowledge."
 readme = "README.md"
 requires-python = ">=3.12"
