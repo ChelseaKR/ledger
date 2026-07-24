@@ -13,7 +13,14 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 > repo cannot produce is exactly the kind of unbacked claim this project's own
 > conformance audit exists to catch). It will move to a real `## [0.1.0] — YYYY-MM-DD`
 > section, with a matching signed annotated git tag, once the first `vX.Y.Z` tag is
-> actually pushed through the release workflow added below.
+> explicitly approved through the release workflow added below.
+
+### Fixed
+- **Release publication now has a trusted-main control plane.** The workflow
+  accepts only an existing SSH-signed stable tag, verifies its signer and main
+  ancestry before testing, builds the exact verified commit, and rechecks the
+  immutable tag object immediately before both PyPI and checkout-free GitHub
+  Release publication.
 
 ### Added
 - `ledger ingest --description ...` sets a Dublin Core description at authoring

@@ -1,8 +1,8 @@
 name: release
 
-# Reproducibility/agility (REL-08): a signed annotated tag matching `v<semver>` is
-# the *only* thing that ships a release — nobody publishes by running a script on
-# a laptop. Least privilege (securability): the workflow holds `contents: read` by
+# Reproducibility/agility (REL-08): a maintainer supplies a signed annotated
+# stable SemVer tag to the reviewed workflow on main. Nobody publishes by running
+# a script on a laptop. Least privilege: the workflow holds `contents: read` by
 # default; each job widens only the token/OIDC scope it actually needs, and the
 # PyPI publish step never sees a long-lived API token at all (PyPI Trusted
 # Publishing, REL-13 — OIDC-issued, workflow-scoped, expires in minutes).
@@ -23,11 +23,12 @@ name: release
 # work with no additional setup, while `verify-published` and the GitHub Release
 # are gated behind the publish and so wait for the one-time setup too.
 on:
-  push:
-    tags:
-      # SemVer release tags only (`v1.2.3`, `v1.2.3rc1`). A stray non-release tag
-      # (e.g. an accessibility or docs snapshot tag) never triggers a publish.
-      - "v[0-9]+.[0-9]+.[0-9]+*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing signed stable SemVer tag (vX.Y.Z)"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -35,53 +36,63 @@ permissions:
 concurrency:
   # One release in flight per tag; never cancel a partially-published release
   # out from under itself.
-  group: release-${{ github.ref }}
+  group: release
   cancel-in-progress: false
 
 jobs:
   verify:
     name: verify (tag · changelog · full merge gate)
     runs-on: ubuntu-latest
+    outputs:
+      release_commit: ${{ steps.tag.outputs.commit }}
+      release_tag: ${{ steps.tag.outputs.tag }}
+      tag_object_sha: ${{ steps.tag.outputs.tag_object_sha }}
+    permissions:
+      contents: read
     steps:
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
         with:
           egress-policy: audit
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
+          ref: main
           persist-credentials: false
-          # The tag *object* (not just the commit it points at) is what REL-08
-          # inspects below, so fetch tags explicitly.
-          fetch-tags: true
-      # REL-08: only a signed annotated tag ships a release — asserted, not
-      # assumed. A lightweight tag has no tag object and no signature; reject
-      # both cases before spending a single CPU-second on the gate. Signature
-      # *presence* is what can be checked in CI today; verifying the signer's
-      # identity needs a committed allowed-signers file (tracked in
-      # docs/ROADMAP.md) — until then this stops the "stray unsigned tag
-      # publishes anyway" failure mode without overclaiming identity pinning.
-      - name: Assert signed annotated tag (REL-08)
+          fetch-depth: 0
+      - name: Resolve and verify the reviewed signed tag (REL-08)
+        id: tag
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
-          TAG="${GITHUB_REF_NAME}"
-          TYPE="$(git cat-file -t "refs/tags/${TAG}")"
-          if [ "$TYPE" != "tag" ]; then
-            echo "::error::${TAG} is a lightweight tag (object type: ${TYPE}); releases require a signed annotated tag"
-            exit 1
-          fi
-          if ! git cat-file tag "refs/tags/${TAG}" | grep -Eq -- "-----BEGIN (SSH|PGP) SIGNATURE-----"; then
-            echo "::error::${TAG} is annotated but carries no SSH/PGP signature; releases require a signed tag"
-            exit 1
-          fi
-          echo "${TAG}: signed annotated tag"
+          TAG="${INPUT_TAG}"
+          test "${GITHUB_REF}" = refs/heads/main
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          test "$(git rev-parse origin/main)" = "${GITHUB_SHA}"
+          [[ "${TAG}" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          git fetch --force origin "refs/tags/${TAG}:refs/tags/${TAG}"
+          test "$(git cat-file -t "refs/tags/${TAG}")" = tag
+          RELEASE_COMMIT="$(git rev-parse --verify "${TAG}^{commit}")"
+          git merge-base --is-ancestor "${RELEASE_COMMIT}" origin/main
+          git config gpg.format ssh
+          git config gpg.ssh.allowedSignersFile "${GITHUB_WORKSPACE}/.github/allowed_signers"
+          git verify-tag -- "${TAG}"
+          {
+            echo "tag=${TAG}"
+            echo "commit=${RELEASE_COMMIT}"
+            echo "tag_object_sha=$(git rev-parse "refs/tags/${TAG}")"
+          } >> "${GITHUB_OUTPUT}"
+          git checkout --detach "${RELEASE_COMMIT}"
       # REL-10: a release must have release notes. A vX.Y.Z tag whose version has
       # no matching `## [X.Y.Z]` section in CHANGELOG.md is a cut-from-the-wrong-
       # state mistake — fail before building, not after publishing.
       - name: CHANGELOG has a section for this version (REL-10)
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
         run: |
           set -euo pipefail
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${TAG#v}"
           if ! grep -Fq "## [${VERSION}]" CHANGELOG.md; then
-            echo "::error::CHANGELOG.md has no '## [${VERSION}]' section for tag ${GITHUB_REF_NAME}"
+            echo "::error::CHANGELOG.md has no '## [${VERSION}]' section for tag ${TAG}"
             exit 1
           fi
           echo "CHANGELOG.md has a section for ${VERSION}"
@@ -116,6 +127,7 @@ jobs:
           egress-policy: audit
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
+          ref: ${{ needs.verify.outputs.release_commit }}
           persist-credentials: false
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
         with:
@@ -144,6 +156,8 @@ jobs:
       # release — fail loudly instead of publishing a mislabeled artifact.
       - name: Tag must match package version
         id: version
+        env:
+          TAG: ${{ needs.verify.outputs.release_tag }}
         run: |
           set -euo pipefail
           # This job only installs the `build` frontend, not the package itself, so
@@ -151,7 +165,7 @@ jobs:
           # version truth, per RELEASE-AND-VERSIONING-STANDARD §2) rather than
           # `importlib.metadata`, which has nothing installed to introspect here.
           PKG_VERSION="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml","rb"))["project"]["version"])')"
-          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          TAG_VERSION="${TAG#v}"
           echo "package version: $PKG_VERSION"
           echo "tag version:     $TAG_VERSION"
           if [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
@@ -167,7 +181,7 @@ jobs:
 
   sbom:
     name: SBOM (CycloneDX)
-    needs: build
+    needs: [verify, build]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -179,6 +193,7 @@ jobs:
           egress-policy: audit
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
+          ref: ${{ needs.verify.outputs.release_commit }}
           persist-credentials: false
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
         with:
@@ -285,7 +300,7 @@ jobs:
 
   publish-pypi:
     name: publish to PyPI (Trusted Publishing)
-    needs: [build, sbom, provenance, sign]
+    needs: [verify, build, sbom, provenance, sign]
     runs-on: ubuntu-latest
     environment:
       # PyPI's Trusted Publishing guide recommends scoping the publish to a
@@ -296,6 +311,7 @@ jobs:
       name: pypi
       url: https://pypi.org/project/ledger-archive/${{ needs.build.outputs.version }}/
     permissions:
+      contents: read
       id-token: write   # OIDC token exchanged for a short-lived PyPI API token — no stored secret, REL-13
     steps:
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
@@ -305,6 +321,15 @@ jobs:
         with:
           name: dist
           path: dist
+      - name: Recheck immutable tag object before PyPI publication
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.verify.outputs.release_tag }}
+          TAG_OBJECT_SHA: ${{ needs.verify.outputs.tag_object_sha }}
+        run: |
+          set -euo pipefail
+          LIVE_TAG_OBJECT="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" --jq .object.sha)"
+          test "${LIVE_TAG_OBJECT}" = "${TAG_OBJECT_SHA}"
       - uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b  # v1.14.0
         with:
           packages-dir: dist
@@ -383,7 +408,7 @@ jobs:
     name: publish GitHub Release
     # verify-published gates the public release page: it only appears once PyPI
     # is confirmed to serve exactly the bytes this run built.
-    needs: [build, sbom, provenance, sign, publish-pypi, verify-published]
+    needs: [verify, build, sbom, provenance, sign, publish-pypi, verify-published]
     runs-on: ubuntu-latest
     permissions:
       contents: write   # `gh release create` needs to create the Release + upload assets
@@ -416,10 +441,14 @@ jobs:
       - name: Publish GitHub Release with verification assets
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.verify.outputs.release_tag }}
+          TAG_OBJECT_SHA: ${{ needs.verify.outputs.tag_object_sha }}
         run: |
           set -euo pipefail
-          gh release create "$GITHUB_REF_NAME" release-assets/* \
+          LIVE_TAG_OBJECT="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" --jq .object.sha)"
+          test "${LIVE_TAG_OBJECT}" = "${TAG_OBJECT_SHA}"
+          gh release create "${TAG}" release-assets/* \
             --repo "$GITHUB_REPOSITORY" \
-            --title "$GITHUB_REF_NAME" \
+            --title "${TAG}" \
             --generate-notes \
             --verify-tag
