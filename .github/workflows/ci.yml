@@ -262,6 +262,32 @@ jobs:
           curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GL}/gitleaks_${GL}_linux_x64.tar.gz" | tar -xz -C /tmp gitleaks
           /tmp/gitleaks detect --source . --config .gitleaks.toml --no-banner --redact --exit-code 1
 
+  osv:
+    name: OSV lockfile scan (uv.lock)
+    runs-on: ubuntu-latest
+    steps:
+      # Harden-Runner (SEC-04): observe/audit egress before anything else runs.
+      # Recording in audit mode first (per the standard's rollout guidance) so the
+      # allowlist can be derived from real traffic before flipping to `block`,
+      # rather than guessing an allowlist and breaking the build.
+      - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+      # SEC-11 (#84): scan the exact pinned graph in `uv.lock` against the OSV
+      # database with OSV-Scanner itself, complementing the supply-chain job's
+      # pip-audit (PyPI-advisory-first) with a second, independently maintained
+      # scanner and advisory ingestion path — a miss in one is caught by the
+      # other. Fail-closed: any known vulnerability in the locked graph fails
+      # this job; no muted gate (the standard forbids `|| true`-ing it away).
+      - name: OSV-Scanner over the locked dependency graph
+        uses: google/osv-scanner-action/osv-scanner-action@9a498708959aeaef5ef730655706c5a1df1edbc2  # v2.3.8
+        with:
+          scan-args: |-
+            --lockfile=./uv.lock
+
   workflow-lint:
     name: workflow linter (zizmor)
     runs-on: ubuntu-latest

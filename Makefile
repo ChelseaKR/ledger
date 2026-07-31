@@ -11,7 +11,7 @@ VENV ?= .venv
 PY   ?= $(if $(wildcard $(VENV)/bin/python),$(VENV)/bin/python,python3)
 
 .DEFAULT_GOAL := help
-.PHONY: help venv install lock lint format type test cov audit accessibility acr demo serve \
+.PHONY: help venv install lock lint format type test cov audit osv accessibility acr demo serve \
         i18n i18n-compile claims secret-scan workflow-lint perf container mutation verify clean
 
 help: ## Show this help
@@ -60,6 +60,19 @@ audit: ## Dependency vulnerability scan (blocking)
 	# SECURITY-AND-SUPPLY-CHAIN-STANDARD §4 forbids muting this gate by name; a
 	# finding must be fixed or explicitly triaged/waived, never `|| true`d away.
 	$(PY) -m pip_audit
+
+osv: ## OSV-Scanner over uv.lock — mirrors ci.yml's osv job locally
+	# CI-authoritative (same shape as secret-scan): CI runs the pinned
+	# OSV-Scanner container over the committed uv.lock (.github/workflows/ci.yml,
+	# `osv` job) regardless of what is on this machine, so CI is the gate of
+	# record even when the Go binary is absent locally. This target just lets a
+	# contributor scan the lockfile before pushing when osv-scanner happens to be
+	# installed (https://google.github.io/osv-scanner/installation/).
+	@command -v osv-scanner >/dev/null 2>&1 || { \
+		echo "osv-scanner not found locally; skipping (CI is authoritative — see ci.yml osv job)"; \
+		exit 0; \
+	}
+	osv-scanner --lockfile=./uv.lock
 
 accessibility: ## Run the accessibility checks over the built web surface
 	$(PY) -m ledger.accessibility_check web
@@ -160,12 +173,12 @@ mutation: ## ADVISORY (never a merge gate): mutation-test the safety-critical co
 
 # The full gate. Determinism + reproducibility: same inputs, same result, every run.
 # Matches CI's required-check set byte-for-byte (CICD-27): the `gate`, `i18n`,
-# `accessibility`, `supply-chain`, and `workflow-lint` jobs in ci.yml run exactly
-# these targets, so green here means green in CI. (The `no-outing-audit` job is
-# `test`'s own `disclosure`-marked subset, run standalone in CI for visibility, not
-# a distinct local gate; `container` is intentionally excluded — see its own
-# target comment.)
-verify: lint type test i18n accessibility audit secret-scan claims workflow-lint ## Run the complete merge gate (== CI's required checks)
+# `accessibility`, `supply-chain`, `osv`, and `workflow-lint` jobs in ci.yml run
+# exactly these targets, so green here means green in CI. (The `no-outing-audit`
+# job is `test`'s own `disclosure`-marked subset, run standalone in CI for
+# visibility, not a distinct local gate; `container` is intentionally excluded —
+# see its own target comment.)
+verify: lint type test i18n accessibility audit osv secret-scan claims workflow-lint ## Run the complete merge gate (== CI's required checks)
 	@echo "verify: all gates green"
 
 clean: ## Remove caches and build artifacts (never touches an archive's data)
