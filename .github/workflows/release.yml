@@ -22,6 +22,24 @@ name: release
 # the jobs upstream of it (verify, build, SBOM, cosign signing, SLSA provenance)
 # work with no additional setup, while `verify-published` and the GitHub Release
 # are gated behind the publish and so wait for the one-time setup too.
+#
+# HARDEN-RUNNER EGRESS (SEC-04, #78). Every other workflow in this repo now runs
+# `egress-policy: block` with an allowlist derived from observed audit-mode runs.
+# The eight jobs below deliberately stay in `audit`, and this is not an oversight:
+#
+#   * This workflow has NEVER RUN. There are zero tags and zero releases on the
+#     repo, so there is no completed run to derive an allowlist from. Everything
+#     one could write here — the Sigstore, PyPI, and attestation endpoints — would
+#     be a guess dressed up as evidence, which is exactly what the audit-first
+#     rollout exists to prevent.
+#   * The failure mode is the worst-timed one in the repo. This workflow fires on
+#     a pushed tag. A blocked endpoint would fail the release AFTER the tag is
+#     public and possibly after a partial publish, and a version number on PyPI
+#     cannot be reused. A false red here is not a retry; it is a burnt version.
+#
+# The order is therefore: land the one-time PyPI setup above, cut one real release
+# with these jobs in audit, read the observed endpoints off that run, and flip them
+# in a follow-up. Tracked on #78; the publish prerequisites are #80.
 on:
   push:
     tags:
@@ -43,6 +61,8 @@ jobs:
     name: verify (tag · changelog · full merge gate)
     runs-on: ubuntu-latest
     steps:
+      # Stays in audit until one real release has run — see the SEC-04 note in the
+      # header. No completed run means no derivable allowlist (#78).
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
         with:
           egress-policy: audit
@@ -111,6 +131,8 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
+      # Stays in audit until one real release has run — see the SEC-04 note in the
+      # header. No completed run means no derivable allowlist (#78).
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
         with:
           egress-policy: audit
@@ -174,6 +196,8 @@ jobs:
       id-token: write        # actions/attest-sbom mints a Sigstore-backed attestation
       attestations: write     # actions/attest-sbom writes the SBOM attestation record
     steps:
+      # Stays in audit until one real release has run — see the SEC-04 note in the
+      # header. No completed run means no derivable allowlist (#78).
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
         with:
           egress-policy: audit
@@ -225,6 +249,8 @@ jobs:
       id-token: write         # exchanged for a Sigstore signing identity (OIDC, keyless)
       attestations: write     # actions/attest-build-provenance writes the SLSA provenance record
     steps:
+      # Stays in audit until one real release has run — see the SEC-04 note in the
+      # header. No completed run means no derivable allowlist (#78).
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
         with:
           egress-policy: audit
@@ -249,6 +275,8 @@ jobs:
       contents: read
       id-token: write   # cosign's keyless signing exchanges this OIDC token for a short-lived Fulcio cert
     steps:
+      # Stays in audit until one real release has run — see the SEC-04 note in the
+      # header. No completed run means no derivable allowlist (#78).
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
         with:
           egress-policy: audit
@@ -298,6 +326,8 @@ jobs:
     permissions:
       id-token: write   # OIDC token exchanged for a short-lived PyPI API token — no stored secret, REL-13
     steps:
+      # Stays in audit until one real release has run — see the SEC-04 note in the
+      # header. No completed run means no derivable allowlist (#78).
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
         with:
           egress-policy: audit
@@ -315,6 +345,8 @@ jobs:
     needs: [build, publish-pypi]
     runs-on: ubuntu-latest
     steps:
+      # Stays in audit until one real release has run — see the SEC-04 note in the
+      # header. No completed run means no derivable allowlist (#78).
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
         with:
           egress-policy: audit
@@ -388,6 +420,8 @@ jobs:
     permissions:
       contents: write   # `gh release create` needs to create the Release + upload assets
     steps:
+      # Stays in audit until one real release has run — see the SEC-04 note in the
+      # header. No completed run means no derivable allowlist (#78).
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
         with:
           egress-policy: audit

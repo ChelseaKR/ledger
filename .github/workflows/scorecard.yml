@@ -26,9 +26,34 @@ jobs:
       id-token: write
       security-events: write
     steps:
+      # Harden-Runner (SEC-04): deny-by-default egress. The allowlist below is
+      # derived from the endpoints this job was OBSERVED calling in completed
+      # audit-mode runs, not from a guess. Needs:
+      # Scorecard queries one external service per check (deps.dev, OSV, the OpenSSF
+      # best-practices badge, the OSS-Fuzz build log bucket) and, because `publish_results:
+      # true`, signs the result with Sigstore — so fulcio/rekor/the TUF CDN are
+      # load-bearing, not optional.
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
-          egress-policy: audit
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            raw.githubusercontent.com:443
+            release-assets.githubusercontent.com:443
+            objects.githubusercontent.com:443
+            *.actions.githubusercontent.com:443
+            *.blob.core.windows.net:443
+            *.githubapp.com:443
+            codeload.github.com:443
+            api.osv.dev:443
+            api.deps.dev:443
+            api.scorecard.dev:443
+            www.bestpractices.dev:443
+            oss-fuzz-build-logs.storage.googleapis.com:443
+            fulcio.sigstore.dev:443
+            rekor.sigstore.dev:443
+            tuf-repo-cdn.sigstore.dev:443
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
