@@ -109,7 +109,7 @@ jobs:
       # publish (PyPI + GitHub Release), and Actions' caches are fillable by any
       # workflow run in the repo — restoring one into the pipeline that ships
       # artifacts is a cache-poisoning vector a build-only CI job doesn't have.
-      - uses: astral-sh/setup-uv@f98e06938123ccabd21905ea5d0069192241f9f1  # v8.3.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
         with:
           python-version: "3.12"
           enable-cache: false
