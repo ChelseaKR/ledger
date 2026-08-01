@@ -194,6 +194,14 @@ a {
   color: var(--link);
   text-decoration: underline;
   text-underline-offset: 2px;
+  /* WCAG 2.2 SC 1.4.10 Reflow. A record's permalink is a long unbroken token, and
+     an unbreakable token is wider than a 320px viewport — which is a 1280px screen
+     at 400% zoom. Without this, one URL makes the WHOLE page scroll sideways, so
+     every line of prose on it has to be read by panning left and right. Break
+     inside the token instead; `anywhere` (not `break-word`) also lets the token's
+     width stop counting toward the container's min-content size, which is what
+     actually stops the page from widening. */
+  overflow-wrap: anywhere;
 }
 
 a:visited {
@@ -239,6 +247,12 @@ a:hover {
   background: var(--surface);
   border-left: 3px solid var(--border);
   padding: 0.5rem 0.75rem;
+  /* WCAG 2.2 SC 1.4.10 Reflow. A citation ends in a permalink — an unbreakable
+     token wider than a 320px viewport (a 1280px screen at 400% zoom). Its box
+     stays 320px wide, so nothing looks wrong in a layout inspector, but the text
+     overflows and the whole PAGE scrolls sideways: every line of the record has
+     to be read by panning. Break inside the token instead. */
+  overflow-wrap: anywhere;
 }
 
 /* --- search match highlight --------------------------------------------- */

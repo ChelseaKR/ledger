@@ -30,7 +30,7 @@ The automated accessibility gate (`ledger.accessibility_check`) enforces the str
 
 This report rests on two committed, recurring sources of evidence — neither adds a runtime dependency, both run against the same canonical pages:
 
-- **Automated.** The stdlib static gate (`python -m ledger.accessibility_check web`) runs on every commit, and a browser-real **axe-core** job (the `accessibility-browser` CI job) drives the served site in a headless Chromium under both the light and dark colour schemes, asserting no WCAG-tagged axe violations.
+- **Automated.** The stdlib static gate (`python -m ledger.accessibility_check web`) runs on every commit, and a browser-real **axe-core** job (the `accessibility-browser` CI job) drives the served site in a headless Chromium under both the light and dark colour schemes, asserting no WCAG-tagged axe violations. The same job runs a **320 CSS px reflow** pass (SC 1.4.10), which axe cannot perform: axe judges the DOM it is handed and has no opinion about the viewport that DOM was laid out in.
 - **Manual.** A committed quarterly (and pre-release) **NVDA and VoiceOver** review covers what no scan can judge — reading order, content-warning announcement, `aria-live` status, and spoken form errors. Its cadence, checklist, and results log live in [`MANUAL-REVIEW-CADENCE.md`](./MANUAL-REVIEW-CADENCE.md); manual findings are reflected back into the remarks below.
 
 ## Tables
@@ -85,7 +85,7 @@ Success criteria at conformance Level AA.
 | 1.4.3 Contrast (Minimum) | Supports | Every text colour pair in the stylesheet is measured against the AA 4.5:1 threshold by an automated audit (ledger.accessibility_check.audit_css_contrast) that runs in the accessibility gate on every build and fails on any regression; all pairs pass with margin (body 17.4:1, links 6.7:1, content-warning text 9.7:1). |
 | 1.4.4 Resize Text | Supports | Type scales in rem/ch units and reflows to 200% zoom without loss. |
 | 1.4.5 Images of Text | Supports | All text is real text; the site uses no images of text. |
-| 1.4.10 Reflow | Supports | Mobile-first, fluid layout; content reflows to a single column and the table scrolls horizontally rather than overflowing at 320 CSS px. |
+| 1.4.10 Reflow | Supports | Mobile-first, fluid layout; content reflows to a single column and the record table scrolls inside its own box rather than widening the page at 320 CSS px. Enforced, not asserted: `reflow.spec.ts` in the `accessibility-browser` CI job loads every canonical page at 320x256 (1280x1024 at 400% zoom) and fails on any horizontal page scroll or any element whose content spills past the viewport. |
 | 1.4.11 Non-text Contrast | Supports | The focus outline and control borders are measured at >= 3:1 by the same automated contrast audit (border 4.5:1 on white), enforced in the gate. |
 | 1.4.12 Text Spacing | Supports | No fixed line-height/letter-spacing prevents user text-spacing overrides; the layout tolerates them. |
 | 1.4.13 Content on Hover or Focus | Not Applicable | No hover/focus-triggered overlays or tooltips. |
@@ -120,7 +120,7 @@ Criteria introduced in WCAG 2.2 at Levels A and AA.
 | 502.2.1 User Control of Accessibility Features | Not Applicable | ledger is not a platform and disables no platform accessibility feature. |
 | 503 Applications | Supports | The browse application uses native controls with correct names, roles, and values; user preferences (zoom, reduced motion) are honoured. |
 | 503.4 User Controls for Captions and Audio Description | Not Applicable | No media player is provided. |
-| 504 Authoring Tools | Partially Supports | The ingest CLI is the authoring path. It accepts structured, accessible metadata (titles, Dublin Core description, content warnings, transcripts/captions) and the renderer produces conformant markup. It now actively prompts an author who omits a description (`--description`) or a transcript for an audio/video payload, nudging without blocking (RM8). Per-payload alt text for a future image payload type is not yet modeled, so authoring-tool support remains partial. |
+| 504 Authoring Tools | Partially Supports | The ingest CLI is the authoring path. It accepts structured, accessible metadata (titles, Dublin Core, content warnings) and the renderer produces conformant markup, but the CLI does not yet actively prompt an author to supply accessibility information (e.g. alt text for a future image payload), so authoring-tool support is partial. |
 
 ### Revised Section 508 — Chapter 6: Support Documentation and Services
 

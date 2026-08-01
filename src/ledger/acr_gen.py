@@ -288,7 +288,11 @@ _WCAG_AA: tuple[Criterion, ...] = (
         "Reflow",
         _SUPPORTS,
         "Mobile-first, fluid layout; content reflows to a single column and "
-        "the table scrolls horizontally rather than overflowing at 320 CSS px.",
+        "the record table scrolls inside its own box rather than widening the page "
+        "at 320 CSS px. Enforced, not asserted: `reflow.spec.ts` in the "
+        "`accessibility-browser` CI job loads every canonical page at 320x256 "
+        "(1280x1024 at 400% zoom) and fails on any horizontal page scroll or any "
+        "element whose content spills past the viewport.",
     ),
     Criterion(
         "1.4.11",
@@ -637,7 +641,10 @@ def render() -> str:
         + "(`python -m ledger.accessibility_check web`) runs on every commit, and a "
         + "browser-real **axe-core** job (the `accessibility-browser` CI job) drives "
         + "the served site in a headless Chromium under both the light and dark colour "
-        + "schemes, asserting no WCAG-tagged axe violations.",
+        + "schemes, asserting no WCAG-tagged axe violations. The same job runs a "
+        + "**320 CSS px reflow** pass (SC 1.4.10), which axe cannot perform: axe "
+        + "judges the DOM it is handed and has no opinion about the viewport that "
+        + "DOM was laid out in.",
         "- **Manual.** A committed quarterly (and pre-release) **NVDA and VoiceOver** "
         + "review covers what no scan can judge — reading order, content-warning "
         + "announcement, `aria-live` status, and spoken form errors. Its cadence, "
