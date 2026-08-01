@@ -122,6 +122,9 @@ i18n-compile: ## Compile the committed PO catalogs to MO (run after editing a .p
 claims: ## Truthfulness gate: verify README/doc factual claims against the repo
 	$(PY) tools/check_claims.py
 
+hygiene: ## Suppression hygiene (CQ-34/35): every noqa/type-ignore is coded, explained, and — for complexity debt — issue-linked
+	$(PY) tools/check_hygiene.py
+
 secret-scan: ## Secret scan (gitleaks) — mirrors ci.yml's supply-chain job locally
 	# CI-authoritative: CI pins and downloads gitleaks 8.30.1 itself
 	# (.github/workflows/ci.yml, supply-chain job) regardless of what is on this
@@ -174,11 +177,12 @@ mutation: ## ADVISORY (never a merge gate): mutation-test the safety-critical co
 # The full gate. Determinism + reproducibility: same inputs, same result, every run.
 # Matches CI's required-check set byte-for-byte (CICD-27): the `gate`, `i18n`,
 # `accessibility`, `supply-chain`, `osv`, and `workflow-lint` jobs in ci.yml run
-# exactly these targets, so green here means green in CI. (The `no-outing-audit`
+# exactly these targets, so green here means green in CI. (`hygiene` runs in the
+# `gate` job alongside lint.) (The `no-outing-audit`
 # job is `test`'s own `disclosure`-marked subset, run standalone in CI for
 # visibility, not a distinct local gate; `container` is intentionally excluded —
 # see its own target comment.)
-verify: lint type test i18n accessibility audit osv secret-scan claims workflow-lint ## Run the complete merge gate (== CI's required checks)
+verify: lint type test i18n accessibility audit osv secret-scan claims hygiene workflow-lint ## Run the complete merge gate (== CI's required checks)
 	@echo "verify: all gates green"
 
 clean: ## Remove caches and build artifacts (never touches an archive's data)

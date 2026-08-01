@@ -114,7 +114,7 @@ def server(tmp_path: Path) -> Iterator[tuple[str, str]]:
 def _get(base: str, path: str) -> str:
     url = f"{base}{path}"
     request = urllib.request.Request(url)  # noqa: S310 - loopback URL we constructed
-    with urllib.request.urlopen(request, timeout=10) as response:  # noqa: S310
+    with urllib.request.urlopen(request, timeout=10) as response:  # noqa: S310 - loopback URL we constructed for the in-process test server
         return str(response.read().decode("utf-8"))
 
 

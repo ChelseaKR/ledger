@@ -62,7 +62,7 @@ def _request(url: str, *, accept_language: str | None = None) -> tuple[int, str,
     if accept_language is not None:
         req.add_header("Accept-Language", accept_language)
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310
+        with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310 - loopback URL we constructed for the in-process test server
             return int(resp.status), resp.read().decode("utf-8"), dict(resp.headers)
     except urllib.error.HTTPError as exc:  # pragma: no cover - not expected here
         return int(exc.code), exc.read().decode("utf-8"), dict(exc.headers)

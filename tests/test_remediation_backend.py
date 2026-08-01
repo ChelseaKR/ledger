@@ -38,6 +38,7 @@ pytestmark = pytest.mark.disclosure
 @pytest.mark.parametrize("grant", [anonymous(), community_member("c"), steward("s")])
 def test_sealed_absolute_visible_to_no_one(grant: object) -> None:
     """The absolute SEALED tier is visible to no grant, not even a steward."""
+    # `grant` is parametrized as `object` to cover three unrelated grant types in one case.
     assert is_visible(AccessPolicy.SEALED, grant, _NOW) is False  # type: ignore[arg-type]
 
 
@@ -81,6 +82,7 @@ def test_to_dict_generalizes_for_outsiders() -> None:
     dr = disclose(rec, anonymous(), _NOW)
     insider = dr.to_dict(withheld_reasons=True)
     outsider = dr.to_dict(withheld_reasons=False)
+    # to_dict() returns a JSON-shaped mapping of `object`; indexing it is the assertion.
     assert any(w["name"] == "loc" for w in insider["withheld"])  # type: ignore[index]
     assert "withheld" not in outsider and outsider["withheld_count"] == 1
 

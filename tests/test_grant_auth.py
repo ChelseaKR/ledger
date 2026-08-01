@@ -111,7 +111,7 @@ def _get(base: str, path: str, *, token: str | None = None) -> tuple[int, str]:
     request = urllib.request.Request(f"{base}{path}")  # noqa: S310 - loopback URL we built
     if token is not None:
         request.add_header(_GRANT_HEADER, token)
-    with urllib.request.urlopen(request, timeout=10) as response:  # noqa: S310
+    with urllib.request.urlopen(request, timeout=10) as response:  # noqa: S310 - loopback URL we constructed for the in-process test server
         return int(response.status), response.read().decode("utf-8")
 
 

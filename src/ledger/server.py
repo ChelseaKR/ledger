@@ -512,7 +512,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
     # *not* refactored under audit time pressure — a split is tracked as a careful,
     # fully-retested follow-up, not a same-day edit to the most safety-sensitive
     # function in the repo (see ledger-REMEDIATION.md P3-2).
-    def do_GET(self) -> None:  # noqa: C901
+    def do_GET(self) -> None:  # noqa: C901 - the public GET route table (#83)
         """Route a GET request to the matching read-only handler.
 
         Routing is a small, explicit dispatch (predictability). Unmatched paths
@@ -597,7 +597,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         except BrokenPipeError:  # pragma: no cover - client disconnected
             pass
 
-    def do_POST(self) -> None:  # noqa: C901
+    def do_POST(self) -> None:  # noqa: C901 - the public POST route table (#83)
         """Route a POST: the contributor consent form and steward request actions.
 
         These are the only writes the site accepts. Consent submission is open (a
@@ -2944,11 +2944,15 @@ def make_server(
     # a not-found vs a not-authorized record) never serializes other requests
     # (availability, responsiveness) — and so the site serves several readers at once.
     httpd = http.server.ThreadingHTTPServer((host, port), ArchiveRequestHandler)
-    # Attach the dependencies the handler reads per request.
-    httpd.archive = archive  # type: ignore[attr-defined]
-    httpd.grants = grants  # type: ignore[attr-defined]
-    httpd.revocations_path = revocations_path  # type: ignore[attr-defined]
-    httpd.allow_contributions = allow_contributions  # type: ignore[attr-defined]
+    # Attach the dependencies the handler reads per request. The stdlib
+    # ThreadingHTTPServer declares no such attributes, and BaseHTTPRequestHandler gives
+    # a handler no other route to per-server state, so these four assignments are the
+    # documented way to do this — the `attr-defined` ignores are the type system
+    # describing the stdlib, not a defect here.
+    httpd.archive = archive  # type: ignore[attr-defined]  # see the note above
+    httpd.grants = grants  # type: ignore[attr-defined]  # see the note above
+    httpd.revocations_path = revocations_path  # type: ignore[attr-defined]  # see above
+    httpd.allow_contributions = allow_contributions  # type: ignore[attr-defined]  # see above
     return httpd
 
 

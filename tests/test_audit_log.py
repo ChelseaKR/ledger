@@ -72,9 +72,9 @@ def server(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[Ar
 
 def _get(base: str, path: str, *, steward: bool = False) -> tuple[int, str]:
     headers = {"X-Ledger-Grant": issue_grant_token("steward-1", _GRANT_SECRET)} if steward else {}
-    req = urllib.request.Request(f"{base}{path}", headers=headers)  # noqa: S310
+    req = urllib.request.Request(f"{base}{path}", headers=headers)  # noqa: S310 - loopback URL we constructed for the in-process test server
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310
+        with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310 - loopback URL we constructed for the in-process test server
             return int(resp.status), resp.read().decode("utf-8")
     except urllib.error.HTTPError as exc:
         return int(exc.code), exc.read().decode("utf-8")

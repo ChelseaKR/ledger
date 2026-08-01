@@ -75,9 +75,9 @@ def _req(
     headers = {"X-Ledger-Grant": issue_grant_token("steward-1", _GRANT_SECRET)} if steward else {}
     if body is not None:
         headers["Content-Type"] = "application/x-www-form-urlencoded"
-    req = urllib.request.Request(f"{base}{path}", data=body, headers=headers)  # noqa: S310
+    req = urllib.request.Request(f"{base}{path}", data=body, headers=headers)  # noqa: S310 - loopback URL we constructed for the in-process test server
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310
+        with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310 - loopback URL we constructed for the in-process test server
             return int(resp.status), resp.read().decode("utf-8")
     except urllib.error.HTTPError as exc:
         return int(exc.code), exc.read().decode("utf-8")

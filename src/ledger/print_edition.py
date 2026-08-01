@@ -47,7 +47,7 @@ from ledger.ingest import Archive
 from ledger.models import DisclosedRecord, HashAlgo, canonical_json, now_iso
 
 try:  # pragma: no cover - exercised indirectly by whichever branch is installed
-    import segno  # type: ignore[import-not-found]
+    import segno  # type: ignore[import-not-found]  # optional extra, ships no stubs
 
     _HAVE_SEGNO = True
 except ImportError:  # pragma: no cover - exercised when the optional extra is absent

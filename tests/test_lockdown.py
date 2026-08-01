@@ -262,6 +262,7 @@ def served(
 
     httpd = make_server(archive, host="127.0.0.1", port=0)
     # Provision a steward grant the handler can resolve from the request header.
+    # Same stdlib-HTTPServer attribute attachment the server module uses (see make_server).
     httpd.grants = {"a-steward": steward("a-steward")}  # type: ignore[attr-defined]
     host, port = httpd.server_address[0], httpd.server_address[1]
     host_s = host.decode("ascii") if isinstance(host, (bytes, bytearray)) else str(host)
@@ -284,7 +285,7 @@ def _steward_fields(base: str, rid: str) -> dict[str, object]:
     req = urllib.request.Request(  # noqa: S310 - loopback URL we constructed
         f"{base}/api/record/{rid}", headers={_GRANT_HEADER: token}
     )
-    with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310
+    with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310 - loopback URL we constructed for the in-process test server
         return dict(json.loads(resp.read().decode("utf-8"))["fields"])
 
 

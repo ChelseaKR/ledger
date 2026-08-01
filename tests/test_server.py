@@ -111,7 +111,7 @@ def _get(base: str, path: str) -> tuple[int, str, dict[str, str]]:
     """GET ``base + path`` over loopback; return (status, body, headers)."""
     url = f"{base}{path}"
     request = urllib.request.Request(url)  # noqa: S310 - loopback URL we constructed
-    with urllib.request.urlopen(request, timeout=10) as response:  # noqa: S310
+    with urllib.request.urlopen(request, timeout=10) as response:  # noqa: S310 - loopback URL we constructed for the in-process test server
         body = response.read().decode("utf-8")
         status = int(response.status)
         headers = {k.lower(): v for k, v in response.headers.items()}
@@ -317,9 +317,9 @@ def test_responses_carry_security_headers(server: tuple[HTTPServer, str, str]) -
 def test_unknown_record_renders_neutral_404(server: tuple[HTTPServer, str, str]) -> None:
     """An unknown record id renders the same neutral 404 page (no existence leak)."""
     _httpd, base, _rid = server
-    request = urllib.request.Request(f"{base}/record/does-not-exist")  # noqa: S310
+    request = urllib.request.Request(f"{base}/record/does-not-exist")  # noqa: S310 - loopback URL we constructed for the in-process test server
     try:
-        with urllib.request.urlopen(request, timeout=10):  # noqa: S310
+        with urllib.request.urlopen(request, timeout=10):  # noqa: S310 - loopback URL we constructed for the in-process test server
             raised = False
     except urllib.error.HTTPError as exc:
         raised = True

@@ -52,6 +52,10 @@ jobs:
         run: |
           uv run ruff check src tests
           uv run ruff format --check src tests
+      # CQ-34/35: a suppression must name its rule, say why, and — for complexity
+      # debt (C901) — link the issue that retires it. Mirrors `make hygiene`.
+      - name: Suppression + marker hygiene
+        run: uv run python tools/check_hygiene.py
       - name: Type check (mypy strict)
         run: uv run mypy
       - name: Test with coverage
