@@ -54,7 +54,7 @@ jobs:
       # (`--locked` fails the build rather than silently re-resolving) instead of
       # an unpinned `pip install -e ".[dev]"` against version ranges — the same
       # exact dependency graph on every contributor's machine and in CI.
-      - uses: astral-sh/setup-uv@f98e06938123ccabd21905ea5d0069192241f9f1  # v8.3.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
         with:
           python-version: ${{ matrix.python }}
           enable-cache: true
@@ -120,7 +120,7 @@ jobs:
       # non-pip scanner. babel/pybabel come from the locked `dev` group below.
       - name: Install gettext (msgfmt)
         run: sudo apt-get update && sudo apt-get install -y gettext
-      - uses: astral-sh/setup-uv@f98e06938123ccabd21905ea5d0069192241f9f1  # v8.3.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
         with:
           python-version: "3.12"
           enable-cache: true
@@ -157,7 +157,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@f98e06938123ccabd21905ea5d0069192241f9f1  # v8.3.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
         with:
           python-version: "3.12"
           enable-cache: true
@@ -193,7 +193,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@f98e06938123ccabd21905ea5d0069192241f9f1  # v8.3.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
         with:
           python-version: "3.12"
           enable-cache: true
@@ -307,7 +307,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@f98e06938123ccabd21905ea5d0069192241f9f1  # v8.3.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
         with:
           python-version: "3.12"
           enable-cache: true
@@ -348,7 +348,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: astral-sh/setup-uv@f98e06938123ccabd21905ea5d0069192241f9f1  # v8.3.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
         with:
           python-version: "3.12"
           enable-cache: true
@@ -432,7 +432,7 @@ jobs:
           persist-credentials: false
       # SEC-13/CQ-09: install from the committed, hash-locked `uv.lock` like every
       # other dep-installing job (see the gate job's comment).
-      - uses: astral-sh/setup-uv@f98e06938123ccabd21905ea5d0069192241f9f1  # v8.3.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
         with:
           python-version: "3.12"
           enable-cache: true
