@@ -98,7 +98,7 @@ def test_mets_attribute_values_escape_quotes_and_round_trip() -> None:
         payloads=(replace(original.payloads[0], filename=filename),),
     )
 
-    root = ET.fromstring(to_mets_xml(record, created="2026-07-07T00:00:00Z"))  # noqa: S314
+    root = ET.fromstring(to_mets_xml(record, created="2026-07-07T00:00:00Z"))  # noqa: S314 - parsing XML this test just generated, not untrusted input
     assert root.attrib["OBJID"] == record.record_id
     assert root.find(f".//{_METS_NS}div").attrib["LABEL"] == record.title
     flocat = root.find(f".//{_METS_NS}FLocat")
@@ -110,7 +110,7 @@ def test_mets_attribute_values_escape_quotes_and_round_trip() -> None:
 def test_mets_file_section_carries_payload_checksum() -> None:
     """Each payload becomes one ``mets:file`` with its content-address digest."""
     xml = to_mets_xml(_sample_record(), created="2026-07-07T00:00:00Z")
-    root = ET.fromstring(xml)  # noqa: S314
+    root = ET.fromstring(xml)  # noqa: S314 - parsing XML this test just generated, not untrusted input
     files = root.findall(f".//{_METS_NS}file")
     assert len(files) == 1
     assert files[0].attrib["CHECKSUM"] == "abc123deadbeef"
@@ -122,7 +122,7 @@ def test_mets_file_section_carries_payload_checksum() -> None:
 def test_mets_struct_map_points_at_every_file() -> None:
     """``structMap`` carries one ``fptr`` per payload, referencing a real file ID."""
     xml = to_mets_xml(_sample_record(), created="2026-07-07T00:00:00Z")
-    root = ET.fromstring(xml)  # noqa: S314
+    root = ET.fromstring(xml)  # noqa: S314 - parsing XML this test just generated, not untrusted input
     file_ids = {f.attrib["ID"] for f in root.findall(f".//{_METS_NS}file")}
     fptr_ids = {p.attrib["FILEID"] for p in root.findall(f".//{_METS_NS}fptr")}
     assert fptr_ids and fptr_ids <= file_ids
@@ -134,7 +134,7 @@ def test_mets_embeds_premis_events_in_digiprov_md() -> None:
     xml = to_mets_xml(
         _sample_record(), created="2026-07-07T00:00:00Z", premis_events=_sample_events()
     )
-    root = ET.fromstring(xml)  # noqa: S314
+    root = ET.fromstring(xml)  # noqa: S314 - parsing XML this test just generated, not untrusted input
     premis_ns = "{http://www.loc.gov/premis/v3}"
     events = root.findall(f".//{premis_ns}event")
     assert len(events) == 1
@@ -144,7 +144,7 @@ def test_mets_embeds_premis_events_in_digiprov_md() -> None:
 def test_mets_omits_amd_sec_when_no_premis_events_given() -> None:
     """No PREMIS events -> no empty ``amdSec`` clutter in the document."""
     xml = to_mets_xml(_sample_record(), created="2026-07-07T00:00:00Z")
-    root = ET.fromstring(xml)  # noqa: S314
+    root = ET.fromstring(xml)  # noqa: S314 - parsing XML this test just generated, not untrusted input
     assert root.find(f".//{_METS_NS}amdSec") is None
 
 
@@ -152,7 +152,7 @@ def test_mets_omits_amd_sec_when_no_premis_events_given() -> None:
 def test_mets_dmd_sec_carries_dublin_core_title() -> None:
     """The descriptive section nests real ``oai_dc`` markup, not a stub."""
     xml = to_mets_xml(_sample_record(), created="2026-07-07T00:00:00Z")
-    root = ET.fromstring(xml)  # noqa: S314
+    root = ET.fromstring(xml)  # noqa: S314 - parsing XML this test just generated, not untrusted input
     dc_ns = "{http://purl.org/dc/elements/1.1/}"
     titles = root.findall(f".//{dc_ns}title")
     assert [t.text for t in titles] == ["Pride march, 1987"]
@@ -188,7 +188,7 @@ def test_ead_xml_is_well_formed_and_namespaced() -> None:
         created="2026-07-07T00:00:00Z",
         collection_id="coll-pride",
     )
-    root = ET.fromstring(xml)  # noqa: S314
+    root = ET.fromstring(xml)  # noqa: S314 - parsing XML this test just generated, not untrusted input
     assert root.tag == f"{_EAD_NS}ead"
 
 
@@ -203,7 +203,7 @@ def test_ead_component_attribute_escapes_quotes_and_round_trips() -> None:
         collection_id="quoted",
     )
 
-    root = ET.fromstring(xml)  # noqa: S314
+    root = ET.fromstring(xml)  # noqa: S314 - parsing XML this test just generated, not untrusted input
     component = root.find(f".//{_EAD_NS}c01")
     assert component is not None
     assert component.attrib["id"] == f"c-{record.record_id}"
@@ -219,7 +219,7 @@ def test_ead_has_one_component_per_record() -> None:
         created="2026-07-07T00:00:00Z",
         collection_id="coll-pride",
     )
-    root = ET.fromstring(xml)  # noqa: S314
+    root = ET.fromstring(xml)  # noqa: S314 - parsing XML this test just generated, not untrusted input
     components = root.findall(f".//{_EAD_NS}c01")
     assert len(components) == 2
 
@@ -269,5 +269,5 @@ def test_ead_empty_collection_still_produces_valid_document() -> None:
     xml = to_ead_xml(
         "Empty Collection", [], created="2026-07-07T00:00:00Z", collection_id="coll-empty"
     )
-    root = ET.fromstring(xml)  # noqa: S314
+    root = ET.fromstring(xml)  # noqa: S314 - parsing XML this test just generated, not untrusted input
     assert root.findall(f".//{_EAD_NS}c01") == []

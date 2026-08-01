@@ -132,6 +132,10 @@ files = ["src/ledger"]
 [tool.pytest.ini_options]
 minversion = "8.0"
 testpaths = ["tests"]
+# The repo root, so `tools/` gate scripts are importable and therefore testable. They
+# stay plain scripts (no package, no install) — a CI gate should be runnable with
+# `python tools/x.py` from a clean checkout — but an untested gate silently stops gating.
+pythonpath = ["."]
 addopts = "-ra --strict-markers --strict-config --import-mode=importlib"
 markers = [
     "preservation: fixity, bagging, and content-addressing guarantees",
@@ -147,11 +151,17 @@ source = ["ledger"]
 [tool.coverage.report]
 show_missing = true
 skip_covered = false
-# CODE-QUALITY-STANDARD CQ-08 (Tier-1 gate): measured branch coverage is 86% as of
-# the 2026-07-05 audit; the floor is set at the level the suite already clears so
-# a future refactor cannot silently erode the disclosure/no-outing test suite this
-# README calls its enforcement mechanism.
-fail_under = 85
+# CODE-QUALITY-STANDARD CQ-08 (Tier-1 gate). A floor is a ratchet, not an
+# aspiration: it is set at the level the suite ALREADY clears, so that a future
+# refactor cannot silently erode the disclosure/no-outing suite this README calls
+# its enforcement mechanism. Setting it above the measured number would not add a
+# single test — it would just make `main` red until someone lowered it again, and a
+# floor that gets lowered is not a floor.
+#
+# Measured 88.06% branch coverage over 1005 tests (2026-08-01). Floor raised 85 -> 88.
+# CQ-08's published-library target is 90%; the remaining ~2 points are real tests that
+# still have to be written, and the largest gaps are named in #83.
+fail_under = 88
 
 # Mutation testing (CODE-QUALITY-STANDARD CQ-47) — advisory only, never a merge
 # gate. Line/branch coverage proves a line *ran*; it does not prove a test would

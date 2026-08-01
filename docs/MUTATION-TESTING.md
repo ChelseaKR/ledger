@@ -1,6 +1,6 @@
 # Mutation testing (advisory)
 
-Branch coverage (`make cov`, floor 85% in `pyproject.toml`) proves a line *ran*;
+Branch coverage (`make cov`, floor 88% in `pyproject.toml`) proves a line *ran*;
 it does not prove a test would *notice* if that line were wrong. For ledger's
 safety-critical core — who gets to see what (`access/`), who a contributor
 really is (`identity.py`), and whether a preserved file has silently changed
@@ -14,7 +14,7 @@ suite would ship.
 This closes CODE-QUALITY-STANDARD **CQ-47** (`docs/ROADMAP.md`). It is
 **advisory only**: it is **never** a merge gate, never runs on `pull_request` or
 `push`, and never blocks. The blocking correctness/disclosure gates stay `make
-test` (via `gate` and `no-outing-audit` in `ci.yml`) and the 85% branch-coverage
+test` (via `gate` and `no-outing-audit` in `ci.yml`) and the 88% branch-coverage
 floor. Mutation score is a slower, deeper health signal watched weekly.
 
 ## Scope

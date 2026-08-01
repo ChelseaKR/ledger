@@ -125,7 +125,7 @@ def _req(
     headers = _steward_header() if steward else {}
     if body is not None:
         headers["Content-Type"] = "application/x-www-form-urlencoded"
-    req = urllib.request.Request(f"{base}{path}", data=body, headers=headers)  # noqa: S310
+    req = urllib.request.Request(f"{base}{path}", data=body, headers=headers)  # noqa: S310 - loopback URL we constructed for the in-process test server
     try:
         with _OPENER.open(req, timeout=10) as resp:
             return int(resp.status), resp.read().decode("utf-8")

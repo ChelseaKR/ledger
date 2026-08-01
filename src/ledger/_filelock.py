@@ -42,7 +42,7 @@ from pathlib import Path
 try:  # POSIX only; absent on Windows.
     import fcntl
 except ImportError:  # pragma: no cover - non-POSIX fallback
-    fcntl = None  # type: ignore[assignment]
+    fcntl = None  # type: ignore[assignment]  # the None sentinel IS the non-POSIX fallback
 
 __all__ = ["file_lock"]
 
@@ -69,6 +69,8 @@ def file_lock(target: Path) -> Iterator[None]:
     target = Path(target)
     target.parent.mkdir(parents=True, exist_ok=True)
     if fcntl is None:  # pragma: no cover - non-POSIX fallback
+        # mypy resolves fcntl on this platform, so it cannot see that the import above
+        # can fail on another one and that this branch is reachable there.
         yield  # type: ignore[unreachable]
         return
     lock_path = target.with_name(f"{target.name}{_LOCK_SUFFIX}")

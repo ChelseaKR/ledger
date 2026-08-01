@@ -242,6 +242,8 @@ def test_language_is_a_facet() -> None:
 def _text(snip: object) -> str:
     """The plain concatenated text of a snippet's runs."""
     assert snip is not None
+    # `snip` is typed `object` so this helper works for any snippet shape the search
+    # module returns; `.runs` is the attribute under test.
     return "".join(text for text, _matched in snip.runs)  # type: ignore[attr-defined]
 
 

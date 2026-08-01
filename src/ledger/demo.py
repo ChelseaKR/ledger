@@ -113,7 +113,7 @@ def _http_get(host: str, port: int, path: str, *, subject: str | None = None) ->
     request = urllib.request.Request(url)  # noqa: S310 - loopback URL we constructed
     if subject is not None:
         request.add_header("X-Ledger-Grant", subject)
-    with urllib.request.urlopen(request, timeout=10) as response:  # noqa: S310
+    with urllib.request.urlopen(request, timeout=10) as response:  # noqa: S310 - loopback URL we constructed for the in-process test server
         raw: bytes = response.read()
     return raw.decode("utf-8")
 

@@ -261,6 +261,8 @@ def test_cues_to_plain_text_joins_with_speaker_prefix() -> None:
 def test_transcript_cue_is_immutable() -> None:
     cue = TranscriptCue(start="00:00:01.000", end="00:00:02.000", text="hi", speaker=None)
     with pytest.raises(AttributeError):
+        # Assigning to a frozen field is the behaviour under test: mypy correctly rejects
+        # it, and pytest asserts the assignment raises at runtime.
         cue.text = "changed"  # type: ignore[misc]
 
 

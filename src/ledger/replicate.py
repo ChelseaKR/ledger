@@ -180,7 +180,7 @@ def _rejected(message: str, event: PremisEvent) -> ReplicationError:
     error = ReplicationError(message, event)
     # ``setattr`` keeps mypy --strict happy without redefining the exception class
     # (errors.py is the shared contract and must not be edited).
-    setattr(error, "quarantine_event", event)  # noqa: B010
+    setattr(error, "quarantine_event", event)  # noqa: B010 - the attribute name is fixed and the target is an exception instance, so a literal attribute assignment would not type-check
     return error
 
 

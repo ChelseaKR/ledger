@@ -148,7 +148,7 @@ def test_search_within_a_facet_returns_the_intersection(server_base: str) -> Non
 
 def test_csv_export_applies_filters_and_is_a_download(server_base: str) -> None:
     """/api/search.csv returns the filtered set as a CSV attachment over the safe shape."""
-    req = urllib.request.Request(f"{server_base}/api/search.csv?subject=protest")  # noqa: S310
+    req = urllib.request.Request(f"{server_base}/api/search.csv?subject=protest")  # noqa: S310 - loopback URL we constructed for the in-process test server
     with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310 - loopback
         body = resp.read().decode("utf-8")
         ctype = resp.headers.get("Content-Type", "")

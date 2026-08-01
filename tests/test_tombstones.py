@@ -232,7 +232,7 @@ def server(tmp_path: Path) -> Iterator[tuple[Archive, list[StorageLocation], str
 def _get(url: str) -> tuple[int, str]:
     req = urllib.request.Request(url)  # noqa: S310 - loopback
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310
+        with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310 - loopback URL we constructed for the in-process test server
             return int(resp.status), resp.read().decode("utf-8")
     except urllib.error.HTTPError as exc:
         return int(exc.code), exc.read().decode("utf-8")

@@ -43,6 +43,8 @@ def _segment(**overrides: object) -> SessionSegment:
         "consent_note": "narrator: public",
     }
     defaults.update(overrides)
+    # `defaults` is a dict[str, object] so overrides can be any type; mypy cannot match
+    # it against the constructor signature, which is exactly what makes the helper reusable.
     return SessionSegment(**defaults)  # type: ignore[arg-type]
 
 
@@ -55,6 +57,7 @@ def _manifest(*segments: SessionSegment, **overrides: object) -> SessionManifest
         "segments": segments or (_segment(),),
     }
     defaults.update(overrides)
+    # Same dict[str, object] override pattern as _segment above.
     return SessionManifest(**defaults)  # type: ignore[arg-type]
 
 

@@ -116,7 +116,7 @@ def _get(
     for name, value in (headers or {}).items():
         req.add_header(name, value)
     try:
-        with urllib.request.urlopen(req, timeout=10) as r:  # noqa: S310
+        with urllib.request.urlopen(req, timeout=10) as r:  # noqa: S310 - loopback URL we constructed for the in-process test server
             return (
                 int(r.status),
                 r.read().decode("utf-8"),
@@ -138,7 +138,7 @@ def _post(
     if grant:
         req.add_header("X-Ledger-Grant", _grant_header(grant))
     try:
-        with urllib.request.urlopen(req, timeout=10) as r:  # noqa: S310
+        with urllib.request.urlopen(req, timeout=10) as r:  # noqa: S310 - loopback URL we constructed for the in-process test server
             return int(r.status), r.read().decode("utf-8")
     except urllib.error.HTTPError as e:
         return int(e.code), e.read().decode("utf-8")

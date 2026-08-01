@@ -311,7 +311,7 @@ def test_cli_attest_health_signs_with_signing_key_flag(tmp_path: Path) -> None:
 def _get(base: str, path: str) -> tuple[int, str]:
     req = urllib.request.Request(f"{base}{path}")  # noqa: S310 - loopback
     try:
-        with urllib.request.urlopen(req, timeout=10) as r:  # noqa: S310
+        with urllib.request.urlopen(req, timeout=10) as r:  # noqa: S310 - loopback URL we constructed for the in-process test server
             return int(r.status), r.read().decode("utf-8")
     except urllib.error.HTTPError as e:
         return int(e.code), e.read().decode("utf-8")
