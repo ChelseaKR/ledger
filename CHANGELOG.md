@@ -167,6 +167,13 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`cryptography` HIGH-severity CVE in the identity vault's encryption dependency
+  (2026-08-04).** The pinned resolution had drifted to `cryptography==49.0.0`,
+  which carries [CVE-2026-69247](https://avd.aquasec.com/nvd/cve-2026-69247)
+  ([PYSEC-2026-3552](https://osv.dev/PYSEC-2026-3552)). Widened the version cap
+  from `<50` to `<51` and re-locked to `50.0.0`, the fixed release; the identity
+  vault, backup, and replication modules only use the long-stable `Fernet` and
+  `Scrypt` APIs, and the full test suite (1020 tests) passes unchanged.
 - **Missing production stylesheet (2026-07-12).** Package `web/static/app.css`
   inside wheel and container installs so `/static/app.css` no longer returns 404
   when the server runs outside a source checkout.

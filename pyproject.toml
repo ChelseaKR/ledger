@@ -37,7 +37,7 @@ classifiers = [
 # `cryptography` is used solely by the encrypted identity vault, where rolling our
 # own would be the opposite of safety.
 dependencies = [
-    "cryptography>=42,<50",
+    "cryptography>=42,<51",
 ]
 
 [project.urls]
