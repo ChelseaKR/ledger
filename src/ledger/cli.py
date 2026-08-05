@@ -31,6 +31,7 @@ from dataclasses import replace as _dc_replace
 from pathlib import Path
 
 from ledger import (
+    __version__,
     acr_gen,
     attest,
     captions,
@@ -1464,6 +1465,12 @@ def _build_parser() -> argparse.ArgumentParser:
         prog="ledger",
         description="A privacy-first community archive for queer histories and mutual-aid knowledge.",
     )
+    # REL-02: `__version__` is itself derived from installed package metadata (see
+    # ledger/__init__.py), so this stays a single source of truth rather than a
+    # third hand-copied version string. `argparse`'s built-in "version" action
+    # prints and exits before subcommand dispatch, so `ledger --version` works
+    # with no COMMAND (the positional below is otherwise required).
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     sub = parser.add_subparsers(dest="command", required=True, metavar="COMMAND")
 
     p_init = sub.add_parser("init", help="create a fresh archive")

@@ -16,6 +16,12 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 > actually pushed through the release workflow added below.
 
 ### Added
+- **`ledger --version`.** The CLI had no top-level version flag — `COMMAND` was a
+  required positional, so there was no way to ask an installed `ledger` what
+  version it was without opening `pyproject.toml`. Prints `ledger <version>` and
+  exits 0, sourced from the same `ledger.__version__` (installed package
+  metadata) every other version-truth path already uses (RELEASE-AND-VERSIONING-
+  STANDARD REL-02), so it cannot drift from `pyproject.toml`.
 - `ledger ingest --description ...` sets a Dublin Core description at authoring
   time, and the ingest CLI now nudges (non-blocking) when a record has no
   description, alongside the existing missing-transcript advisory — moving the

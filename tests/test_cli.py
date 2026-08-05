@@ -77,6 +77,27 @@ def _only_bag(root: Path) -> Path:
     return bags[0]
 
 
+# --- top-level flags ---------------------------------------------------------
+
+
+def test_version_flag_prints_version_and_exits_zero(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """``ledger --version`` prints the package version and exits 0 with no COMMAND.
+
+    REL-02: the printed string comes from :data:`ledger.__version__`, itself
+    derived from installed package metadata, so this test also guards against the
+    CLI's version drifting from the single source of truth in ``pyproject.toml``.
+    """
+    from ledger import __version__
+
+    with pytest.raises(SystemExit) as exc_info:
+        cli.main(["--version"])
+    assert exc_info.value.code == 0
+    out = capsys.readouterr().out
+    assert out.strip() == f"ledger {__version__}"
+
+
 # --- happy path -------------------------------------------------------------
 
 
