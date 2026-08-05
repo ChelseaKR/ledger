@@ -270,6 +270,36 @@ def _match_signature(data: bytes) -> FormatInfo | None:
     return None
 
 
+#: Byte-order marks stripped before sniffing an XML declaration. A BOM is legal
+#: in front of ``<?xml`` and would otherwise hide it.
+_BOMS: tuple[bytes, ...] = (b"\xef\xbb\xbf", b"\xff\xfe", b"\xfe\xff")
+
+
+def _looks_like_xml(data: bytes) -> bool:
+    """Whether ``data`` opens with an XML declaration.
+
+    The metadata standards this project writes are XML: PREMIS, METS, Dublin
+    Core, and OAI-PMH responses. Without this check an XML file that reaches an
+    archive without its ``.xml`` extension is recorded as ``text/plain``
+    (``x-fmt/111``) instead of XML (``fmt/101``), which puts a wrong format in
+    the preservation metadata for exactly the files whose format matters most.
+    Files do arrive renamed or extension-less, which is why content-based
+    identification exists at all.
+
+    Deliberately *not* a step-one signature: an SVG normally opens with the same
+    declaration, and SVG is identified by extension here, so promoting ``<?xml``
+    to a signature would relabel every ``.svg`` as generic XML. Running after
+    the extension step keeps ``.svg`` and ``.xml`` exactly as they were and only
+    changes files no earlier step could name.
+    """
+    head = data
+    for bom in _BOMS:
+        if head.startswith(bom):
+            head = head[len(bom) :]
+            break
+    return head.lstrip()[:5] == b"<?xml"
+
+
 def _looks_like_text(data: bytes) -> bool:
     """Whether ``data`` decodes as UTF-8 with no NUL and no C0 control noise.
 
@@ -312,8 +342,12 @@ def identify_format(data: bytes, *, filename: str | None = None) -> FormatId:
     1. **signature** — a content-based magic-number match (authoritative);
     2. **extension** — the filename's extension, for formats with no reliable
        leading signature;
-    3. **text** — a clean UTF-8 decode (plain text);
-    4. **unknown** — none of the above; recorded honestly as ``application/
+    3. **xml-declaration** — an ``<?xml`` opening, so a renamed or
+       extension-less PREMIS/METS/Dublin Core file is recorded as XML rather
+       than as plain text (see :func:`_looks_like_xml` for why this runs here
+       and not as a signature);
+    4. **text** — a clean UTF-8 decode (plain text);
+    5. **unknown** — none of the above; recorded honestly as ``application/
        octet-stream`` with a recommendation to identify it.
 
     Pure and deterministic: the same bytes and filename always yield the same
@@ -326,6 +360,8 @@ def identify_format(data: bytes, *, filename: str | None = None) -> FormatId:
         ext_info = _EXTENSION_MAP.get(_extension(filename))
         if ext_info is not None:
             return FormatId.of(ext_info, basis="extension")
+    if _looks_like_xml(data):
+        return FormatId.of(_XML, basis="xml-declaration")
     if _looks_like_text(data):
         return FormatId.of(_TEXT, basis="text")
     return FormatId.of(_UNKNOWN, basis="unknown")
