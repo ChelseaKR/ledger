@@ -446,3 +446,8 @@ metadata, seal the contributor's name and identity while publishing the story, c
 committed audit suite that no public surface or log reveals who contributed it, browse the archive
 through an accessible interface with a working list/table equivalent, and process a consent change
 that propagates across replicas — with the ACR committed and every CI gate green.
+
+## Support
+
+This is independent, unpaid work. If it has been useful to you, you can
+<a href='https://ko-fi.com/T6T6GMYTU' target='_blank'><img height='36' style='border:0px;height:36px;' src='https://storage.ko-fi.com/cdn/kofi6.png?v=6' border='0' alt='Buy Me a Coffee at ko-fi.com' /></a>
