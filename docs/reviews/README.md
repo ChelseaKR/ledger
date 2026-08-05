@@ -11,6 +11,17 @@ synthetic-data-only, and useful to both reviewer and maintainer.
 | [Threat-model review](threat-model-review.md) | An independent security, privacy, or applied-cryptography reviewer | 2–4 hours | Findings, threat-model corrections, and residual-risk decision |
 | [Manual accessibility review](manual-accessibility-review.md) | A screen-reader and keyboard user, ideally paid for their expertise | 60–90 minutes per AT/browser pair | Dated assistive-technology findings and ACR updates |
 
+## Review status
+
+No independent review has been completed yet — a packet, an open invitation, or an issue
+label does not count as one (see the safety boundary below). Current status:
+
+| Review | Status |
+| --- | --- |
+| Community archivist pilot | **Recruiting** — [open help-wanted call](https://github.com/ChelseaKR/ledger/issues/99); the packet is on `main`, so use the [plain file link](community-archivist-pilot.md) for this review, not a branch URL |
+| Threat-model review | Not started |
+| Manual accessibility review | Not started |
+
 ## Safety boundary for every review
 
 - Use only the repository's synthetic records and sentinel identities.
