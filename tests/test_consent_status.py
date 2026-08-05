@@ -75,7 +75,7 @@ def server(tmp_path: Path) -> Iterator[tuple[Archive, str, str]]:
 def _get(base: str, path: str) -> tuple[int, str]:
     req = urllib.request.Request(f"{base}{path}")  # noqa: S310 - loopback
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310
+        with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310 - loopback URL we constructed for the in-process test server
             return int(resp.status), resp.read().decode("utf-8")
     except urllib.error.HTTPError as exc:
         return int(exc.code), exc.read().decode("utf-8")
@@ -87,7 +87,7 @@ def _post(base: str, path: str, fields: dict[str, str]) -> tuple[int, str]:
         f"{base}{path}", data=data, headers={"Content-Type": "application/x-www-form-urlencoded"}
     )
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310
+        with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310 - loopback URL we constructed for the in-process test server
             return int(resp.status), resp.read().decode("utf-8")
     except urllib.error.HTTPError as exc:
         return int(exc.code), exc.read().decode("utf-8")

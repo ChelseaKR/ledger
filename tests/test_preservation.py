@@ -202,3 +202,50 @@ def test_format_identification_never_leaks_identity(tmp_path: Path) -> None:
     rid = Path(glob.glob(str(root / "store" / "records" / "*.json"))[0]).stem
     premis_text = (archive.bags_dir / rid / "premis.json").read_text(encoding="utf-8")
     assert sentinel not in premis_text
+
+
+def test_xml_is_identified_by_its_declaration_without_an_extension() -> None:
+    """A renamed or extension-less PREMIS/METS file must not be recorded as text.
+
+    Found by identifying real encoder-produced files rather than magic-byte
+    stubs: every binary format resolved correctly, but XML content reached the
+    identifier as ``text/plain`` (``x-fmt/111``) whenever the filename did not
+    end in ``.xml``. The metadata standards this project writes are XML, so that
+    is the wrong PUID on exactly the files whose format matters most.
+    """
+    premis = b'<?xml version="1.0" encoding="UTF-8"?>\n<premis:premis/>\n'
+
+    no_name = identify_format(premis)
+    assert no_name.media_type == "application/xml"
+    assert no_name.puid == "fmt/101"
+    assert no_name.basis == "xml-declaration"
+
+    # A wrong extension must not win over the declaration either.
+    mislabelled = identify_format(premis, filename="scan.png")
+    assert mislabelled.media_type == "application/xml"
+
+
+def test_xml_declaration_is_found_behind_a_byte_order_mark() -> None:
+    """A BOM is legal in front of ``<?xml`` and must not hide it."""
+    for bom in (b"\xef\xbb\xbf", b"\xff\xfe", b"\xfe\xff"):
+        fmt = identify_format(bom + b'<?xml version="1.0"?>\n<mets/>\n')
+        assert fmt.media_type == "application/xml", bom
+
+
+def test_svg_still_resolves_by_extension_not_as_generic_xml() -> None:
+    """The XML check runs after the extension step precisely to protect this.
+
+    An SVG normally opens with an XML declaration, so treating ``<?xml`` as a
+    step-one signature would relabel every ``.svg`` as generic XML and lose
+    ``fmt/91``.
+    """
+    svg = b'<?xml version="1.0"?>\n<svg xmlns="http://www.w3.org/2000/svg"/>\n'
+    fmt = identify_format(svg, filename="poster.svg")
+    assert fmt.media_type == "image/svg+xml"
+    assert fmt.basis == "extension"
+
+
+def test_plain_text_is_unaffected_by_the_xml_check() -> None:
+    fmt = identify_format(b"an oral history transcript\n")
+    assert fmt.media_type == "text/plain"
+    assert fmt.basis == "text"

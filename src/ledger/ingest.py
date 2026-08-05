@@ -325,7 +325,7 @@ def rights_for_record(record: Record) -> PremisRights:
 # was enabled. Waived, not re-muted: this is preservation-core code, so a split is
 # tracked as a deliberate, well-tested follow-up rather than rushed under audit
 # time pressure (see ledger-REMEDIATION.md P3-2).
-def ingest_sip(  # noqa: C901
+def ingest_sip(  # noqa: C901 - the SIP pipeline's stages, in order (#83)
     sip: SIP,
     store: ContentStore,
     vault: IdentityVault | None,

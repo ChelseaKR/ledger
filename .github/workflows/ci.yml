@@ -28,13 +28,25 @@ jobs:
         # now, the ceiling too, so the matrix is a single interpreter.
         python: ["3.12"]
     steps:
-      # Harden-Runner (SEC-04): observe/audit egress before anything else runs.
-      # Recording in audit mode first (per the standard's rollout guidance) so the
-      # allowlist can be derived from real traffic before flipping to `block`,
-      # rather than guessing an allowlist and breaking the build.
+      # Harden-Runner (SEC-04): deny-by-default egress. The allowlist below is
+      # derived from the endpoints this job was OBSERVED calling in completed
+      # audit-mode runs, not from a guess. Needs:
+      # checkout, uv, and the locked PyPI graph.
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
         with:
-          egress-policy: audit
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            raw.githubusercontent.com:443
+            release-assets.githubusercontent.com:443
+            objects.githubusercontent.com:443
+            *.actions.githubusercontent.com:443
+            *.blob.core.windows.net:443
+            *.githubapp.com:443
+            releases.astral.sh:443
+            pypi.org:443
+            files.pythonhosted.org:443
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
@@ -42,7 +54,7 @@ jobs:
       # (`--locked` fails the build rather than silently re-resolving) instead of
       # an unpinned `pip install -e ".[dev]"` against version ranges — the same
       # exact dependency graph on every contributor's machine and in CI.
-      - uses: astral-sh/setup-uv@f98e06938123ccabd21905ea5d0069192241f9f1  # v8.3.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
         with:
           python-version: ${{ matrix.python }}
           enable-cache: true
@@ -52,6 +64,10 @@ jobs:
         run: |
           uv run ruff check src tests
           uv run ruff format --check src tests
+      # CQ-34/35: a suppression must name its rule, say why, and — for complexity
+      # debt (C901) — link the issue that retires it. Mirrors `make hygiene`.
+      - name: Suppression + marker hygiene
+        run: uv run python tools/check_hygiene.py
       - name: Type check (mypy strict)
         run: uv run mypy
       - name: Test with coverage
@@ -71,13 +87,31 @@ jobs:
     name: i18n (gettext catalog gate)
     runs-on: ubuntu-latest
     steps:
-      # Harden-Runner (SEC-04): observe/audit egress before anything else runs.
-      # Recording in audit mode first (per the standard's rollout guidance) so the
-      # allowlist can be derived from real traffic before flipping to `block`,
-      # rather than guessing an allowlist and breaking the build.
+      # Harden-Runner (SEC-04): deny-by-default egress. The allowlist below is
+      # derived from the endpoints this job was OBSERVED calling in completed
+      # audit-mode runs, not from a guess. Needs:
+      # as `gate`, plus the Ubuntu/Microsoft/Google apt sources `apt-get update` touches to
+      # install gettext.
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
         with:
-          egress-policy: audit
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            raw.githubusercontent.com:443
+            release-assets.githubusercontent.com:443
+            objects.githubusercontent.com:443
+            *.actions.githubusercontent.com:443
+            *.blob.core.windows.net:443
+            *.githubapp.com:443
+            releases.astral.sh:443
+            pypi.org:443
+            files.pythonhosted.org:443
+            azure.archive.ubuntu.com:80
+            esm.ubuntu.com:443
+            motd.ubuntu.com:443
+            packages.microsoft.com:443
+            dl.google.com:443
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
@@ -86,7 +120,7 @@ jobs:
       # non-pip scanner. babel/pybabel come from the locked `dev` group below.
       - name: Install gettext (msgfmt)
         run: sudo apt-get update && sudo apt-get install -y gettext
-      - uses: astral-sh/setup-uv@f98e06938123ccabd21905ea5d0069192241f9f1  # v8.3.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
         with:
           python-version: "3.12"
           enable-cache: true
@@ -101,17 +135,29 @@ jobs:
     name: no-outing audit (safety gate)
     runs-on: ubuntu-latest
     steps:
-      # Harden-Runner (SEC-04): observe/audit egress before anything else runs.
-      # Recording in audit mode first (per the standard's rollout guidance) so the
-      # allowlist can be derived from real traffic before flipping to `block`,
-      # rather than guessing an allowlist and breaking the build.
+      # Harden-Runner (SEC-04): deny-by-default egress. The allowlist below is
+      # derived from the endpoints this job was OBSERVED calling in completed
+      # audit-mode runs, not from a guess. Needs:
+      # checkout, uv, and the locked PyPI graph.
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
         with:
-          egress-policy: audit
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            raw.githubusercontent.com:443
+            release-assets.githubusercontent.com:443
+            objects.githubusercontent.com:443
+            *.actions.githubusercontent.com:443
+            *.blob.core.windows.net:443
+            *.githubapp.com:443
+            releases.astral.sh:443
+            pypi.org:443
+            files.pythonhosted.org:443
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@f98e06938123ccabd21905ea5d0069192241f9f1  # v8.3.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
         with:
           python-version: "3.12"
           enable-cache: true
@@ -125,17 +171,29 @@ jobs:
     name: accessibility gate (WCAG 2.2 AA)
     runs-on: ubuntu-latest
     steps:
-      # Harden-Runner (SEC-04): observe/audit egress before anything else runs.
-      # Recording in audit mode first (per the standard's rollout guidance) so the
-      # allowlist can be derived from real traffic before flipping to `block`,
-      # rather than guessing an allowlist and breaking the build.
+      # Harden-Runner (SEC-04): deny-by-default egress. The allowlist below is
+      # derived from the endpoints this job was OBSERVED calling in completed
+      # audit-mode runs, not from a guess. Needs:
+      # checkout, uv, and the locked PyPI graph.
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
         with:
-          egress-policy: audit
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            raw.githubusercontent.com:443
+            release-assets.githubusercontent.com:443
+            objects.githubusercontent.com:443
+            *.actions.githubusercontent.com:443
+            *.blob.core.windows.net:443
+            *.githubapp.com:443
+            releases.astral.sh:443
+            pypi.org:443
+            files.pythonhosted.org:443
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@f98e06938123ccabd21905ea5d0069192241f9f1  # v8.3.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
         with:
           python-version: "3.12"
           enable-cache: true
@@ -158,12 +216,35 @@ jobs:
     # holds; only this box installs them. The committed manual NVDA/VoiceOver
     # cadence in docs/accessibility/MANUAL-REVIEW-CADENCE.md is the human half.
     steps:
-      # Harden-Runner (SEC-04): same audit-mode egress observation as every other
-      # job — the browser harness downloads Node deps and a Chromium build, which
-      # is exactly the traffic worth an allowlist later.
+      # Harden-Runner (SEC-04): deny-by-default egress. The allowlist below is
+      # derived from the endpoints this job was OBSERVED calling in completed
+      # audit-mode runs, not from a guess. Needs:
+      # the widest job in the repo: pip, npm, the apt sources pulled in by `playwright
+      # install --with-deps`, and the Chromium build itself (cdn.playwright.dev + the
+      # Microsoft/Google CDNs it redirects to).
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
         with:
-          egress-policy: audit
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            raw.githubusercontent.com:443
+            release-assets.githubusercontent.com:443
+            objects.githubusercontent.com:443
+            *.actions.githubusercontent.com:443
+            *.blob.core.windows.net:443
+            *.githubapp.com:443
+            pypi.org:443
+            files.pythonhosted.org:443
+            azure.archive.ubuntu.com:80
+            esm.ubuntu.com:443
+            motd.ubuntu.com:443
+            packages.microsoft.com:443
+            dl.google.com:443
+            registry.npmjs.org:443
+            cdn.playwright.dev:443
+            playwright.download.prss.microsoft.com:443
+            storage.googleapis.com:443
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
@@ -204,17 +285,29 @@ jobs:
     name: performance budgets (QM-02)
     runs-on: ubuntu-latest
     steps:
-      # Harden-Runner (SEC-04): observe/audit egress before anything else runs.
-      # Recording in audit mode first (per the standard's rollout guidance) so the
-      # allowlist can be derived from real traffic before flipping to `block`,
-      # rather than guessing an allowlist and breaking the build.
+      # Harden-Runner (SEC-04): deny-by-default egress. The allowlist below is
+      # derived from the endpoints this job was OBSERVED calling in completed
+      # audit-mode runs, not from a guess. Needs:
+      # checkout, uv, and the locked PyPI graph.
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
         with:
-          egress-policy: audit
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            raw.githubusercontent.com:443
+            release-assets.githubusercontent.com:443
+            objects.githubusercontent.com:443
+            *.actions.githubusercontent.com:443
+            *.blob.core.windows.net:443
+            *.githubapp.com:443
+            releases.astral.sh:443
+            pypi.org:443
+            files.pythonhosted.org:443
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@f98e06938123ccabd21905ea5d0069192241f9f1  # v8.3.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
         with:
           python-version: "3.12"
           enable-cache: true
@@ -231,18 +324,31 @@ jobs:
     name: dependency & secret scan
     runs-on: ubuntu-latest
     steps:
-      # Harden-Runner (SEC-04): observe/audit egress before anything else runs.
-      # Recording in audit mode first (per the standard's rollout guidance) so the
-      # allowlist can be derived from real traffic before flipping to `block`,
-      # rather than guessing an allowlist and breaking the build.
+      # Harden-Runner (SEC-04): deny-by-default egress. The allowlist below is
+      # derived from the endpoints this job was OBSERVED calling in completed
+      # audit-mode runs, not from a guess. Needs:
+      # checkout, uv, the locked PyPI graph, and the pinned gitleaks release tarball (a
+      # github.com release download, already in the base set).
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
         with:
-          egress-policy: audit
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            raw.githubusercontent.com:443
+            release-assets.githubusercontent.com:443
+            objects.githubusercontent.com:443
+            *.actions.githubusercontent.com:443
+            *.blob.core.windows.net:443
+            *.githubapp.com:443
+            releases.astral.sh:443
+            pypi.org:443
+            files.pythonhosted.org:443
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: astral-sh/setup-uv@f98e06938123ccabd21905ea5d0069192241f9f1  # v8.3.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
         with:
           python-version: "3.12"
           enable-cache: true
@@ -266,14 +372,24 @@ jobs:
     name: OSV lockfile scan (uv.lock)
     runs-on: ubuntu-latest
     steps:
-      # Harden-Runner (SEC-04): observe/audit egress before anything else runs.
-      # Recording in audit mode first (per the standard's rollout guidance) so the
-      # allowlist can be derived from real traffic before flipping to `block`,
-      # rather than guessing an allowlist and breaking the build.
+      # Harden-Runner (SEC-04): deny-by-default egress. The allowlist below is
+      # derived from the endpoints this job was OBSERVED calling in completed
+      # audit-mode runs, not from a guess. Needs:
+      # checkout plus the OSV advisory API the scanner queries.
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
         with:
-          egress-policy: audit
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            raw.githubusercontent.com:443
+            release-assets.githubusercontent.com:443
+            objects.githubusercontent.com:443
+            *.actions.githubusercontent.com:443
+            *.blob.core.windows.net:443
+            *.githubapp.com:443
+            api.osv.dev:443
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
       # SEC-11 (#84): scan the exact pinned graph in `uv.lock` against the OSV
@@ -292,19 +408,31 @@ jobs:
     name: workflow linter (zizmor)
     runs-on: ubuntu-latest
     steps:
-      # Harden-Runner (SEC-04): observe/audit egress before anything else runs.
-      # Recording in audit mode first (per the standard's rollout guidance) so the
-      # allowlist can be derived from real traffic before flipping to `block`,
-      # rather than guessing an allowlist and breaking the build.
+      # Harden-Runner (SEC-04): deny-by-default egress. The allowlist below is
+      # derived from the endpoints this job was OBSERVED calling in completed
+      # audit-mode runs, not from a guess. Needs:
+      # checkout, uv, and the locked PyPI graph.
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
         with:
-          egress-policy: audit
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            raw.githubusercontent.com:443
+            release-assets.githubusercontent.com:443
+            objects.githubusercontent.com:443
+            *.actions.githubusercontent.com:443
+            *.blob.core.windows.net:443
+            *.githubapp.com:443
+            releases.astral.sh:443
+            pypi.org:443
+            files.pythonhosted.org:443
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
       # SEC-13/CQ-09: install from the committed, hash-locked `uv.lock` like every
       # other dep-installing job (see the gate job's comment).
-      - uses: astral-sh/setup-uv@f98e06938123ccabd21905ea5d0069192241f9f1  # v8.3.1
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
         with:
           python-version: "3.12"
           enable-cache: true
@@ -327,13 +455,37 @@ jobs:
     name: container image CVE scan (Trivy)
     runs-on: ubuntu-latest
     steps:
-      # Harden-Runner (SEC-04): observe/audit egress before anything else runs.
-      # Recording in audit mode first (per the standard's rollout guidance) so the
-      # allowlist can be derived from real traffic before flipping to `block`,
-      # rather than guessing an allowlist and breaking the build.
+      # Harden-Runner (SEC-04): deny-by-default egress. The allowlist below is
+      # derived from the endpoints this job was OBSERVED calling in completed
+      # audit-mode runs, not from a guess. Needs:
+      # `docker build` pulls the Debian base image (Docker Hub via the runner's gcr mirror)
+      # and runs apt inside it; Trivy fetches its vulnerability DB. ghcr.io + pkg-containers
+      # are Trivy's DEFAULT DB registry — observed runs used mirror.gcr.io, but the mirror
+      # is a runner-image convenience that can miss, and a blocked fallback would fail the
+      # gate for a network reason.
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
         with:
-          egress-policy: audit
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            raw.githubusercontent.com:443
+            release-assets.githubusercontent.com:443
+            objects.githubusercontent.com:443
+            *.actions.githubusercontent.com:443
+            *.blob.core.windows.net:443
+            *.githubapp.com:443
+            releases.astral.sh:443
+            pypi.org:443
+            files.pythonhosted.org:443
+            registry-1.docker.io:443
+            auth.docker.io:443
+            production.cloudfront.docker.com:443
+            mirror.gcr.io:443
+            ghcr.io:443
+            pkg-containers.githubusercontent.com:443
+            check.trivy.dev:443
+            deb.debian.org:80
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false

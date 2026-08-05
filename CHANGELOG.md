@@ -16,6 +16,12 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 > actually pushed through the release workflow added below.
 
 ### Added
+- **`ledger --version`.** The CLI had no top-level version flag — `COMMAND` was a
+  required positional, so there was no way to ask an installed `ledger` what
+  version it was without opening `pyproject.toml`. Prints `ledger <version>` and
+  exits 0, sourced from the same `ledger.__version__` (installed package
+  metadata) every other version-truth path already uses (RELEASE-AND-VERSIONING-
+  STANDARD REL-02), so it cannot drift from `pyproject.toml`.
 - `ledger ingest --description ...` sets a Dublin Core description at authoring
   time, and the ingest CLI now nudges (non-blocking) when a record has no
   description, alongside the existing missing-transcript advisory — moving the
@@ -167,6 +173,13 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`cryptography` HIGH-severity CVE in the identity vault's encryption dependency
+  (2026-08-04).** The pinned resolution had drifted to `cryptography==49.0.0`,
+  which carries [CVE-2026-69247](https://avd.aquasec.com/nvd/cve-2026-69247)
+  ([PYSEC-2026-3552](https://osv.dev/PYSEC-2026-3552)). Widened the version cap
+  from `<50` to `<51` and re-locked to `50.0.0`, the fixed release; the identity
+  vault, backup, and replication modules only use the long-stable `Fernet` and
+  `Scrypt` APIs, and the full test suite (1020 tests) passes unchanged.
 - **Missing production stylesheet (2026-07-12).** Package `web/static/app.css`
   inside wheel and container installs so `/static/app.css` no longer returns 404
   when the server runs outside a source checkout.

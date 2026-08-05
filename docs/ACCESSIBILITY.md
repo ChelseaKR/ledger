@@ -1,11 +1,15 @@
 # Accessibility
 
-Last verified: 2026-07-05 · Recheck cadence: per release
+Last verified: 2026-08-01 · Recheck cadence: per release
 
 This document states ledger's accessibility commitment, what it covers, and how it
 is enforced. It is the prose companion to two machine artifacts: the automated gate
 in `src/ledger/accessibility_check.py` and the Accessibility Conformance Report
 generated into `docs/accessibility/ACR.md`.
+
+For readers rather than implementers, the short public version is
+[`docs/accessibility/STATEMENT.md`](accessibility/STATEMENT.md): what has been
+tested, what has **not**, and how to report a barrier.
 
 ## The commitment
 
@@ -126,6 +130,17 @@ the build. The gate has two parts.
    computed accessible names, and focus order. It is **CI/dev-only** — Playwright,
    Node, and the browser live under `tools/a11y_browser/` and never enter the
    `ledger` runtime, so the stdlib-only, one-cheap-box promise still holds.
+
+   The same job runs a **320 CSS px reflow** pass (`reflow.spec.ts`, SC 1.4.10) —
+   320×256 is a 1280×1024 screen at 400% zoom, which is where the number in the
+   criterion comes from. axe cannot do this: axe evaluates the DOM it is handed and
+   has no opinion about the viewport that DOM was laid out in, so an axe-green page
+   can still force a reader to pan sideways to read every line. The gate fails on
+   any horizontal *page* scroll, and on any element whose content spills past the
+   viewport even when its box does not — a long unbreakable URL inside a correctly
+   sized paragraph, which looks fine in a layout inspector. Content that genuinely
+   needs a second dimension is exempt under the SC, so an element inside its own
+   `overflow-x: auto` scroller (the record table) is not flagged.
 
 2. **Manual screen-reader review (NVDA / VoiceOver).** The criteria no scan — static
    or browser-automated — can judge (meaningful reading order, the quality of the

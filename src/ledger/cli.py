@@ -31,6 +31,7 @@ from dataclasses import replace as _dc_replace
 from pathlib import Path
 
 from ledger import (
+    __version__,
     acr_gen,
     attest,
     captions,
@@ -162,7 +163,7 @@ def _cmd_init(args: argparse.Namespace) -> int:
 # Pre-existing complexity (one function branches over every CLI ingest option);
 # surfaced 2026-07-05 when CQ-05's complexity gate was enabled. Waived, not
 # re-muted: tracked for a follow-up split (see ledger-REMEDIATION.md P3-2).
-def _cmd_ingest(args: argparse.Namespace) -> int:  # noqa: C901
+def _cmd_ingest(args: argparse.Namespace) -> int:  # noqa: C901 - argparse option handling; the branching is the CLI surface (#83)
     """``ingest`` — build a record (and optional sealed identity) and store it.
 
     Public descriptive fields are published; sealed fields default to the
@@ -1464,6 +1465,12 @@ def _build_parser() -> argparse.ArgumentParser:
         prog="ledger",
         description="A privacy-first community archive for queer histories and mutual-aid knowledge.",
     )
+    # REL-02: `__version__` is itself derived from installed package metadata (see
+    # ledger/__init__.py), so this stays a single source of truth rather than a
+    # third hand-copied version string. `argparse`'s built-in "version" action
+    # prints and exits before subcommand dispatch, so `ledger --version` works
+    # with no COMMAND (the positional below is otherwise required).
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     sub = parser.add_subparsers(dest="command", required=True, metavar="COMMAND")
 
     p_init = sub.add_parser("init", help="create a fresh archive")

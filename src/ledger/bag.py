@@ -329,7 +329,7 @@ def _algo_of_manifest(manifest_path: Path) -> HashAlgo:
 # Waived, not re-muted: this is preservation-integrity code, so a split is tracked
 # as a deliberate, well-tested follow-up rather than rushed under audit time
 # pressure (see ledger-REMEDIATION.md P3-2).
-def validate_bag(bag_dir: Path) -> AuditReport:  # noqa: C901
+def validate_bag(bag_dir: Path) -> AuditReport:  # noqa: C901 - BagIt validation reports EVERY failure rather than stopping at the first, so each check is its own branch (#83)
     """Validate the bag at ``bag_dir`` against RFC 8493 structure and manifests.
 
     Structural failures raise :class:`~ledger.errors.BagValidationError`:

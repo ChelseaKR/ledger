@@ -12,6 +12,12 @@ name: standards
 on:
   push:
     branches: [main]
+  # Manual runs only ever re-run a read-only freshness check (`contents: read`, no
+  # write scope anywhere in the job). It is here because a push-to-main-only workflow
+  # is otherwise impossible to exercise from a branch — which meant the SEC-04 egress
+  # allowlist below could not be verified before it reached main. A gate you cannot
+  # rehearse is a gate you find out about by breaking main.
+  workflow_dispatch:
 
 # Least privilege: this job only reads. No write scope is granted to GITHUB_TOKEN.
 permissions:
@@ -25,10 +31,24 @@ jobs:
   standards:
     runs-on: ubuntu-latest
     steps:
-      # Harden-Runner (SEC-04): audit mode first, see ci.yml for the rollout note.
+      # Harden-Runner (SEC-04): deny-by-default egress. The allowlist below is
+      # derived from the endpoints this job was OBSERVED calling in completed
+      # audit-mode runs, not from a guess. Needs:
+      # the deploy-key checkout of the pinned private standards repo is an SSH clone, so
+      # github.com is needed on 22 as well as 443.
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
         with:
-          egress-policy: audit
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            raw.githubusercontent.com:443
+            release-assets.githubusercontent.com:443
+            objects.githubusercontent.com:443
+            *.actions.githubusercontent.com:443
+            *.blob.core.windows.net:443
+            *.githubapp.com:443
+            github.com:22
       - name: Check out this repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

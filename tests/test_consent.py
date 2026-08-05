@@ -91,6 +91,7 @@ def test_invalid_status_rejected() -> None:
 
 def test_from_dict_rejects_non_mapping() -> None:
     with pytest.raises(LedgerError):
+        # Passing the wrong type deliberately: the runtime guard is the thing under test.
         ConsentRequest.from_dict(["not", "a", "mapping"])  # type: ignore[arg-type]
 
 

@@ -32,10 +32,27 @@ jobs:
       security-events: write
       contents: read
     steps:
-      # Harden-Runner (SEC-04): audit mode first, see ci.yml for the rollout note.
+      # Harden-Runner (SEC-04): deny-by-default egress. The allowlist below is
+      # derived from the endpoints this job was OBSERVED calling in completed
+      # audit-mode runs, not from a guess. Needs:
+      # pip installs the pinned semgrep, which then fetches the `p/ci` ruleset from
+      # semgrep.dev and posts anonymous run metrics.
       - uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
         with:
-          egress-policy: audit
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            raw.githubusercontent.com:443
+            release-assets.githubusercontent.com:443
+            objects.githubusercontent.com:443
+            *.actions.githubusercontent.com:443
+            *.blob.core.windows.net:443
+            *.githubapp.com:443
+            pypi.org:443
+            files.pythonhosted.org:443
+            semgrep.dev:443
+            metrics.semgrep.dev:443
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
@@ -51,6 +68,6 @@ jobs:
         run: semgrep scan --config p/ci --sarif --output semgrep.sarif --error src tests
       - name: Upload SARIF to code scanning
         if: always()
-        uses: github/codeql-action/upload-sarif@e0647621c2984b5ed2f768cb892365bf2a616ad1  # v4
+        uses: github/codeql-action/upload-sarif@f205ea1c3313d32999d8d6a48b4f6530d4437b38  # v4.37.4
         with:
           sarif_file: semgrep.sarif
