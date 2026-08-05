@@ -736,3 +736,79 @@ def test_redact_suggest_reads_stdin_and_never_applies_anything(
     assert out["count"] == 0
     # A scan command takes no --root: it cannot touch an archive, only read text.
     assert list(tmp_path.iterdir()) == []
+
+
+def test_ingest_refuses_payloads_that_share_a_filename(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Two sources with the same basename must not silently collapse to one.
+
+    A bag's payload is keyed by filename, so the second file replaced the first
+    and ingest still reported success: the record listed one payload, PREMIS
+    logged "ingested 1 payload file(s)", and `ledger audit` passed, because the
+    bag was internally consistent. Nothing anywhere said a file the steward
+    handed the archive was gone. Found by ingesting a directory tree whose
+    per-directory pages share names, which is ordinary for a digitisation
+    package.
+    """
+    root = tmp_path / "arc"
+    assert _init(root) == 0
+    a = tmp_path / "a"
+    b = tmp_path / "b"
+    a.mkdir()
+    b.mkdir()
+    (a / "page-001.txt").write_text("from A", encoding="utf-8")
+    (b / "page-001.txt").write_text("from B, entirely different", encoding="utf-8")
+    capsys.readouterr()
+
+    rc = cli.main(
+        [
+            "ingest",
+            "--root",
+            str(root),
+            "--title",
+            "Colliding basenames",
+            str(a / "page-001.txt"),
+            str(b / "page-001.txt"),
+            "--now",
+            _NOW,
+        ]
+    )
+
+    assert rc != 0
+    err = capsys.readouterr().err
+    assert "page-001.txt" in err
+    # Fail closed: nothing is written, so there is no half-ingested record to reason about.
+    assert not list((root / "store" / "bags").iterdir())
+
+
+def test_ingest_still_accepts_distinct_filenames_from_different_directories(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The collision guard must not reject an ordinary multi-directory ingest."""
+    root = tmp_path / "arc"
+    assert _init(root) == 0
+    a = tmp_path / "a"
+    b = tmp_path / "b"
+    a.mkdir()
+    b.mkdir()
+    (a / "page-001.txt").write_text("from A", encoding="utf-8")
+    (b / "page-002.txt").write_text("from B", encoding="utf-8")
+    capsys.readouterr()
+
+    rc = cli.main(
+        [
+            "ingest",
+            "--root",
+            str(root),
+            "--title",
+            "Distinct basenames",
+            str(a / "page-001.txt"),
+            str(b / "page-002.txt"),
+            "--now",
+            _NOW,
+        ]
+    )
+
+    assert rc == 0
+    assert len(list((root / "store" / "bags").iterdir())) == 1

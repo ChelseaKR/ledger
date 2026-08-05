@@ -192,10 +192,32 @@ def _cmd_ingest(args: argparse.Namespace) -> int:  # noqa: C901 - argparse optio
         content_warnings=list(args.cw or []),
     )
 
+    # A bag's payload is keyed by filename, so two sources sharing a basename would
+    # collapse to one entry and the second would silently replace the first: an
+    # archive that reported success, recorded one payload, and passed its own audit
+    # while a file the steward handed it was gone. Digitisation packages routinely
+    # carry repeated basenames across directories (per-chapter `page-001.txt`,
+    # per-volume `metadata.xml`), so this is an ordinary input, not a pathological
+    # one. Refuse the whole ingest and name the collision (fail closed): losing a
+    # payload is the one outcome a preservation tool must never reach quietly.
     payload: dict[str, Path] = {}
+    collisions: dict[str, list[Path]] = {}
     for file_arg in args.files or []:
         source = Path(file_arg)
+        if source.name in payload:
+            collisions.setdefault(source.name, [payload[source.name]]).append(source)
+            continue
         payload[source.name] = source
+    if collisions:
+        detail = "; ".join(
+            f"{name} <- {', '.join(str(p) for p in sources)}"
+            for name, sources in sorted(collisions.items())
+        )
+        raise LedgerError(
+            "two or more payload files share a filename, so one would replace the "
+            f"other in the bag: {detail}. Rename them, or ingest them as separate "
+            "records, so every file the archive is handed is the file it keeps."
+        )
 
     # A transcript/caption makes audio or video accessible to a Deaf or hard-of-
     # hearing reader (user research H3). Pre-declare the payload carrying it so the
