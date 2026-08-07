@@ -1346,34 +1346,82 @@ class Archive:
         published for community cross-checking (``/proof``), since a single copy
         can still be rewritten self-consistently by an attacker who reruns this
         same chaining logic.
+
+        A bag that is simply *absent* is not a validation failure this loop can
+        find on its own: it walks whatever directories exist under ``bags/``, so a
+        deleted bag is a directory that is not there to iterate rather than one
+        that fails to validate. Left alone, every caller of this method computes
+        ``all(report.ok for _, report in reports)`` (or the equivalent "0 failed"),
+        and that predicate is vacuously true over an empty or shrunken list — a
+        steward with raw disk access who deletes a bag, by accident or otherwise,
+        makes this audit and the signed attestation built from it (:func:`ledger.
+        attestation.build_attestation`) report *more* health, not less, right up
+        to `fixity_ok: true` over zero bags. That is the gap :meth:`remove_all_
+        copies` does not have — it always keeps the bag, the fast-lookup manifest,
+        and the tombstone in sync — and it should not exist here either. So this
+        also reconciles the bag directories found against every record id known
+        to ``records/`` (the fast-lookup manifests written at ingest — see
+        :meth:`ingest` — always exist once a bag does, so a record id with no
+        matching bag is never a normal, still-in-flight ingest, only a bag that
+        went missing after the fact) and turns each unmatched record into its own
+        failing entry, keyed by record id rather than a bag name that does not
+        exist to key it by.
         """
-        if not self.bags_dir.exists():
-            return []
         reports: list[tuple[str, AuditReport]] = []
-        for bag_path in sorted(p for p in self.bags_dir.iterdir() if p.is_dir()):
-            try:
-                report = validate_bag(bag_path)
-            except BagValidationError as exc:
-                synthetic = FixityResult(
-                    path=bag_path.name,
-                    algo=HashAlgo.SHA256,
-                    expected="structurally valid bag",
-                    actual=f"invalid: {exc}",
-                )
-                reports.append((bag_path.name, AuditReport(results=[synthetic])))
-                continue
-            chain_result = self._verify_premis_chain(bag_path / _PREMIS_FILENAME)
-            if chain_result is not None and not chain_result.ok:
-                broken = chain_result.broken_at
-                chain_failure = FixityResult(
-                    path=_PREMIS_FILENAME,
-                    algo=HashAlgo.SHA256,
-                    expected="unbroken PREMIS hash chain",
-                    actual=f"chain broken at entry {broken}" if broken is not None else "broken",
-                )
-                report = AuditReport(results=[*report.results, chain_failure])
-            reports.append((bag_path.name, report))
+        if self.bags_dir.exists():
+            for bag_path in sorted(p for p in self.bags_dir.iterdir() if p.is_dir()):
+                try:
+                    report = validate_bag(bag_path)
+                except BagValidationError as exc:
+                    synthetic = FixityResult(
+                        path=bag_path.name,
+                        algo=HashAlgo.SHA256,
+                        expected="structurally valid bag",
+                        actual=f"invalid: {exc}",
+                    )
+                    reports.append((bag_path.name, AuditReport(results=[synthetic])))
+                    continue
+                chain_result = self._verify_premis_chain(bag_path / _PREMIS_FILENAME)
+                if chain_result is not None and not chain_result.ok:
+                    broken = chain_result.broken_at
+                    chain_failure = FixityResult(
+                        path=_PREMIS_FILENAME,
+                        algo=HashAlgo.SHA256,
+                        expected="unbroken PREMIS hash chain",
+                        actual=f"chain broken at entry {broken}"
+                        if broken is not None
+                        else "broken",
+                    )
+                    report = AuditReport(results=[*report.results, chain_failure])
+                reports.append((bag_path.name, report))
+
+        audited = {name for name, _ in reports}
+        for record_id in sorted(self._record_ids_on_disk() - audited):
+            missing = FixityResult(
+                path=f"bags/{record_id}",
+                algo=HashAlgo.SHA256,
+                expected="a bag directory for this record",
+                actual="no bag directory found",
+            )
+            reports.append((record_id, AuditReport(results=[missing])))
+
         return reports
+
+    def _record_ids_on_disk(self) -> set[str]:
+        """Every record id with a fast-lookup manifest under ``records/``.
+
+        Reads file names only — never opens or parses a manifest — so a record
+        whose JSON has been damaged (itself a fixity concern, not this method's)
+        still counts as a record that ought to have a bag. Excludes the append-only
+        ``*.versions.json`` index, which names a record but is not one.
+        """
+        if not self.records_dir.exists():
+            return set()
+        return {
+            path.stem
+            for path in self.records_dir.glob("*.json")
+            if not path.name.endswith(_VERSIONS_SUFFIX)
+        }
 
     @staticmethod
     def _verify_premis_chain(premis_path: Path) -> ChainVerification | None:

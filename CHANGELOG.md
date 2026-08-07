@@ -16,6 +16,21 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 > explicitly approved through the release workflow added below.
 
 ### Fixed
+- **`audit_fixity` no longer reports health it never checked when a bag has been
+  deleted outside `remove_all_copies`.** It walked only `bags/`, so a missing bag
+  was a directory that was not there to iterate — never a validation failure.
+  Every caller computes `all(report.ok for _, report in reports)` (or the
+  equivalent "0 failed"), and that predicate is vacuously true over a shrunken
+  or empty list. Measured: deleting one bag from a 3-record archive dropped the
+  audit to `2 audited, 0 failed`; deleting all three produced `PASS: 0 bag(s)
+  audited, 0 failed`, exit 0, while `browse()` still listed all 3 records, and
+  `build_attestation()` — the function a steward's `ledger attest-health` signs
+  and publishes to `/proof` — reported `fixity_ok: true`. `audit_fixity` now
+  reconciles the bags found against every record id known to `records/` (the
+  fast-lookup manifest that always exists once a bag does, per `ingest`'s write
+  order) and turns each unmatched record into its own failing entry, keyed by
+  record id. A genuinely empty archive — no records, nothing to reconcile —
+  still audits clean; this only closes the gap where evidence used to exist.
 - **Release publication now has a trusted-main control plane.** The workflow
   accepts only an existing SSH-signed stable tag, verifies its signer and main
   ancestry before testing, builds the exact verified commit, and rechecks the
