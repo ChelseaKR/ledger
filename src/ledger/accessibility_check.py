@@ -24,12 +24,18 @@ Conformance Report (:mod:`ledger.acr_gen`); this is the automatable floor.
 
 No-outing rule: the checker reads only markup structure and emits only problem
 descriptions naming files and elements — never page content, never an identity.
+
+Examining zero documents is itself treated as a failure, not a vacuous pass
+(:class:`AccessibilityReport`, :func:`check_dir`) — a structural check that ran
+over nothing proves nothing, and must say so rather than print the same
+"passed" a real, clean scan would (#122).
 """
 
 from __future__ import annotations
 
 import re
 import sys
+from dataclasses import dataclass
 from html.parser import HTMLParser
 from pathlib import Path
 
@@ -304,21 +310,32 @@ def check_html(markup: str, *, label: str) -> list[str]:  # noqa: C901 - a flat 
 def _render_sample_pages() -> dict[str, str]:
     """Render the server's sample pages over a throwaway in-memory archive.
 
-    Best-effort: the server-rendered HTML is the surface real users see, so the
-    gate checks it directly when possible. Any failure to build the sample (a
-    missing optional dependency, a sandbox without temp write access) degrades to
-    an empty mapping rather than failing the whole check (robustness — the static
-    file scan still runs).
+    The server-rendered HTML is the surface real users see, so the gate checks it
+    directly when possible — and today it is the *only* source of structural
+    coverage, since ``web/`` ships no static ``.html`` of its own (see
+    :func:`check_dir`).
+
+    Degrades to an empty mapping — the static file scan in :func:`check_dir`
+    still runs, and :func:`check_dir` itself asserts that *something* was
+    ultimately examined — only for :exc:`OSError`. A sandbox with no writable
+    temp directory (:func:`tempfile.mkdtemp` raising) is a fact about the
+    environment this happens to run in, not a defect in this code or the
+    renderer it calls (robustness). Any other exception — a missing import, a
+    ``render.py`` signature drift, a real bug reachable from this call path —
+    means the renderer cannot render, which *is* a defect: it must propagate and
+    fail the gate loudly rather than degrade into "0 pages, 0 problems, pass",
+    which is the bug this function used to have (#122).
     """
     try:
         from tempfile import mkdtemp
 
-        from ledger import contribute
+        from ledger import contribute, i18n
         from ledger.config import Config
         from ledger.ingest import Archive
         from ledger.models import AccessPolicy, DublinCore, Field, Record
         from ledger.render import (
             _browse_main_html,
+            _overview_main_html,
             _page,
             _places_html,
             _record_main_html,
@@ -380,35 +397,103 @@ def _render_sample_pages() -> dict[str, str]:
             "rendered:/transparency": _page(
                 "Legal-process transparency", lang="en", main_html=transparency_html
             ),
+            # These three reuse a pure render function server.py already calls
+            # unmodified -- no server.py change was needed to add them (#122). The
+            # remaining uncovered routes build their <main> HTML inline inside a
+            # ServerHandler method instead of through a function like these, so
+            # reaching them would mean extracting one first: separate, real work,
+            # tracked and reasoned about route by route in
+            # docs/accessibility/ROUTE-COVERAGE.md rather than done here.
+            "rendered:/overview": _page(
+                i18n.t("en", "overview_heading"),
+                lang="en",
+                main_html=_overview_main_html(disclosed, lang="en"),
+            ),
+            "rendered:/withdraw": _page(
+                "Withdraw", lang="en", main_html=contribute.render_withdraw_main(lang="en")
+            ),
+            "rendered:/edit": _page(
+                "Edit", lang="en", main_html=contribute.render_edit_main(config, lang="en")
+            ),
         }
-    except Exception:
-        # Degrade gracefully: the static file scan still runs even if the sample
-        # cannot be rendered (robustness). A broad catch is deliberate here.
+    except OSError:
+        # A sandbox with no writable temp directory is an environment fact, not a
+        # defect -- degrade to no rendered samples so the static file scan in
+        # check_dir still runs (robustness). Everything else (ImportError,
+        # AttributeError/TypeError from a signature drift, a genuine bug in the
+        # render path) is deliberately NOT caught here: check_dir's own
+        # zero-documents assertion is the backstop for "nothing to render", but a
+        # renderer that raises for its own reasons must fail loudly, not be
+        # folded into that same silent path (#122).
         return {}
 
 
-def check_dir(path: Path) -> list[str]:
+@dataclass(frozen=True)
+class AccessibilityReport:
+    """Everything :func:`check_dir` found, and everything it actually examined.
+
+    ``html_documents`` and ``css_files`` name every artifact scanned — a file path
+    for a static file, a ``rendered:/path`` label for a server-rendered sample —
+    in the order each was checked, so a caller (or a human reading the CI log) can
+    see what a pass covered instead of only being told "passed" (#122).
+
+    An empty ``html_documents`` is not silently "no problems": :func:`check_dir`
+    appends its own entry to ``problems`` in that case, because the structural
+    checks are vacuously satisfied over zero documents and that is not evidence
+    the site is accessible — it is evidence nothing was checked. The two must
+    never look the same in this tool's own output.
+    """
+
+    problems: list[str]
+    html_documents: tuple[str, ...]
+    css_files: tuple[str, ...]
+
+
+def check_dir(path: Path) -> AccessibilityReport:
     """Scan every ``.html`` file under ``path`` (plus rendered samples) for problems.
 
-    Returns a flat list of human-readable problems across all documents; an empty
-    list means the directory passes the automatable accessibility floor. Files are
-    visited in sorted order so two runs over the same tree report identically
-    (reproducibility).
+    Returns an :class:`AccessibilityReport` naming every problem found and every
+    document/stylesheet actually examined. Files are visited in sorted order so
+    two runs over the same tree report identically (reproducibility).
+
+    Examining zero HTML documents — no static ``.html`` under ``path`` *and* no
+    server-rendered sample (:func:`_render_sample_pages` returned nothing, e.g.
+    because it hit a defect rather than the one exception it degrades for) — is
+    itself appended to ``problems`` rather than left as a quiet empty result: the
+    whole structural floor (``lang``, ``<title>``, a single ``<h1>``, ``<main>``,
+    the skip link, ``alt``, ``<label for>``, table ``<caption>``/``<th scope>``,
+    ``tabindex``) previously rested entirely on the rendered samples, and a
+    renderer that failed made this function report a clean pass having verified
+    nothing (#122).
     """
     problems: list[str] = []
+    html_documents: list[str] = []
+    css_files: list[str] = []
     if path.exists():
         for html_file in sorted(path.rglob("*.html")):
             markup = html_file.read_text(encoding="utf-8", errors="replace")
             problems.extend(check_html(markup, label=str(html_file)))
+            html_documents.append(str(html_file))
         # Colour-contrast audit over every stylesheet found (WCAG 1.4.3 / 1.4.11).
         for css_file in sorted(path.rglob("*.css")):
             css = css_file.read_text(encoding="utf-8", errors="replace")
             problems.extend(audit_css_contrast(css, label=str(css_file)))
+            css_files.append(str(css_file))
 
     for label, markup in _render_sample_pages().items():
         problems.extend(check_html(markup, label=label))
+        html_documents.append(label)
 
-    return problems
+    if not html_documents:
+        problems.append(
+            f"no HTML documents were examined under {path}: 0 static .html files, and "
+            "the server-rendered sample pages returned none. A pass with zero "
+            "documents checked is not evidence the site is accessible (#122)"
+        )
+
+    return AccessibilityReport(
+        problems=problems, html_documents=tuple(html_documents), css_files=tuple(css_files)
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -416,18 +501,27 @@ def main(argv: list[str] | None = None) -> int:
 
     The directory to scan is ``argv[0]`` if given, else ``web`` (the bundled
     site). Returns ``0`` when no problems are found and ``1`` otherwise, so a CI
-    gate can branch on the exit code (operability). Problems are printed to
-    *stdout* one per line; a clean run prints a single confirmation.
+    gate can branch on the exit code (operability). A failure lists every problem,
+    one per line. A pass names exactly what was examined — every HTML document
+    and every stylesheet, one per line — so the log is self-evidencing rather than
+    asking a reader to trust "passed" on faith (#122).
     """
     args = sys.argv[1:] if argv is None else argv
     target = Path(args[0]) if args else Path("web")
-    problems = check_dir(target)
-    if problems:
-        print(f"accessibility check FAILED for {target}: {len(problems)} problem(s)")
-        for problem in problems:
+    report = check_dir(target)
+    if report.problems:
+        print(f"accessibility check FAILED for {target}: {len(report.problems)} problem(s)")
+        for problem in report.problems:
             print(f"  - {problem}")
         return 1
-    print(f"accessibility check passed for {target}")
+    print(
+        f"accessibility check passed for {target}: {len(report.html_documents)} HTML "
+        f"document(s) and {len(report.css_files)} stylesheet(s) checked"
+    )
+    for doc in report.html_documents:
+        print(f"  - {doc}")
+    for css in report.css_files:
+        print(f"  - {css}")
     return 0
 
 

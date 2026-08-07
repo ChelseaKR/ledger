@@ -1,6 +1,6 @@
 """Tests for the static accessibility gate (:mod:`ledger.accessibility_check`).
 
-Three things matter here:
+Four things matter here:
 
 * a known-good, fully marked-up page passes ``check_html`` with no problems;
 * a page that is missing structure (``lang``, a table ``<caption>``, an ``alt``)
@@ -9,17 +9,26 @@ Three things matter here:
   them, and they cannot leak content — the no-outing rule applies to tooling too);
 * ``check_dir`` run against the real bundled ``web/`` directory passes. This last
   one is the actual CI gate: if it ever fails, the shipped site has regressed.
+* issue #122's fix holds: ``check_dir`` refuses to report a clean pass having
+  examined zero HTML documents, ``_render_sample_pages`` degrades silently only
+  for ``OSError`` (letting a genuine renderer defect fail loudly), and a pass
+  states how many documents it checked and which.
 """
 
 from __future__ import annotations
 
+import tempfile
 from pathlib import Path
 
+import pytest
+
 from ledger.accessibility_check import (
+    _render_sample_pages,
     audit_css_contrast,
     check_dir,
     check_html,
     contrast_ratio,
+    main,
 )
 
 # A minimal, fully accessible document: declared lang, non-empty title, exactly one
@@ -162,10 +171,200 @@ def test_check_dir_against_real_web_passes() -> None:
     Scans the actual shipped site (plus the server's rendered sample pages, which
     ``check_dir`` renders internally). If this regresses, the public surface has
     lost a WCAG-required structure and must be fixed before release.
+
+    ``web/`` itself ships no static ``.html`` (confirmed empty by
+    ``test_web_has_no_static_html_so_the_gate_rests_on_rendered_samples`` below), so
+    a non-empty ``html_documents`` here is proof that the rendered samples are the
+    thing actually carrying this gate, not an assumption about them.
     """
     web_root = Path(__file__).resolve().parent.parent / "web"
     assert web_root.is_dir(), f"web/ not found at {web_root}"
-    problems = check_dir(web_root)
-    assert problems == [], (
-        "the bundled web/ surface must pass the accessibility gate:\n" + "\n".join(problems)
+    report = check_dir(web_root)
+    assert report.problems == [], (
+        "the bundled web/ surface must pass the accessibility gate:\n" + "\n".join(report.problems)
     )
+    assert report.html_documents, (
+        "check_dir examined zero HTML documents -- a pass with nothing checked is "
+        "not evidence the site is accessible (#122)"
+    )
+
+
+def test_web_has_no_static_html_so_the_gate_rests_on_rendered_samples() -> None:
+    """The measured fact issue #122 is built on: ``web/`` ships no ``.html`` at all.
+
+    This is *why* ``_render_sample_pages`` degrading silently was able to make the
+    whole structural floor disappear without ``check_dir`` noticing: the static
+    file scan alone has nothing to scan. If this test ever starts failing because
+    ``web/`` gained real markup, that is good news, but it means the "rests
+    entirely on rendered samples" framing below needs revisiting too.
+    """
+    web_root = Path(__file__).resolve().parent.parent / "web"
+    assert list(web_root.rglob("*.html")) == []
+
+
+def test_render_sample_pages_returns_the_nine_documented_routes() -> None:
+    """The exact set of routes the static gate's rendered-sample coverage reaches.
+
+    Pinned so a change here is a conscious, reviewed edit (e.g. adding coverage
+    for one of the routes named in docs/accessibility/ROUTE-COVERAGE.md) rather
+    than a silent drift that the coverage doc quietly stops matching.
+    """
+    assert set(_render_sample_pages()) == {
+        "rendered:/",
+        "rendered:/record/{id}",
+        "rendered:/places",
+        "rendered:/timeline",
+        "rendered:/contribute",
+        "rendered:/transparency",
+        "rendered:/overview",
+        "rendered:/withdraw",
+        "rendered:/edit",
+    }
+
+
+def test_the_three_newly_covered_routes_pass_the_structural_check_individually() -> None:
+    """``/overview``, ``/withdraw``, and ``/edit`` close three of the eleven gaps
+    named in ``docs/accessibility/ROUTE-COVERAGE.md``, each by calling a pure
+    render function ``server.py`` already calls unmodified (``_overview_main_html``,
+    ``contribute.render_withdraw_main``, ``contribute.render_edit_main``) — no
+    change to ``server.py`` was needed. Checked individually, not just as part of
+    the aggregate ``web/`` pass, so a regression in one names itself precisely.
+    """
+    pages = _render_sample_pages()
+    for route in ("rendered:/overview", "rendered:/withdraw", "rendered:/edit"):
+        assert route in pages, f"{route} missing from _render_sample_pages()"
+        assert check_html(pages[route], label=route) == []
+
+
+def test_render_sample_pages_degrades_to_empty_on_oserror(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A sandbox with no writable temp directory degrades gracefully, as before.
+
+    ``mkdtemp`` raising ``OSError`` is the named, legitimate case from #122: an
+    environment fact, not a defect. This must keep returning ``{}`` without
+    raising, so a genuinely sandboxed run does not crash merely for lacking a
+    writable temp directory.
+    """
+
+    def _no_writable_tmp(*args: object, **kwargs: object) -> str:
+        raise OSError("no writable temp directory in this sandbox")
+
+    monkeypatch.setattr(tempfile, "mkdtemp", _no_writable_tmp)
+    assert _render_sample_pages() == {}
+
+
+def test_render_sample_pages_reraises_a_non_oserror_defect(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A renderer that raises for its own reasons must fail loudly, not degrade.
+
+    Simulates the exact failure #122 measured: substituting a renderer that
+    raises (standing in for an import error, a ``render.py`` signature drift, or
+    a real bug) used to be swallowed by the old bare ``except Exception`` and
+    silently produce ``{}``. It must now propagate.
+    """
+    from ledger import contribute
+
+    def _signature_drifted(*args: object, **kwargs: object) -> str:
+        raise TypeError("render_contribute_main() signature drifted")
+
+    monkeypatch.setattr(contribute, "render_contribute_main", _signature_drifted)
+    with pytest.raises(TypeError, match="signature drifted"):
+        _render_sample_pages()
+
+
+def test_check_dir_fails_loudly_when_the_renderer_has_a_real_defect(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """End to end: a renderer defect must fail the whole gate, not pass silently.
+
+    Before #122's fix, this exact scenario printed "accessibility check passed"
+    and exited 0, having examined zero documents. It must now propagate the
+    renderer's own exception instead of swallowing it into a false pass.
+    """
+    from ledger import contribute
+
+    def _broken(*args: object, **kwargs: object) -> str:
+        raise TypeError("render_contribute_main() signature drifted")
+
+    monkeypatch.setattr(contribute, "render_contribute_main", _broken)
+    with pytest.raises(TypeError, match="signature drifted"):
+        check_dir(tmp_path)
+
+
+def test_check_dir_reports_zero_documents_as_a_problem_not_a_pass(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The core #122 regression test: zero documents examined must never look
+    like "no problems found".
+
+    ``tmp_path`` is empty (no static ``.html``) and the renderer is monkeypatched
+    to return no samples at all (standing in for any degrade path, OSError
+    included) — the exact "0 static files and a renderer that produced nothing"
+    combination the issue measured against a real, un-monkeypatched ``web/``.
+    """
+    monkeypatch.setattr("ledger.accessibility_check._render_sample_pages", lambda: {})
+
+    report = check_dir(tmp_path)
+
+    assert report.html_documents == ()
+    assert report.problems, "zero documents examined must be reported as a problem"
+    assert any("no HTML documents were examined" in p for p in report.problems)
+
+
+def test_check_dir_oserror_degrade_is_not_a_spurious_failure_when_static_files_exist(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """OSError degrading the rendered samples must not fail a run that still has
+    real static HTML to check — the "legitimately sandboxed" case must not become
+    a spurious failure just because the render step could not run.
+    """
+    (tmp_path / "index.html").write_text(_GOOD_HTML, encoding="utf-8")
+
+    def _no_writable_tmp(*args: object, **kwargs: object) -> str:
+        raise OSError("no writable temp directory in this sandbox")
+
+    monkeypatch.setattr(tempfile, "mkdtemp", _no_writable_tmp)
+
+    report = check_dir(tmp_path)
+
+    assert report.problems == []
+    assert report.html_documents == (str(tmp_path / "index.html"),)
+
+
+def test_main_reports_document_count_and_names_on_a_pass(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    """A pass names how many documents it checked and which — the log is
+    self-evidencing, not just a bare "passed" a reader has to take on faith.
+    """
+    (tmp_path / "index.html").write_text(_GOOD_HTML, encoding="utf-8")
+
+    exit_code = main([str(tmp_path)])
+
+    out = capsys.readouterr().out
+    assert exit_code == 0
+    assert "passed" in out
+    # Nine rendered samples plus the one static file just written.
+    assert "10 HTML document(s)" in out
+    assert str(tmp_path / "index.html") in out
+    assert "rendered:/contribute" in out
+
+
+def test_main_fails_loudly_instead_of_a_false_pass_when_nothing_was_examined(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    """The measured #122 bug, end to end through the CLI entry point: a renderer
+    that produces nothing over an otherwise-empty directory must exit non-zero and
+    say so, never print "accessibility check passed".
+    """
+    monkeypatch.setattr("ledger.accessibility_check._render_sample_pages", lambda: {})
+
+    exit_code = main([str(tmp_path)])
+
+    out = capsys.readouterr().out
+    assert exit_code == 1
+    assert "passed" not in out
+    assert "FAILED" in out
+    assert "no HTML documents were examined" in out
