@@ -1,6 +1,6 @@
 # Accessibility
 
-Last verified: 2026-08-01 · Recheck cadence: per release
+Last verified: 2026-08-06 · Recheck cadence: per release
 
 This document states ledger's accessibility commitment, what it covers, and how it
 is enforced. It is the prose companion to two machine artifacts: the automated gate
@@ -102,10 +102,12 @@ the build. The gate has two parts.
 1. **Automated structural check (`make accessibility`).** The `accessibility` job in
    `.github/workflows/ci.yml` runs `python -m ledger.accessibility_check web` on
    every push and pull request. The checker is dependency-free and built on the
-   standard-library `html.parser`. It scans the static HTML under `web/` **and**
-   the server-rendered sample pages (browse and a single record), and fails the
-   build (exit code 1) on any of the structural WCAG 2.x violations it can verify
-   statically:
+   standard-library `html.parser`. `web/` ships no static `.html` of its own, so
+   the check scans **nine server-rendered sample pages** — browse, a record,
+   places, timeline, the collection overview, contribute, withdraw, edit, and the
+   transparency log (`ledger.accessibility_check._render_sample_pages`) — and
+   fails the build (exit code 1) on any of the structural WCAG 2.x violations it
+   can verify statically:
    - a missing or empty `lang` on `<html>` (3.1.1);
    - a missing or empty `<title>` (2.4.2);
    - zero or more than one `<h1>` (1.3.1);
@@ -119,6 +121,22 @@ the build. The gate has two parts.
    This is the automatable **floor**, not a claim of full conformance. It catches
    the structural regressions a machine can catch, deterministically, on every
    commit.
+
+   Because the nine rendered sample pages are the *only* structural coverage
+   (`web/` has no static HTML of its own), a check that examined zero of them
+   is treated as a failure, not a vacuous pass: `check_dir` refuses to report
+   success having checked nothing, and a passing run's own output states how
+   many documents it examined and names each one, so "9 checked, clean" and "0
+   checked" can never print the same "accessibility check passed" line
+   ([#122](https://github.com/ChelseaKR/ledger/issues/122)). The renderer degrades
+   silently only for `OSError` — a sandbox with no writable temp directory, an
+   environment fact — never for a renderer defect, which fails the gate loudly
+   instead.
+
+   The static gate and the browser job below do not reach every HTML-emitting
+   route in `server.py`; which routes are covered by which mechanism, and which
+   8 have no automated coverage from either today, is recorded in
+   [`docs/accessibility/ROUTE-COVERAGE.md`](accessibility/ROUTE-COVERAGE.md).
 
    A second, **browser-real** automated job adds engine-backed depth on top of that
    static floor. The `accessibility-browser` job in `.github/workflows/ci.yml`

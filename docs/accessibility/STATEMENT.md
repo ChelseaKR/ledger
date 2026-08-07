@@ -1,6 +1,6 @@
 # Accessibility statement
 
-**Last verified: 2026-08-01 · Recheck cadence: per release and quarterly**
+**Last verified: 2026-08-06 · Recheck cadence: per release and quarterly**
 
 This is ledger's public accessibility statement (A11Y-16). It says what we have
 tested, what we have **not** tested, and what to do if the software fails you.
@@ -71,6 +71,13 @@ Also untested, and named rather than omitted:
 - **Magnification and text-spacing** beyond the 320px reflow case (SC 1.4.4, 1.4.12).
 - **Speech input** (Dragon, Voice Control).
 - **Cognitive-load review** by anyone other than the maintainer.
+- **8 of 21 HTML-emitting routes** — including the per-record consent form, one
+  of the pages a contributor uses to retract or tighten their own consent — have
+  no automated coverage from the structural gate or the browser job. (Two
+  sibling pages, `/withdraw` and `/edit`, gained structural-gate coverage
+  alongside this line.) The full route-by-route accounting, and why closing the
+  rest is follow-up work rather than folded into the fix that added this line,
+  is in [`ROUTE-COVERAGE.md`](ROUTE-COVERAGE.md).
 
 ## Known limitations
 

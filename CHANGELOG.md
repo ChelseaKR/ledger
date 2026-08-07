@@ -31,6 +31,34 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   order) and turns each unmatched record into its own failing entry, keyed by
   record id. A genuinely empty archive — no records, nothing to reconcile —
   still audits clean; this only closes the gap where evidence used to exist.
+- **The static accessibility gate can no longer pass having checked zero
+  documents.** `web/` ships no static `.html`, so the whole structural floor
+  (`lang`, `<title>`, a single `<h1>`, `<main>`, the skip link, `alt`,
+  `<label for>`, table `<caption>`/`<th scope>`, `tabindex`) rested entirely on
+  `_render_sample_pages()`, which ended in a bare `except Exception: return {}`.
+  A renderer that raised for any reason — an import error, a `render.py`
+  signature drift, a real bug — made `check_dir`/`main(['web'])` print
+  `accessibility check passed for web` and exit 0 having examined nothing.
+  `_render_sample_pages()` now degrades silently only for `OSError` (a sandbox
+  with no writable temp directory, an environment fact); any other exception
+  propagates and fails the gate loudly. `check_dir` now asserts it examined at
+  least one HTML document and reports zero as a problem, never a pass, and a
+  passing run's own output states how many documents (and stylesheets) it
+  checked and names each one — the log is self-evidencing instead of asking a
+  reader to trust "passed" on faith. While diagnosing the route-coverage gap
+  this bug could hide, `/overview`, `/withdraw`, and `/edit` turned out to
+  already build their HTML through a pure function `server.py` calls
+  unmodified, so the static gate now renders and checks all three too — no
+  `server.py` change needed, and `/withdraw`/`/edit` were the two
+  highest-priority gaps this issue named (the pages a contributor uses to
+  retract or tighten their own consent). Of 21 HTML-emitting routes in
+  `server.py`, 13 now have automated accessibility coverage from either engine;
+  the other 8 — including the per-record consent form, the third of the
+  three highest-priority routes — need a `server.py` extraction or new sample
+  state this PR deliberately does not add, and are recorded, route by route and
+  dated, in the new
+  [`docs/accessibility/ROUTE-COVERAGE.md`](docs/accessibility/ROUTE-COVERAGE.md)
+  rather than left an undocumented gap. Refs #122.
 - **Release publication now has a trusted-main control plane.** The workflow
   accepts only an existing SSH-signed stable tag, verifies its signer and main
   ancestry before testing, builds the exact verified commit, and rechecks the
