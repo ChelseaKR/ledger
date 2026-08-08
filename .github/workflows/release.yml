@@ -354,6 +354,7 @@ jobs:
       - name: Recheck immutable tag object before PyPI publication
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           TAG: ${{ needs.verify.outputs.release_tag }}
           TAG_OBJECT_SHA: ${{ needs.verify.outputs.tag_object_sha }}
         run: |
@@ -485,4 +486,4 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --title "${TAG}" \
             --generate-notes \
-            --verify-tag
+           
