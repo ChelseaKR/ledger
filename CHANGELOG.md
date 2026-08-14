@@ -39,7 +39,10 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   claims it *cannot* check on every run, published for readers in `CONTRIBUTING.md`
   and kept in step by `tests/test_claims_gate.py`. The same sweep found two more dead
   roadmap pointers (`DEFINITION_OF_DONE.md`, `docs/DORA-DELIVERY-HEALTH-REVIEW.md`),
-  now corrected.
+  now corrected — and a sixth home for the `/healthz` claim, in `infra/README.md`,
+  which is the operator-facing copy and the worse of the two: it told someone
+  standing up a server to point an uptime monitor at `/healthz` and read counts an
+  anonymous request does not return.
 - **The truthfulness gate now runs on pull requests.** It was documented as
   merge-blocking and listed in `make verify`, but `ci.yml` never invoked it: it ran
   only on a contributor's machine and at tag time in `release.yml`, so the one place

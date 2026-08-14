@@ -93,11 +93,23 @@ def test_the_stale_claim_is_gone_from_the_docs(path: str, phrase: str, _name: st
         ("README.md", "residual-risk\nregister](docs/audits/residual-risk-register.md)"),
         ("README.md", "review documents under"),
         ("docs/ARCHITECTURE.md", "gated to a steward grant"),
+        ("infra/README.md", "gated to a steward grant"),
     ],
 )
 def test_the_corrected_claim_is_actually_stated(path: str, phrase: str) -> None:
     text = (REPO_ROOT / path).read_text(encoding="utf-8")
     assert phrase in text, f"{path} no longer states the corrected claim {phrase!r}"
+
+
+def test_the_healthz_claim_is_gone_from_the_self_host_runbook_too() -> None:
+    """The fifth claim had a second home nobody listed: `infra/README.md`.
+
+    It is the operator-facing copy, and the worse of the two — it tells someone
+    standing up a server to point an uptime monitor at `/healthz` and read counts an
+    anonymous request has not returned since P2-2 gated them.
+    """
+    text = (REPO_ROOT / "infra/README.md").read_text(encoding="utf-8")
+    assert "fixity counts only" not in text
 
 
 def test_every_stale_claim_has_an_inventory_entry_that_names_it() -> None:

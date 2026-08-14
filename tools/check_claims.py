@@ -355,6 +355,21 @@ CLAIMS: tuple[Claim, ...] = (
         "are behind a steward grant (P2-2). Do not describe the endpoint as leaking totals "
         "the code no longer exposes (#124).",
     ),
+    ForbiddenString(
+        "healthz-counts-are-gated-in-the-runbook",
+        "infra/README.md",
+        "fixity counts only",
+        "the self-host runbook told an operator to expect counts from an anonymous "
+        "/healthz; they are behind a steward grant (P2-2), so a monitor pointed at the "
+        "endpoint sees all_verified and not the numbers (#124).",
+    ),
+    RequiredString(
+        "healthz-gating-in-the-runbook",
+        "infra/README.md",
+        "gated to a steward grant",
+        "the self-host runbook must say which /healthz fields an anonymous monitor "
+        "actually gets, not merely stop promising counts.",
+    ),
     RequiredString(
         "lockfile-is-hash-pinned",
         "uv.lock",
