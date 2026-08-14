@@ -175,8 +175,9 @@ disclosure model. ledger makes both explicit and tests both.
 external-identifier metadata. PREMIS records the events (ingest, fixity check, replication,
 redaction, access-policy change, takedown) with the agent and outcome of each, so the chain of
 custody is auditable. Dublin Core describes the record for discovery. Fixity is verified on a
-schedule across every replica; a mismatch raises a `fixity-failure` PREMIS event, quarantines the
-bad copy, and heals from a verified replica rather than trusting the divergent one.
+schedule across every replica; a mismatch raises a `fixity-failure` PREMIS event and quarantines the
+bad copy, and `ledger heal` rebuilds it from a replica that just passed validation rather than
+trusting the divergent one.
 
 **Disclosure.** Every record and field carries an access policy drawn from a small, documented set
 (`public`, `community`, `stewards`, `sealed-until`, `sealed-conditional`). A grant maps a viewer to
@@ -224,7 +225,8 @@ remain tracked in `docs/ROADMAP.md`.
 **Durability** — replicated content-addressed copies across independent locations; no single point of
 loss. **Redundancy** — every bag exists in N configured locations, re-verified on arrival. **Reliability**
 and **dependability** — scheduled fixity audits catch bit rot before it spreads. **Recoverability** —
-a quarantined copy heals from a verified replica; the store rebuilds from bags. **Survivability** — the
+`ledger heal` rebuilds a quarantined or missing copy from a verified replica; the store rebuilds
+from bags. **Survivability** — the
 archive outlives any one host, drive, or maintainer because the package is plain BagIt anyone can read.
 **Stability** — the bag layout and metadata schemas are versioned and stable across releases.
 **Correctness** and **accuracy** — fixity is checked against the manifest, not assumed; PREMIS events

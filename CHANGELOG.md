@@ -66,6 +66,29 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Release publication.
 
 ### Added
+- **`ledger heal` and `ledger mutual-aid seal|attest|verify|recover` — the recovery
+  capabilities the docs described now have operator entry points.** `replicate.heal`
+  and the whole EXP-15 sealed-replica family were written, documented, and unit-tested
+  with no subcommand, no route, and no call site in `src/` outside the module defining
+  them: 38 references to the sealed family, all in `tests/`. The README states as a
+  rule that a quarantined copy "heals from a verified replica", `docs/ARCHITECTURE.md`
+  maps Recoverability straight at `replicate.heal`, and `docs/MUTUAL-AID.md` is an
+  operator runbook whose steps 3-5 were Python calls against internal APIs — for an
+  audience of community archivists and mutual-aid organizers, explicitly not
+  developers. `ledger heal` always passes the archive's takedown tombstones, so a
+  pending takedown is applied before any copying and a tombstoned bag is never
+  resurrected from a stale replica; it prints heal's honest limit (fixity-aware, not
+  revision-aware) on stderr where the steward acting on it will read it, and exits
+  non-zero if a healed copy arrived torn. The mutual-aid group takes its pairing key
+  only from `LEDGER_PAIRING_KEY` — there is no `--key` flag, because a key in argv is a
+  key in shell history and in the process table — and `attest` needs neither the key
+  nor an archive, so the *holding* partner can run it on a cron job over a directory of
+  blobs they cannot read. `verify` and `recover` exit non-zero on a drifted copy or a
+  failed drill, so a scheduled check fails loudly instead of reporting a recovery that
+  would not have worked.
+- **`Archive.bag_path`.** The one supported way for steward tooling to turn a record id
+  into a bag directory, with the same path-component validation the rest of the module
+  uses, so the CLI does not reimplement it by string concatenation.
 - **`ledger --version`.** The CLI had no top-level version flag — `COMMAND` was a
   required positional, so there was no way to ask an installed `ledger` what
   version it was without opening `pyproject.toml`. Prints `ledger <version>` and

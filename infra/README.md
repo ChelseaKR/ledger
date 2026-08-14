@@ -319,10 +319,20 @@ Schedule it on the host (example: daily at 03:30):
 30 3 * * *  docker compose -f /path/to/ledger/infra/docker-compose.yml exec -T ledger ledger audit --root /data >> /var/log/ledger-audit.log 2>&1
 ```
 
-The live `/healthz` endpoint also carries a rolling fixity summary, so your
-uptime monitor will turn the box red on drift even between scheduled audits. When
-a bag fails, do not overwrite it blindly: heal it by restoring that bag from a
-verified replica or backup, then re-run the audit.
+The live `/healthz` endpoint also reports `all_verified` for the whole archive (the
+counts behind it need a steward grant), so your uptime monitor will turn the box red
+on drift even between scheduled audits. When a bag fails, do not overwrite it blindly:
+
+```sh
+docker compose -f infra/docker-compose.yml exec ledger \
+  ledger heal --root /data --id <record-id> --actor <steward-id>
+```
+
+`heal` copies only from a replica that has just passed full validation, re-verifies
+the copy on arrival, and refuses to act at all when no replica validates — so a
+divergent copy can never propagate. It exits non-zero if a healed copy arrived torn
+and was quarantined. Re-run the audit afterwards. If no replica validates, restore
+that bag from a backup (`ledger restore-backup`) instead.
 
 ---
 
@@ -406,6 +416,7 @@ docker compose -f infra/docker-compose.yml down              # stop + remove con
 # Operations (all run against the /data volume inside the container)
 ledger audit    --root /data                                 # fixity audit (exit non-zero on failure)
 ledger replicas --root /data --id <id>                       # replica health for one bag
+ledger heal     --root /data --id <id> --actor <s>           # rebuild failing/missing replicas
 ledger browse   --root /data [--as steward]                  # what a viewer can see
 ledger takedown --root /data --id <id> --actor <s> --reason <why>
 ledger policy   --root /data --id <id> --level <lvl> --actor <s> --reason <why>
