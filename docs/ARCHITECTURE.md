@@ -320,9 +320,13 @@ anonymous unless `X-Ledger-Grant` names a *pre-provisioned* subject in the grant
 file, and the header confers nothing on its own. `/record/{id}` renders a textual
 content-warning interstitial before the content, and a missing record and a
 not-permitted record render the *same* neutral 404, so the response never reveals
-whether a sealed record exists. `/healthz` reports counts only (bags audited, passed,
-failed, files checked) — no path, digest, record id, or identity. The site binds to
-`127.0.0.1` by default.
+whether a sealed record exists. `/healthz` answers an anonymous request with `status`,
+`all_verified`, `ready`, and an opaque `chain_head` commitment only (plus a generic
+`reason` code when the readiness probe fails); the absolute counts — bags audited,
+passed, failed, files checked — are gated to a steward grant, because the totals include
+sealed and community records and would let an outsider learn the archive's size and poll
+for the moment a sealed record is added (P2-2). Neither form carries a path, digest,
+record id, or identity. The site binds to `127.0.0.1` by default.
 
 ### 1.11 CLI: `cli.py` and `config.py`
 

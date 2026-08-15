@@ -16,6 +16,37 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 > explicitly approved through the release workflow added below.
 
 ### Fixed
+- **Five stale README/architecture statements corrected, and the truthfulness gate
+  widened so this class of claim is inside it.** All five drifted in the same
+  direction — describing work as still owed that had shipped, or behaviour the code
+  had since tightened — and `tools/check_claims.py` was green throughout, because a
+  claim it does not hold cannot fail it. Corrected: dependency pinning is not "a
+  range today" (a hash-pinned `uv.lock` is committed, `uv sync --locked` installs
+  from it, and a blocking OSV job scans it — the README's own standards table
+  already said so 161 lines further down); the residual-risk register and the
+  `docs/audits/` review set are committed, with only the human sign-off (#82) open;
+  the README's observability section pointed at a roadmap item, `P3-6`, that exists
+  nowhere in the repo; and `/healthz` has not "reported counts only" since the counts were
+  gated behind a steward grant (P2-2) — an anonymous request gets `status`,
+  `all_verified`, `ready`, and `chain_head`, so a reader auditing the threat model
+  would have concluded the endpoint leaks archive size that the code no longer
+  exposes. The gate gains three claim kinds — `required_string` (the evidence a
+  correction rests on, since "the old phrase is gone" is also true of a deleted
+  paragraph), `stated_count` (a number in the prose re-derived from the tree, which
+  fails both when the count is wrong and when the sentence stating it disappears),
+  and `reference_exists` (every "tracked in `docs/ROADMAP.md`, <ID>" pointer in every
+  committed Markdown file must resolve there) — and it now prints the load-bearing
+  claims it *cannot* check on every run, published for readers in `CONTRIBUTING.md`
+  and kept in step by `tests/test_claims_gate.py`. The same sweep found two more dead
+  roadmap pointers (`DEFINITION_OF_DONE.md`, `docs/DORA-DELIVERY-HEALTH-REVIEW.md`),
+  now corrected — and a sixth home for the `/healthz` claim, in `infra/README.md`,
+  which is the operator-facing copy and the worse of the two: it told someone
+  standing up a server to point an uptime monitor at `/healthz` and read counts an
+  anonymous request does not return.
+- **The truthfulness gate now runs on pull requests.** It was documented as
+  merge-blocking and listed in `make verify`, but `ci.yml` never invoked it: it ran
+  only on a contributor's machine and at tag time in `release.yml`, so the one place
+  it never ran was the pull request it exists to block.
 - **`audit_fixity` no longer reports health it never checked when a bag has been
   deleted outside `remove_all_copies`.** It walked only `bags/`, so a missing bag
   was a directory that was not there to iterate — never a validation failure.

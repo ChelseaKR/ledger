@@ -86,12 +86,15 @@ From the **repository root** (the compose build context is the repo root):
 
    ```sh
    docker compose -f infra/docker-compose.yml ps          # STATUS should show (healthy)
-   curl -fsS http://127.0.0.1:8000/healthz                 # JSON: status + fixity counts
+   curl -fsS http://127.0.0.1:8000/healthz                 # JSON: status + all_verified
    ```
 
-   `/healthz` reports `status` and fixity counts only (bags audited / passed /
-   failed, files checked). It never exposes a bag path, a record id, or any
-   identity — it is safe to point a monitor at.
+   An anonymous request to `/healthz` returns `status`, `all_verified`, `ready`, and
+   an opaque `chain_head` commitment. The fixity counts (bags audited / passed /
+   failed, files checked) are gated to a steward grant, so an uptime monitor can see
+   whether the archive is healthy without learning how large it is; point a monitor at
+   it with a provisioned steward grant if you want the numbers. It never exposes a bag
+   path, a record id, or any identity — it is safe to point a monitor at.
 
 5. **Front it with a reverse proxy.** Terminate TLS and add rate limiting on the
    host, forwarding to `127.0.0.1:<LEDGER_PORT>`. Do not publish the container
