@@ -95,8 +95,16 @@ from ledger.reading_room_enclave import (
     AggregateQuery,
     ReadingRoomEnclave,
 )
-from ledger.replicate import verify_replicas
+from ledger.replicate import (
+    attest_sealed_replica,
+    heal,
+    recover_sealed_bag,
+    replicate_sealed_bag,
+    verify_replicas,
+    verify_sealed_attestation,
+)
 from ledger.server import serve
+from ledger.tombstones import TombstoneStore
 
 _CONFIG_FILENAME = "config.json"
 
@@ -1110,6 +1118,171 @@ def _cmd_replicas(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_heal(args: argparse.Namespace) -> int:
+    """``heal`` — rebuild every failing or missing replica of one bag from a verified one.
+
+    The operator entry point for :func:`ledger.replicate.heal`, which the README and
+    the architecture doc both present as how the archive recovers: a quarantined copy
+    heals from a verified replica. Until this command existed the capability was
+    library-only, so the documented recovery path could not be run by the community
+    archivists it is written for, and had never been exercised outside pytest — the
+    state a recovery path is most likely to be broken in on the day it is needed.
+
+    Safety: the archive's takedown tombstones are always passed, so a takedown that
+    was pending at an offline location is applied *before* any copying and a
+    tombstoned bag is never resurrected from a stale replica.
+
+    Failure transparency: prints one line per attempted heal and exits ``1`` if any
+    heal arrived torn and was quarantined (cron/CI can branch on it), ``2`` via
+    :class:`~ledger.errors.LedgerError` when no replica validates at all — there is
+    nothing trustworthy to heal from, and a divergent copy is never blessed.
+    """
+    archive = _open_archive(Path(args.root))
+    now = args.now if args.now else now_iso()
+    events = heal(
+        args.id,
+        archive.config.locations,
+        agent=args.actor,
+        now=now,
+        tombstones=TombstoneStore(archive.logs_dir),
+    )
+    if not events:
+        print(f"heal: every replica of bag {args.id} already verified; nothing to do")
+        return 0
+    quarantined = 0
+    for event in events:
+        print(f"{event.event_type.value}\t{event.outcome}\t{event.detail}")
+        if event.outcome != "success":
+            quarantined += 1
+    # An honest limit, printed where the steward acting on it will read it: heal
+    # validates that a replica is internally consistent, not that it is current.
+    print(
+        "note: heal copies from a replica that just passed validation, which means "
+        "internally consistent, not necessarily the newest revision — re-replicate "
+        "promptly after an update rather than relying on a heal to preserve one.",
+        file=sys.stderr,
+    )
+    return 1 if quarantined else 0
+
+
+def _pairing_key() -> bytes:
+    """The mutual-aid pairing key, from the environment and never from argv.
+
+    Confidentiality: a key passed as a command-line argument lands in shell history
+    and in the process table for every other user on the box, so ``LEDGER_PAIRING_KEY``
+    is the only way in — the same rule ``vault rekey`` applies to the vault key. The
+    key is never printed, never logged, and never written into a sealed blob.
+    """
+    raw = os.environ.get("LEDGER_PAIRING_KEY")
+    if not raw:
+        raise LedgerError(
+            "set LEDGER_PAIRING_KEY to the pairing key (via the environment, never argv)"
+        )
+    return raw.encode("ascii")
+
+
+def _pairing_location(args: argparse.Namespace) -> StorageLocation:
+    """Resolve the partner location from ``--location`` (config) or ``--path`` (bare).
+
+    Two ways in, because the exchange has two sides: the *owner* has the partner
+    registered in their config by ``ledger add-location`` and names it; the *holding*
+    partner may have no archive at all — they hold a directory of opaque blobs they
+    cannot read — and gives its path directly.
+    """
+    if args.path:
+        return StorageLocation(name=args.path, path=args.path, kind="mirror")
+    if not args.location:
+        raise LedgerError("give --location NAME (with --root) or --path DIR")
+    config = _load_config(Path(args.root))
+    for location in config.locations:
+        if location.name == args.location:
+            return location
+    known = ", ".join(sorted(loc.name for loc in config.locations)) or "none configured"
+    raise LedgerError(f"no storage location named {args.location!r} (known: {known})")
+
+
+def _cmd_mutual_aid_seal(args: argparse.Namespace) -> int:
+    """``mutual-aid seal`` — send one bag to a partner as ciphertext they cannot read.
+
+    Step 3 of the pairing runbook in ``docs/MUTUAL-AID.md``, which until now was a
+    Python call a community archivist had to write themselves. Prints the digest to
+    keep — never the key, never the ciphertext — because that digest is what a later
+    ``mutual-aid verify`` compares a partner's attestation against.
+    """
+    archive = _open_archive(Path(args.root))
+    location = _pairing_location(args)
+    now = args.now if args.now else now_iso()
+    event, digest = replicate_sealed_bag(
+        archive.bag_path(args.id),
+        location,
+        _pairing_key(),
+        agent=args.actor,
+        now=now,
+    )
+    print(f"{event.event_type.value}\t{event.outcome}\t{event.detail}")
+    print(f"sealed digest (keep this, not the key or the ciphertext): {digest}")
+    return 0
+
+
+def _cmd_mutual_aid_attest(args: argparse.Namespace) -> int:
+    """``mutual-aid attest`` — report the digest of the ciphertext a location holds.
+
+    Step 4 of the runbook, and the command a *holding* partner puts on a cron job:
+    it never decrypts and never asks for the key, so an instance that has never held
+    the key can attest to exactly which bytes it is storing. A missing blob is
+    reported, not raised (a partner that has lost a copy must be able to say so).
+    """
+    location = _pairing_location(args)
+    now = args.now if args.now else now_iso()
+    attestation = attest_sealed_replica(location, args.bag, now=now)
+    if not attestation.exists:
+        print(f"missing\t{attestation.location}\t{attestation.bag}\t{attestation.checked_at}")
+        return 1
+    print(
+        f"present\t{attestation.location}\t{attestation.bag}\t"
+        f"{attestation.sealed_sha256}\t{attestation.checked_at}"
+    )
+    return 0
+
+
+def _cmd_mutual_aid_verify(args: argparse.Namespace) -> int:
+    """``mutual-aid verify`` — check a partner's copy against the digest from seal time.
+
+    Exits ``0`` only when the bytes on the partner's disk still hash to ``--expect``.
+    A mismatch or a missing blob exits ``1``: the copy drifted, was substituted, or is
+    gone, which is evidence to act on well before a real loss forces the question.
+    """
+    location = _pairing_location(args)
+    now = args.now if args.now else now_iso()
+    attestation = attest_sealed_replica(location, args.bag, now=now)
+    if verify_sealed_attestation(args.expect, attestation):
+        print(f"ok\t{attestation.location}\t{attestation.bag}\t{attestation.checked_at}")
+        return 0
+    state = "present but different" if attestation.exists else "missing"
+    print(
+        f"MISMATCH\t{attestation.location}\t{attestation.bag}\t{state}\t{attestation.checked_at}",
+        file=sys.stderr,
+    )
+    return 1
+
+
+def _cmd_mutual_aid_recover(args: argparse.Namespace) -> int:
+    """``mutual-aid recover`` — pull a sealed copy back, decrypt it, and validate it.
+
+    Step 5 of the runbook: the recovery drill, run exactly the way a real recovery
+    would be — read whatever ciphertext the partner holds, decrypt it locally with the
+    key that never left home, and run the result through the same ``validate_bag``
+    every other path uses. Exits non-zero when the recovered bag fails validation, so
+    a scheduled drill fails loudly rather than reporting a recovery that would not
+    have worked.
+    """
+    location = _pairing_location(args)
+    report = recover_sealed_bag(location, args.bag, _pairing_key(), Path(args.into))
+    flag = "ok" if report.ok else "FAIL"
+    print(f"{flag}\t{args.bag}\trecovered to {args.into}\t({report.checked} file(s) checked)")
+    return 0 if report.ok else 1
+
+
 def _cmd_add_location(args: argparse.Namespace) -> int:
     """``add-location`` — register a mirror target in the archive config.
 
@@ -1799,6 +1972,64 @@ def _build_parser() -> argparse.ArgumentParser:
     p_replicas.add_argument("--root", required=True)
     p_replicas.add_argument("--id", required=True)
     p_replicas.set_defaults(func=_cmd_replicas)
+
+    p_heal = sub.add_parser(
+        "heal", help="rebuild failing or missing replicas of a bag from a verified one"
+    )
+    p_heal.add_argument("--root", required=True)
+    p_heal.add_argument("--id", required=True, help="the bag (record id) to heal")
+    p_heal.add_argument("--actor", required=True, help="steward id performing the heal")
+    p_heal.add_argument("--now", help="ISO-8601 timestamp")
+    p_heal.set_defaults(func=_cmd_heal)
+
+    # EXP-15. The pairing key always arrives in LEDGER_PAIRING_KEY, never in argv:
+    # a key on the command line is a key in shell history and in the process table.
+    p_aid = sub.add_parser(
+        "mutual-aid", help="encrypted replica exchange with a partner archive (EXP-15)"
+    )
+    aid_sub = p_aid.add_subparsers(dest="mutual_aid_command", required=True, metavar="SUBCOMMAND")
+
+    p_aid_seal = aid_sub.add_parser(
+        "seal", help="seal a bag and send the ciphertext to a partner (key via env)"
+    )
+    p_aid_seal.add_argument("--root", required=True)
+    p_aid_seal.add_argument("--id", required=True, help="the bag (record id) to seal")
+    p_aid_seal.add_argument("--location", help="name of a configured partner location")
+    p_aid_seal.add_argument("--path", help="partner storage directory (instead of --location)")
+    p_aid_seal.add_argument("--actor", required=True, help="steward id sending the copy")
+    p_aid_seal.add_argument("--now", help="ISO-8601 timestamp")
+    p_aid_seal.set_defaults(func=_cmd_mutual_aid_seal)
+
+    p_aid_attest = aid_sub.add_parser(
+        "attest", help="report the digest of the sealed blob a location holds (no key)"
+    )
+    p_aid_attest.add_argument("--root", default=".", help="archive root (used with --location)")
+    p_aid_attest.add_argument("--location", help="name of a configured partner location")
+    p_aid_attest.add_argument("--path", help="partner storage directory (instead of --location)")
+    p_aid_attest.add_argument("--bag", required=True, help="the sealed bag (record id)")
+    p_aid_attest.add_argument("--now", help="ISO-8601 timestamp")
+    p_aid_attest.set_defaults(func=_cmd_mutual_aid_attest)
+
+    p_aid_verify = aid_sub.add_parser(
+        "verify", help="check a partner's copy against the digest recorded at seal time"
+    )
+    p_aid_verify.add_argument("--root", default=".", help="archive root (used with --location)")
+    p_aid_verify.add_argument("--location", help="name of a configured partner location")
+    p_aid_verify.add_argument("--path", help="partner storage directory (instead of --location)")
+    p_aid_verify.add_argument("--bag", required=True, help="the sealed bag (record id)")
+    p_aid_verify.add_argument("--expect", required=True, help="the digest kept from seal time")
+    p_aid_verify.add_argument("--now", help="ISO-8601 timestamp")
+    p_aid_verify.set_defaults(func=_cmd_mutual_aid_verify)
+
+    p_aid_recover = aid_sub.add_parser(
+        "recover", help="recovery drill: pull a sealed copy back, decrypt, validate"
+    )
+    p_aid_recover.add_argument("--root", default=".", help="archive root (used with --location)")
+    p_aid_recover.add_argument("--location", help="name of a configured partner location")
+    p_aid_recover.add_argument("--path", help="partner storage directory (instead of --location)")
+    p_aid_recover.add_argument("--bag", required=True, help="the sealed bag (record id)")
+    p_aid_recover.add_argument("--into", required=True, help="directory to recover into")
+    p_aid_recover.set_defaults(func=_cmd_mutual_aid_recover)
 
     p_loc = sub.add_parser("add-location", help="register a storage/mirror location")
     p_loc.add_argument("--root", required=True)
