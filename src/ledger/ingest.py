@@ -775,6 +775,21 @@ class Archive:
             return deserialize_record(in_bag.read_text(encoding="utf-8"))
         raise ObjectNotFound(record_id)
 
+    def bag_path(self, record_id: str) -> Path:
+        """The directory of ``record_id``'s bag, or raise if there is none.
+
+        The one supported way for a caller outside this module (steward tooling, the
+        CLI's mutual-aid commands) to turn a record id into a bag directory: the id
+        is validated as a single allowlisted path component and the child is selected
+        from an existing listing, so a caller cannot construct a tainted path by
+        concatenation. Raises :class:`~ledger.errors.ObjectNotFound` naming only the
+        record id (no-outing rule).
+        """
+        bag = _existing_child(self.bags_dir, _safe_record_component(record_id))
+        if bag is None or not bag.is_dir():
+            raise ObjectNotFound(record_id)
+        return bag
+
     def _versions_path(self, record_id: str) -> Path:
         """The append-only version-index path for ``record_id`` under ``records/``."""
         return self.records_dir / f"{_safe_record_component(record_id)}{_VERSIONS_SUFFIX}"

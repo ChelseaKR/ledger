@@ -15,7 +15,9 @@ synthetic fixtures, and two safety-critical behaviours get their own tests:
 
 from __future__ import annotations
 
+import argparse
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -812,3 +814,29 @@ def test_ingest_still_accepts_distinct_filenames_from_different_directories(
 
     assert rc == 0
     assert len(list((root / "store" / "bags").iterdir())) == 1
+
+
+# --- the documented surface vs the real one ----------------------------------
+
+
+def test_architecture_doc_states_the_real_subcommand_count() -> None:
+    """`docs/ARCHITECTURE.md`'s CLI section, re-derived from the parser (#123).
+
+    Its list of subcommands had drifted to less than a third of the real surface, which
+    is how a shipped-but-unreachable capability stays invisible: the doc describing the
+    steward's one discoverable surface was not describing it. The count is now derived
+    from argparse rather than counted by hand, so adding a command without saying so
+    fails here instead of quietly widening the gap again.
+    """
+    parser = cli._build_parser()
+    subparsers = [a for a in parser._actions if isinstance(a, argparse._SubParsersAction)]
+    actual = len(subparsers[0].choices)
+
+    arch = (Path(__file__).resolve().parent.parent / "docs/ARCHITECTURE.md").read_text(
+        encoding="utf-8"
+    )
+    match = re.search(r"`cli\.py` is the one discoverable steward surface: (\d+) subcommands", arch)
+    assert match is not None, "docs/ARCHITECTURE.md no longer states a subcommand count"
+    assert int(match.group(1)) == actual, (
+        f"docs/ARCHITECTURE.md says {match.group(1)} subcommands; the parser has {actual}"
+    )

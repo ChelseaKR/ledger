@@ -16,6 +16,37 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 > explicitly approved through the release workflow added below.
 
 ### Fixed
+- **Five stale README/architecture statements corrected, and the truthfulness gate
+  widened so this class of claim is inside it.** All five drifted in the same
+  direction — describing work as still owed that had shipped, or behaviour the code
+  had since tightened — and `tools/check_claims.py` was green throughout, because a
+  claim it does not hold cannot fail it. Corrected: dependency pinning is not "a
+  range today" (a hash-pinned `uv.lock` is committed, `uv sync --locked` installs
+  from it, and a blocking OSV job scans it — the README's own standards table
+  already said so 161 lines further down); the residual-risk register and the
+  `docs/audits/` review set are committed, with only the human sign-off (#82) open;
+  the README's observability section pointed at a roadmap item, `P3-6`, that exists
+  nowhere in the repo; and `/healthz` has not "reported counts only" since the counts were
+  gated behind a steward grant (P2-2) — an anonymous request gets `status`,
+  `all_verified`, `ready`, and `chain_head`, so a reader auditing the threat model
+  would have concluded the endpoint leaks archive size that the code no longer
+  exposes. The gate gains three claim kinds — `required_string` (the evidence a
+  correction rests on, since "the old phrase is gone" is also true of a deleted
+  paragraph), `stated_count` (a number in the prose re-derived from the tree, which
+  fails both when the count is wrong and when the sentence stating it disappears),
+  and `reference_exists` (every "tracked in `docs/ROADMAP.md`, <ID>" pointer in every
+  committed Markdown file must resolve there) — and it now prints the load-bearing
+  claims it *cannot* check on every run, published for readers in `CONTRIBUTING.md`
+  and kept in step by `tests/test_claims_gate.py`. The same sweep found two more dead
+  roadmap pointers (`DEFINITION_OF_DONE.md`, `docs/DORA-DELIVERY-HEALTH-REVIEW.md`),
+  now corrected — and a sixth home for the `/healthz` claim, in `infra/README.md`,
+  which is the operator-facing copy and the worse of the two: it told someone
+  standing up a server to point an uptime monitor at `/healthz` and read counts an
+  anonymous request does not return.
+- **The truthfulness gate now runs on pull requests.** It was documented as
+  merge-blocking and listed in `make verify`, but `ci.yml` never invoked it: it ran
+  only on a contributor's machine and at tag time in `release.yml`, so the one place
+  it never ran was the pull request it exists to block.
 - **`audit_fixity` no longer reports health it never checked when a bag has been
   deleted outside `remove_all_copies`.** It walked only `bags/`, so a missing bag
   was a directory that was not there to iterate — never a validation failure.
@@ -66,6 +97,29 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Release publication.
 
 ### Added
+- **`ledger heal` and `ledger mutual-aid seal|attest|verify|recover` — the recovery
+  capabilities the docs described now have operator entry points.** `replicate.heal`
+  and the whole EXP-15 sealed-replica family were written, documented, and unit-tested
+  with no subcommand, no route, and no call site in `src/` outside the module defining
+  them: 38 references to the sealed family, all in `tests/`. The README states as a
+  rule that a quarantined copy "heals from a verified replica", `docs/ARCHITECTURE.md`
+  maps Recoverability straight at `replicate.heal`, and `docs/MUTUAL-AID.md` is an
+  operator runbook whose steps 3-5 were Python calls against internal APIs — for an
+  audience of community archivists and mutual-aid organizers, explicitly not
+  developers. `ledger heal` always passes the archive's takedown tombstones, so a
+  pending takedown is applied before any copying and a tombstoned bag is never
+  resurrected from a stale replica; it prints heal's honest limit (fixity-aware, not
+  revision-aware) on stderr where the steward acting on it will read it, and exits
+  non-zero if a healed copy arrived torn. The mutual-aid group takes its pairing key
+  only from `LEDGER_PAIRING_KEY` — there is no `--key` flag, because a key in argv is a
+  key in shell history and in the process table — and `attest` needs neither the key
+  nor an archive, so the *holding* partner can run it on a cron job over a directory of
+  blobs they cannot read. `verify` and `recover` exit non-zero on a drifted copy or a
+  failed drill, so a scheduled check fails loudly instead of reporting a recovery that
+  would not have worked.
+- **`Archive.bag_path`.** The one supported way for steward tooling to turn a record id
+  into a bag directory, with the same path-component validation the rest of the module
+  uses, so the CLI does not reimplement it by string concatenation.
 - **`ledger --version`.** The CLI had no top-level version flag — `COMMAND` was a
   required positional, so there was no way to ask an installed `ledger` what
   version it was without opening `pyproject.toml`. Prints `ledger <version>` and
