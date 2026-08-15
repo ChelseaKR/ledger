@@ -9,6 +9,7 @@ caching, and that none of the new surfaces leak a contributor identity.
 from __future__ import annotations
 
 import json
+import re
 import threading
 import urllib.error
 import urllib.parse
@@ -356,6 +357,41 @@ def test_healthz_counts_gated_to_steward(site: tuple[str, str, str]) -> None:
     _, boss_body, _ = _get(base, "/healthz", grant="boss")
     boss = json.loads(boss_body)
     assert boss["fixity"]["bags_audited"] >= 2  # a steward sees the real counts
+
+
+def test_architecture_doc_states_the_healthz_shape_the_server_actually_serves(
+    site: tuple[str, str, str],
+) -> None:
+    """The architecture doc's `/healthz` sentence, re-derived from a live response (#124).
+
+    `docs/ARCHITECTURE.md` described the endpoint as reporting counts long after the code
+    gated them behind a steward grant, and no gate could see the drift: prose about a
+    response body is only checkable against a response body. So the documented key list is
+    parsed out of the sentence itself and compared with what an anonymous request gets —
+    if either side moves, this fails rather than the doc quietly going stale again.
+
+    It asserts in both directions: the documented keys are exactly the anonymous ones (no
+    missing key, no extra), and the counts the doc says are steward-gated really are
+    absent for an outsider and present for a steward.
+    """
+    base, _pub, _comm = site
+    arch = (Path(__file__).resolve().parent.parent / "docs/ARCHITECTURE.md").read_text(
+        encoding="utf-8"
+    )
+    match = re.search(r"`/healthz` answers an anonymous request with (.+?) only\b", arch, re.DOTALL)
+    assert match is not None, "docs/ARCHITECTURE.md no longer describes the /healthz shape"
+    documented = set(re.findall(r"`([a-z_]+)`", match.group(1)))
+    assert documented, "the /healthz sentence names no response keys"
+
+    _, anon_body, _ = _get(base, "/healthz")
+    anon = json.loads(anon_body)
+    assert set(anon) == documented, (
+        f"anonymous /healthz returns {sorted(anon)} but docs/ARCHITECTURE.md documents "
+        f"{sorted(documented)}"
+    )
+    assert "fixity" not in anon
+    _, boss_body, _ = _get(base, "/healthz", grant="boss")
+    assert "fixity" in json.loads(boss_body), "the doc says a steward grant sees the counts"
 
 
 def test_proof_attestation_json_has_no_count_even_for_a_steward(

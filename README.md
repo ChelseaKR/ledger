@@ -175,8 +175,9 @@ disclosure model. ledger makes both explicit and tests both.
 external-identifier metadata. PREMIS records the events (ingest, fixity check, replication,
 redaction, access-policy change, takedown) with the agent and outcome of each, so the chain of
 custody is auditable. Dublin Core describes the record for discovery. Fixity is verified on a
-schedule across every replica; a mismatch raises a `fixity-failure` PREMIS event, quarantines the
-bad copy, and heals from a verified replica rather than trusting the divergent one.
+schedule across every replica; a mismatch raises a `fixity-failure` PREMIS event and quarantines the
+bad copy, and `ledger heal` rebuilds it from a replica that just passed validation rather than
+trusting the divergent one.
 
 **Disclosure.** Every record and field carries an access policy drawn from a small, documented set
 (`public`, `community`, `stewards`, `sealed-until`, `sealed-conditional`). A grant maps a viewer to
@@ -211,20 +212,24 @@ manual step only the project owner can do — tracked in [`docs/ROADMAP.md`](doc
 (data) — content addressing plus dual-algorithm BagIt manifests make tampering detectable, not
 deniable. **Autonomy** — a contributor controls their own disclosure and can revoke; the system
 enforces their decision, not a steward's preference. **Vulnerability** management — pip-audit,
-gitleaks, CodeQL in CI, blocking with no muted gates; dependency pinning is a range today, a
-committed hash-pinned lockfile is tracked in `docs/ROADMAP.md`. **Accountability** and
+gitleaks, CodeQL in CI, blocking with no muted gates; dependencies install from the committed,
+hash-pinned `uv.lock` (`uv sync --locked` fails rather than silently re-resolving), and a blocking
+OSV scan runs over that lockfile in CI. **Accountability** and
 **auditability** — every preservation and access event is a PREMIS record with agent and outcome;
 audit-as-artifact documents committed today are [`docs/THREAT-MODEL.md`](docs/THREAT-MODEL.md), the
-[Accessibility Conformance Report](docs/accessibility/ACR.md), and the
-[Data Protection Impact Assessment](docs/audits/dpia.md) and [bias / representational-harm
-review](docs/audits/bias-representational-harm.md); human review and the residual-risk register
-remain tracked in `docs/ROADMAP.md`.
+[Accessibility Conformance Report](docs/accessibility/ACR.md), the
+[Data Protection Impact Assessment](docs/audits/dpia.md), the [bias / representational-harm
+review](docs/audits/bias-representational-harm.md), and the [residual-risk
+register](docs/audits/residual-risk-register.md); what remains open is the accountable-owner and
+independent human review of those artifacts, tracked in
+[`docs/ROADMAP.md`](docs/ROADMAP.md) and [#82](https://github.com/ChelseaKR/ledger/issues/82).
 
 ### Preservation integrity, durability, fixity
 **Durability** — replicated content-addressed copies across independent locations; no single point of
 loss. **Redundancy** — every bag exists in N configured locations, re-verified on arrival. **Reliability**
 and **dependability** — scheduled fixity audits catch bit rot before it spreads. **Recoverability** —
-a quarantined copy heals from a verified replica; the store rebuilds from bags. **Survivability** — the
+`ledger heal` rebuilds a quarantined or missing copy from a verified replica; the store rebuilds
+from bags. **Survivability** — the
 archive outlives any one host, drive, or maintainer because the package is plain BagIt anyone can read.
 **Stability** — the bag layout and metadata schemas are versioned and stable across releases.
 **Correctness** and **accuracy** — fixity is checked against the manifest, not assumed; PREMIS events
@@ -395,8 +400,11 @@ owned in [`docs/ROADMAP.md`](docs/ROADMAP.md#open-conformance-gaps).
 server). Opt-in `--log-format json` only.** ledger exceeds Tier C in one respect and falls short in
 another, stated honestly rather than folded into a blanket claim: it already ships a `/healthz`
 endpoint returning JSON with a degraded-503 path (`server.py`), which Tier C does not require; it
-does **not** yet ship the opt-in `--log-format json` CLI flag the tier description names (tracked in
-`docs/ROADMAP.md`, P3-6) — today's structured-logging story is the standard library `logging` module
+does **not** yet ship the opt-in `--log-format json` CLI flag the tier description names. That flag
+is not an open conformance gap and no roadmap row or issue tracks it: Tier C's own applicability
+ruling ([ADR 0006](docs/adr/0006-standards-applicability.md)) treats structured JSON logging as
+opt-in for a local-first library/CLI. Today's structured-logging story is the standard library
+`logging` module
 with contributor-identity scrubbing enforced by construction and asserted by the no-outing test
 suite (OBS-11, unconditional regardless of tier).
 
@@ -423,8 +431,12 @@ targets). The repo ships **LICENSE (AGPL-3.0)**, **NOTICE** (independence statem
 open-source project, unaffiliated with any employer or client, containing no proprietary or client
 material), **CODE_OF_CONDUCT**, **CONTRIBUTING**, **SECURITY**, **GOVERNANCE**, a versioned metadata
 schema with a deprecation policy, **semver**, **ADRs**, and audit-as-artifact documents
-(`docs/THREAT-MODEL.md`, `docs/accessibility/ACR.md`; a fuller `docs/audits/` set is tracked in
-[`docs/ROADMAP.md`](docs/ROADMAP.md)). Conventional commits; pinned GitHub Actions; a tag-triggered
+(`docs/THREAT-MODEL.md`, `docs/accessibility/ACR.md`, and eight review documents under
+[`docs/audits/`](docs/audits/) — an ethics-consequence scan, a DPIA, a bias / representational-harm
+review, two cryptographic design reviews, a crypto-agility / post-quantum posture note, the
+residual-risk register, and a standards-conformance record — whose accountable-owner and
+independent human sign-off is what remains tracked in [`docs/ROADMAP.md`](docs/ROADMAP.md)).
+Conventional commits; pinned GitHub Actions; a tag-triggered
 release workflow (`.github/workflows/release.yml`) that builds, SBOMs, cosign-signs, and
 SLSA-attests every `v*` release before publishing to PyPI over Trusted Publishing — but **no release
 has shipped yet**, since no tag has been cut and the PyPI Trusted Publisher still needs one-time
