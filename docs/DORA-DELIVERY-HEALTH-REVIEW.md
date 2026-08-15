@@ -83,10 +83,10 @@ infrastructure, not optional hygiene. Ledger's safety nets (branch coverage
 floor with `--cov-fail-under=85`, mypy `--strict`, the no-outing audit gate,
 pip-audit blocking, gitleaks, CodeQL) are already AUTO-GATE per
 `DEFINITION_OF_DONE.md`, which is the portfolio's answer to "throughput
-without stability" for this repo. The remaining Security gaps (Semgrep,
-zizmor, SBOM/cosign/SLSA — `docs/ROADMAP.md` P1-3/P1-6) are the concrete next
-steps this finding argues for, and are already tracked, not new discoveries
-from this review.
+without stability" for this repo. The Security gaps open at the time of this
+review (Semgrep, zizmor, SBOM/cosign/SLSA — tracked then in
+`docs/ROADMAP.md`) are the concrete next steps this finding argues for, and
+were already tracked, not new discoveries from this review.
 
 The **DORA 2025 AI Capabilities Model** governance checklist (7 gates before
 expanding AI tooling scope) does not apply: ledger has no AI/LLM component

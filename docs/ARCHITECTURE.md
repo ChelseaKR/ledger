@@ -281,8 +281,12 @@ digest against the one recorded at seal time, closing the residual that a hostil
 compromised replica host can read what it stores. `recover_sealed_bag` is the
 recovery drill: pull the blob back, decrypt locally with the key that never left
 home, and run the exact same `validate_bag` used by the plaintext path — "does the
-partner's copy actually work" is answered by evidence, not assumption. See
-[`docs/MUTUAL-AID.md`](MUTUAL-AID.md) for the operational runbook.
+partner's copy actually work" is answered by evidence, not assumption. Each of the four
+is reachable as a subcommand (`ledger mutual-aid seal|attest|verify|recover`), with the
+pairing key arriving only in `LEDGER_PAIRING_KEY` and never in argv; `attest` needs
+neither the key nor an archive, so the *holding* partner can run it on a directory of
+blobs they cannot read. See [`docs/MUTUAL-AID.md`](MUTUAL-AID.md) for the operational
+runbook.
 
 ### 1.9 Moderation: `moderate.py`
 
@@ -316,16 +320,23 @@ anonymous unless `X-Ledger-Grant` names a *pre-provisioned* subject in the grant
 file, and the header confers nothing on its own. `/record/{id}` renders a textual
 content-warning interstitial before the content, and a missing record and a
 not-permitted record render the *same* neutral 404, so the response never reveals
-whether a sealed record exists. `/healthz` reports counts only (bags audited, passed,
-failed, files checked) — no path, digest, record id, or identity. The site binds to
-`127.0.0.1` by default.
+whether a sealed record exists. `/healthz` answers an anonymous request with `status`,
+`all_verified`, `ready`, and an opaque `chain_head` commitment only (plus a generic
+`reason` code when the readiness probe fails); the absolute counts — bags audited,
+passed, failed, files checked — are gated to a steward grant, because the totals include
+sealed and community records and would let an outsider learn the archive's size and poll
+for the moment a sealed record is added (P2-2). Neither form carries a path, digest,
+record id, or identity. The site binds to `127.0.0.1` by default.
 
 ### 1.11 CLI: `cli.py` and `config.py`
 
-`cli.py` is the one discoverable steward surface: `init`, `ingest`, `browse`, `show`,
-`serve`, `audit`, `policy`, `takedown`, `replicas`, `add-location`, `demo`, `acr`.
-Exit codes are meaningful (`audit` returns non-zero on any failing bag so cron/CI can
-branch). It is held to the no-outing rule: a contributor name/contact is accepted only
+`cli.py` is the one discoverable steward surface: 38 subcommands, which `ledger --help`
+lists in full — `init`, `ingest`, `browse`, `show`, `serve`, `audit`, `policy`,
+`takedown`, `replicas`, `heal`, `add-location`, `demo`, `acr`, and the `grant`, `vault`,
+`mutual-aid`, `transparency`, and `session` groups among them. A capability with no
+subcommand is not a capability a steward has (#123), so the count above is asserted
+against the parser itself in `tests/test_cli.py`. Exit codes are meaningful (`audit`
+returns non-zero on any failing bag so cron/CI can branch). It is held to the no-outing rule: a contributor name/contact is accepted only
 as ingest *input*, sealed into the vault, and the CLI then prints *only* the opaque
 `identity_ref` — never echoing the name. Every time-stamping command accepts `--now`
 for reproducibility.
@@ -504,7 +515,7 @@ function that realizes it. This is a sample; the README works through the full l
 | **Confidentiality**          | `access.policy.is_visible` (deny by default); `access.is_listable` (sealed records never listed); `identity.py` Fernet encryption at rest |
 | **Integrity** (data)         | `cas.ContentStore.verify` (address *is* the checksum); `fixity.hash_file_multi` (dual SHA-256 + BLAKE2b manifests) |
 | **Durability / Redundancy**  | `replicate.replicate_bag` (copy to N `StorageLocation`s, verify-on-arrival); `config.StorageLocation` (`mirror` targets) |
-| **Recoverability**           | `replicate.heal` (rebuild only from a just-validated replica) and `replicate._quarantine` |
+| **Recoverability**           | `replicate.heal` (rebuild only from a just-validated replica), reachable as `ledger heal`, and `replicate._quarantine` |
 | **Failure transparency**     | `replicate.verify_replicas` (degrade, never raise); `QUARANTINE` event attached to `ReplicationError`; `errors.py` (failures surfaced, never swallowed) |
 | **Auditability / Provability** | `metadata.premis.PremisLog` (append-only); `moderate.ModerationLog` (justified, attributed, contestable) |
 | **Autonomy / Consent**       | `moderate.change_consent`; `identity.IdentityVault.revoke` (takedown honoured at storage) |

@@ -126,6 +126,29 @@ regression in either must be unmistakable, not buried:
   Accessibility Conformance Report (`docs/accessibility/ACR.md`). Accessibility is merge-blocking;
   a regression fails the build.
 
+#### What the truthfulness gate does not cover
+
+`make claims` (`tools/check_claims.py`) verifies a small inventory of factual claims the
+README and docs make about this repo: paths that must exist, corrected claims that must not
+come back, the evidence a corrected claim rests on, a stated count re-derived from the tree,
+and every "tracked in `docs/ROADMAP.md`, <ID>" pointer. It was green for weeks while five
+load-bearing statements were false (#124), because a claim it does not hold cannot fail it.
+So it now prints its own boundary on every run, and this is the same list — if you are
+relying on a claim below, verify it yourself rather than reading a green build as evidence:
+
+- no release has shipped yet — the answer lives in the remote's tags, which a CI checkout does not fetch
+- the audit artifacts under docs/audits/ have not been signed off by a human — a fact about people, not about the tree ([#82](https://github.com/ChelseaKR/ledger/issues/82))
+- no dated assistive-technology walkthrough exists — no scan can produce or confirm a screen-reader session ([#81](https://github.com/ChelseaKR/ledger/issues/81))
+- the test, coverage, and mutation figures in docs/ROADMAP.md — dated measurements; `make test`, `make cov`, and `make mutation` re-measure them
+- a roadmap pointer resolves to a defined roadmap row — the sweep proves the id is mentioned in `docs/ROADMAP.md`, not that a row defines it
+- standards control ids (SEC-04, A11Y-11, CQ-08 …) cited beside a roadmap pointer — they are defined in the portfolio's `STANDARDS/`, so this repo has nothing to resolve them against
+- the response shape of the browse server's routes — asserted live in `tests/test_server_remediation.py` instead, against the prose in `docs/ARCHITECTURE.md`
+
+Adding a claim to the inventory is welcome when it is factual, load-bearing, and cheap to
+check; adding a prose-drift scanner is not (a noisy tripwire trains reviewers to ignore it).
+If a claim cannot be checked mechanically, add it to `UNCOVERED` and to this list — the two
+are kept in step by `tests/test_claims_gate.py`.
+
 Useful extras that are run individually above but are also handy standalone:
 
 ```sh

@@ -68,6 +68,12 @@ jobs:
       # debt (C901) — link the issue that retires it. Mirrors `make hygiene`.
       - name: Suppression + marker hygiene
         run: uv run python tools/check_hygiene.py
+      # DOC-13 (#124): the truthfulness gate checks the factual claims the README
+      # and docs make about this repo. It ran in `make verify` locally and in
+      # release.yml at tag time, but never on a pull request — the one place a
+      # merge-blocking gate has to run. Mirrors `make claims`.
+      - name: Truthfulness gate (README/doc claims vs the repo)
+        run: uv run python tools/check_claims.py
       - name: Type check (mypy strict)
         run: uv run mypy
       - name: Test with coverage
