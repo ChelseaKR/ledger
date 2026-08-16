@@ -162,7 +162,7 @@ class _Accessibility(HTMLParser):
     # Pre-existing complexity (many checks fan out from one dispatch point); surfaced
     # 2026-07-05 when CQ-05's complexity gate was enabled. Waived, not re-muted:
     # tracked for a follow-up split rather than refactored under audit time
-    # pressure on safety-adjacent code (see ledger-REMEDIATION.md P3-2).
+    # pressure on safety-adjacent code. Tracked in issue #83.
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:  # noqa: C901 - one branch per element type the WCAG checks care about; splitting it would scatter the rule set (#83)
         """Record the facts each opening tag contributes to the checks."""
         attr = {name: (value or "") for name, value in attrs}
@@ -252,7 +252,7 @@ def _to_int(value: str) -> int:
 
 # Pre-existing complexity (one function surveys every WCAG structural check);
 # surfaced 2026-07-05 when CQ-05's complexity gate was enabled. Waived, not
-# re-muted: tracked for a follow-up split (see ledger-REMEDIATION.md P3-2).
+# re-muted: tracked for a follow-up split in issue #83.
 def check_html(markup: str, *, label: str) -> list[str]:  # noqa: C901 - a flat sequence of independent WCAG checks that all report into one list (#83)
     """Return a list of human-readable accessibility problems found in ``markup``.
 

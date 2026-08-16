@@ -1,8 +1,10 @@
 # CODEOWNERS — required-reviewer routing (CODE-QUALITY-STANDARD CQ-39, CI-CD-STANDARD
 # CICD-17/18). This file has no effect on its own; it becomes load-bearing only once
 # branch protection / a repository ruleset requires review from the matched code
-# owner (see ledger-REMEDIATION.md P2-4 — that ruleset is a separate, server-side
-# artifact this file does not create).
+# owner. The live `protect-main` ruleset does not require code-owner review today —
+# it has no pull-request rule at all — so this routing is intent, not enforcement.
+# The committed mirror of that ruleset is `.github/rulesets/main.json`, and closing
+# the gap is issue #79.
 #
 # Solo-maintainer repo today: every path routes to the same owner. The workflow and
 # safety-critical paths are named explicitly anyway so the intent (these paths
@@ -14,6 +16,11 @@
 # CI/CD and supply-chain surface: a compromised or careless workflow edit is a
 # direct path to exfiltrating secrets or weakening a merge gate.
 /.github/                 @ChelseaKR
+
+# The branch-protection profile itself (CI-CD-STANDARD §6 names this path). Routed
+# explicitly, above the blanket /.github/ rule, because a quiet edit here is how a
+# committed mirror stops matching the live ruleset it claims to record.
+/.github/rulesets/        @ChelseaKR
 
 # The disclosure/no-outing choke point and the encrypted identity vault: the two
 # places where a bug is a safety incident, not just a defect.

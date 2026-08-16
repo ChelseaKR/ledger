@@ -131,7 +131,9 @@ regression in either must be unmistakable, not buried:
 `make claims` (`tools/check_claims.py`) verifies a small inventory of factual claims the
 README and docs make about this repo: paths that must exist, corrected claims that must not
 come back, the evidence a corrected claim rests on, a stated count re-derived from the tree,
-and every "tracked in `docs/ROADMAP.md`, <ID>" pointer. It was green for weeks while five
+a documented threshold re-derived from the config that enforces it, the required-check set in
+the committed branch-protection mirror, and every "tracked in `docs/ROADMAP.md`, <ID>"
+pointer. It was green for weeks while five
 load-bearing statements were false (#124), because a claim it does not hold cannot fail it.
 So it now prints its own boundary on every run, and this is the same list — if you are
 relying on a claim below, verify it yourself rather than reading a green build as evidence:
@@ -142,6 +144,8 @@ relying on a claim below, verify it yourself rather than reading a green build a
 - the test, coverage, and mutation figures in docs/ROADMAP.md — dated measurements; `make test`, `make cov`, and `make mutation` re-measure them
 - a roadmap pointer resolves to a defined roadmap row — the sweep proves the id is mentioned in `docs/ROADMAP.md`, not that a row defines it
 - standards control ids (SEC-04, A11Y-11, CQ-08 …) cited beside a roadmap pointer — they are defined in the portfolio's `STANDARDS/`, so this repo has nothing to resolve them against
+- whether .github/rulesets/main.json still matches the live protect-main ruleset — parity needs a GitHub API call, and this script makes no network request
+- whether every merge-blocking gate is in the required-check set — a policy decision, not a repo fact; Semgrep and the OSV scan run on every PR and are not required ([#79](https://github.com/ChelseaKR/ledger/issues/79))
 - the response shape of the browse server's routes — asserted live in `tests/test_server_remediation.py` instead, against the prose in `docs/ARCHITECTURE.md`
 
 Adding a claim to the inventory is welcome when it is factual, load-bearing, and cheap to
@@ -152,9 +156,11 @@ are kept in step by `tests/test_claims_gate.py`.
 Useful extras that are run individually above but are also handy standalone:
 
 ```sh
-make cov            # tests with a coverage report (--cov-fail-under=85; verify's `test` target
-                     # runs pytest without coverage for speed, so run this before relying on the
-                     # floor locally)
+make cov            # tests with a coverage report: the 88% branch-coverage floor
+                     # ([tool.coverage.report] fail_under in pyproject.toml) plus the scoped
+                     # 95% floor on access/consent/dual-control. verify's `test` target runs
+                     # pytest without coverage for speed, so run this before relying on
+                     # either floor locally.
 make acr            # regenerate the Accessibility Conformance Report
 ```
 

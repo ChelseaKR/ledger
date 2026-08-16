@@ -77,7 +77,7 @@ def _esc(value: object) -> str:
 
 # Pre-existing complexity (one function validates every submitted field); surfaced
 # 2026-07-05 when CQ-05's complexity gate was enabled. Waived, not re-muted:
-# tracked for a follow-up split (see ledger-REMEDIATION.md P3-2).
+# tracked for a follow-up split in issue #83.
 def parse_submission(form: dict[str, str], config: Config) -> Submission:  # noqa: C901 - per-field validation of an untrusted form; every branch is a rejection path (#83)
     """Build a ``(record, identity)`` pair from a posted contribution form.
 

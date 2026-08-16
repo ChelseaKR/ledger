@@ -213,8 +213,10 @@ manual step only the project owner can do — tracked in [`docs/ROADMAP.md`](doc
 deniable. **Autonomy** — a contributor controls their own disclosure and can revoke; the system
 enforces their decision, not a steward's preference. **Vulnerability** management — pip-audit,
 gitleaks, CodeQL in CI, blocking with no muted gates; dependencies install from the committed,
-hash-pinned `uv.lock` (`uv sync --locked` fails rather than silently re-resolving), and a blocking
-OSV scan runs over that lockfile in CI. **Accountability** and
+hash-pinned `uv.lock` (`uv sync --locked` fails rather than silently re-resolving), and an OSV
+scan runs over that lockfile in CI — fail-closed as a job, but not yet one of the required status
+checks in [`.github/rulesets/main.json`](.github/rulesets/main.json), so a red OSV run does not
+block a merge today. **Accountability** and
 **auditability** — every preservation and access event is a PREMIS record with agent and outcome;
 audit-as-artifact documents committed today are [`docs/THREAT-MODEL.md`](docs/THREAT-MODEL.md), the
 [Accessibility Conformance Report](docs/accessibility/ACR.md), the
@@ -378,8 +380,8 @@ project owner can do (tracked below).
 |---|---|---|
 | Responsible-Tech Framework | Applies | The no-outing sentinel suite enforces misuse resistance; dated ethics, DPIA, bias, threat-model, and residual-risk artifacts live under [`docs/audits/`](docs/audits/) and retain explicit human-review status. |
 | Code Quality | Applies | `ruff` (including `C901`, max 10), `mypy --strict`, pytest branch coverage, src layout, CODEOWNERS, Python `>=3.12` with `.python-version`, and a hash-locked `uv.lock`. |
-| Security & Supply-Chain | Applies — **ASVS L2** | Blocking pip-audit, gitleaks, Semgrep, CodeQL, zizmor, Trivy, and no-outing gates; SHA-pinned Actions; digest-pinned container base; SBOM, keyless signing, and SLSA provenance on tagged releases. |
-| CI/CD | Applies | Least-privilege workflow tokens, SHA-pinned actions, Harden-Runner on every job, a live `main` ruleset, and local `make verify` parity with the portable merge gates. Ruleset evidence is recorded in [`docs/ROADMAP.md`](docs/ROADMAP.md). |
+| Security & Supply-Chain | Applies — **ASVS L2** | Merge-blocking pip-audit, gitleaks, CodeQL, zizmor, Trivy, and no-outing gates; Semgrep and the OSV lockfile scan run fail-closed on every pull request but are **not** in the required-check set, so neither blocks a merge yet (see [`.github/rulesets/main.json`](.github/rulesets/main.json)); SHA-pinned Actions; digest-pinned container base; SBOM, keyless signing, and SLSA provenance on tagged releases. |
+| CI/CD | Applies | Least-privilege workflow tokens, SHA-pinned actions, Harden-Runner on every job, a live `main` ruleset mirrored in-tree at [`.github/rulesets/main.json`](.github/rulesets/main.json), and local `make verify` parity with the portable merge gates. That profile does not yet meet the §5 floor (no pull-request rule, signatures, linear history, or strict checks) — the delta is itemized in [`.github/rulesets/README.md`](.github/rulesets/README.md) and tracked in [`docs/ROADMAP.md`](docs/ROADMAP.md). |
 | Observability | Applies — **Tier C** | The non-tiered no-PII-in-logs control and a degraded `/healthz` path are tested. Tier A tracing, metrics, SLO, and alert controls are outside this local-first library/CLI tier; see [Observability](#observability). |
 | Accessibility | Applies | The human-facing HTML surface is checked structurally and with Playwright + axe in Chromium; keyboard traversal, a dated ACR, and a manual assistive-technology review cadence are committed under [`docs/accessibility/`](docs/accessibility/). |
 | Internationalization | Applies | Packaged gettext catalogs ship complete EN/ES/FR/AR translations, including Arabic RTL, with blocking extraction, BCP-47, parity, completeness, compilation, pseudolocale, and response-header checks. |

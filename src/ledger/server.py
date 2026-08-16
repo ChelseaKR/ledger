@@ -511,7 +511,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
     # this function is the disclosure/no-outing choke point, so it is deliberately
     # *not* refactored under audit time pressure — a split is tracked as a careful,
     # fully-retested follow-up, not a same-day edit to the most safety-sensitive
-    # function in the repo (see ledger-REMEDIATION.md P3-2).
+    # function in the repo. Tracked in issue #83.
     def do_GET(self) -> None:  # noqa: C901 - the public GET route table (#83)
         """Route a GET request to the matching read-only handler.
 

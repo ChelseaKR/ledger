@@ -27,10 +27,12 @@ from tools import check_claims
 from tools.check_claims import (
     CLAIMS,
     UNCOVERED,
+    ConfigNumber,
     ForbiddenString,
     PathExists,
     ReferenceExists,
     RequiredString,
+    RulesetContexts,
     StatedCount,
 )
 
@@ -304,8 +306,236 @@ def test_a_missing_file_fails_rather_than_vacuously_passing(
     """A claim about a file that is not there is unverified, which is not the same as true."""
     fake_repo(tmp_path, monkeypatch, {})
     for entry in CLAIMS:
-        if isinstance(entry, ForbiddenString | RequiredString | StatedCount | PathExists):
+        if isinstance(
+            entry,
+            ForbiddenString
+            | RequiredString
+            | StatedCount
+            | PathExists
+            | ConfigNumber
+            | RulesetContexts,
+        ):
             assert entry.check() is not None, f"{entry.name} passed against an empty tree"
+
+
+# --- config_number: the documented threshold is tied to the enforcing config -----
+
+_PYPROJECT = "[tool.coverage.report]\nfail_under = 88\n"
+
+
+def config_number_claim() -> ConfigNumber:
+    entry = claim("coverage-floor-in-definition-of-done")
+    assert isinstance(entry, ConfigNumber)
+    return entry
+
+
+def test_a_documented_floor_that_drifted_below_the_enforced_one_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The real drift: three files said 85 for two weeks while pyproject enforced 88.
+
+    Documentation that understates a gate is the same defect as documentation that
+    overstates one — a reader plans against a number the build does not use.
+    """
+    entry = config_number_claim()
+    fake_repo(
+        tmp_path,
+        monkeypatch,
+        {
+            "pyproject.toml": _PYPROJECT,
+            "DEFINITION_OF_DONE.md": "the 85% branch-coverage floor applies.\n",
+        },
+    )
+    problem = entry.check()
+    assert problem is not None
+    assert "states 85" in problem and "88" in problem
+
+
+def test_a_documented_floor_that_matches_the_enforced_one_passes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    entry = config_number_claim()
+    fake_repo(
+        tmp_path,
+        monkeypatch,
+        {
+            "pyproject.toml": _PYPROJECT,
+            "DEFINITION_OF_DONE.md": "the 88% branch-coverage floor applies.\n",
+        },
+    )
+    assert entry.check() is None
+
+
+def test_a_floor_that_stopped_being_stated_fails_rather_than_passing_silently(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    entry = config_number_claim()
+    fake_repo(
+        tmp_path,
+        monkeypatch,
+        {"pyproject.toml": _PYPROJECT, "DEFINITION_OF_DONE.md": "coverage is enforced.\n"},
+    )
+    problem = entry.check()
+    assert problem is not None
+    assert "no longer states the threshold" in problem
+
+
+def test_an_unreadable_config_fails_rather_than_being_read_as_agreement(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No source to check against is "unverified", which is not "true"."""
+    entry = config_number_claim()
+    fake_repo(
+        tmp_path,
+        monkeypatch,
+        {
+            "pyproject.toml": "[tool.coverage]\n",
+            "DEFINITION_OF_DONE.md": "the 88% branch-coverage floor applies.\n",
+        },
+    )
+    problem = entry.check()
+    assert problem is not None
+    assert "cannot read" in problem
+
+
+def test_the_three_documents_state_the_floor_pyproject_enforces() -> None:
+    """All three live copies of the number, checked against the tree as it stands."""
+    for name in (
+        "coverage-floor-in-definition-of-done",
+        "coverage-floor-in-contributing",
+        "coverage-floor-in-dora-review",
+    ):
+        entry = claim(name)
+        assert isinstance(entry, ConfigNumber)
+        assert entry.check() is None, entry.check()
+
+
+def test_the_stale_coverage_flag_is_gone_from_every_document() -> None:
+    """`--cov-fail-under=85` named a flag this repo never passed and a floor it no
+    longer enforces; it survived in three files because nothing tied it to a source."""
+    for rel in ("DEFINITION_OF_DONE.md", "CONTRIBUTING.md", "docs/DORA-DELIVERY-HEALTH-REVIEW.md"):
+        text = (REPO_ROOT / rel).read_text(encoding="utf-8")
+        assert "--cov-fail-under" not in text, f"{rel} still cites a flag the repo does not pass"
+
+
+# --- ruleset_contexts: a required check that no job can ever report --------------
+
+
+_RULESET = """{
+  "name": "protect-main",
+  "rules": [
+    {"type": "deletion"},
+    {"type": "required_status_checks", "parameters": {"required_status_checks": [
+      {"context": "lint \\u00b7 type \\u00b7 test (py3.12)"},
+      {"context": "CodeQL analyze (python)"}
+    ]}}
+  ]
+}
+"""
+
+_CI = """name: ci
+jobs:
+  gate:
+    name: lint · type · test (py${{ matrix.python }})
+    runs-on: ubuntu-latest
+"""
+
+_CODEQL = """name: codeql
+jobs:
+  analyze:
+    name: CodeQL analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+"""
+
+
+def ruleset_claim() -> RulesetContexts:
+    entry = claim("ruleset-contexts-name-real-jobs")
+    assert isinstance(entry, RulesetContexts)
+    return entry
+
+
+def test_a_required_context_that_matches_a_matrix_job_name_passes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Job names interpolate matrix values, so the resolution is a pattern match."""
+    entry = ruleset_claim()
+    fake_repo(
+        tmp_path,
+        monkeypatch,
+        {
+            ".github/rulesets/main.json": _RULESET,
+            ".github/workflows/ci.yml": _CI,
+            ".github/workflows/codeql.yml": _CODEQL,
+        },
+    )
+    assert entry.check() is None
+
+
+def test_renaming_a_job_out_from_under_the_ruleset_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The failure this claim exists for.
+
+    Rename the job and nothing goes red: the ruleset keeps requiring a context no
+    workflow will ever report, the branch reads as protected, and the gate it named
+    has quietly stopped being merge-blocking.
+    """
+    entry = ruleset_claim()
+    fake_repo(
+        tmp_path,
+        monkeypatch,
+        {
+            ".github/rulesets/main.json": _RULESET,
+            ".github/workflows/ci.yml": _CI.replace("lint · type · test", "checks"),
+            ".github/workflows/codeql.yml": _CODEQL,
+        },
+    )
+    problem = entry.check()
+    assert problem is not None
+    assert "lint" in problem
+
+
+def test_a_ruleset_requiring_nothing_fails(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """An empty required-check list is the purest gate that cannot fail."""
+    entry = ruleset_claim()
+    fake_repo(
+        tmp_path,
+        monkeypatch,
+        {
+            ".github/rulesets/main.json": '{"rules": [{"type": "required_status_checks",'
+            ' "parameters": {"required_status_checks": []}}]}',
+            ".github/workflows/ci.yml": _CI,
+        },
+    )
+    problem = entry.check()
+    assert problem is not None
+    assert "zero status checks" in problem
+
+
+def test_a_ruleset_with_no_status_check_rule_at_all_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    entry = ruleset_claim()
+    fake_repo(
+        tmp_path,
+        monkeypatch,
+        {
+            ".github/rulesets/main.json": '{"rules": [{"type": "deletion"}]}',
+            ".github/workflows/ci.yml": _CI,
+        },
+    )
+    problem = entry.check()
+    assert problem is not None
+    assert "no `required_status_checks` rule" in problem
+
+
+def test_the_committed_mirror_matches_the_required_contexts_the_workflows_declare() -> None:
+    """The repository as it stands: all eleven required contexts resolve to real jobs."""
+    entry = ruleset_claim()
+    contexts = entry.contexts()
+    assert isinstance(contexts, list), contexts
+    assert len(contexts) == 11
+    assert entry.check() is None
 
 
 # --- the boundary is published, not implied ----------------------------------

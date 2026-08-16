@@ -1,0 +1,36 @@
+{
+  "name": "protect-main",
+  "target": "branch",
+  "enforcement": "active",
+  "conditions": {
+    "ref_name": {
+      "include": ["refs/heads/main"],
+      "exclude": []
+    }
+  },
+  "rules": [
+    { "type": "deletion" },
+    { "type": "non_fast_forward" },
+    {
+      "type": "required_status_checks",
+      "parameters": {
+        "strict_required_status_checks_policy": false,
+        "do_not_enforce_on_create": false,
+        "required_status_checks": [
+          { "context": "lint · type · test (py3.12)" },
+          { "context": "dependency & secret scan" },
+          { "context": "no-outing audit (safety gate)" },
+          { "context": "accessibility gate (WCAG 2.2 AA)" },
+          { "context": "accessibility (browser axe over the served site)" },
+          { "context": "i18n (gettext catalog gate)" },
+          { "context": "workflow linter (zizmor)" },
+          { "context": "performance budgets (QM-02)" },
+          { "context": "container image CVE scan (Trivy)" },
+          { "context": "CodeQL analyze (python)" },
+          { "context": "CodeQL analyze (actions)" }
+        ]
+      }
+    }
+  ],
+  "bypass_actors": []
+}
