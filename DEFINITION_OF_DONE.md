@@ -9,9 +9,9 @@ quarterly alongside the DORA review; update this file in the same PR that
 changes what "done" means (e.g. adding a new gate).
 
 CODEOWNER-protected: `.github/CODEOWNERS` routes every path, and `/.github/`,
-`/src/ledger/access/`, and `/src/ledger/identity.py` explicitly, to
-`@ChelseaKR`. Modifying this file therefore already requires the same review
-the standard asks for; a distinct branch-protection ruleset making that
+`/.github/rulesets/`, `/src/ledger/access/`, and `/src/ledger/identity.py`
+explicitly, to `@ChelseaKR`. Modifying this file therefore already routes to
+the same reviewer the standard asks for; a branch-protection rule making that
 review *mandatory* (rather than requested) is the separate, server-side gap
 tracked below under "Branch protection."
 
@@ -22,13 +22,15 @@ tracked below under "Branch protection."
 2. **Type-check** — `mypy` strict config, zero errors (`ci.yml`; `make type`).
 3. **Tests + coverage** — full suite green on Python 3.12 (the floor per
    CQ-01 and, for now, the ceiling — the CI matrix is a single interpreter);
-   branch coverage ≥ 85% (`--cov-fail-under=85`, `[tool.coverage.run] branch
-   = true` in `pyproject.toml`) plus a ≥ 95% per-module floor on
-   `access/`/consent/dual-control; cyclomatic complexity ≤ 10 (`ruff` `C901`,
-   `max-complexity = 10`) — pre-existing functions over the limit are waived
-   with dated `# noqa: C901` comments pending a deliberate split, tracked in
-   `docs/ROADMAP.md` (CQ-05). The 90% published-library floor remains tracked
-   in issue #83; this file does not overstate the current 85% gate.
+   the 88% branch-coverage floor (`[tool.coverage.report] fail_under` and
+   `[tool.coverage.run] branch = true` in `pyproject.toml`) plus a ≥ 95%
+   per-module floor on `access/`/consent/dual-control; cyclomatic complexity
+   ≤ 10 (`ruff` `C901`, `max-complexity = 10`) — pre-existing functions over
+   the limit are waived with `# noqa: C901` comments that link issue #83
+   pending a deliberate split (CQ-05). CQ-08's 90% published-library floor
+   remains tracked in issue #83; this file does not overstate the gate that
+   is enforced today. Both coverage floors run in CI's `gate` job and not in
+   `make verify` — see the note at the end of this section.
 4. **Security** — CodeQL (`python` + `actions`), Semgrep (`p/ci`, SARIF to
    the Security tab), and gitleaks (secret scan) run on every PR; `pip-audit`
    is blocking with no mute pattern (`SECURITY-AND-SUPPLY-CHAIN-STANDARD` §4
@@ -82,12 +84,27 @@ tracked below under "Branch protection."
     replica deletion, and encrypted-backup controls are defined in
     `docs/DATA-GOVERNANCE.md` and its data card.
 
-`make verify` runs stages 1, 2, 3, the structural half of 6, 7, the
-`pip-audit`/`gitleaks` half of 4, and the zizmor half of 5 locally
+`make verify` runs stages 1, 2, the test half of 3, the structural half of 6,
+7, the `pip-audit`/`gitleaks`/OSV half of 4, and the zizmor half of 5 locally
 (`Makefile` target `verify`: lint, type, test, i18n, accessibility, audit,
-secret-scan, claims, workflow-lint — the same set CI requires). Stages not
-yet CI-gated (most of 9, 10) are not silently skipped — each has a
-`docs/ROADMAP.md` row naming the gap and the item that closes it.
+osv, secret-scan, claims, hygiene, workflow-lint).
+
+Three deliberate differences between `make verify` and the required CI checks,
+so "green locally" is not read as more than it is:
+
+- **Coverage floors are CI-only.** `verify` calls `test` (plain `pytest`), not
+  `cov`, because the coverage run roughly doubles the suite's wall time; CI's
+  `gate` job runs `pytest --cov` plus the scoped `--fail-under=95` re-report.
+  Run `make cov` before relying on either floor locally.
+- **`osv` and `secret-scan` no-op when the binary is absent** and say so; CI
+  installs pinned copies and is the gate of record for both.
+- **`perf` and `container` are excluded entirely** — see each target's comment.
+
+Stages not yet CI-gated (most of 9) are not silently skipped — each has a
+`docs/ROADMAP.md` row naming the gap and the item that closes it. Two stages
+*are* CI-gated but not merge-blocking: Semgrep (stage 4) and the OSV lockfile
+scan run on every pull request yet are absent from the required-check set in
+`.github/rulesets/main.json`.
 
 ## REVIEW-GATE (human sign-off, committed as PR attestation + artifact)
 
@@ -124,10 +141,14 @@ exists and enforces this section on every `v*` tag:
 
 ## Branch protection
 
-An active `protect-main` GitHub ruleset now blocks deletion and force-push and
-requires the named CI checks. It is not yet the complete portfolio posture:
-strict/up-to-date checks, PR approval, stale-review dismissal, CODEOWNER review,
-signed commits, and linear history remain issue #79. The target posture is:
+An active `protect-main` GitHub ruleset blocks deletion and force-push and
+requires eleven named CI checks. It is mirrored in-tree at
+`.github/rulesets/main.json` so the posture is reviewable in a diff; the gaps
+are itemized in `.github/rulesets/README.md`. It is not yet the complete
+portfolio posture: strict/up-to-date checks, PR approval, stale-review
+dismissal, CODEOWNER review, signed commits, and linear history remain issue
+#79, and the Semgrep and OSV contexts are missing from the required set. The
+target posture is:
 PR required (≥1 approval, ≥2 for
 changes to `src/ledger/access/` or `identity.py`), last-pusher cannot
 self-approve, stale reviews dismissed on new pushes, CODEOWNERS review

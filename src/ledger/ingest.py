@@ -324,7 +324,7 @@ def rights_for_record(record: Record) -> PremisRights:
 # PREMIS/DC -> store pipeline); surfaced 2026-07-05 when CQ-05's complexity gate
 # was enabled. Waived, not re-muted: this is preservation-core code, so a split is
 # tracked as a deliberate, well-tested follow-up rather than rushed under audit
-# time pressure (see ledger-REMEDIATION.md P3-2).
+# time pressure. Tracked in issue #83.
 def ingest_sip(  # noqa: C901 - the SIP pipeline's stages, in order (#83)
     sip: SIP,
     store: ContentStore,

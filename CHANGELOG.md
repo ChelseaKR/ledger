@@ -15,7 +15,44 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 > section, with a matching signed annotated git tag, once the first `vX.Y.Z` tag is
 > explicitly approved through the release workflow added below.
 
+### Added
+- **The live `protect-main` ruleset is now mirrored in-tree at
+  `.github/rulesets/main.json`** (CI-CD-STANDARD §5), with `.github/rulesets/README.md`
+  itemizing the six §5/§5.1 floors that profile does not meet and saying plainly that
+  it is evidence rather than a profile to copy. `CODEOWNERS` routes the new directory
+  explicitly. The truthfulness gate gains a `ruleset_contexts` claim: every required
+  status check in the mirror must name a job that exists in `.github/workflows/`, and
+  an empty required-check list fails, because renaming a job is otherwise a silent way
+  to leave a branch requiring a context nothing will ever report.
+
 ### Fixed
+- **Two security gates were described as blocking while neither could block a merge.**
+  The `osv` job and the `semgrep` workflow run fail-closed on every pull request and
+  are absent from the live ruleset's eleven required status checks, so a red run on
+  either is advisory. The README's "Blocking … Semgrep" row and its "a blocking OSV
+  scan" sentence now say what is true today; `docs/ROADMAP.md` carried the same gap on
+  a row pointing at the **closed** issue #84, which is repointed. Adding the two
+  contexts to the live ruleset is a server-side change and stays open.
+- **Three documents cited a coverage flag this repo does not pass, at a floor it does
+  not enforce.** `DEFINITION_OF_DONE.md`, `CONTRIBUTING.md`, and
+  `docs/DORA-DELIVERY-HEALTH-REVIEW.md` all said `--cov-fail-under=85`; the flag
+  appears in no config or workflow, and `[tool.coverage.report] fail_under` has been
+  88 since the ratchet in #83's first pass. A new `config_number` claim kind re-derives
+  the number from `pyproject.toml` in all three files, so it fails both when the
+  documented floor disagrees with the enforced one and when a file stops stating it.
+- **Eight comments pointed at `ledger-REMEDIATION.md`, a file this repo does not
+  ship** — `CODEOWNERS` plus the prose above six `# noqa: C901` waivers. Each now
+  names issue #83, which is where the `noqa` lines themselves already pointed.
+- **A new HTML route could be served with no accessibility coverage and no red test.**
+  `tests/test_accessibility_route_coverage.py` checked that every inventoried route
+  still exists in `server.py`, but nothing checked the reverse, so an added page would
+  silently invalidate every count in `docs/accessibility/ROUTE-COVERAGE.md`. Every
+  literal route in the `do_GET` dispatch table must now be classified as HTML-in-scope
+  or explicitly out of scope.
+- **`DEFINITION_OF_DONE.md` claimed `make verify` reproduces every AUTO-GATE item
+  locally**, including the coverage floors, which it does not run. The three
+  deliberate local/CI differences (coverage, tool-dependent scans, `perf`/`container`)
+  are now written down instead of implied.
 - **Five stale README/architecture statements corrected, and the truthfulness gate
   widened so this class of claim is inside it.** All five drifted in the same
   direction — describing work as still owed that had shipped, or behaviour the code

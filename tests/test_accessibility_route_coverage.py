@@ -20,11 +20,15 @@ ROUTE-COVERAGE.md ("these 13 routes are covered, these 8 are not") stays true:
   superset (an undocumented gap) and not a subset (a stale doc overclaiming a
   gap that coverage has since closed);
 * every uncovered route's literal path actually appears in the committed doc,
-  so the gap is a written fact, not just a fact this test happens to know.
+  so the gap is a written fact, not just a fact this test happens to know;
+* and the reverse of the first bullet — every literal route `do_GET` dispatches
+  is classified as HTML-in-scope or explicitly out of scope, so a *new* page
+  cannot appear with no accessibility decision and no red test.
 """
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from ledger.accessibility_check import _render_sample_pages
@@ -119,6 +123,58 @@ def _static_gate_covered_routes() -> set[str]:
     ROUTE-COVERAGE.md to match.
     """
     return {label.removeprefix("rendered:") for label in _render_sample_pages()}
+
+
+# The literal `path == "..."` routes in do_GET that deliberately do not emit HTML for
+# a person, and so are out of scope for a WCAG gate. Kept as data rather than prose so
+# the inventory can be checked against the dispatch table in both directions: the
+# reverse check below fails on any new literal route that is in neither list.
+_NON_HTML_ROUTES: frozenset[str] = frozenset(
+    {
+        "/healthz",
+        "/proof/attestation.json",
+        "/oai",
+        "/sitemap.xml",
+        "/robots.txt",
+        "/feed.atom",
+        "/api/records",
+        "/api/search",
+        "/api/search.csv",
+    }
+)
+
+_LITERAL_ROUTE_RE = re.compile(r'path == "([^"]+)"')
+
+
+def test_a_new_html_route_cannot_be_added_without_an_accessibility_decision() -> None:
+    """The direction the other checks do not cover.
+
+    ``test_all_html_routes_are_still_present_in_dispatch`` catches a route that
+    *disappears* from ``server.py``. Nothing caught a route that *appears*: a new page
+    could be served with no automated accessibility coverage from either engine, and
+    every count in ``ROUTE-COVERAGE.md`` would silently become wrong while the whole
+    suite stayed green. A hand-maintained inventory that is only checked in the
+    direction it cannot drift is not checked.
+
+    Every literal route the dispatch table serves must therefore be classified: either
+    in this file's HTML inventory (and so accounted for as covered or as a documented
+    gap) or in ``_NON_HTML_ROUTES``. Adding a page is then a decision, not an omission.
+    """
+    dispatched = set(_LITERAL_ROUTE_RE.findall(_do_get_dispatch_source()))
+    unclassified = dispatched - set(_ALL_HTML_ROUTES) - _NON_HTML_ROUTES
+    assert not unclassified, (
+        f"server.py dispatches {sorted(unclassified)}, which is in neither the HTML "
+        "route inventory nor the non-HTML exclusion list. If it renders a page for a "
+        "person, add it to _ALL_HTML_ROUTES and to docs/accessibility/ROUTE-COVERAGE.md "
+        "as covered or as a named gap; if it does not, add it to _NON_HTML_ROUTES."
+    )
+
+
+def test_the_non_html_exclusion_list_does_not_name_routes_that_are_gone() -> None:
+    """An exclusion for a route that no longer exists quietly widens the next one."""
+    dispatched = set(_LITERAL_ROUTE_RE.findall(_do_get_dispatch_source()))
+    stale = _NON_HTML_ROUTES - dispatched
+    assert not stale, f"_NON_HTML_ROUTES excludes {sorted(stale)}, which do_GET no longer serves"
 
 
 def test_all_html_routes_are_still_present_in_dispatch() -> None:

@@ -9,7 +9,7 @@ alone. This tripwire pins a *small* inventory of load-bearing, checkable claims 
 fails the build when reality and documentation diverge, so a correction stays
 corrected and a future edit cannot silently reintroduce a dead claim.
 
-Five claim kinds, all pure standard library (no new dependency — ledger's runtime is
+Seven claim kinds, all pure standard library (no new dependency — ledger's runtime is
 stdlib-first and this tool runs in the same gate):
 
 * ``path_exists`` — a repo-relative path the docs promise the repo ships (e.g. the
@@ -29,6 +29,16 @@ stdlib-first and this tool runs in the same gate):
   committed Markdown must find <ID> in ``docs/ROADMAP.md``. DOC-13's rule is that a
   gap declaration links something a reader can actually open; a pointer to a tracker
   item that no longer exists is a dead claim of the same family as a dead path.
+* ``config_number`` — a threshold the prose states, re-derived from the config that
+  actually enforces it rather than from another sentence. Three documents spent two
+  weeks citing a coverage flag (``--cov-fail-under=85``) that appears nowhere in the
+  repo and a floor three points below the one ``pyproject.toml`` enforces, because
+  nothing tied the number to its source. Like ``stated_count`` it fails both ways.
+* ``ruleset_contexts`` — every required status check in the committed branch-protection
+  mirror (``.github/rulesets/main.json``) must name a job that exists in
+  ``.github/workflows/``. Renaming a job is otherwise a silent way to drop a
+  merge-blocking gate: the ruleset keeps requiring a context nothing will ever report.
+  An empty required-check list is a failure too, not a vacuous pass.
 
 Keep the inventory deliberately small: a noisy tripwire that flags prose churn trains
 reviewers to ignore it. Add a claim only when it is factual, load-bearing, and cheap to
@@ -40,10 +50,13 @@ and ``CONTRIBUTING.md`` publishes the same list for readers (kept in step by
 
 from __future__ import annotations
 
+import json
 import re
 import sys
+import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -256,6 +269,180 @@ class ReferenceExists:
 
 
 @dataclass(frozen=True)
+class ConfigNumber:
+    """A threshold the prose states, re-derived from the config that enforces it.
+
+    ``stated_count`` re-derives a number from the *tree*; this re-derives one from the
+    *configuration*, which is where thresholds actually live. The failure this exists
+    to prevent is documented drift in the safe direction: three files claimed an 85%
+    coverage floor, and cited a ``--cov-fail-under=85`` flag the repo does not pass,
+    while ``pyproject.toml`` had been enforcing 88 since the ratchet in #83's first
+    pass. Nobody was lying; the sentence simply had no tie to its source.
+
+    ``key_path`` walks the parsed TOML. Fails when the source is missing, when the key
+    is absent, when the prose stops stating the number, and when the two disagree.
+    """
+
+    name: str
+    file: str
+    pattern: str
+    source: str
+    key_path: tuple[str, ...]
+    hint: str
+
+    def actual(self) -> int | str | None:
+        source = ROOT / self.source
+        if not source.is_file():
+            return None
+        try:
+            data: Any = tomllib.loads(source.read_text(encoding="utf-8"))
+        except (OSError, tomllib.TOMLDecodeError):
+            return None
+        for key in self.key_path:
+            if not isinstance(data, dict) or key not in data:
+                return None
+            data = data[key]
+        return data if isinstance(data, int) and not isinstance(data, bool) else None
+
+    def check(self) -> str | None:
+        target = ROOT / self.file
+        if not target.is_file():
+            return f"{self.name}: {self.file!r} is missing — cannot check the stated threshold"
+        dotted = ".".join(self.key_path)
+        actual = self.actual()
+        if actual is None:
+            return (
+                f"{self.name}: cannot read {dotted} from {self.source} — the documented "
+                "threshold has no source to be checked against, which is not the same as "
+                "the documentation being right"
+            )
+        found = re.findall(self.pattern, target.read_text(encoding="utf-8"))
+        if not found:
+            return (
+                f"{self.name}: {self.file} no longer states the threshold this gate "
+                f"re-derives (pattern {self.pattern!r} matched nothing) — restate it, or "
+                "delete this claim rather than leaving a check that verifies nothing"
+            )
+        for raw in found:
+            if str(raw) != str(actual):
+                return (
+                    f"{self.name}: {self.file} states {raw} but {self.source} sets "
+                    f"{dotted} = {actual} — {self.hint}"
+                )
+        return None
+
+
+# --- ruleset_contexts -------------------------------------------------------
+#
+# Job-level names sit at four-space indentation under `jobs:`; a job with no `name:`
+# reports under its own id. A name may interpolate a matrix value
+# (`CodeQL analyze (${{ matrix.language }})`), so each name becomes a pattern rather
+# than a literal.
+
+_JOB_ID_RE = re.compile(r"^  ([A-Za-z_][\w-]*):\s*$")
+_JOB_NAME_RE = re.compile(r"^    name:\s*(.+?)\s*$")
+_EXPRESSION_RE = re.compile(r"\$\{\{.*?\}\}")
+
+
+def _job_name_patterns(workflows: Path) -> list[re.Pattern[str]]:
+    """One regex per job GitHub could report a check for, across every workflow."""
+    patterns: list[re.Pattern[str]] = []
+    for path in sorted(workflows.glob("*.yml")) + sorted(workflows.glob("*.yaml")):
+        lines = path.read_text(encoding="utf-8").splitlines()
+        in_jobs = False
+        for index, line in enumerate(lines):
+            if line.rstrip() == "jobs:":
+                in_jobs = True
+                continue
+            if not in_jobs or not (job := _JOB_ID_RE.match(line)):
+                continue
+            name = job.group(1)
+            for following in lines[index + 1 :]:
+                if _JOB_ID_RE.match(following) or following.rstrip() == "jobs:":
+                    break
+                if declared := _JOB_NAME_RE.match(following):
+                    name = declared.group(1).strip("\"'")
+                    break
+            # A matrix interpolation stands for "any value", so blank it to a sentinel
+            # the name itself cannot contain, escape the literal remainder, and put a
+            # wildcard back where the sentinel was.
+            escaped = re.escape(_EXPRESSION_RE.sub("\x00", name))
+            patterns.append(re.compile(f"^{escaped.replace(chr(0), '.+')}$"))
+    return patterns
+
+
+@dataclass(frozen=True)
+class RulesetContexts:
+    """Every required status check in the committed ruleset must name a real job.
+
+    ``.github/rulesets/main.json`` mirrors the live ``protect-main`` ruleset so the
+    branch-protection posture is reviewable in a diff. A required context is a string
+    match against a check name: rename the job and the ruleset goes on requiring a
+    context that nothing will ever report, which reads as "still protected" and is not.
+
+    An empty required-check list fails too. A ruleset that requires nothing is the
+    purest form of the failure this whole file is about.
+    """
+
+    name: str
+    ruleset: str
+    workflows: str
+    hint: str
+
+    def contexts(self) -> list[str] | str:
+        """The required contexts, or a message explaining why they cannot be read."""
+        target = ROOT / self.ruleset
+        if not target.is_file():
+            return f"{self.ruleset!r} is missing — the committed ruleset mirror is the evidence"
+        try:
+            data: Any = json.loads(target.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            return f"{self.ruleset} cannot be parsed: {exc}"
+        if not isinstance(data, dict) or not isinstance(data.get("rules"), list):
+            return f"{self.ruleset} has no `rules` array"
+        for rule in data["rules"]:
+            if not isinstance(rule, dict) or rule.get("type") != "required_status_checks":
+                continue
+            parameters = rule.get("parameters")
+            if not isinstance(parameters, dict):
+                return f"{self.ruleset}: required_status_checks has no `parameters` object"
+            checks = parameters.get("required_status_checks")
+            if not isinstance(checks, list):
+                return f"{self.ruleset}: `required_status_checks` must be an array"
+            found = [c["context"] for c in checks if isinstance(c, dict) and "context" in c]
+            if len(found) != len(checks):
+                return f"{self.ruleset}: every required status check needs a `context`"
+            return found
+        return f"{self.ruleset} declares no `required_status_checks` rule"
+
+    def check(self) -> str | None:
+        contexts = self.contexts()
+        if isinstance(contexts, str):
+            return f"{self.name}: {contexts} — {self.hint}"
+        if not contexts:
+            return (
+                f"{self.name}: {self.ruleset} requires zero status checks — a branch "
+                "protection profile that gates nothing is not protection"
+            )
+        workflows = ROOT / self.workflows
+        if not workflows.is_dir():
+            return (
+                f"{self.name}: {self.workflows!r} is missing — nothing to resolve contexts against"
+            )
+        patterns = _job_name_patterns(workflows)
+        if not patterns:
+            return f"{self.name}: no job names found under {self.workflows} — {self.hint}"
+        unresolved = [c for c in contexts if not any(p.match(c) for p in patterns)]
+        if unresolved:
+            listed = ", ".join(repr(c) for c in unresolved)
+            return (
+                f"{self.name}: {self.ruleset} requires {listed}, which no job in "
+                f"{self.workflows} is named — {self.hint}"
+            )
+        return None
+
+
+@dataclass(frozen=True)
 class Uncovered:
     """A load-bearing claim this gate cannot check, named rather than left implicit.
 
@@ -269,7 +456,15 @@ class Uncovered:
     checked_elsewhere: str = ""
 
 
-Claim = PathExists | ForbiddenString | RequiredString | StatedCount | ReferenceExists
+Claim = (
+    PathExists
+    | ForbiddenString
+    | RequiredString
+    | StatedCount
+    | ReferenceExists
+    | ConfigNumber
+    | RulesetContexts
+)
 
 # The inventory. Small on purpose (see module docstring). Each entry pins one
 # factual, checkable claim the README/docs make about the repo.
@@ -405,6 +600,43 @@ CLAIMS: tuple[Claim, ...] = (
         "a gap declaration must link something a reader can open (DOC-13): either add the "
         "item to docs/ROADMAP.md or stop citing an id that does not exist (#124).",
     ),
+    PathExists(
+        "committed-ruleset-mirror",
+        ".github/rulesets/main.json",
+        "the README and DEFINITION_OF_DONE.md say the live protect-main ruleset is mirrored "
+        "in-tree (CI-CD-STANDARD §5); restore the mirror or stop claiming it.",
+    ),
+    RulesetContexts(
+        "ruleset-contexts-name-real-jobs",
+        ".github/rulesets/main.json",
+        ".github/workflows",
+        "a required context that matches no job name is a check that will never report, "
+        "which leaves the branch reading as protected by a gate that cannot run.",
+    ),
+    ConfigNumber(
+        "coverage-floor-in-definition-of-done",
+        "DEFINITION_OF_DONE.md",
+        r"(\d+)% branch-coverage floor",
+        "pyproject.toml",
+        ("tool", "coverage", "report", "fail_under"),
+        "restate the floor pyproject.toml actually enforces, or change the floor.",
+    ),
+    ConfigNumber(
+        "coverage-floor-in-contributing",
+        "CONTRIBUTING.md",
+        r"(\d+)% branch-coverage floor",
+        "pyproject.toml",
+        ("tool", "coverage", "report", "fail_under"),
+        "restate the floor pyproject.toml actually enforces, or change the floor.",
+    ),
+    ConfigNumber(
+        "coverage-floor-in-dora-review",
+        "docs/DORA-DELIVERY-HEALTH-REVIEW.md",
+        r"(\d+)%\s*\n?branch-coverage floor",
+        "pyproject.toml",
+        ("tool", "coverage", "report", "fail_under"),
+        "restate the floor pyproject.toml actually enforces, or change the floor.",
+    ),
 )
 
 # What this gate cannot see. Published in CONTRIBUTING.md ("What the truthfulness gate
@@ -440,6 +672,16 @@ UNCOVERED: tuple[Uncovered, ...] = (
         "has nothing local to resolve them against",
     ),
     Uncovered(
+        "whether .github/rulesets/main.json still matches the live protect-main ruleset",
+        "parity needs a GitHub API call, and this stdlib script deliberately makes no "
+        "network request; the mirror is only as current as the change that last touched it",
+    ),
+    Uncovered(
+        "whether every merge-blocking gate is in the required-check set",
+        "which gates ought to be required is a policy decision, not a repo fact; today "
+        "Semgrep and the OSV lockfile scan run on every PR and are not required (#79)",
+    ),
+    Uncovered(
         "the response shape of the browse server's routes",
         "needs a running server, which this stdlib script deliberately does not start",
         "asserted live against the documented prose in tests/test_server_remediation.py",
@@ -451,6 +693,14 @@ _KIND_LABEL: dict[str, tuple[str, str]] = {
     "ForbiddenString": ("dead claim absent", "dead claims absent"),
     "RequiredString": ("supporting fact present", "supporting facts present"),
     "StatedCount": ("stated count re-derived", "stated counts re-derived"),
+    "ConfigNumber": (
+        "threshold re-derived from config",
+        "thresholds re-derived from config",
+    ),
+    "RulesetContexts": (
+        "required-check set resolved",
+        "required-check sets resolved",
+    ),
     # ReferenceExists is reported by the number of pointers it swept, not by the
     # number of inventory entries: "1 claim" would hide how much it looked at.
 }
