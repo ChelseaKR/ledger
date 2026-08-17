@@ -1508,6 +1508,9 @@ class Archive:
                         else "broken",
                     )
                     report = AuditReport(results=[*report.results, chain_failure])
+                fast_result = self._fast_lookup_divergence(bag_path)
+                if fast_result is not None:
+                    report = AuditReport(results=[*report.results, fast_result])
                 reports.append((bag_path.name, report))
 
         audited = {name for name, _ in reports}
@@ -1521,6 +1524,55 @@ class Archive:
             reports.append((record_id, AuditReport(results=[missing])))
 
         return reports
+
+    def _fast_lookup_divergence(self, bag_path: Path) -> FixityResult | None:
+        """Compare a bag's ``record.json`` against its ``records/`` copy, or ``None``.
+
+        Every disclosure decision in ledger is made from the *fast-lookup* manifest
+        under ``records/`` — :meth:`get` prefers it, and :meth:`_all_records` (browse,
+        search, OAI, sitemap, feed, CSV) reads only it, through the catalog index.
+        The bag's ``record.json`` is the copy BagIt fixity actually covers. Nothing
+        compared the two, so the file every read path trusts had no fixity coverage
+        at all: editing only ``records/<id>.json`` to flip a ``sealed-until`` field
+        to ``public`` discloses the embargoed plaintext to an anonymous viewer while
+        :meth:`audit_fixity` stays green and the signed health attestation still
+        reports ``fixity_ok: true``. The bag is not touched, so no manifest, no tag
+        manifest, and no PREMIS chain can notice.
+
+        Both copies are written from the same bytes on every lawful path (:meth:
+        `ingest` copies the file; :meth:`apply_update` writes one serialization to
+        both; :meth:`remove_all_copies` deletes both), so a divergence between two
+        copies that both exist is a finding, never normal operation.
+
+        Scope: this compares *content*, and only when both copies are present. A
+        fast-lookup manifest that is simply absent is deliberately left to the
+        existing reconciliation rules (see ``tests/test_audit_missing_bags.py``,
+        which holds that an untouched bag whose records/ copy was removed is not a
+        fixity failure) — an absent copy hides a record, it cannot disclose one, so
+        it is a different concern from the tamper this closes.
+
+        Reported as a failing :class:`~ledger.models.FixityResult` naming only the
+        two paths, never a field value or an identity (no-outing rule). Returns
+        ``None`` when either copy is missing or unreadable, so this can only ever
+        add findings, never mask one.
+        """
+        in_bag = bag_path / _RECORD_FILENAME
+        fast = self.records_dir / f"{bag_path.name}.json"
+        if not in_bag.is_file() or not fast.is_file():
+            return None
+        try:
+            expected = hashlib.sha256(in_bag.read_bytes()).hexdigest()
+            actual = hashlib.sha256(fast.read_bytes()).hexdigest()
+        except OSError:
+            return None
+        if expected == actual:
+            return None
+        return FixityResult(
+            path=f"records/{bag_path.name}.json",
+            algo=HashAlgo.SHA256,
+            expected=expected,
+            actual=actual,
+        )
 
     def _record_ids_on_disk(self) -> set[str]:
         """Every record id with a fast-lookup manifest under ``records/``.

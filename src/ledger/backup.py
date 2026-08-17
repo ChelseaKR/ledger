@@ -15,8 +15,12 @@ What it does, and the qualities it serves:
   *passphrase* with the **exact** scrypt parameters the identity vault uses
   (:meth:`~ledger.identity.IdentityVault.derive_key`), and encrypts the tar with
   authenticated Fernet. The output is ``ledger-backup-<UTC>.tar.fernet`` plus a
-  small JSON sidecar manifest. A stolen backup is ciphertext only — confidentiality
-  even off-box, on a host the community does not control.
+  small JSON sidecar manifest carrying only what a restore cannot work without —
+  the salt, the ciphertext's digest and length, and the timestamps. A stolen backup
+  is ciphertext only — confidentiality even off-box, on a host the community does
+  not control — and the plaintext sidecar beside it describes the *file*, never the
+  collection: no bag count, no record id, nothing an observer could difference
+  across a nightly series to date a sealed deposit (no-outing / P2-2).
 * :func:`restore_backup` decrypts, untars, and then runs the **same**
   readability + RFC 8493 fixity checks ``verify-backup`` runs, so every restore is
   verified rather than merely unpacked — an untested restore is a hope, not a
@@ -156,7 +160,8 @@ def create_backup(config: Config, dest_dir: Path, passphrase: str) -> BackupRepo
     scrypt parameters the identity vault uses (:meth:`IdentityVault.derive_key`),
     encrypts the tar with authenticated Fernet, and writes
     ``<dest_dir>/ledger-backup-<UTC>.tar.fernet`` plus a JSON sidecar manifest
-    (``created-at``, ``salt``, the ciphertext SHA-256, and the bag count). Returns a
+    (``created-at``, ``salt``, the ciphertext SHA-256, and its length — everything a
+    restore needs and nothing that describes the collection inside). Returns a
     :class:`BackupReport`. The passphrase, the derived key, and every plaintext byte
     stay in memory only and never reach disk in the clear, a log, or the report
     (confidentiality, no-outing rule).
@@ -188,13 +193,22 @@ def create_backup(config: Config, dest_dir: Path, passphrase: str) -> BackupRepo
 
     digest = hashlib.sha256(ciphertext).hexdigest()
     bag_count = _count_bags(config)
+    # The sidecar is the one part of a backup that is NOT encrypted — it has to be,
+    # since the salt inside it is what a restore needs to derive the key. So it must
+    # carry nothing the ciphertext is meant to protect. The bag count is exactly such
+    # a thing: it counts sealed and community bags alongside public ones, ledger keeps
+    # absolute counts steward-only everywhere else (P2-2), and a nightly cron leaves a
+    # dated series of these sidecars on a host the community does not control — which
+    # reads off both the archive's true size and the date each record, sealed ones
+    # included, was added. Nothing reads it back (:func:`restore_backup` uses only
+    # ``salt``); the count still reaches the steward in :class:`BackupReport`, in
+    # memory, where it is theirs to see. See ``docs/BACKUP-RUNBOOK.md``.
     manifest = {
         "schema": "ledger-backup/1",
         "created-at": created_at,
         "salt": salt.hex(),
         "ciphertext-sha256": digest,
         "ciphertext-bytes": len(ciphertext),
-        "bag-count": bag_count,
         "archive-file": archive_path.name,
     }
 

@@ -546,9 +546,9 @@ CLAIMS: tuple[Claim, ...] = (
         "healthz-counts-are-gated",
         "docs/ARCHITECTURE.md",
         "`/healthz` reports counts only",
-        "anonymous /healthz returns status, all_verified, ready, and chain_head; the counts "
-        "are behind a steward grant (P2-2). Do not describe the endpoint as leaking totals "
-        "the code no longer exposes (#124).",
+        "anonymous /healthz returns status, all_verified, and ready; the counts AND the "
+        "live chain_head commitment are both behind a steward grant (P2-2). Do not "
+        "describe the endpoint as leaking totals the code no longer exposes (#124).",
     ),
     ForbiddenString(
         "healthz-counts-are-gated-in-the-runbook",
