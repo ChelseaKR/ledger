@@ -44,6 +44,7 @@ you are asking:
 | I want to… | Start with… |
 | --- | --- |
 | See the core safety and preservation flow work | [Five-minute synthetic walkthrough](docs/TRY-LEDGER.md) |
+| See what real archival files do to it, including what broke | [Real-corpus report](docs/REAL-CORPUS-REPORT.md) (`make real-corpus`) |
 | Assess it with a community archivist, using no real records | [Partner-pilot packet](docs/reviews/community-archivist-pilot.md) |
 | Review the threat model or accessibility claims | [Review packet](docs/reviews/README.md) |
 | Decide whether a real collective can adopt it | [Adoption checklist](docs/ADOPTING.md) and [threat model](docs/THREAT-MODEL.md) |
@@ -53,6 +54,17 @@ you are asking:
 evidence that a third party has audited ledger. The demo proves specific, automated
 properties over synthetic data; it does not establish safety for any particular
 community or deployment.
+
+**Real files, not only fixtures.** A demo built on fixtures ledger wrote itself is a
+closed loop — the fixtures encode the same assumptions as the code, so they can only
+confirm them. `make real-corpus` runs the whole ingest path over 679 real files from
+the [Open Preservation Foundation format-corpus](https://github.com/openpreserve/format-corpus)
+(CC0): JHOVE error cases, a PDF cabinet of horrors, real government PDFs that broke
+real harvesters, dead spreadsheet formats, JPEG 2000 masters, and deliberately hostile
+filenames. [`docs/REAL-CORPUS-REPORT.md`](docs/REAL-CORPUS-REPORT.md) is the honest
+write-up, defects first — including the ones still open. Nothing crashed and every bag
+validated; what the run found was a preservation log reporting confident success over
+material the pipeline had entirely failed to understand.
 
 **Why this domain.** Queer history is disproportionately undocumented, and the documentation that
 exists is fragile. It lives on a single laptop, a dead Facebook group, a hosted service that changes

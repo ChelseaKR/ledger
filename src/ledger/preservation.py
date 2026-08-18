@@ -71,9 +71,13 @@ class FormatId:
 
     ``basis`` records *how* the format was determined — ``"signature"`` (a
     content-based magic-number match, the strongest), ``"extension"`` (filename
-    only), ``"text"`` (decoded cleanly as UTF-8), or ``"unknown"`` (none of the
-    above). A steward reading a preservation report can tell a confident
-    identification from a guess (inspectability, honesty).
+    only), ``"text"`` (decoded cleanly as UTF-8), ``"signature-offset"`` (a
+    content signature found *after* byte 0, behind a wrapper or preamble), or
+    ``"unknown"`` (none of the above). A steward reading a preservation report can
+    tell a confident identification from a guess (inspectability, honesty).
+
+    ``header_offset`` is where the signature was found; it is ``0`` for every
+    basis except ``"signature-offset"``.
     """
 
     name: str
@@ -82,9 +86,10 @@ class FormatId:
     at_risk: bool
     recommendation: str
     basis: str
+    header_offset: int = 0
 
     @classmethod
-    def of(cls, info: FormatInfo, *, basis: str) -> FormatId:
+    def of(cls, info: FormatInfo, *, basis: str, header_offset: int = 0) -> FormatId:
         """Build a :class:`FormatId` from a registry :class:`FormatInfo`."""
         return cls(
             name=info.name,
@@ -93,12 +98,21 @@ class FormatId:
             at_risk=info.at_risk,
             recommendation=info.recommendation,
             basis=basis,
+            header_offset=header_offset,
         )
 
     def summary(self) -> str:
         """A one-line, no-outing-safe description for a PREMIS event detail."""
         puid = self.puid or "no-puid"
         line = f"identified as {self.name} [{puid}] via {self.basis}; media-type {self.media_type}"
+        if self.header_offset:
+            # Say so explicitly: this is a preservation-planning signal in its own
+            # right, because a strict identifier (DROID, veraPDF) anchors the header
+            # at byte 0 and will not recognise the file at all.
+            line += (
+                f"; header at byte {self.header_offset}, not 0 — a wrapper or preamble "
+                "precedes it, and strict validators will not identify this file"
+            )
         if self.at_risk:
             line += f"; AT-RISK — {self.recommendation}"
         return line
@@ -121,7 +135,7 @@ _JPEG = FormatInfo("JPEG", "image/jpeg", "fmt/43", False, "")
 _GIF = FormatInfo("GIF", "image/gif", "fmt/4", False, "")
 _TIFF = FormatInfo("TIFF", "image/tiff", "fmt/353", False, "")
 _BMP = FormatInfo("Windows Bitmap", "image/bmp", "fmt/116", False, "")
-_WEBP = FormatInfo("WebP", "image/webp", "fmt/565", False, "")
+_WEBP = FormatInfo("WebP", "image/webp", "fmt/566", False, "")
 _WAV = FormatInfo("Broadcast/WAVE audio", "audio/x-wav", "fmt/141", False, "")
 _FLAC = FormatInfo("FLAC", "audio/flac", "fmt/279", False, "")
 _OGG = FormatInfo("Ogg", "application/ogg", "fmt/203", False, "")
@@ -129,13 +143,37 @@ _MP3 = FormatInfo(
     "MP3", "audio/mpeg", "fmt/134", False, "Lossy; keep any lossless master (e.g. FLAC/WAV)."
 )
 _MP4 = FormatInfo("MPEG-4 / QuickTime (ISO BMFF)", "video/mp4", "fmt/199", False, "")
-_MKV = FormatInfo("Matroska / WebM", "video/x-matroska", "fmt/641", False, "")
+_MKV = FormatInfo("Matroska / WebM", "video/x-matroska", "fmt/569", False, "")
 _ZIP = FormatInfo("ZIP", "application/zip", "x-fmt/263", False, "")
 _GZIP = FormatInfo("GZIP", "application/gzip", "x-fmt/266", False, "")
 _SEVENZIP = FormatInfo("7-Zip", "application/x-7z-compressed", "fmt/484", False, "")
 _TEXT = FormatInfo("Plain text (UTF-8)", "text/plain", "x-fmt/111", False, "")
 _XML = FormatInfo("XML", "application/xml", "fmt/101", False, "")
 _HTML = FormatInfo("HTML", "text/html", "fmt/471", False, "")
+_RTF = FormatInfo(
+    "Rich Text Format",
+    "application/rtf",
+    "fmt/45",
+    False,
+    "Widely readable, but consider ODF or PDF/A for an archival master.",
+)
+
+# JPEG 2000 family. This is the preservation *master* format for most library and
+# museum digitisation programmes (a scanned zine page, a photographed banner), so a
+# preservation tool that cannot name it is blind to exactly the files an archive
+# most cares about keeping. All four container flavours share one signature box and
+# are told apart by the brand at offset 20; the raw codestream has its own marker.
+_JP2 = FormatInfo("JP2 (JPEG 2000 part 1)", "image/jp2", "x-fmt/392", False, "")
+_JPX = FormatInfo("JPX (JPEG 2000 part 2)", "image/jpx", "fmt/151", False, "")
+_JPM = FormatInfo("JPM (JPEG 2000 part 6)", "image/jpm", "fmt/463", False, "")
+_MJ2 = FormatInfo("MJ2 (Motion JPEG 2000)", "video/mj2", "fmt/337", False, "")
+_J2C = FormatInfo(
+    "JPEG 2000 codestream",
+    "image/jp2",
+    "fmt/1794",
+    False,
+    "A bare codestream carries no metadata; wrap it in a JP2 container for preservation.",
+)
 
 # At-risk: obsolescent or proprietary formats whose long-term usability is in
 # doubt. NDSA/DPC treat migration of these as a core preservation activity.
@@ -156,7 +194,7 @@ _SWF = FormatInfo(
 _REALMEDIA = FormatInfo(
     "RealMedia",
     "application/vnd.rn-realmedia",
-    "fmt/202",
+    "x-fmt/190",
     True,
     "Proprietary and obsolescent. Transcode to an open format (e.g. MP4/Matroska).",
 )
@@ -213,9 +251,24 @@ _SIGNATURES: tuple[tuple[int, bytes, FormatInfo], ...] = (
     (0, b"ZWS", _SWF),
     (0, b".RMF", _REALMEDIA),
     (0, b"\xffWPC", _WORDPERFECT),
+    # RTF is ASCII, so without this it decodes cleanly and is filed as plain text —
+    # losing the format of a word-processing document that carries real structure.
+    (0, b"{\\rtf", _RTF),
+    # A bare JPEG 2000 codestream (SOC + SIZ markers), as distinct from a JP2 container.
+    (0, b"\xff\x4f\xff\x51", _J2C),
 )
 
 _OLE2_MAGIC = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
+
+#: The JPEG 2000 signature box that opens every JP2-family container (ISO/IEC
+#: 15444-1 Annex I). The flavour is then read from the ``ftyp`` brand at offset 20.
+_JP2_SIGNATURE_BOX = b"\x00\x00\x00\x0cjP  \r\n\x87\n"
+_JP2_BRANDS: dict[bytes, FormatInfo] = {
+    b"jp2 ": _JP2,
+    b"jpx ": _JPX,
+    b"jpm ": _JPM,
+    b"mjp2": _MJ2,
+}
 
 # Extension fallback for formats with no reliable leading signature (mostly text-
 # based or container formats), used only when no content signature matched.
@@ -228,6 +281,16 @@ _EXTENSION_MAP: dict[str, FormatInfo] = {
     "html": _HTML,
     "htm": _HTML,
     "svg": FormatInfo("SVG", "image/svg+xml", "fmt/91", False, ""),
+    "rtf": _RTF,
+    "jp2": _JP2,
+    "jpf": _JPX,
+    "jpx": _JPX,
+    "jpm": _JPM,
+    "mj2": _MJ2,
+    "mjp2": _MJ2,
+    "j2c": _J2C,
+    "j2k": _J2C,
+    "jpc": _J2C,
     "doc": _OLE2_OFFICE,
     "xls": _OLE2_OFFICE,
     "ppt": _OLE2_OFFICE,
@@ -248,6 +311,11 @@ def _match_signature(data: bytes) -> FormatInfo | None:
     """
     if data.startswith(_OLE2_MAGIC):
         return _OLE2_OFFICE
+    if data.startswith(_JP2_SIGNATURE_BOX):
+        # Every JP2-family file opens with the same signature box; the brand in the
+        # following ``ftyp`` box says which one. An unrecognised brand still means
+        # "some JPEG 2000 container", so fall back to JP2 rather than to unknown.
+        return _JP2_BRANDS.get(data[20:24], _JP2)
     if data.startswith(b"RIFF") and len(data) >= 12:
         brand = data[8:12]
         if brand == b"WAVE":
@@ -328,6 +396,39 @@ def _looks_like_text(data: bytes) -> bool:
     return all(ch >= " " or ch in allowed_controls for ch in text)
 
 
+#: How far past byte 0 a displaced header is still looked for. 1024 is the
+#: tolerance Adobe's own readers document for the ``%PDF-`` header, and it bounds
+#: the scan so identification stays cheap and cannot wander into file content.
+_MAX_HEADER_OFFSET = 1024
+
+
+def _match_displaced_signature(data: bytes) -> tuple[FormatInfo, int] | None:
+    """Find a ``%PDF-`` header that real-world damage has pushed past byte 0.
+
+    Files do not reach an archive in the shape the standard describes. A PDF
+    harvested over HTTP can carry the chunked-transfer length ahead of its header;
+    one recovered from a Mac carries a MacBinary wrapper; one saved out of a web
+    tool carries a ``data:`` URI prefix or a JSON envelope; plenty simply have a
+    stray leading space. In every one of those cases the file is a PDF that opens
+    fine in a reader, and ISO 32000-1 §7.5.2 wants the header first while Adobe's
+    implementations accept it within the first 1024 bytes.
+
+    Recording such a file as ``Unidentified`` is the worst of both worlds: the
+    steward is told nothing, and the real defect — a wrapper that a strict
+    validator will choke on — goes unnamed. So this identifies the format *and*
+    reports the offset, which :meth:`FormatId.summary` puts in the PREMIS detail.
+
+    Deliberately the *last* step before ``unknown``, and deliberately PDF-only.
+    Running it after the extension, XML, and text steps means it can only change
+    files that no earlier step could name, so a text file that merely mentions
+    ``%PDF-`` is still plain text. Returns the format and the offset, or ``None``.
+    """
+    index = data.find(b"%PDF-", 1, _MAX_HEADER_OFFSET + len(b"%PDF-"))
+    if index == -1:
+        return None
+    return _PDF, index
+
+
 def _extension(filename: str) -> str:
     """The lower-cased extension of ``filename`` without the dot (``""`` if none)."""
     suffix = Path(filename).suffix
@@ -347,7 +448,10 @@ def identify_format(data: bytes, *, filename: str | None = None) -> FormatId:
        than as plain text (see :func:`_looks_like_xml` for why this runs here
        and not as a signature);
     4. **text** — a clean UTF-8 decode (plain text);
-    5. **unknown** — none of the above; recorded honestly as ``application/
+    5. **signature-offset** — a ``%PDF-`` header displaced past byte 0 by a
+       wrapper or preamble, which real files carry often enough to matter (see
+       :func:`_match_displaced_signature` for why this runs last);
+    6. **unknown** — none of the above; recorded honestly as ``application/
        octet-stream`` with a recommendation to identify it.
 
     Pure and deterministic: the same bytes and filename always yield the same
@@ -364,6 +468,10 @@ def identify_format(data: bytes, *, filename: str | None = None) -> FormatId:
         return FormatId.of(_XML, basis="xml-declaration")
     if _looks_like_text(data):
         return FormatId.of(_TEXT, basis="text")
+    displaced = _match_displaced_signature(data)
+    if displaced is not None:
+        info, offset = displaced
+        return FormatId.of(info, basis="signature-offset", header_offset=offset)
     return FormatId.of(_UNKNOWN, basis="unknown")
 
 
