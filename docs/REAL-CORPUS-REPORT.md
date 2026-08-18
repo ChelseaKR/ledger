@@ -87,7 +87,7 @@ are exactly the formats a small curated registry is least likely to know.
 
 **Not fixed — flagged.** Widening the registry to cover these is real work with a
 real design question behind it (should `unknown` imply elevated risk?), and guessing
-at it under this PR's scope would be worse than naming it. Filed.
+at it under this PR's scope would be worse than naming it. Filed as [#142](https://github.com/ChelseaKR/ledger/issues/142).
 
 ### 3. JPEG 2000 — the preservation master format — was unidentified
 
@@ -198,8 +198,8 @@ payload size honestly." Neither was done: there is no cap and no documented cave
 
 **Not fixed here.** Fernet does not stream; doing this properly means a chunked
 framing format for data at rest, which changes the on-disk encryption format and
-belongs with the crypto review already tracked as FIX-11. Filed with this
-measurement attached.
+belongs with the crypto review already tracked as FIX-11. Filed as
+[#141](https://github.com/ChelseaKR/ledger/issues/141) with this measurement attached.
 
 ### 8. BagIt manifests are not percent-encoded (RFC 8493 §2.1.3)
 
@@ -223,7 +223,7 @@ unpack a ledger bag without ledger itself."
 
 **Not fixed here.** The fix is small but it changes the serialisation of already-
 written bags, so it needs a migration story for existing archives rather than a
-drive-by edit in a PR about format identification. Filed.
+drive-by edit in a PR about format identification. Filed as [#143](https://github.com/ChelseaKR/ledger/issues/143).
 
 ### 9. The record's media type contradicts the preservation log for 100 payloads
 
@@ -245,7 +245,8 @@ also discarded in favour of stdlib `mimetypes`, so a `.doc` is recorded as
 `application/msword` in the record while PREMIS calls it at-risk OLE2.
 
 **Not fixed here** — deciding which of the two should win is a product question about
-what the browse UI owes a reader, not a bug with an obvious correct answer. Filed,
+what the browse UI owes a reader, not a bug with an obvious correct answer. Filed as
+[#144](https://github.com/ChelseaKR/ledger/issues/144),
 with the harness reporting the count on every run so it cannot drift unnoticed.
 
 ---
