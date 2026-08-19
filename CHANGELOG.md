@@ -16,6 +16,40 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 > explicitly approved through the release workflow added below.
 
 ### Added
+- **Preservation risk is now two signals, not one** (ADR 0010, #142). `at_risk` keeps
+  its exact meaning — a positive finding about a *known* obsolescent format, with a
+  named migration target — and `FormatId.unassessable` is added for a file nothing
+  could identify. `at_risk=False` used to mean both "assessed, and fine" and "never
+  assessed at all", and on a real corpus the second was 17% of files. Reported
+  separately in the PREMIS `eventOutcome`, the identification summary, and the
+  `ledger ingest` advisory. Making `unknown` simply imply `at_risk` was rejected on the
+  measurement: of 118 unidentified corpus files, 52 are empty, OS metadata, damaged,
+  disk images, or a live niche format, and "migrate to a modern format" is the wrong
+  instruction for every one of them.
+- **The dead 1990s desktop is identified** — Lotus 1-2-3 (`x-fmt/114`, `x-fmt/115`,
+  `x-fmt/116`, `x-fmt/117`, `fmt/1452`), Quattro Pro (`x-fmt/121`, `x-fmt/122`,
+  `fmt/834`, `fmt/835`), Windows Write (`x-fmt/4`, `x-fmt/12`), Microsoft Access
+  (Jet 3 / Jet 4), Inmagic DB/TextWorks, IBM DisplayWrite/DCA (`x-fmt/148`), ARJ
+  (`fmt/610`), Adobe InDesign, and the discontinued ebook formats — Microsoft Reader
+  LIT (`fmt/867`), Sony BBeB LRF (`fmt/518`), Rocket eBook (`fmt/485`), Bambook SNB,
+  Mobipocket and PalmDOC (`fmt/396`). Every signature was read off the corpus bytes and
+  then checked against PRONOM's DROID signature file (V120). Where PRONOM assigns
+  several byte-identical PUIDs to one head signature (Access, InDesign) or has no entry
+  (DB/TextWorks, Bambook), no PUID is asserted. Recall over the corpus's 66
+  unambiguously obsolete files went from **0 to 57 (86%)**, and `make real-corpus`
+  prints that against a written-down ground truth on every run.
+- **A zero-byte payload is reported as empty, not as unidentified** (`basis="empty"`,
+  PREMIS `eventOutcome: "empty"`). 31 of the corpus's 118 "unidentified" files were
+  simply empty; in a real deposit that is a failed transfer, and it is worth catching
+  at ingest rather than at the next audit.
+- **`PayloadFile.media_type_basis`** records where a record's media type came from —
+  `signature`, `extension`, `text`, `xml-declaration`, `signature-offset`, `empty`,
+  `unknown`, or `declared` — and is disclosed alongside the type, so a consumer that
+  sees `application/pdf` can tell whether the bytes said so or the filename did.
+- **`Config.sealed_payload_max_bytes`** (default 64 MiB) caps SEALED payloads, with
+  `bag.migrate_manifest_encoding()` provided for archives that need the RFC 8493
+  §2.1.3 manifest migration below.
+
 - **The pipeline is now exercised against a real, openly-licensed archival corpus**
   (`make real-corpus`, `tools/real_corpus.py`, findings in
   `docs/REAL-CORPUS-REPORT.md`). Every other proof in this repository runs on fixtures
@@ -53,6 +87,59 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   nothing to act on, over nearly a quarter of the archive.
 
 ### Fixed
+- **BagIt manifests are percent-encoded per RFC 8493 §2.1.3** (#143). `%`, CR, and LF
+  are encoded on write and decoded on read; ledger previously wrote a payload named
+  `%` into the manifest raw, so the Library of Congress `bagit-python` reference
+  implementation — which percent-decodes — resolved a ledger path containing `%` to
+  the wrong file or to none, and a filename containing a newline broke the manifest
+  grammar outright. ledger round-tripped its own bags either way, because both halves
+  were consistently wrong. This contradicted `bag.py`'s stated reason for choosing
+  BagIt at all: that any conformant tool can read a ledger bag without ledger. The
+  decoder handles only the three escapes the RFC defines, so **bags written before this
+  change keep validating untouched** — a general percent-decoder would have turned a
+  pre-migration payload named `%41` into a lookup for `A`. `bag.migrate_manifest_encoding()`
+  re-serialises manifests and reseals the tag manifests for an archive that wants
+  unambiguous ones; it is idempotent and only matters to an archive holding `%`, CR, or
+  LF in a payload name.
+- **A SEALED payload larger than the cap is refused instead of OOM-killing the ingest**
+  (ADR 0011, #141). Fernet has no streaming API, so sealing holds the whole file in
+  memory: measured peak RSS is `33 MB + 7.4 × payload`, which is **1189 MB for a 157 MB
+  file** against a flat ~38 MB on the streamed PUBLIC path. SEALED is what an at-risk
+  contributor picks for their most sensitive material, so the archive was falling over
+  precisely on the records it most needs to keep — and not with an error. The refusal
+  happens in a pre-flight pass before anything is read, encrypted, or stored, and names
+  the limit, the measured cost, the formula, and three ways forward. The real fix is
+  chunked at-rest framing, which changes the on-disk encryption format and stays gated
+  on the commissioned crypto review (FIX-11) rather than being invented on self-review.
+- **The five "never held in RAM" claims are now true as written** (#141).
+  `docs/ARCHITECTURE.md`, `fixity.py`, `bag.py`, `cas.py`, and `server.py` each claimed
+  a payload is never held in RAM or costs constant memory. Each was true of the path it
+  annotated and, read together, asserted an end-to-end property that SEALED broke. Each
+  now names the path it is actually about and points at ADR 0011, and the truthfulness
+  gate pins the pointer in all five files so it cannot silently revert.
+- **A record's media type no longer contradicts its own preservation log** (ADR 0010,
+  #144). `mimetypes.guess_type` — a pure filename guess — is removed from the ingest
+  path; the record's media type is the identifier's verdict, except for a type the
+  caller *declared*. 100 payloads previously advertised a confident media type while
+  their own PREMIS log read `identified as Unidentified [no-puid] via unknown`.
+  Divergence is now **0 of 679**, and `make real-corpus` fails the run on any hit
+  rather than reporting a count.
+- **The `.doc`/`.xls`/`.ppt` extension rows are removed** (ADR 0010). They could only
+  ever fire on a file whose bytes are *not* OLE2 — a genuine legacy Office file matches
+  the OLE2 signature two steps earlier — so by construction they were reachable only
+  when wrong, and they wrote PUID `fmt/111` into the PREMIS log as fact. All five files
+  the `.doc` row identified on the corpus were WordPerfect or IBM DisplayWrite
+  documents, and none was Microsoft anything; PRONOM itself lists `.doc` under
+  WordPerfect (`x-fmt/44`).
+- **OLE2 is named for what its PUID actually covers.** `fmt/111` is "OLE2 Compound
+  Document Format" in PRONOM, with no extensions attached; calling it "Microsoft OLE2
+  (legacy Office)" overclaimed, and the corpus caught it with a Quattro Pro `.wb3` and
+  a `.qpw`, which are OLE2 files and are not Microsoft anything.
+- **Markdown is identified as `text/markdown` (`fmt/1149`)** rather than plain text.
+  The registry is meant to be the better-informed source and on this row it was the
+  worse one, which produced the largest single media-type divergence (73 files).
+- **`CONTRIBUTING.md` pointed ADR authors at `docs/ADRs/`**, which does not exist; the
+  directory is `docs/adr/`.
 - **A `%PDF-` header displaced past byte 0 is identified instead of discarded.** Real
   PDFs arrive behind an HTTP chunked-transfer length, a MacBinary wrapper, a `data:`
   URI prefix, a JSON envelope, or just a stray leading space; 20 in the corpus did,

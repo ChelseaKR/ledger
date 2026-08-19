@@ -57,3 +57,12 @@ mutants/
 .mutmut-cache
 mutmut-stats.json
 mutmut-cicd-stats.json
+
+# Ideation planning notes (docs/ideation/). `main` carries exactly one of the five —
+# 02-large-scale-fixes.md, whose FIX-NN ids are cited from ADRs, issues, and the
+# roadmap, so a reader following a reference can open it. The other four are working
+# notes main has never carried, and that boundary used to exist only as absence.
+# See "Planning notes: what docs/ideation/ publishes" in CONTRIBUTING.md — including
+# why this is not a retraction: all five are already public on the rescue/* branches.
+/docs/ideation/*
+!/docs/ideation/02-large-scale-fixes.md
