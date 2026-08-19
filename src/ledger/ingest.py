@@ -461,11 +461,24 @@ def ingest_sip(  # noqa: C901 - the SIP pipeline's stages, in order (#83)
         # identified format, its PRONOM PUID where known, how it was identified, and —
         # for an obsolescent/proprietary format — the migration recommendation. The
         # detail carries only format metadata, never identity or content (no-outing).
+        #
+        # A file the identifier could not name is NOT a success. Recording it as one
+        # buries the single most useful preservation-planning signal an ingest can
+        # produce — "we do not know what this is" — under the same green outcome as a
+        # confident content match, so a steward auditing the log by outcome sees
+        # nothing to act on. Measured on a real archival corpus, this was 23% of
+        # files (see docs/REAL-CORPUS-REPORT.md), not a rounding error.
+        if fmt.at_risk:
+            outcome = "at-risk"
+        elif fmt.basis == "unknown":
+            outcome = "unidentified"
+        else:
+            outcome = "success"
         format_events.append(
             PremisEvent(
                 event_type=PremisEventType.FORMAT_IDENTIFICATION,
                 agent=agent,
-                outcome="at-risk" if fmt.at_risk else "success",
+                outcome=outcome,
                 detail=fmt.summary(),
                 linked_object=str(address),
                 event_datetime=now,

@@ -12,7 +12,8 @@ PY   ?= $(if $(wildcard $(VENV)/bin/python),$(VENV)/bin/python,python3)
 
 .DEFAULT_GOAL := help
 .PHONY: help venv install lock lint format type test cov audit osv accessibility acr demo serve \
-        i18n i18n-compile claims secret-scan workflow-lint perf container mutation verify clean
+        i18n i18n-compile claims secret-scan workflow-lint perf real-corpus container mutation \
+        verify clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -151,6 +152,18 @@ perf: ## Performance budgets (QM-02): CAS, fixity, ingest, browse must clear the
 	# this target just lets a contributor run the same budgets locally out of
 	# curiosity or to reproduce a CI failure.
 	$(PY) tools/perf_budget.py
+
+real-corpus: ## Ingest a real, openly-licensed archival corpus (OPF format-corpus) and report what broke
+	# Not part of `verify`: it downloads ~302 MB from the network, which a merge
+	# gate must never depend on. Every other proof in this repo runs on fixtures
+	# ledger wrote itself — a closed loop that can only confirm its own
+	# assumptions. This target opens it against the digital-preservation
+	# community's own corpus of awkward real files (CC0), pinned to one commit and
+	# verified file-by-file against its git blob SHA-1 so a run cannot silently
+	# measure something other than the corpus it names. The corpus lands in the
+	# gitignored ./real-corpus and is never committed.
+	# Findings from the last run are written up in docs/REAL-CORPUS-REPORT.md.
+	$(PY) tools/real_corpus.py
 
 container: ## Build the self-host image and scan it for CRITICAL/HIGH CVEs (Trivy)
 	# Not part of `verify`: it needs a working Docker daemon, which not every

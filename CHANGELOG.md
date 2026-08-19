@@ -16,6 +16,25 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 > explicitly approved through the release workflow added below.
 
 ### Added
+- **The pipeline is now exercised against a real, openly-licensed archival corpus**
+  (`make real-corpus`, `tools/real_corpus.py`, findings in
+  `docs/REAL-CORPUS-REPORT.md`). Every other proof in this repository runs on fixtures
+  ledger wrote itself — a closed loop that can only confirm its own assumptions. This
+  runs the whole ingest path over 679 files (302 MB) of the Open Preservation
+  Foundation `format-corpus` (CC0), pinned to one commit and verified file-by-file
+  against its git blob SHA-1, and re-hashes every bagged payload against the fetched
+  original so a plausible-looking report cannot be produced over data that never
+  reached the code. The corpus is gitignored and never committed; the target is
+  deliberately outside `make verify`, which must not depend on the network.
+- **JPEG 2000 is identified** — JP2, JPX, JPM, MJ2, and bare codestreams (`x-fmt/392`,
+  `fmt/151`, `fmt/463`, `fmt/337`, `fmt/1794`). This is the preservation *master*
+  format of most digitisation programmes and 18 of them were previously recorded as
+  `application/octet-stream`. The four container flavours share one signature box and
+  differ only in the `ftyp` brand at offset 20, which a fixed-offset signature table
+  could not express; an unrecognised brand degrades to JP2, never to unknown.
+- **Rich Text Format is identified** (`fmt/45`). RTF is ASCII, so with no signature for
+  it the UTF-8 fallback claimed it first and filed a structured word-processing
+  document as `text/plain`.
 - **The live `protect-main` ruleset is now mirrored in-tree at
   `.github/rulesets/main.json`** (CI-CD-STANDARD §5), with `.github/rulesets/README.md`
   itemizing the six §5/§5.1 floors that profile does not meet and saying plainly that
@@ -25,7 +44,32 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   an empty required-check list fails, because renaming a job is otherwise a silent way
   to leave a branch requiring a context nothing will ever report.
 
+### Changed
+- **A payload whose format could not be identified is no longer logged as a
+  successful ingest.** It now records PREMIS `eventOutcome: "unidentified"`, and
+  `ledger ingest` says so on stderr. Measured on the real corpus this was 156 of 679
+  files (23%), every one of them filed under the same green `success` outcome as a
+  confident content match — so a steward auditing a preservation log by outcome saw
+  nothing to act on, over nearly a quarter of the archive.
+
 ### Fixed
+- **A `%PDF-` header displaced past byte 0 is identified instead of discarded.** Real
+  PDFs arrive behind an HTTP chunked-transfer length, a MacBinary wrapper, a `data:`
+  URI prefix, a JSON envelope, or just a stray leading space; 20 in the corpus did,
+  and all 20 were recorded as `Unidentified`, which named neither the format nor the
+  defect. A displaced header within 1024 bytes (Adobe's documented tolerance) now
+  yields a distinct basis, `signature-offset`, and the PREMIS detail reports the
+  offset and warns that strict validators (DROID, veraPDF) will not identify the file.
+  The scan runs last, after the extension/XML/text steps, so it can only name files no
+  earlier step could — prose mentioning `%PDF-` is still plain text.
+- **Three PRONOM PUIDs identified entirely different formats** and were being written
+  into every PREMIS log as fact: WebP claimed `fmt/565` (**Adobe Illustrator**),
+  Matroska/WebM claimed `fmt/641` (**Epson Raw Image Format**), and RealMedia claimed
+  `fmt/202` (**Nikon Digital SLR Camera Raw**). Corrected to `fmt/566`, `fmt/569`, and
+  `x-fmt/190`, verified against PRONOM's published DROID signature file (V120) — which
+  also confirmed the registry's other 25 PUIDs are right — and pinned by a regression
+  test. A PUID exists for interoperability with DROID/PRONOM tooling, so a wrong one
+  does not merely fail to help, it misinforms every downstream system that trusts it.
 - **Two security gates were described as blocking while neither could block a merge.**
   The `osv` job and the `semgrep` workflow run fail-closed on every pull request and
   are absent from the live ruleset's eleven required status checks, so a red run on

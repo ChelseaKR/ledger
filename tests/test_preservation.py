@@ -37,6 +37,16 @@ _SWF = b"FWS\x09" + b"\x00" * 16
 _RAR = b"Rar!\x1a\x07\x00" + b"\x00" * 16
 _REALMEDIA = b".RMF\x00\x00\x00\x12" + b"\x00" * 8
 
+# Byte prefixes taken verbatim from real files in the Open Preservation Foundation
+# format-corpus (CC0), which `make real-corpus` runs the whole pipeline over. Every
+# one of these was recorded as "Unidentified" before the corpus run exposed it.
+_JP2 = b"\x00\x00\x00\x0cjP  \r\n\x87\n\x00\x00\x00\x14ftypjp2 " + b"\x00" * 8
+_JPX = b"\x00\x00\x00\x0cjP  \r\n\x87\n\x00\x00\x00\x1cftypjpx " + b"\x00" * 8
+_JPM = b"\x00\x00\x00\x0cjP  \r\n\x87\n\x00\x00\x00\x14ftypjpm " + b"\x00" * 8
+_MJ2 = b"\x00\x00\x00\x0cjP  \r\n\x87\n\x00\x00\x00\x18ftypmjp2" + b"\x00" * 8
+_J2C = b"\xff\x4f\xff\x51\x00\x2f\x00\x00" + b"\x00" * 16
+_RTF = rb"{\rtf1\ansi\deff0 hello}"
+
 
 def test_signature_identification_beats_extension() -> None:
     """A content signature is authoritative even when the extension lies."""
@@ -116,6 +126,87 @@ def test_identify_file_reads_only_head(tmp_path: Path) -> None:
     assert identify_file(big).media_type == "image/png"
 
 
+@pytest.mark.parametrize(
+    ("data", "name", "media_type", "puid"),
+    [
+        (_JP2, "JP2 (JPEG 2000 part 1)", "image/jp2", "x-fmt/392"),
+        (_JPX, "JPX (JPEG 2000 part 2)", "image/jpx", "fmt/151"),
+        (_JPM, "JPM (JPEG 2000 part 6)", "image/jpm", "fmt/463"),
+        (_MJ2, "MJ2 (Motion JPEG 2000)", "video/mj2", "fmt/337"),
+        (_J2C, "JPEG 2000 codestream", "image/jp2", "fmt/1794"),
+    ],
+)
+def test_jpeg_2000_family_identified_by_signature(
+    data: bytes, name: str, media_type: str, puid: str
+) -> None:
+    """JPEG 2000 — the preservation master format of most digitisation programmes.
+
+    All four container flavours share one signature box and differ only in the
+    ``ftyp`` brand at offset 20, so identifying them means reading past the magic
+    number. Every one of these was ``Unidentified`` until a real corpus said so.
+    """
+    fmt = identify_format(data, filename="no-extension")
+    assert fmt.name == name
+    assert fmt.media_type == media_type
+    assert fmt.puid == puid
+    assert fmt.basis == "signature"
+
+
+def test_unknown_jpeg_2000_brand_still_identified_as_jpeg_2000() -> None:
+    """An unrecognised JP2 brand degrades to JP2, never to ``unknown``."""
+    fmt = identify_format(
+        b"\x00\x00\x00\x0cjP  \r\n\x87\n\x00\x00\x00\x14ftypXXXX" + b"\x00" * 8,
+        filename="mystery",
+    )
+    assert fmt.puid == "x-fmt/392"
+    assert fmt.basis == "signature"
+
+
+def test_rtf_is_a_format_not_plain_text() -> None:
+    """RTF is ASCII, so without a signature it silently degrades to text/plain."""
+    fmt = identify_format(_RTF, filename="no-extension")
+    assert fmt.name == "Rich Text Format"
+    assert fmt.media_type == "application/rtf"
+    assert fmt.puid == "fmt/45"
+    assert fmt.basis == "signature"
+
+
+@pytest.mark.parametrize("preamble", [b" ", b"17e500\r\n", b"\x00" * 128, b'{"datetime": 1}\n'])
+def test_pdf_header_displaced_by_a_wrapper_is_still_identified(preamble: bytes) -> None:
+    """Real PDFs carry preambles: chunked-transfer lengths, MacBinary, JSON, a space.
+
+    The file opens fine in a reader, so recording it as ``Unidentified`` tells the
+    steward nothing. It is identified, and the offset is reported, because a header
+    off byte 0 is itself the preservation defect worth surfacing.
+    """
+    fmt = identify_format(preamble + _PDF, filename="scan.pdf")
+    assert fmt.media_type == "application/pdf"
+    assert fmt.basis == "signature-offset"
+    assert fmt.header_offset == len(preamble)
+    assert f"header at byte {len(preamble)}" in fmt.summary()
+
+
+def test_undisplaced_pdf_keeps_the_plain_signature_basis() -> None:
+    """A well-formed PDF is unaffected: basis stays ``signature``, offset stays 0."""
+    fmt = identify_format(_PDF, filename="scan.pdf")
+    assert fmt.basis == "signature"
+    assert fmt.header_offset == 0
+    assert "header at byte" not in fmt.summary()
+
+
+def test_text_mentioning_a_pdf_header_is_still_plain_text() -> None:
+    """The displaced-header scan runs last, so it cannot relabel ordinary prose."""
+    fmt = identify_format(b"The zine was distributed as %PDF-1.4 files.\n", filename="notes")
+    assert fmt.basis == "text"
+    assert fmt.media_type == "text/plain"
+
+
+def test_displaced_header_search_is_bounded() -> None:
+    """A ``%PDF-`` far into the file is not a header, and is not treated as one."""
+    fmt = identify_format(b"\x00" * 4096 + _PDF, filename="mystery")
+    assert fmt.basis == "unknown"
+
+
 def _ingest(tmp_path: Path, name: str, data: bytes) -> tuple[Archive, str]:
     root = tmp_path / "arc"
     assert cli.main(["init", "--root", str(root), "--name", "P"]) == 0
@@ -163,6 +254,47 @@ def test_ingest_at_risk_format_marks_event_and_warns(
     premis = PremisLog.read(archive.bags_dir / rid / "premis.json")
     fmt_events = [e for e in premis.events if e.event_type is PremisEventType.FORMAT_IDENTIFICATION]
     assert fmt_events and fmt_events[0].outcome == "at-risk"
+
+
+def test_unidentified_payload_is_not_recorded_as_a_successful_ingest(tmp_path: Path) -> None:
+    """A file the identifier could not name must not carry a green PREMIS outcome.
+
+    "We do not know what this is" is the single most actionable preservation-planning
+    signal an ingest produces. Filing it as ``success`` — the same outcome as a
+    confident content match — hides it from any steward auditing the log by outcome.
+    On a real archival corpus this was 17% of files, not a rounding error.
+    """
+    archive, rid = _ingest(tmp_path, "mystery.bin", b"\x00\x01\x02\x03\xff\xfe\x05" * 8)
+    premis = PremisLog.read(archive.bags_dir / rid / "premis.json")
+    fmt_events = [e for e in premis.events if e.event_type is PremisEventType.FORMAT_IDENTIFICATION]
+    assert fmt_events and fmt_events[0].outcome == "unidentified"
+
+
+def test_identified_payload_still_records_success(tmp_path: Path) -> None:
+    """The honest-unknown outcome does not disturb an ordinary identified payload."""
+    archive, rid = _ingest(tmp_path, "photo.png", _PNG)
+    premis = PremisLog.read(archive.bags_dir / rid / "premis.json")
+    fmt_events = [e for e in premis.events if e.event_type is PremisEventType.FORMAT_IDENTIFICATION]
+    assert fmt_events and fmt_events[0].outcome == "success"
+
+
+@pytest.mark.parametrize(
+    ("data", "puid"),
+    [
+        (_WEBP, "fmt/566"),
+        (b"\x1aE\xdf\xa3" + b"\x00" * 16, "fmt/569"),
+        (_REALMEDIA, "x-fmt/190"),
+    ],
+)
+def test_puids_match_pronom(data: bytes, puid: str) -> None:
+    """A PUID is a claim about an external registry, so a wrong one misinforms.
+
+    These three were each pointing at a different format in PRONOM entirely — WebP
+    at Adobe Illustrator, Matroska at Epson Raw, RealMedia at Nikon camera raw —
+    and were written into every PREMIS log as fact. Verified against the DROID
+    signature file (V120), which is PRONOM's own published export.
+    """
+    assert identify_format(data, filename="payload.bin").puid == puid
 
 
 def test_format_identification_never_leaks_identity(tmp_path: Path) -> None:
