@@ -312,14 +312,25 @@ def _cmd_ingest(args: argparse.Namespace) -> int:  # noqa: C901 - argparse optio
                 f"{fmt.recommendation}",
                 file=sys.stderr,
             )
-        elif fmt.basis == "unknown":
+        elif fmt.unassessable:
             # The steward is the only one who can say what this is, and they will
             # never be better placed to say it than at the moment they hand it over.
-            # Measured on a real archival corpus, this is 17% of files.
+            # Measured on a real archival corpus, this is 4.7% of files.
             print(
-                f"note: {src.name} could not be identified from its bytes. It is stored "
-                "and checksummed either way, but nothing here can tell you whether it "
-                "will still be readable later — identify and document it now.",
+                f"note: {src.name} could not be identified from its bytes, so it has "
+                "NOT been assessed for preservation risk — that is not the same as "
+                "being safe. It is stored and checksummed either way, but nothing here "
+                "can tell you whether it will still be readable later; identify and "
+                "document it now.",
+                file=sys.stderr,
+            )
+        elif fmt.basis == "empty":
+            # A zero-byte deposit is nearly always a transfer that failed silently,
+            # and the moment of ingest is the only cheap time to catch it.
+            print(
+                f"note: {src.name} is empty (zero bytes). It will be stored and "
+                "checksummed faithfully, but check the source — an empty payload is "
+                "usually a truncated copy rather than the record you meant to keep.",
                 file=sys.stderr,
             )
         if fmt.header_offset:

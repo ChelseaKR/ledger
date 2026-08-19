@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import mimetypes
 import os
 import re
 import shutil
@@ -43,7 +42,11 @@ from ledger.bag import (
 )
 from ledger.cas import ContentStore
 from ledger.chain import GENESIS_HASH, ChainVerification
-from ledger.config import Config
+from ledger.config import (
+    DEFAULT_SEALED_PAYLOAD_MAX_BYTES,
+    SEALED_PEAK_RSS_MULTIPLIER,
+    Config,
+)
 from ledger.errors import BagValidationError, LedgerError, ObjectNotFound
 from ledger.fixity import AuditReport, hash_file_multi
 from ledger.identity import ContributorIdentity, IdentityVault
@@ -135,6 +138,7 @@ def serialize_record(record: Record) -> str:
                 "filename": p.filename,
                 "address": str(p.address),
                 "media_type": p.media_type,
+                "media_type_basis": p.media_type_basis,
                 "size_bytes": p.size_bytes,
                 "policy": p.policy.value,
                 "transcript": p.transcript,
@@ -219,6 +223,10 @@ def _payload_from_dict(item: dict[str, object]) -> PayloadFile:
         filename=str(item.get("filename", "")),
         address=ContentAddress.parse(str(item.get("address", ""))),
         media_type=str(item.get("media_type", "application/octet-stream")),
+        # Absent on records written before ADR 0010; "" reads as "provenance not
+        # recorded", which is the truth for those and must not be mistaken for
+        # "verified".
+        media_type_basis=str(item.get("media_type_basis", "")),
         size_bytes=size if isinstance(size, int) else 0,
         policy=AccessPolicy(str(item.get("policy", AccessPolicy.SEALED_UNTIL.value))),
         transcript=str(item.get("transcript", "")),
@@ -325,6 +333,46 @@ def rights_for_record(record: Record) -> PremisRights:
 # was enabled. Waived, not re-muted: this is preservation-core code, so a split is
 # tracked as a deliberate, well-tested follow-up rather than rushed under audit
 # time pressure. Tracked in issue #83.
+def _reject_oversized_sealed_payloads(
+    sip: SIP, declared: dict[str, PayloadFile], limit: int
+) -> None:
+    """Refuse a SEALED payload larger than ``limit`` bytes, before any work is done.
+
+    SEALED is the one ingest path that is not memory-bounded. Fernet has no streaming
+    API, so :func:`ingest_sip` holds the whole file in memory to encrypt it, and peak
+    RSS runs at roughly ``33 MB + 7.4x`` the payload — measured at 1189 MB for a
+    157 MB file against a flat ~38 MB on the streamed PUBLIC path.
+
+    Without this check the failure mode is not an error, it is the OOM killer taking
+    the ingest down mid-write on the one inexpensive box the archive targets — and it
+    happens on SEALED, which is what an at-risk contributor picks for the most
+    sensitive material they have. A refusal that names the limit, the measured cost,
+    and the alternatives is strictly better than a process that dies (fail closed,
+    failure transparency).
+
+    This is an honest interim, not the fix. The fix is chunked at-rest framing, which
+    changes the on-disk encryption format and is gated on the commissioned crypto
+    review (FIX-11) rather than invented here. See ADR 0011.
+    """
+    for filename in sorted(sip.payload):
+        existing = declared.get(filename)
+        policy = existing.policy if existing is not None else sip.record.default_policy
+        if policy is not AccessPolicy.SEALED:
+            continue
+        size = sip.payload[filename].stat().st_size
+        if size <= limit:
+            continue
+        raise LedgerError(
+            f"sealed payload {filename!r} is {size / 1e6:.1f} MB, over this archive's "
+            f"{limit / 1e6:.1f} MB limit for SEALED files. Sealing holds the whole file "
+            f"in memory (Fernet cannot stream), so ingesting it would peak at roughly "
+            f"{(33 + SEALED_PEAK_RSS_MULTIPLIER * size / 1e6):.0f} MB of RSS and most "
+            "likely be killed. Either store it under a non-SEALED policy on an "
+            "encrypted disk, split it, or raise sealed_payload_max_bytes in the archive "
+            "config if this box has the memory (peak_mb ~= 33 + 7.4 x payload_mb)."
+        )
+
+
 def ingest_sip(  # noqa: C901 - the SIP pipeline's stages, in order (#83)
     sip: SIP,
     store: ContentStore,
@@ -333,6 +381,7 @@ def ingest_sip(  # noqa: C901 - the SIP pipeline's stages, in order (#83)
     bags_dir: Path,
     agent: str,
     now: str,
+    sealed_payload_max_bytes: int = DEFAULT_SEALED_PAYLOAD_MAX_BYTES,
 ) -> AIP:
     """Run the one ingest path for ``sip`` and return the stored :class:`AIP`.
 
@@ -377,6 +426,12 @@ def ingest_sip(  # noqa: C901 - the SIP pipeline's stages, in order (#83)
     # 1. Fixity + store. Preserve any per-file policy already declared on the
     #    record; otherwise default to the record's narrowest policy.
     declared = {p.filename: p for p in record.payloads}
+    # Refuse an oversized SEALED payload here, before anything is read, encrypted, or
+    # stored — the same precondition discipline as the duplicate-bag check above, and
+    # for the same reason: a refusal must leave CAS, temporary ciphertext, and the
+    # vault untouched. Doing it per-file inside the loop would already have written
+    # ciphertext for the payloads that came alphabetically first.
+    _reject_oversized_sealed_payloads(sip, declared, sealed_payload_max_bytes)
     payload_entries: list[PayloadFile] = []
     fixity_events: list[PremisEvent] = []
     # PREMIS format-identification events + the IANA media types identified, so the
@@ -399,13 +454,28 @@ def ingest_sip(  # noqa: C901 - the SIP pipeline's stages, in order (#83)
         fmt = identify_file(source)
         identified_media_types.append(fmt.media_type)
         if existing is not None:
+            # A caller-declared type is a human assertion, not a guess, so it still
+            # wins — but the record says that is where it came from.
             media_type = existing.media_type
+            media_type_basis = "declared"
         else:
-            # Prefer a content-based media type; else infer from the filename so the
-            # Files list and API report something meaningful instead of octet-stream
-            # (correctness, usability).
-            guessed, _ = mimetypes.guess_type(filename)
-            media_type = fmt.media_type if fmt.basis == "signature" else (guessed or fmt.media_type)
+            # The identifier's verdict IS the record's media type (ADR 0010). It used
+            # to be overridden by ``mimetypes.guess_type`` — a pure filename guess —
+            # whenever identification did not reach a content signature, so a record
+            # could advertise a confident ``application/pdf`` for a file whose own
+            # PREMIS log read "Unidentified [no-puid] via unknown". That was 100
+            # payloads on a real corpus, and it inverted the intended precedence: the
+            # curated registry knows a legacy .doc is at-risk OLE2, and it was being
+            # replaced by the stdlib's blander ``application/msword``.
+            #
+            # The stated cost of preferring the identifier was that 17% of files would
+            # fall back to ``application/octet-stream``. Widening the registry cut the
+            # unidentified share to 4.7%, and for a file nothing could identify,
+            # ``application/octet-stream`` is not a degradation — it is the accurate
+            # IANA type for an unrecognised byte stream, and it warns the reader that
+            # the deliberately-damaged PDF they are about to download will not open.
+            media_type = fmt.media_type
+            media_type_basis = fmt.basis
         policy = existing.policy if existing is not None else record.default_policy
         # An absolute-SEALED payload FILE is encrypted at rest: the content store and
         # the bag hold ciphertext, never the clear bytes, so a stolen disk or hostile
@@ -439,6 +509,7 @@ def ingest_sip(  # noqa: C901 - the SIP pipeline's stages, in order (#83)
                 filename=filename,
                 address=address,
                 media_type=media_type,
+                media_type_basis=media_type_basis,
                 size_bytes=size,
                 policy=policy,
                 transcript=transcript,
@@ -468,10 +539,18 @@ def ingest_sip(  # noqa: C901 - the SIP pipeline's stages, in order (#83)
         # confident content match, so a steward auditing the log by outcome sees
         # nothing to act on. Measured on a real archival corpus, this was 23% of
         # files (see docs/REAL-CORPUS-REPORT.md), not a rounding error.
+        #
+        # "unidentified" and "empty" are both distinct from "success" and from each
+        # other: an unidentified file is one nothing could assess, while a zero-byte
+        # file has been assessed perfectly well and is empty — usually a truncated
+        # transfer, which a steward wants to hear about now rather than at the next
+        # audit. Filing either under "success" is the same defect in two sizes.
         if fmt.at_risk:
             outcome = "at-risk"
-        elif fmt.basis == "unknown":
+        elif fmt.unassessable:
             outcome = "unidentified"
+        elif fmt.basis == "empty":
+            outcome = "empty"
         else:
             outcome = "success"
         format_events.append(
@@ -742,7 +821,15 @@ class Archive:
         )
         vault = self._open_vault(vault_key) if needs_vault else None
         sip = SIP(record=record, payload=dict(payload), identity=identity)
-        aip = ingest_sip(sip, self.store, vault, bags_dir=self.bags_dir, agent=agent, now=stamp)
+        aip = ingest_sip(
+            sip,
+            self.store,
+            vault,
+            bags_dir=self.bags_dir,
+            agent=agent,
+            now=stamp,
+            sealed_payload_max_bytes=self.config.sealed_payload_max_bytes,
+        )
 
         # Mirror the bag's identity-free manifest into records/ for quick reads. The
         # catalog index (FIX-04) needs no explicit update here: it self-syncs against

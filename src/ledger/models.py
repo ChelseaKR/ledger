@@ -366,11 +366,22 @@ class PayloadFile:
     *same* payload policy as
     everything else here — see :class:`TranscriptCue` for why no finer-grained,
     per-cue policy is implemented yet.
+
+    ``media_type_basis`` records where ``media_type`` came from, so the record can
+    never assert more confidence than the pipeline actually had. It is the
+    :attr:`~ledger.preservation.FormatId.basis` of the identification that produced
+    the type (``signature`` — matched on content, the strongest; ``extension`` —
+    inferred by the format registry from the filename; ``text``,
+    ``xml-declaration``, ``signature-offset``, ``empty``; or ``unknown``, where the
+    type is the honest ``application/octet-stream``), or ``declared`` when a steward
+    supplied the type themselves. Empty on records written before this field existed,
+    which is why nothing may read it as "verified" by default (ADR 0010).
     """
 
     filename: str
     address: ContentAddress
     media_type: str = "application/octet-stream"
+    media_type_basis: str = ""
     size_bytes: int = 0
     policy: AccessPolicy = AccessPolicy.SEALED_UNTIL
     transcript: str = ""
@@ -461,6 +472,10 @@ class DisclosedRecord:
                     "filename": p.filename,
                     "address": str(p.address),
                     "media_type": p.media_type,
+                    # Disclosed alongside the type, never separately: a consumer that
+                    # sees `application/pdf` is entitled to know whether the bytes
+                    # said so or the filename did (ADR 0010).
+                    "media_type_basis": p.media_type_basis,
                     "size_bytes": p.size_bytes,
                 }
                 for p in self.payloads
