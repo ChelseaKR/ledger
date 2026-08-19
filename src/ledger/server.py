@@ -2500,7 +2500,9 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         Streams the file in :data:`~ledger.fixity.CHUNK_SIZE` windows rather than
         reading it whole into memory first (FIX-03): a multi-gigabyte oral-history
         video must not cost gigabytes of RSS to serve on the "one inexpensive box"
-        the archive targets. A single ``Range: bytes=...`` request is honored with
+        the archive targets. Serving is bounded; *ingesting* a SEALED payload is not,
+        and is capped instead (ADR 0011) — though no SEALED payload is ever served
+        on this or any other read path. A single ``Range: bytes=...`` request is honored with
         a ``206 Partial Content`` response (RFC 9110 §14) so a browser can seek
         within served audio/video instead of re-downloading the whole file; a
         malformed unit, a multi-range request, or no header at all falls back to a

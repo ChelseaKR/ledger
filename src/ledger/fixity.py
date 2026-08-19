@@ -9,6 +9,10 @@ quality attributes:
   independent digest must agree too.
 * **Constant-memory streaming** (fixed-size chunks) -> efficiency and scalability:
   a multi-gigabyte oral-history video is hashed without ever being held in RAM.
+  This holds for *hashing*, which is all this module does. It is not an end-to-end
+  guarantee for the whole pipeline: at-rest encryption of a SEALED payload has no
+  streaming path (Fernet cannot stream), costs about 7.4x the payload in peak RSS,
+  and is size-capped for exactly that reason -- see ADR 0011.
 
 No-outing: nothing here ever reads or emits file *contents*. It emits hex digests,
 relative paths, and pass/fail outcomes only — never a byte of payload, never an

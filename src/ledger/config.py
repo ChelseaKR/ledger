@@ -40,6 +40,17 @@ CONFIG_SCHEMA_VERSION: int = 1
 # ``mirror`` is a replica target (replication/redundancy).
 _KNOWN_KINDS: frozenset[str] = frozenset({"local", "mirror"})
 
+#: Default ceiling on a SEALED payload, in bytes (ADR 0011). See
+#: :attr:`Config.sealed_payload_max_bytes` for how 64 MiB was derived from the
+#: measured peak-RSS curve, and why the honest cap ships ahead of the real fix.
+DEFAULT_SEALED_PAYLOAD_MAX_BYTES: int = 64 * 1024 * 1024
+
+#: Measured multiplier of peak RSS to SEALED payload size, from the probe recorded in
+#: docs/REAL-CORPUS-REPORT.md §7: peak_mb ~= 33 + 7.4 x payload_mb, linear across
+#: 16/64/157 MB. Quoted in the refusal message so an operator can size their own cap
+#: instead of guessing at one.
+SEALED_PEAK_RSS_MULTIPLIER: float = 7.4
+
 
 @dataclass(frozen=True)
 class LockdownConfig:
@@ -249,6 +260,25 @@ class Config:
     # governance opt-in (documented risk: aggregation leaks are subtle).
     reading_room_k_floor: int = 25
     reading_room_enabled: bool = False
+    # The largest SEALED payload this archive will accept, in bytes (ADR 0011).
+    #
+    # SEALED payloads are encrypted at rest with Fernet, which has no streaming API,
+    # so the whole file is held in memory to encrypt it. Measured: peak RSS is about
+    # 33 MB of interpreter plus **7.4x the payload size** — a 157 MB file costs
+    # 1189 MB, against a streamed PUBLIC path that stays flat at ~38 MB whatever the
+    # size. Uncapped, a large sealed deposit does not fail, it OOM-kills the ingest
+    # on the one inexpensive box this project targets, and it does so on the most
+    # sensitive material an at-risk contributor has.
+    #
+    # 64 MiB is derived, not chosen, and then measured rather than predicted: a
+    # 64 MiB sealed payload peaks at **527 MB** of RSS, about half of the 1 GB box
+    # that is the smallest worth running this on. An operator with more memory can
+    # raise it — peak_rss_mb ~= 33 + 7.4 x payload_mb — and the refusal says so. This is
+    # an honest interim, not the answer: the answer is chunked at-rest framing, which
+    # changes the on-disk encryption format and is gated on the commissioned crypto
+    # review (FIX-11), because inventing an AEAD framing on self-review is exactly
+    # the wrong risk to take with this material.
+    sealed_payload_max_bytes: int = DEFAULT_SEALED_PAYLOAD_MAX_BYTES
     schema_version: int = CONFIG_SCHEMA_VERSION
 
     def validate(self) -> None:
@@ -328,6 +358,8 @@ class Config:
             raise ConfigError("reading_room_enabled must be a boolean")
         if self.reading_room_enabled and self.dual_control_threshold < 2:
             raise ConfigError("reading_room_enabled requires dual_control_threshold of at least 2")
+        if self.sealed_payload_max_bytes < 1:
+            raise ConfigError("sealed_payload_max_bytes must be at least 1")
 
     def to_dict(self) -> dict[str, object]:
         """Serialize to a JSON-ready mapping with a deterministic field order.
@@ -360,6 +392,7 @@ class Config:
             "transparency_cadence_days": self.transparency_cadence_days,
             "reading_room_k_floor": self.reading_room_k_floor,
             "reading_room_enabled": self.reading_room_enabled,
+            "sealed_payload_max_bytes": self.sealed_payload_max_bytes,
         }
 
     def save(self, path: Path) -> None:
@@ -451,6 +484,9 @@ class Config:
             reading_room_k_floor=int(str(migrated.get("reading_room_k_floor", 25))),
             reading_room_enabled=_as_bool(
                 migrated.get("reading_room_enabled", False), "reading_room_enabled"
+            ),
+            sealed_payload_max_bytes=int(
+                str(migrated.get("sealed_payload_max_bytes", DEFAULT_SEALED_PAYLOAD_MAX_BYTES))
             ),
             schema_version=CONFIG_SCHEMA_VERSION,
         )

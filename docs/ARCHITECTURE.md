@@ -91,7 +91,11 @@ identity; they hash bytes, store bytes, and package bytes.
 `audit_files`, and the `AuditReport` aggregate. It supports SHA-256 *and* BLAKE2b on
 purpose — a single weakened or backdoored algorithm cannot mask tampering when an
 independent digest must agree. Hashing streams in 1 MiB windows so a multi-gigabyte
-oral-history video is verified without being held in RAM. Nothing here ever reads or
+oral-history video is verified without being held in RAM. That is a claim about
+hashing, bagging, storing, and serving — every path FIX-03 reached — and
+deliberately not about the whole pipeline: encrypting a SEALED payload at rest has
+no streaming path and peaks at roughly 7.4x the payload size, so SEALED payloads are
+size-capped rather than described as memory-bounded (ADR 0011). Nothing here ever reads or
 emits file *contents* — only hex digests, paths, and pass/fail outcomes.
 
 **`cas.py`** (`ContentStore`) names objects by the hash of their content under a fixed
