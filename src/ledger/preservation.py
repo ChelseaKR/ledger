@@ -18,9 +18,15 @@ What it does:
   guess (inspectability).
 * **Flag at-risk material.** Obsolescent or proprietary formats that real
   community archives actually hold (legacy Office, Flash, RealMedia, WordPerfect,
-  proprietary RAR) are marked ``at_risk`` with a plain-language migration
-  recommendation, so the preservation risk is surfaced at ingest rather than
-  discovered when the last reader stops working.
+  proprietary RAR, the dead 1990s desktop: Lotus 1-2-3, Quattro Pro, Windows
+  Write, Access/Jet, and the discontinued ebook formats) are marked ``at_risk``
+  with a plain-language migration recommendation, so the preservation risk is
+  surfaced at ingest rather than discovered when the last reader stops working.
+* **Say when no assessment was possible.** ``at_risk=False`` used to mean two
+  incompatible things — "assessed, and fine" and "never assessed at all" — and a
+  steward reading the advisory could not tell them apart. A file the identifier
+  cannot name is now separately :attr:`~FormatId.unassessable`, because the
+  absence of a risk finding is not a finding of safety (ADR 0010).
 * **Carry a PRONOM PUID** where one is well known, so the identification is
   interoperable with DROID/PRONOM-based preservation tooling (standards).
 
@@ -72,9 +78,10 @@ class FormatId:
     ``basis`` records *how* the format was determined — ``"signature"`` (a
     content-based magic-number match, the strongest), ``"extension"`` (filename
     only), ``"text"`` (decoded cleanly as UTF-8), ``"signature-offset"`` (a
-    content signature found *after* byte 0, behind a wrapper or preamble), or
-    ``"unknown"`` (none of the above). A steward reading a preservation report can
-    tell a confident identification from a guess (inspectability, honesty).
+    content signature found *after* byte 0, behind a wrapper or preamble),
+    ``"empty"`` (the file has no bytes at all), or ``"unknown"`` (none of the
+    above). A steward reading a preservation report can tell a confident
+    identification from a guess (inspectability, honesty).
 
     ``header_offset`` is where the signature was found; it is ``0`` for every
     basis except ``"signature-offset"``.
@@ -101,6 +108,30 @@ class FormatId:
             header_offset=header_offset,
         )
 
+    @property
+    def unassessable(self) -> bool:
+        """Whether no format was determined, so no risk assessment was possible.
+
+        This is the *second* half of the preservation-risk signal, and it exists
+        because the first half alone was misread. ``at_risk`` is a positive finding
+        about a **known** format — it is obsolescent, and here is the migration
+        target. Its complement was therefore doing double duty: ``at_risk=False``
+        meant both "we assessed this and it is fine" and "we have no idea what this
+        is", and only the first reading is reassuring.
+
+        Measured on the OPF format-corpus (679 files), that conflation hid **66
+        genuinely obsolete files** — Lotus 1-2-3, Quattro Pro, Access, Windows
+        Write, DB/TextWorks, the dead ebook formats — inside the same quiet
+        not-at-risk bucket as a healthy PNG. Splitting the signal is what lets
+        ``at_risk`` stay precise (it never fires on a format nobody has assessed)
+        while nothing silently passes as safe (ADR 0010).
+
+        Deliberately *not* the same thing as ``at_risk``: the remedies differ. An
+        at-risk file needs migrating to a named target; an unassessable one needs
+        identifying first, and nothing can be recommended until it is.
+        """
+        return self.basis == "unknown"
+
     def summary(self) -> str:
         """A one-line, no-outing-safe description for a PREMIS event detail."""
         puid = self.puid or "no-puid"
@@ -115,6 +146,13 @@ class FormatId:
             )
         if self.at_risk:
             line += f"; AT-RISK — {self.recommendation}"
+        if self.unassessable:
+            # Never let the log imply that "no risk recorded" means "no risk". This
+            # is the same defect class as the outcome that used to read "success".
+            line += (
+                "; UNASSESSABLE — no format was identified, so no preservation-risk "
+                "assessment was possible; this is not a finding that the file is safe"
+            )
         return line
 
 
@@ -150,6 +188,11 @@ _SEVENZIP = FormatInfo("7-Zip", "application/x-7z-compressed", "fmt/484", False,
 _TEXT = FormatInfo("Plain text (UTF-8)", "text/plain", "x-fmt/111", False, "")
 _XML = FormatInfo("XML", "application/xml", "fmt/101", False, "")
 _HTML = FormatInfo("HTML", "text/html", "fmt/471", False, "")
+# Markdown was mapped to plain text here while `mimetypes` knew it as text/markdown,
+# so the record and the preservation log disagreed on 73 of the corpus's files — the
+# largest single divergence measured (ADR 0010, issue #144). The registry is meant to
+# be the better-informed source; on this row it was the worse one.
+_MARKDOWN = FormatInfo("Markdown", "text/markdown", "fmt/1149", False, "")
 _RTF = FormatInfo(
     "Rich Text Format",
     "application/rtf",
@@ -178,7 +221,13 @@ _J2C = FormatInfo(
 # At-risk: obsolescent or proprietary formats whose long-term usability is in
 # doubt. NDSA/DPC treat migration of these as a core preservation activity.
 _OLE2_OFFICE = FormatInfo(
-    "Microsoft OLE2 (legacy Office 97-2003: .doc/.xls/.ppt)",
+    # PRONOM's own name for fmt/111 is "OLE2 Compound Document Format", with no
+    # extensions attached, because OLE2 is a *container* many applications used.
+    # Calling it "Microsoft Office" was an overclaim the corpus caught: a Quattro
+    # Pro .wb3 and a .qpw are OLE2 files and are not Microsoft anything. The name
+    # now matches what the PUID actually asserts; naming the inner application
+    # would mean parsing the OLE2 directory, which this module deliberately does not.
+    "OLE2 Compound Document (legacy Office .doc/.xls/.ppt and other OLE2 applications)",
     "application/x-ole-storage",
     "fmt/111",
     True,
@@ -213,15 +262,236 @@ _RAR = FormatInfo(
     "Proprietary container. Repackage as ZIP or tar for preservation.",
 )
 
+# --- the dead 1990s desktop ------------------------------------------------
+#
+# Added after the OPF format-corpus run measured this module catching 25 endangered
+# files and missing 66 (ADR 0010). These are not corpus trivia: they are the formats
+# a community archive inherits when someone donates the contents of an old hard
+# drive, and every one of them is a spreadsheet, database, or manuscript nobody can
+# open today. Every signature below was read off the corpus bytes and then checked
+# against PRONOM's published DROID signature file (V120) — the same source that
+# caught three wrong PUIDs in the previous pass — so no identifier here is asserted
+# on memory.
+#
+# Where PRONOM has several PUIDs whose head signatures are byte-identical (Access,
+# InDesign), ``puid`` is ``None``: naming one of them would be a guess dressed as an
+# interoperable fact, which is precisely the defect that made this check necessary.
+
+_LOTUS_RECOMMENDATION = (
+    "Obsolete spreadsheet format with no maintained reader. Migrate to ODF/OOXML "
+    "or CSV, and keep a PDF/A rendering of the formatted sheet."
+)
+_LOTUS_WK1 = FormatInfo(
+    "Lotus 1-2-3 Worksheet (WK1)",
+    "application/vnd.lotus-1-2-3",
+    "x-fmt/114",
+    True,
+    _LOTUS_RECOMMENDATION,
+)
+_LOTUS_WKS = FormatInfo(
+    "Lotus 1-2-3 Worksheet (WKS)",
+    "application/vnd.lotus-1-2-3",
+    "x-fmt/117",
+    True,
+    _LOTUS_RECOMMENDATION,
+)
+_LOTUS_WK3 = FormatInfo(
+    "Lotus 1-2-3 Worksheet (WK3)",
+    "application/vnd.lotus-1-2-3",
+    "x-fmt/115",
+    True,
+    _LOTUS_RECOMMENDATION,
+)
+_LOTUS_WK4 = FormatInfo(
+    "Lotus 1-2-3 Worksheet (WK4)",
+    "application/vnd.lotus-1-2-3",
+    "x-fmt/116",
+    True,
+    _LOTUS_RECOMMENDATION,
+)
+_LOTUS_123 = FormatInfo(
+    "Lotus 1-2-3 Worksheet (123)",
+    "application/vnd.lotus-1-2-3",
+    "fmt/1452",
+    True,
+    _LOTUS_RECOMMENDATION,
+)
+
+_QPRO_RECOMMENDATION = (
+    "Obsolete spreadsheet format; the last reader shipped with software that is no "
+    "longer sold. Migrate to ODF/OOXML or CSV and keep a PDF/A rendering."
+)
+_QPRO_WQ1 = FormatInfo(
+    "Quattro Pro for DOS (WQ1)", "application/x-quattropro", "x-fmt/121", True, _QPRO_RECOMMENDATION
+)
+_QPRO_WQ2 = FormatInfo(
+    "Quattro Pro for DOS (WQ2)", "application/x-quattropro", "x-fmt/122", True, _QPRO_RECOMMENDATION
+)
+_QPRO_WB1 = FormatInfo(
+    "Quattro Pro for Windows (WB1)",
+    "application/x-quattropro",
+    "fmt/834",
+    True,
+    _QPRO_RECOMMENDATION,
+)
+_QPRO_WB2 = FormatInfo(
+    "Quattro Pro for Windows (WB2)",
+    "application/x-quattropro",
+    "fmt/835",
+    True,
+    _QPRO_RECOMMENDATION,
+)
+
+_WINWRITE_RECOMMENDATION = (
+    "Windows Write was discontinued with Windows 95. Migrate to ODF/OOXML or PDF/A."
+)
+_WINWRITE = FormatInfo(
+    "Write for Windows Document",
+    "application/x-mswrite",
+    "x-fmt/12",
+    True,
+    _WINWRITE_RECOMMENDATION,
+)
+_WINWRITE_ALT = FormatInfo(
+    "Write for Windows Document", "application/x-mswrite", "x-fmt/4", True, _WINWRITE_RECOMMENDATION
+)
+
+_ACCESS_RECOMMENDATION = (
+    "A proprietary database, not a document: the records are only readable through "
+    "Microsoft Access. Export the tables to CSV and the schema to plain text now, "
+    "and keep the original alongside them."
+)
+# PRONOM distinguishes Jet 3 from Jet 4 by the five bytes after the "Standard Jet DB"
+# string, but assigns TWO byte-identical PUIDs to each (x-fmt/238 and x-fmt/239 for
+# Jet 3; x-fmt/240 and x-fmt/241 for Jet 4), separated by metadata further inside the
+# file than this module reads. So the *format* is named confidently and the PUID is
+# left unset rather than picking one of a pair at random.
+_ACCESS_JET3 = FormatInfo(
+    "Microsoft Access database (Jet 3 — Access 95/97)",
+    "application/x-msaccess",
+    None,
+    True,
+    _ACCESS_RECOMMENDATION,
+)
+_ACCESS_JET4 = FormatInfo(
+    "Microsoft Access database (Jet 4 — Access 2000-2003)",
+    "application/x-msaccess",
+    None,
+    True,
+    _ACCESS_RECOMMENDATION,
+)
+
+_EBOOK_RECOMMENDATION = (
+    "A discontinued ebook format, usually DRM-bound to a reader that no longer "
+    "exists. Migrate the text to EPUB and keep a plain-text or PDF/A rendering."
+)
+_LIT = FormatInfo(
+    "Microsoft Reader eBook (LIT)",
+    "application/x-ms-reader",
+    "fmt/867",
+    True,
+    _EBOOK_RECOMMENDATION,
+)
+_LRF = FormatInfo(
+    "Broad Band eBook (Sony BBeB/LRF)",
+    "application/x-sony-bbeb",
+    "fmt/518",
+    True,
+    _EBOOK_RECOMMENDATION,
+)
+_ROCKET = FormatInfo(
+    "Rocket eBook", "application/x-rocketbook", "fmt/485", True, _EBOOK_RECOMMENDATION
+)
+# PRONOM has no entry for the Shanda Bambook format at V120 — an unassessable format
+# even for the national registry, which is the whole argument for ADR 0010's split.
+_SNB = FormatInfo(
+    "Shanda Bambook eBook (SNB)", "application/x-snb", None, True, _EBOOK_RECOMMENDATION
+)
+# Both of these are Palm databases and PRONOM gives both byte sequences fmt/396. The
+# .azw3 files in the corpus carry BOOKMOBI, not Amazon's `kindle:` marker (fmt/1937),
+# so the bytes say Mobipocket whatever the extension claims — which is the entire
+# reason content-based identification outranks the filename here.
+_MOBIPOCKET = FormatInfo(
+    "Mobipocket eBook (Palm database)",
+    "application/x-mobipocket-ebook",
+    "fmt/396",
+    True,
+    _EBOOK_RECOMMENDATION,
+)
+_PALMDOC = FormatInfo(
+    "PalmDOC / AportisDoc (Palm database)",
+    "application/vnd.palm",
+    "fmt/396",
+    True,
+    _EBOOK_RECOMMENDATION,
+)
+
+_IBM_DCA = FormatInfo(
+    "IBM DisplayWrite / DCA document",
+    "application/x-ibm-dca",
+    "x-fmt/148",
+    True,
+    "IBM's Document Content Architecture, from a word processor discontinued in the "
+    "early 1990s. Migrate to ODF/OOXML or PDF/A; no current software opens it.",
+)
+
+_ARJ = FormatInfo(
+    "ARJ archive",
+    "application/x-arj",
+    "fmt/610",
+    True,
+    "Obsolete DOS-era archive container. Unpack and repackage as ZIP or tar; a "
+    "container nobody can open takes everything inside it down with it.",
+)
+# Every InDesign PUID from fmt/196 onward shares one head signature and is separated
+# only by version metadata this module does not read, so no PUID is asserted.
+_INDESIGN = FormatInfo(
+    "Adobe InDesign document",
+    "application/x-indesign",
+    None,
+    True,
+    "Proprietary and version-locked — InDesign will not open a document more than a "
+    "few major versions old. Export IDML plus a PDF/A rendering while a licence "
+    "that can still open it exists.",
+)
+# Inmagic DB/TextWorks: a proprietary library/museum catalogue whose database is
+# split across ten single-purpose files. PRONOM has no entry for any of them, which
+# matters — this is a *cataloguing* system, so losing it loses the finding aid rather
+# than one record. Named as a family; the three-letter tag says which component.
+_DBTEXTWORKS_TAGS = frozenset(
+    {"ACF", "BTX", "DBO", "DBR", "DBS", "IXL", "OCC", "SDO", "TBA", "TBU"}
+)
+_DBTEXTWORKS_RECOMMENDATION = (
+    "A component of an Inmagic DB/TextWorks catalogue — proprietary, discontinued, "
+    "and only meaningful alongside the other files of the same database. Export the "
+    "catalogue to a delimited text or XML dump before the software is unavailable, "
+    "and keep the whole file set together."
+)
+
 # Unidentified content. Recorded honestly (an unrecognised format is itself a
-# preservation-planning signal) but not flagged at_risk, which is reserved for
-# *known* obsolescent formats so the at-risk advisory stays precise.
+# preservation-planning signal) and NOT flagged at_risk, which stays reserved for
+# *known* obsolescent formats so the at-risk advisory keeps its precision. The
+# honesty now lives in a signal of its own — :attr:`FormatId.unassessable` — instead
+# of being inferred from the absence of one (ADR 0010).
 _UNKNOWN = FormatInfo(
     "Unidentified",
     "application/octet-stream",
     None,
     False,
     "Unrecognised format — identify and document it before relying on it.",
+)
+
+# A zero-byte file is not unidentifiable, it is *empty*, and saying "Unidentified"
+# for one buries the more useful finding. 31 of the corpus's 118 unidentified files
+# were simply empty; in a real deposit that is a failed transfer, and it is worth
+# catching at ingest rather than at the next audit.
+_EMPTY = FormatInfo(
+    "Empty file (zero bytes)",
+    "application/octet-stream",
+    None,
+    False,
+    "A zero-byte payload is almost always a truncated transfer or a placeholder. "
+    "Check the source before treating this record as preserved.",
 )
 
 # Fixed-offset magic-number signatures, longest/most specific first. RIFF, ISO
@@ -256,6 +526,39 @@ _SIGNATURES: tuple[tuple[int, bytes, FormatInfo], ...] = (
     (0, b"{\\rtf", _RTF),
     # A bare JPEG 2000 codestream (SOC + SIZ markers), as distinct from a JP2 container.
     (0, b"\xff\x4f\xff\x51", _J2C),
+    # --- the dead 1990s desktop (see ADR 0010) ---------------------------------
+    # Lotus and Quattro Pro share a BOF record whose first four bytes are the record
+    # type and length; the two bytes after it are the version word, and that word is
+    # the only thing telling a Lotus WK1 from a Quattro Pro WQ2. Each entry below is
+    # DROID V120's own byte sequence for that PUID, so the discrimination is
+    # PRONOM's, not a guess — and the longer sequences are listed before the shorter
+    # ones they would otherwise shadow.
+    (0, b"\x00\x00\x02\x00\x06\x04\x06\x00\x08\x00", _LOTUS_WK1),
+    (0, b"\x00\x00\x02\x00\x04\x04", _LOTUS_WKS),
+    (0, b"\x00\x00\x1a\x00\x00\x10\x04\x00", _LOTUS_WK3),
+    (0, b"\x00\x00\x1a\x00\x02\x10\x04\x00", _LOTUS_WK4),
+    (0, b"\x00\x00\x1a\x00\x03\x10\x04\x00", _LOTUS_123),
+    (0, b"\x00\x00\x02\x00\x20\x51", _QPRO_WQ1),
+    (0, b"\x00\x00\x02\x00\x21\x51", _QPRO_WQ2),
+    (0, b"\x00\x00\x02\x00\x01\x10", _QPRO_WB1),
+    (0, b"\x00\x00\x02\x00\x02\x10", _QPRO_WB2),
+    (0, b"\x31\xbe\x00\x00\x00\xab\x00\x00\x00\x00\x00\x00\x00\x00", _WINWRITE),
+    (0, b"\x32\xbe\x00\x00\x00\xab\x00\x00\x00\x00\x00\x00\x00\x00", _WINWRITE_ALT),
+    # Jet 3 and Jet 4 differ only in the five bytes after the version string.
+    (0, b"\x00\x01\x00\x00Standard Jet DB\x00\x01\x00\x00\x00", _ACCESS_JET4),
+    (0, b"\x00\x01\x00\x00Standard Jet DB\x00\x00\x00\x00\x00", _ACCESS_JET3),
+    (0, b"ITOLITLS", _LIT),
+    (0, b"L\x00R\x00F\x00\x00\x00", _LRF),
+    (0, b"\xb0\x0c\xb0\x0c", _ROCKET),
+    (0, b"SNBP", _SNB),
+    (0, b"\x60\xea", _ARJ),
+    (0, b"\x00\x05\xe1\x03\x00\x00\x20\xe2\x05\x00\x01\x51\x01\x00", _IBM_DCA),
+    (0, b"\x06\x06\xed\xf5\xd8\x1d\x46\xe5\xbd\x31\xef\xe7\xfe\x74\xb7\x1dDOCUMENT", _INDESIGN),
+    # A Palm database opens with a 32-byte free-text name, so its real identity is the
+    # type+creator pair at offset 60 — which is why these are offset entries and why
+    # the `.azw3` files in the corpus resolve to Mobipocket rather than to Kindle.
+    (60, b"BOOKMOBI", _MOBIPOCKET),
+    (60, b"TEXtREAd", _PALMDOC),
 )
 
 _OLE2_MAGIC = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
@@ -274,7 +577,8 @@ _JP2_BRANDS: dict[bytes, FormatInfo] = {
 # based or container formats), used only when no content signature matched.
 _EXTENSION_MAP: dict[str, FormatInfo] = {
     "txt": _TEXT,
-    "md": _TEXT,
+    "md": _MARKDOWN,
+    "markdown": _MARKDOWN,
     "csv": FormatInfo("CSV", "text/csv", "x-fmt/18", False, ""),
     "json": FormatInfo("JSON", "application/json", "fmt/817", False, ""),
     "xml": _XML,
@@ -291,15 +595,76 @@ _EXTENSION_MAP: dict[str, FormatInfo] = {
     "j2c": _J2C,
     "j2k": _J2C,
     "jpc": _J2C,
-    "doc": _OLE2_OFFICE,
-    "xls": _OLE2_OFFICE,
-    "ppt": _OLE2_OFFICE,
+    # NOTE: there is deliberately no "doc"/"xls"/"ppt" row here. Those rows could
+    # only ever fire on a file whose bytes are *not* OLE2 — a real legacy Office file
+    # matches the OLE2 signature two steps earlier — so by construction they were
+    # reachable only when wrong, and they wrote PUID fmt/111 into the PREMIS log as
+    # fact. Measured on the OPF corpus: all five files the ".doc" row identified were
+    # WordPerfect or IBM DisplayWrite documents, and not one was Microsoft anything.
+    # PRONOM itself lists ".doc" under WordPerfect (x-fmt/44) as well as under Word.
+    # Losing the row costs nothing real and those files are now honestly unassessable
+    # (ADR 0010) instead of confidently mislabelled.
     "wpd": _WORDPERFECT,
     "rm": _REALMEDIA,
     "ram": _REALMEDIA,
     "swf": _SWF,
     "rar": _RAR,
 }
+
+
+def _match_dbtextworks(data: bytes) -> FormatInfo | None:
+    """Match an Inmagic DB/TextWorks component by its fixed 16-byte header.
+
+    Every file of a DB/TextWorks database opens the same way: a three-letter
+    component tag, a space, a three-digit format version, a space, and the version's
+    release date as ``MM/DD/YY``. Checking that *shape* — rather than listing ten
+    four-byte prefixes — is what keeps a plain-text file that happens to begin
+    ``OCC `` from being claimed as a catalogue index.
+
+    PRONOM has no PUID for any of these at V120, so the family is named from its own
+    header and carries no identifier it cannot honour.
+    """
+    if len(data) < 16:
+        return None
+    tag = data[:3].decode("ascii", "replace")
+    if tag not in _DBTEXTWORKS_TAGS:
+        return None
+    if data[3] != 0x20 or data[7] != 0x20:
+        return None
+    if not data[4:7].isdigit():
+        return None
+    stamp = data[8:16].decode("ascii", "replace")
+    if len(stamp) != 8 or stamp[2] != "/" or stamp[5] != "/":
+        return None
+    if not (stamp[:2].isdigit() and stamp[3:5].isdigit() and stamp[6:].isdigit()):
+        return None
+    return FormatInfo(
+        f"Inmagic DB/TextWorks database component ({tag})",
+        "application/x-dbtextworks",
+        None,
+        True,
+        _DBTEXTWORKS_RECOMMENDATION,
+    )
+
+
+_AVI = FormatInfo(
+    "Audio Video Interleave (AVI)",
+    "video/x-msvideo",
+    "fmt/5",
+    False,
+    "Ageing container; consider Matroska/FFV1 or MP4 for access.",
+)
+
+#: RIFF is a container, not a format: WAVE, WebP, and AVI all open with ``RIFF`` and
+#: are told apart only by the four-byte form type at offset 8.
+_RIFF_FORMS: dict[bytes, FormatInfo] = {b"WAVE": _WAV, b"WEBP": _WEBP, b"AVI ": _AVI}
+
+
+def _match_riff(data: bytes) -> FormatInfo | None:
+    """Match a RIFF container by its form type, or ``None`` if this is not RIFF."""
+    if not data.startswith(b"RIFF") or len(data) < 12:
+        return None
+    return _RIFF_FORMS.get(data[8:12])
 
 
 def _match_signature(data: bytes) -> FormatInfo | None:
@@ -316,22 +681,14 @@ def _match_signature(data: bytes) -> FormatInfo | None:
         # following ``ftyp`` box says which one. An unrecognised brand still means
         # "some JPEG 2000 container", so fall back to JP2 rather than to unknown.
         return _JP2_BRANDS.get(data[20:24], _JP2)
-    if data.startswith(b"RIFF") and len(data) >= 12:
-        brand = data[8:12]
-        if brand == b"WAVE":
-            return _WAV
-        if brand == b"WEBP":
-            return _WEBP
-        if brand == b"AVI ":
-            return FormatInfo(
-                "Audio Video Interleave (AVI)",
-                "video/x-msvideo",
-                "fmt/5",
-                False,
-                "Ageing container; consider Matroska/FFV1 or MP4 for access.",
-            )
+    riff = _match_riff(data)
+    if riff is not None:
+        return riff
     if len(data) >= 12 and data[4:8] == b"ftyp":
         return _MP4
+    dbtextworks = _match_dbtextworks(data)
+    if dbtextworks is not None:
+        return dbtextworks
     for offset, magic, info in _SIGNATURES:
         if data[offset : offset + len(magic)] == magic:
             return info
@@ -440,6 +797,11 @@ def identify_format(data: bytes, *, filename: str | None = None) -> FormatId:
 
     Resolution order, strongest first (each step records its ``basis``):
 
+    0. **empty** — the file has no bytes. Checked first because every step below
+       would otherwise fall through to ``unknown``, and "we could not identify
+       this" is a much weaker and more alarming statement than "this file is
+       empty" — which in a real deposit usually means a truncated transfer. 31 of
+       the corpus's 118 unidentified files were simply empty.
     1. **signature** — a content-based magic-number match (authoritative);
     2. **extension** — the filename's extension, for formats with no reliable
        leading signature;
@@ -457,6 +819,8 @@ def identify_format(data: bytes, *, filename: str | None = None) -> FormatId:
     Pure and deterministic: the same bytes and filename always yield the same
     :class:`FormatId` (reproducibility). No identity or content is logged or
     returned (no-outing rule)."""
+    if not data:
+        return FormatId.of(_EMPTY, basis="empty")
     info = _match_signature(data)
     if info is not None:
         return FormatId.of(info, basis="signature")

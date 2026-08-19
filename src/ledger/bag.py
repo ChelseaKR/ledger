@@ -124,13 +124,70 @@ def _write_text(path: Path, text: str) -> None:
     atomic_write_text(path, text)
 
 
+#: The three characters RFC 8493 §2.1.3 requires a manifest filepath to
+#: percent-encode, and the encodings it names. ``%`` MUST be first: it is the escape
+#: character, so encoding it after CR/LF would double-encode the ``%`` this table
+#: just introduced.
+_PERCENT_ENCODINGS: tuple[tuple[str, str], ...] = (
+    ("%", "%25"),
+    ("\r", "%0D"),
+    ("\n", "%0A"),
+)
+
+
+def _encode_manifest_path(relpath: str) -> str:
+    """Percent-encode a payload path for a manifest line, per RFC 8493 §2.1.3.
+
+    Only ``%``, CR, and LF are encoded — the RFC names exactly these three and no
+    others, so a UTF-8 filename with spaces, accents, or emoji stays readable rather
+    than being mangled into ``%``-soup no human can check against a directory listing.
+
+    This is not pedantry about a spec. ``bag.py`` chooses BagIt precisely so that
+    "any conformant tool — now or decades from now, run by people who never met us —
+    can validate and unpack a ledger bag without ledger itself", and an unencoded
+    ``%`` breaks exactly that: the Library of Congress ``bagit-python`` reference
+    implementation percent-*decodes* what it reads, so a ledger payload named ``%41``
+    resolved to a file called ``A``. A filename containing a newline broke the
+    line-oriented grammar outright. ledger round-tripped its own bags either way,
+    because both halves were consistently wrong — which is the worst shape for an
+    interoperability defect to take, since nothing local can see it.
+    """
+    for char, escape in _PERCENT_ENCODINGS:
+        relpath = relpath.replace(char, escape)
+    return relpath
+
+
+def _decode_manifest_path(relpath: str) -> str:
+    """Decode a manifest filepath written per RFC 8493 §2.1.3.
+
+    Deliberately decodes **only** the three escapes the RFC defines, and leaves any
+    other ``%`` sequence alone. That is what makes this a migration rather than a
+    flag day: a bag written by an older ledger carries raw, unencoded ``%``
+    characters, and a general percent-decoder would silently turn a payload named
+    ``%41`` into a lookup for ``A`` — corrupting the read of every existing bag in
+    order to fix the write of new ones.
+
+    The one case this cannot disambiguate is a *pre-migration* bag holding a file
+    literally named ``%25``, which reads back as ``%``. That ambiguity is inherent to
+    introducing an escape character after the fact; it is documented rather than
+    hidden, and :func:`migrate_manifest_encoding` exists so an archive can move to
+    unambiguous manifests deliberately.
+    """
+    for char, escape in _PERCENT_ENCODINGS:
+        relpath = relpath.replace(escape, char)
+    return relpath
+
+
 def _manifest_body(entries: Mapping[str, str]) -> str:
     """Render manifest lines ``<hex>  <path>`` sorted by path, newline-terminated.
 
     Sorting by path makes the manifest a deterministic function of its inputs
     (reproducibility); the trailing newline matches the RFC's line-oriented grammar.
+    Paths are percent-encoded per §2.1.3 on the way out (see
+    :func:`_encode_manifest_path`). Sorting happens on the *decoded* path so the
+    ordering stays a property of the payload rather than of its escaping.
     """
-    lines = [f"{entries[p]}{_SEP}{p}" for p in sorted(entries)]
+    lines = [f"{entries[p]}{_SEP}{_encode_manifest_path(p)}" for p in sorted(entries)]
     return "".join(f"{line}\n" for line in lines)
 
 
@@ -191,7 +248,9 @@ def write_bag(
         # Stream the copy in fixed-size chunks (shutil.copyfileobj) rather than
         # ``write_bytes(read_bytes())``, which would hold the entire payload in RAM
         # — the difference between bagging a multi-gigabyte oral-history video and
-        # exhausting memory on the "one inexpensive box" the archive targets.
+        # exhausting memory on the "one inexpensive box" the archive targets. True of
+        # bagging, and of every step FIX-03 reached; NOT true of sealing a payload at
+        # rest, which is why SEALED payloads are size-capped (ADR 0011).
         with source.open("rb") as src_handle, dest.open("wb") as dest_handle:
             shutil.copyfileobj(src_handle, dest_handle, length=CHUNK_SIZE)
         digests = hash_file_multi(dest, algos)
@@ -290,10 +349,50 @@ def refresh_tag_manifests(bag_dir: Path) -> Bag:
     return Bag(path=bag_dir)
 
 
+def migrate_manifest_encoding(bag_dir: Path) -> bool:
+    """Rewrite a bag's manifests with RFC 8493 §2.1.3 percent-encoding.
+
+    The migration path for bags written before ledger encoded anything. It is only
+    needed by an archive holding a payload whose name contains ``%``, CR, or LF —
+    every other bag is already byte-identical under both rules, which is why this is
+    a deliberate maintenance action rather than an automatic rewrite of an archive's
+    entire history at upgrade time. Reading is migrated for free: those bags keep
+    validating untouched, because :func:`_decode_manifest_path` only decodes the
+    three escapes the RFC defines and leaves any other ``%`` alone.
+
+    Rewriting a payload manifest changes bytes the *tag* manifests cover, so the bag
+    is resealed through :func:`refresh_tag_manifests` — the same route a lawful
+    post-ingest metadata change takes. The payload digests themselves are copied
+    across untouched: this re-serialises how paths are spelled, and must never be
+    able to paper over content rot.
+
+    Idempotent, and returns whether anything changed, so running it across a whole
+    archive does not churn tag manifests on bags that needed nothing.
+    """
+    bag_dir = Path(bag_dir)
+    manifest_paths = sorted(bag_dir.glob("manifest-*.txt"))
+    if not manifest_paths:
+        raise BagValidationError(f"no payload manifest to migrate: {bag_dir}")
+    changed = False
+    for manifest_path in manifest_paths:
+        before = manifest_path.read_text(encoding="utf-8")
+        after = _manifest_body(_parse_manifest(manifest_path))
+        if after != before:
+            _write_text(manifest_path, after)
+            changed = True
+    if changed:
+        refresh_tag_manifests(bag_dir)
+    return changed
+
+
 def _parse_manifest(path: Path) -> dict[str, str]:
     """Parse a BagIt manifest into ``{path: hex_digest}``.
 
-    Splits each non-empty line on the first run of whitespace per the RFC grammar.
+    Splits each non-empty line on the first run of whitespace per the RFC grammar,
+    then percent-decodes the filepath per §2.1.3 (see :func:`_decode_manifest_path`
+    for why the decoder is deliberately narrow, and how bags written before ledger
+    encoded anything keep validating).
+
     Raises :class:`~ledger.errors.BagValidationError` on a malformed line.
     """
     entries: dict[str, str] = {}
@@ -307,7 +406,7 @@ def _parse_manifest(path: Path) -> dict[str, str]:
         rel = rel.strip()
         if not digest or not rel:
             raise BagValidationError(f"malformed manifest line in {path.name}")
-        entries[rel] = digest
+        entries[_decode_manifest_path(rel)] = digest
     return entries
 
 

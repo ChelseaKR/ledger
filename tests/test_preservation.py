@@ -99,11 +99,28 @@ def test_plain_text_identified_by_decode() -> None:
     assert fmt.at_risk is False
 
 
-def test_extension_fallback_flags_legacy_office() -> None:
-    """With no usable signature, a legacy-Office extension still flags the risk."""
+def test_a_doc_extension_no_longer_claims_legacy_office() -> None:
+    """Reversed by ADR 0010, because the corpus showed the row could only fire wrong.
+
+    A genuine legacy Office file matches the OLE2 *signature* two steps earlier, so
+    the ``.doc`` extension row was only ever reachable for a file that is not OLE2 —
+    and it wrote PUID ``fmt/111`` into the PREMIS log as fact. All five files it
+    identified on the OPF corpus were WordPerfect or IBM DisplayWrite documents, and
+    none was Microsoft anything. Being honestly unassessable beats being confidently
+    wrong; a real legacy Office file is still caught by its signature (below).
+    """
     fmt = identify_format(b"\x05\x06\x07arbitrary-binary-no-signature", filename="memo.doc")
-    assert fmt.basis == "extension"
+    assert fmt.basis == "unknown"
+    assert fmt.unassessable is True
+    assert fmt.puid != "fmt/111"
+
+
+def test_a_real_ole2_file_is_still_flagged_at_risk() -> None:
+    """The risk signal for legacy Office comes from the bytes, where it belongs."""
+    fmt = identify_format(_OLE2, filename="memo.doc")
+    assert fmt.basis == "signature"
     assert fmt.at_risk is True
+    assert fmt.puid == "fmt/111"
 
 
 def test_unidentified_binary_is_honest_not_at_risk() -> None:

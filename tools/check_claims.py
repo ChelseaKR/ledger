@@ -595,6 +595,47 @@ CLAIMS: tuple[Claim, ...] = (
         "count the review documents in docs/audits/ and restate the number (#124).",
         exclude=("docs/audits/README.md",),
     ),
+    # ADR 0011: five separate places claimed a payload is never held in RAM, and the
+    # SEALED at-rest encryption path broke all five (1189 MB peak for a 157 MB file).
+    # The claims were qualified rather than deleted, so each needs its caveat pinned:
+    # a RequiredString alone would be satisfied by deleting the paragraph, and a
+    # ForbiddenString alone cannot be written here because the unqualified sentences
+    # are still the true part of each claim. Pinning the pointer to the ADR is what
+    # makes "these five are now true" a checkable statement instead of a promise.
+    *(
+        RequiredString(
+            f"sealed-memory-caveat-{name}",
+            path,
+            "ADR 0011",
+            "this file claims a payload is never held in RAM / costs constant memory. "
+            "That is true of the path it describes and false of SEALED at-rest "
+            "encryption, which peaks at ~7.4x the payload size. The claim must keep "
+            "pointing at ADR 0011, which records the cap that makes it honest (#141).",
+        )
+        for name, path in (
+            ("architecture", "docs/ARCHITECTURE.md"),
+            ("fixity", "src/ledger/fixity.py"),
+            ("bag", "src/ledger/bag.py"),
+            ("cas", "src/ledger/cas.py"),
+            ("server", "src/ledger/server.py"),
+        )
+    ),
+    RequiredString(
+        "sealed-cap-is-enforced",
+        "src/ledger/ingest.py",
+        "_reject_oversized_sealed_payloads",
+        "ADR 0011's cap is what makes the five memory caveats an enforced limit "
+        "rather than a note; without the pre-flight refusal an oversized SEALED "
+        "ingest is an OOM kill, not an error (#141).",
+    ),
+    RequiredString(
+        "manifest-paths-are-percent-encoded",
+        "src/ledger/bag.py",
+        "_encode_manifest_path",
+        "bag.py chooses BagIt so any conformant tool can read a ledger bag without "
+        "ledger. RFC 8493 s2.1.3 percent-encoding is what makes that true for a "
+        "payload named with a %, CR, or LF (#143).",
+    ),
     ReferenceExists(
         "roadmap-item-pointers",
         "a gap declaration must link something a reader can open (DOC-13): either add the "
@@ -680,6 +721,18 @@ UNCOVERED: tuple[Uncovered, ...] = (
         "whether every merge-blocking gate is in the required-check set",
         "which gates ought to be required is a policy decision, not a repo fact; today "
         "Semgrep and the OSV lockfile scan run on every PR and are not required (#79)",
+    ),
+    Uncovered(
+        "whether the SEALED memory cap is still the right number",
+        "peak RSS is a measurement of a running ingest, not a property of the tree; "
+        "the 7.4x multiplier behind ADR 0011's 64 MiB default is dated, not derived",
+        "re-measured by the probe recorded in docs/REAL-CORPUS-REPORT.md section 7",
+    ),
+    Uncovered(
+        "whether ledger's bags are readable by a third-party BagIt implementation",
+        "proving interoperability needs another tool (LoC bagit-python), and this repo "
+        "is stdlib-only by ADR 0005; the RFC 8493 s2.1.3 encoding is asserted against "
+        "the spec's own rules in tests/test_real_corpus_issues.py, not against a reader",
     ),
     Uncovered(
         "the response shape of the browse server's routes",

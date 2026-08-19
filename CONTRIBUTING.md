@@ -146,6 +146,8 @@ relying on a claim below, verify it yourself rather than reading a green build a
 - standards control ids (SEC-04, A11Y-11, CQ-08 …) cited beside a roadmap pointer — they are defined in the portfolio's `STANDARDS/`, so this repo has nothing to resolve them against
 - whether .github/rulesets/main.json still matches the live protect-main ruleset — parity needs a GitHub API call, and this script makes no network request
 - whether every merge-blocking gate is in the required-check set — a policy decision, not a repo fact; Semgrep and the OSV scan run on every PR and are not required ([#79](https://github.com/ChelseaKR/ledger/issues/79))
+- whether the SEALED memory cap is still the right number — peak RSS is a measurement of a running ingest; the 7.4x multiplier behind ADR 0011's 64 MiB default is dated, and `docs/REAL-CORPUS-REPORT.md` §7 records how to re-measure it
+- whether ledger's bags are readable by a third-party BagIt implementation — that needs another tool (LoC `bagit-python`), and this repo is stdlib-only by ADR 0005; RFC 8493 §2.1.3 encoding is asserted against the spec's rules in `tests/test_real_corpus_issues.py`, not against a reader
 - the response shape of the browse server's routes — asserted live in `tests/test_server_remediation.py` instead, against the prose in `docs/ARCHITECTURE.md`
 
 Adding a claim to the inventory is welcome when it is factual, load-bearing, and cheap to
@@ -210,15 +212,36 @@ docs(adr): record decision to address content with BLAKE2b and SHA-256
 ## ADRs: record significant decisions
 
 Any decision that is hard to reverse or that shapes the architecture, the threat model, or a public
-interface gets an **Architecture Decision Record** in `docs/ADRs/`. That includes choices about the
+interface gets an **Architecture Decision Record** in `docs/adr/`. That includes choices about the
 storage layout, the access-policy model, the identity vault, the metadata schema and its migrations,
 and anything affecting the no-outing or fixity guarantees.
 
-Add an ADR as a numbered Markdown file (`docs/ADRs/0007-short-title.md`) using the standard shape:
+Add an ADR as a numbered Markdown file (`docs/adr/0012-short-title.md`) using the standard shape:
 **Title**, **Status** (Proposed / Accepted / Superseded), **Context**, **Decision**, and
 **Consequences**. Reference the ADR from the pull request that implements it. Superseding an earlier
 decision means marking the old ADR `Superseded by NNNN`, not deleting it — the record of *why* is
 part of the project.
+
+## Planning notes: what `docs/ideation/` publishes
+
+The 2026-07-01 ideation set is five files. `main` carries exactly one of them —
+[`docs/ideation/02-large-scale-fixes.md`](docs/ideation/02-large-scale-fixes.md) —
+because the `FIX-NN` identifiers in it are cited from ADRs, issues, and the roadmap, so
+a reader following a reference has to be able to open it. The other four
+(`01-deep-dive.md`, `03-expansions.md`, `04-impact-and-sequencing.md`, `README.md`) are
+working notes that `main` has never carried.
+
+Until now that boundary existed only as *absence*: nothing recorded the intent and
+nothing enforced it, so re-adding the other four would have looked like an ordinary
+commit. `.gitignore` now states it, with an explicit exception for the file that
+belongs, and this paragraph is the policy the pattern implements. Adding another
+ideation file to `main` is a deliberate act: un-ignore it here and say why in the PR.
+
+**This is not a retraction, and must not be read as one.** All five files are already
+published on this repository's public remote, on the `rescue/uncommitted-2026-07-06`
+and `rescue/uncommitted-2026-07-09` branches. Those branches are kept. A `.gitignore`
+entry governs what future commits add to `main`; it does not un-publish anything, and
+nobody should read it as evidence that the other four are private.
 
 ## Pull requests
 

@@ -10,6 +10,13 @@ obsolete, and named by someone who was not thinking about BagIt.
 This is the write-up of running the whole ingest pipeline over a real corpus.
 Reproduce it with `make real-corpus`.
 
+Nine defects were found. Six were fixed in the corpus PR; the remaining three needed a
+product decision, a migration story, or a crypto review, were filed as issues rather
+than guessed at, and have since been resolved by
+[ADR 0010](adr/0010-identification-governs-what-a-record-asserts.md) and
+[ADR 0011](adr/0011-sealed-payloads-are-size-capped.md). Every number here is measured
+on the same pinned corpus commit and re-measured on every run.
+
 **Lead finding: nothing crashed, and that was the problem.** All 22 collections
 ingested, all 22 bags validated against RFC 8493, every payload byte survived. The
 defects were all in what the pipeline *said* about the files afterwards — a
@@ -85,9 +92,31 @@ recognises. An obsolete format the registry has never heard of therefore lands i
 one bucket that is explicitly *not* at-risk. The formats most likely to be obsolete
 are exactly the formats a small curated registry is least likely to know.
 
-**Not fixed — flagged.** Widening the registry to cover these is real work with a
-real design question behind it (should `unknown` imply elevated risk?), and guessing
-at it under this PR's scope would be worse than naming it. Filed as [#142](https://github.com/ChelseaKR/ledger/issues/142).
+**Resolved** by [ADR 0010](adr/0010-identification-governs-what-a-record-asserts.md)
+([#142](https://github.com/ChelseaKR/ledger/issues/142)), which answers the design
+question rather than deferring it again. `at_risk` keeps its exact meaning — a
+*positive* finding about a known format, with a named migration target — and a second,
+orthogonal signal is added: `unassessable`, true when nothing could identify the file.
+
+Making `unknown` imply `at_risk`, the obvious shortcut, was rejected on the
+measurement. Of the 118 unidentified files, 66 are obsolete and **52 are not**: 31 are
+zero-byte, 7 are `.DS_Store`, 4 are deliberately damaged PDFs, 5 are raw disk images,
+and 5 are PCRaster maps in a format that is still maintained. Not one of those 52 wants
+"migrate to a modern format" as its remedy. Precision was worth protecting; it was the
+inference from its *absence* that was wrong.
+
+The registry also widened, with every signature read off the corpus bytes and then
+checked against PRONOM's published DROID signature file (V120). Where PRONOM assigns
+several byte-identical PUIDs to one head signature (Access, InDesign) or has no entry
+at all (DB/TextWorks, Bambook), `puid` stays `None` rather than guessing — asserting a
+PUID on memory is what produced defect 5. Nine files (Statistica, MindManager,
+ConceptDraw, IBM FFT) are left unidentified **on purpose**: the long tail of dead
+formats has no end, and the point of the split is that the registry no longer has to
+converge for the archive to stay honest.
+
+Recall over the corpus's 66 known-obsolete files went from **0 to 57 (86%)**, and
+`make real-corpus` now prints that number against a written-down ground truth on every
+run, so a regression shows up as a falling count rather than as silence.
 
 ### 3. JPEG 2000 — the preservation master format — was unidentified
 
@@ -166,7 +195,7 @@ was recorded as if it were a `.txt` file. **Fixed** (`fmt/45`).
 
 ---
 
-## Defects found and deliberately not fixed here
+## Defects deferred at the corpus run, and resolved since
 
 ### 7. A sealed 157 MB payload costs 1.1 GB of RAM
 
@@ -196,10 +225,38 @@ would need roughly 7 GB of RSS on a box the project advertises as inexpensive.
 targets, fixes the other two, and offers "or note the limitation and cap SEALED
 payload size honestly." Neither was done: there is no cap and no documented caveat.
 
-**Not fixed here.** Fernet does not stream; doing this properly means a chunked
-framing format for data at rest, which changes the on-disk encryption format and
-belongs with the crypto review already tracked as FIX-11. Filed as
-[#141](https://github.com/ChelseaKR/ledger/issues/141) with this measurement attached.
+**Resolved** by [ADR 0011](adr/0011-sealed-payloads-are-size-capped.md)
+([#141](https://github.com/ChelseaKR/ledger/issues/141)). Fernet does not stream, and
+doing this properly means a chunked framing format for data at rest — which changes
+the on-disk encryption format for the tier protecting a contributor's most sensitive
+material, and which FIX-11 already records must not ship on self-review. So the honest
+interim shipped instead of an unreviewed AEAD framing:
+
+- **SEALED payloads are capped** at `Config.sealed_payload_max_bytes` (default 64 MiB),
+  refused in a pre-flight pass before anything is read, encrypted, or stored, with a
+  message naming the limit, the measured cost, the formula, and three ways forward.
+- **All five claims are qualified** to name the path they are actually about and to
+  point at ADR 0011 for the exception, and the truthfulness gate pins the pointer in
+  each of the five files so it cannot silently revert to an unqualified claim.
+
+Re-measured across three sizes, one file each, peak RSS of the ingesting process:
+
+| payload | PUBLIC (streamed) | SEALED |
+| --- | --- | --- |
+| 16.8 MB | 35.8 MB | 159.9 MB |
+| 67.1 MB | 35.8 MB | 527.2 MB |
+| 157.3 MB | 38.9 MB | 1189.3 MB |
+
+The streamed path is flat; the sealed path is linear at `peak_mb ≈ 33 + 7.4 × payload_mb`.
+64 MiB is the payload whose peak fits half of a 1 GB box — predicted at 506 MB and
+**measured at 527 MB**, which is the number the docs carry, because a predicted figure
+in a document about false claims would repeat the original mistake.
+
+**Reproducing the measurement.** Ingest one file of a known size under
+`AccessPolicy.PUBLIC` and again under `AccessPolicy.SEALED` in separate processes, and
+read `resource.getrusage(RUSAGE_SELF).ru_maxrss` after each `Archive.ingest` returns.
+Separate processes matter: peak RSS is a high-water mark, so a shared process reports
+the largest run for all of them.
 
 ### 8. BagIt manifests are not percent-encoded (RFC 8493 §2.1.3)
 
@@ -221,9 +278,26 @@ This contradicts `bag.py`'s stated reason for choosing BagIt at all: "any confor
 tool — now or decades from now, run by people who never met us — can validate and
 unpack a ledger bag without ledger itself."
 
-**Not fixed here.** The fix is small but it changes the serialisation of already-
-written bags, so it needs a migration story for existing archives rather than a
-drive-by edit in a PR about format identification. Filed as [#143](https://github.com/ChelseaKR/ledger/issues/143).
+**Resolved** ([#143](https://github.com/ChelseaKR/ledger/issues/143)). `%`, CR, and LF
+are percent-encoded on write and decoded on read — and only those three, so a UTF-8
+filename with spaces or accents stays legible to a human checking a manifest against a
+directory listing.
+
+**Migration path for existing bags.** Reading migrates itself: the decoder handles only
+the three escapes the RFC defines and leaves every other `%` alone, so a bag written
+before this change keeps validating untouched. A general percent-decoder would have
+turned a pre-migration payload named `%41` into a lookup for `A` — corrupting the read
+of every existing bag in order to fix the write of new ones. For an archive that wants
+unambiguous manifests, `bag.migrate_manifest_encoding(bag_dir)` re-serialises the
+payload manifests and reseals the tag manifests through the same path a lawful metadata
+revision takes; it is idempotent, returns whether anything changed, and only an archive
+holding `%`, CR, or LF in a payload name needs it at all. The one case that cannot be
+disambiguated is a pre-migration bag holding a file literally named `%25`, which reads
+back as `%`; that ambiguity is inherent to introducing an escape character after the
+fact, and is documented rather than hidden.
+
+Round-tripped in tests over the hostile filenames `filesys-trials` actually ships —
+`!`, `#`, `$`, `%`, `(.)`, `{ (2).}`, backtick, `~`, `null` — plus `%41` and `a%20b`.
 
 ### 9. The record's media type contradicts the preservation log for 100 payloads
 
@@ -244,10 +318,44 @@ succeed, but the underlying asymmetry remains: a curated `_EXTENSION_MAP` result
 also discarded in favour of stdlib `mimetypes`, so a `.doc` is recorded as
 `application/msword` in the record while PREMIS calls it at-risk OLE2.
 
-**Not fixed here** — deciding which of the two should win is a product question about
-what the browse UI owes a reader, not a bug with an obvious correct answer. Filed as
-[#144](https://github.com/ChelseaKR/ledger/issues/144),
-with the harness reporting the count on every run so it cannot drift unnoticed.
+**Resolved** by [ADR 0010](adr/0010-identification-governs-what-a-record-asserts.md)
+([#144](https://github.com/ChelseaKR/ledger/issues/144)). `mimetypes.guess_type` is
+removed from the ingest path: the record's media type is the identifier's verdict,
+always, except for a type the caller *declared* — a human assertion rather than a
+guess, and labelled as such.
+
+The objection to preferring the identifier was that it degrades the browse UI to
+`application/octet-stream` for 17% of files. Widening the registry (defect 2) cut that
+to **4.9%**, and for those files `application/octet-stream` is not a degradation: it is
+the correct IANA type for an unrecognised byte stream, and it warns a reader that the
+damaged PDF they are about to download will not open. `PayloadFile.media_type_basis`
+now travels with the type in the record and the API, so a consumer that sees
+`application/pdf` can tell whether the bytes said so or the filename did.
+
+Divergence is **0 of 679**, and the harness now fails the run on any hit rather than
+reporting a count: since ADR 0010 this is an invariant, not a statistic.
+
+---
+
+## A tenth defect, found while resolving the ninth
+
+PREMIS events are linked by content address, and the content store deduplicates — but
+identification is a function of the bytes *and the filename*. So two byte-identical
+payloads whose names identify differently write two contradictory
+`format identification` events against one object identifier, and a consumer reading
+PREMIS the correct way (keyed by `linkingObjectIdentifier`) sees whichever was written
+last.
+
+The corpus surfaced it: `office/wordprocessing/IBM_DCA/testIBM_DCA.rft` is
+byte-identical to three `testIBMDisplayWrite*.doc` files. Removing the `.doc` extension
+row and adding the IBM DisplayWrite/DCA signature made all four identify the same way,
+so the collision count is **0** — but that resolved the instance, not the class.
+`a.txt` and `a.md` with identical contents is enough to reproduce it.
+
+**Not fixed.** The question is what ledger's PREMIS *Object* is — the content-addressed
+blob or the payload-within-a-record — and each answer implies a different serialisation.
+Filed as [#149](https://github.com/ChelseaKR/ledger/issues/149), with the harness
+reporting the count on every run.
 
 ---
 
@@ -273,22 +381,37 @@ Worth stating plainly, because it is the part fixtures could not have told us:
 
 Identification basis over the same 679 files, before and after:
 
-| basis | before | after |
+| basis | at the corpus run | after fixes 1-6 | after §§2, 7-9 |
+| --- | --- | --- | --- |
+| `signature` | 385 (56.7%) | 408 (60.1%) | **468 (68.9%)** |
+| **`unknown`** | **156 (23.0%)** | **118 (17.4%)** | **33 (4.9%)** |
+| `extension` | 111 (16.3%) | 111 (16.3%) | 106 (15.6%) |
+| `empty` | — | — | 30 (4.4%) |
+| `signature-offset` | — | 20 (2.9%) | 20 (2.9%) |
+| `text` | 22 (3.2%) | 17 (2.5%) | 17 (2.5%) |
+| `xml-declaration` | 5 (0.7%) | 5 (0.7%) | 5 (0.7%) |
+
+And the signals a steward actually acts on:
+
+| | at the corpus run | now |
 | --- | --- | --- |
-| `signature` | 385 (56.7%) | 408 (60.1%) |
-| **`unknown`** | **156 (23.0%)** | **118 (17.4%)** |
-| `extension` | 111 (16.3%) | 111 (16.3%) |
-| `signature-offset` | — | 20 (2.9%) |
-| `text` | 22 (3.2%) | 17 (2.5%) |
-| `xml-declaration` | 5 (0.7%) | 5 (0.7%) |
+| flagged `at_risk` | 25 (3.7%) | **80 (11.8%)** |
+| reported `unassessable` | — | 33 (4.9%) |
+| **recall over the 66 known-obsolete files** | **0 / 66** | **57 / 66 (86%)** |
+| record media type contradicting the log | 100 | **0** |
+| one content address, contradictory verdicts | 1 | **0** |
 
-38 real files that the pipeline previously could not name, it now names: 18 JPEG
-2000, 20 displaced-header PDFs. 5 RTF files moved from a wrong answer (`text/plain`)
-to a right one.
+123 real files that the pipeline previously could not name, it now names: 18 JPEG 2000,
+20 displaced-header PDFs, 56 obsolete-format files, 30 correctly reported as empty
+rather than unidentified. 5 RTF files moved from a wrong answer (`text/plain`) to a
+right one, and 5 `.doc` files moved from a *confidently wrong* answer (asserted as
+Microsoft OLE2 with PUID `fmt/111`, when they are WordPerfect and IBM DisplayWrite) to
+an honest one.
 
-**17.4% is still unidentified, and that is the honest number.** Most of the remainder
-is §2 — obsolete formats with no registry entry — and it is now visible in the PREMIS
-log as `unidentified` instead of hiding inside `success`.
+**4.9% is still unidentified, and that is the honest number.** Nine of those are
+obsolete formats left out of the registry deliberately (§2); the rest are damaged
+files, raw disk images, OS metadata, and a live-but-niche scientific format. All of
+them are now reported as `unassessable` — not as safe.
 
 ---
 

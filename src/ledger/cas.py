@@ -114,6 +114,11 @@ class ContentStore:
 
         Streams the source so arbitrarily large payloads cost constant memory
         (scalability). Idempotent on an already-present address (dedupe).
+
+        Constant memory is a property of *this* store operation. A SEALED payload
+        reaches it as ciphertext that :func:`~ledger.ingest.ingest_sip` has already
+        had to build in memory, so the archive's end-to-end cost for that tier is
+        not constant and is capped instead (ADR 0011).
         """
         digest = hash_file(src, self.address_algo)
         addr = self._store(digest)

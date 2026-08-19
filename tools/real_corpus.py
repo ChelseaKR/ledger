@@ -93,6 +93,33 @@ SKIP_PATHS = frozenset(
 
 DEFAULT_DEST = Path("real-corpus")
 
+#: The corpus files that are in unambiguously obsolete formats, by extension — the
+#: ground truth for the at-risk advisory's *recall*. This is a property of the OPF
+#: corpus, not of ledger: these are dead 1990s desktop applications (Lotus 1-2-3,
+#: Quattro Pro, Access, Windows Write), a discontinued proprietary catalogue system
+#: (Inmagic DB/TextWorks), and ebook formats whose readers no longer exist. Written
+#: down so recall is a number this harness reports on every run rather than a claim,
+#: and so a regression in identification shows up as a falling count instead of as
+#: silence. Precision has never been the problem; recall was 25 caught / 66 missed.
+OBSOLETE_EXTENSIONS = frozenset(
+    {
+        # Lotus 1-2-3
+        "wk1", "wk3", "wk4", "wks", "123",
+        # Quattro Pro
+        "wq1", "wq2", "wb1", "wb2",
+        # Microsoft Access
+        "mdb",
+        # Windows Write
+        "wri",
+        # Inmagic DB/TextWorks catalogue components
+        "acf", "btx", "dbo", "dbr", "dbs", "ixl", "occ", "sdo", "tba", "tbu",
+        # Discontinued ebook formats
+        "lit", "mobi", "azw3", "lrf", "pdb", "rb", "snb",
+        # Other dead formats
+        "arj", "indd", "fft", "rft", "cdd", "mmp", "stg", "scr", "sta",
+    }
+)  # fmt: skip
+
 
 @dataclass(frozen=True)
 class CorpusFile:
@@ -236,18 +263,48 @@ def _format_events(archive: Archive, bag_names: list[str]) -> list[dict[str, str
     return events
 
 
+def _report_obsolete_recall(corpus_root: Path, files: list[Path]) -> None:
+    """Print the at-risk advisory's recall over the corpus's known-obsolete files.
+
+    Recall, not precision, is the number this advisory was failing on: it caught 25
+    endangered files and missed 66. Precision is reported as the miss list rather
+    than as a false-positive rate, because an at_risk flag on a file outside
+    :data:`OBSOLETE_EXTENSIONS` is not automatically wrong — legacy OLE2 Office is
+    genuinely at risk and is deliberately not in that set.
+    """
+    flagged = 0
+    missed: list[str] = []
+    obsolete = [p for p in files if p.suffix[1:].lower() in OBSOLETE_EXTENSIONS]
+    for path in obsolete:
+        if identify_file(path).at_risk:
+            flagged += 1
+        else:
+            missed.append(str(path.relative_to(corpus_root)))
+
+    print("\n=== at-risk recall over the corpus's known-obsolete files ===")
+    print(f"  obsolete files in the corpus:        {len(obsolete)}")
+    print(f"  flagged at_risk:                     {flagged}")
+    print(f"  recall:                              {flagged / (len(obsolete) or 1) * 100:.0f}%")
+    if missed:
+        print(f"  still unflagged ({len(missed)}) — reported as unassessable, not as safe:")
+        for name in missed:
+            print(f"    {name}")
+
+
 def _report_identification(corpus_root: Path) -> None:
     """Print the identification tables measured directly over the fetched files."""
     files = [p for p in corpus_root.rglob("*") if p.is_file()]
     by_basis: collections.Counter[str] = collections.Counter()
     by_format: collections.Counter[str] = collections.Counter()
     at_risk = 0
+    unassessable = 0
     displaced: list[tuple[str, int]] = []
     for path in sorted(files):
         fmt = identify_file(path)
         by_basis[fmt.basis] += 1
         by_format[fmt.name] += 1
         at_risk += bool(fmt.at_risk)
+        unassessable += bool(fmt.unassessable)
         if fmt.header_offset:
             displaced.append((str(path.relative_to(corpus_root)), fmt.header_offset))
 
@@ -255,7 +312,12 @@ def _report_identification(corpus_root: Path) -> None:
     print("\n=== identification over the real corpus ===")
     for basis, count in by_basis.most_common():
         print(f"  {count:5d}  {count / total * 100:5.1f}%  {basis}")
-    print(f"  {at_risk:5d}  {at_risk / total * 100:5.1f}%  flagged at_risk")
+    print(f"  {at_risk:5d}  {at_risk / total * 100:5.1f}%  flagged at_risk (known-obsolete)")
+    print(
+        f"  {unassessable:5d}  {unassessable / total * 100:5.1f}%  unassessable (no risk verdict possible)"
+    )
+
+    _report_obsolete_recall(corpus_root, files)
 
     print("\n=== formats identified ===")
     for name, count in by_format.most_common(20):
@@ -299,44 +361,86 @@ def _report(archive: Archive, corpus_root: Path, bag_names: list[str], failures:
         print(f"  {count:5d}  {outcome}")
 
     print("\n=== record media type vs PREMIS identification ===")
-    divergent = _media_type_divergence(archive, bag_names)
+    divergent = _media_type_divergence(archive, corpus_root, bag_names)
     print(
         f"  payloads whose record media_type disagrees with the identified format: {len(divergent)}"
     )
     for filename, record_type, premis_type in divergent[:10]:
         print(f"    record says {record_type:32s} identifier says {premis_type:26s} {filename}")
 
-    broken = bool(failures or invalid or mismatches)
+    print("\n=== one content address, contradictory format verdicts ===")
+    collisions = _address_verdict_collisions(archive, bag_names)
+    print(f"  addresses carrying more than one identification verdict: {len(collisions)}")
+    for address, found in collisions[:10]:
+        print(f"    {address[:24]}…  {found}")
+
+    # Since ADR 0010 the record's media type IS the identifier's verdict, so any
+    # divergence is a defect rather than a statistic. Failing the run on it is what
+    # stops the old behaviour creeping back in through a new code path.
+    broken = bool(failures or invalid or mismatches or divergent)
     print("\nreal-corpus run: " + ("FAILURES ABOVE" if broken else "no pipeline failures"))
     return 1 if broken else 0
 
 
-def _media_type_divergence(archive: Archive, bag_names: list[str]) -> list[tuple[str, str, str]]:
+def _media_type_divergence(
+    archive: Archive, corpus_root: Path, bag_names: list[str]
+) -> list[tuple[str, str, str]]:
     """Payloads whose stored media type disagrees with what the identifier found.
 
-    ``ingest`` falls back to :mod:`mimetypes` (a pure filename guess) whenever the
-    content-based identifier did not match a signature, so a record can advertise a
-    confident media type for a file the preservation log says was never identified.
-    Naming that divergence is the point: it is invisible on fixtures, where the
-    extension and the bytes always agree.
+    ``ingest`` used to fall back to :mod:`mimetypes` — a pure filename guess —
+    whenever the content-based identifier did not match a signature, so a record
+    could advertise a confident media type for a file the preservation log said was
+    never identified. That was 100 payloads here. Since ADR 0010 the record's media
+    type *is* the identifier's verdict, so this is an invariant rather than a
+    statistic and any hit fails the run.
+
+    Compared against a fresh identification of the corpus file rather than against
+    the PREMIS event map, because PREMIS events are keyed by content address and the
+    store deduplicates: identical bytes under two different names collapse to one
+    address, and the event map then reports whichever event was written last. See
+    :func:`_address_verdict_collisions`, which reports that case as the separate
+    finding it is.
     """
     divergent: list[tuple[str, str, str]] = []
     for name in bag_names:
-        bag_dir = archive.bags_dir / name
-        record = json.loads((bag_dir / "record.json").read_text(encoding="utf-8"))
-        premis = json.loads((bag_dir / "premis.json").read_text(encoding="utf-8"))
-        identified = {
-            entry["linkingObjectIdentifier"]: entry["eventDetail"]
-            for entry in premis["entries"]
-            if entry["eventType"] == "format identification"
-        }
+        record = json.loads((archive.bags_dir / name / "record.json").read_text(encoding="utf-8"))
         for payload in record["payloads"]:
-            detail = identified.get(payload["address"], "")
-            match = re.search(r"media-type ([^;]+)", detail)
-            found = match.group(1).strip() if match else "?"
+            source = corpus_root / payload["filename"]
+            if not source.is_file():
+                continue
+            found = identify_file(source).media_type
             if found != payload["media_type"]:
                 divergent.append((payload["filename"], payload["media_type"], found))
     return divergent
+
+
+def _address_verdict_collisions(archive: Archive, bag_names: list[str]) -> list[tuple[str, str]]:
+    """Content addresses carrying more than one format-identification verdict.
+
+    Identification is a function of the bytes *and the filename*, but a PREMIS
+    format-identification event is linked to the payload's content address, which is
+    a function of the bytes alone. So when identical bytes arrive under two names
+    that identify differently, one object identifier ends up with two contradictory
+    events against it, and a consumer keyed by address — the correct way to read
+    PREMIS — sees only whichever was written last.
+
+    The corpus surfaced this with ``testIBM_DCA.rft``, which is byte-identical to
+    three ``testIBMDisplayWrite*.doc`` files. Reported rather than failed: the fix is
+    a modelling decision about what ledger's PREMIS Object *is*, not a patch.
+    """
+    collisions: list[tuple[str, str]] = []
+    for name in bag_names:
+        premis = json.loads((archive.bags_dir / name / "premis.json").read_text(encoding="utf-8"))
+        verdicts: dict[str, set[str]] = collections.defaultdict(set)
+        for entry in premis["entries"]:
+            if entry["eventType"] != "format identification":
+                continue
+            match = re.search(r"media-type ([^;]+)", entry["eventDetail"])
+            verdicts[entry["linkingObjectIdentifier"]].add(match.group(1).strip() if match else "?")
+        for address, found in sorted(verdicts.items()):
+            if len(found) > 1:
+                collisions.append((address, ", ".join(sorted(found))))
+    return collisions
 
 
 def main(argv: list[str] | None = None) -> int:
