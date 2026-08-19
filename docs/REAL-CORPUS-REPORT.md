@@ -337,6 +337,28 @@ reporting a count: since ADR 0010 this is an invariant, not a statistic.
 
 ---
 
+## A tenth defect, found while resolving the ninth
+
+PREMIS events are linked by content address, and the content store deduplicates — but
+identification is a function of the bytes *and the filename*. So two byte-identical
+payloads whose names identify differently write two contradictory
+`format identification` events against one object identifier, and a consumer reading
+PREMIS the correct way (keyed by `linkingObjectIdentifier`) sees whichever was written
+last.
+
+The corpus surfaced it: `office/wordprocessing/IBM_DCA/testIBM_DCA.rft` is
+byte-identical to three `testIBMDisplayWrite*.doc` files. Removing the `.doc` extension
+row and adding the IBM DisplayWrite/DCA signature made all four identify the same way,
+so the collision count is **0** — but that resolved the instance, not the class.
+`a.txt` and `a.md` with identical contents is enough to reproduce it.
+
+**Not fixed.** The question is what ledger's PREMIS *Object* is — the content-addressed
+blob or the payload-within-a-record — and each answer implies a different serialisation.
+Filed as [#149](https://github.com/ChelseaKR/ledger/issues/149), with the harness
+reporting the count on every run.
+
+---
+
 ## What held up
 
 Worth stating plainly, because it is the part fixtures could not have told us:

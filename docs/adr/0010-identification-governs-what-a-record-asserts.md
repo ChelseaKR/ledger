@@ -153,5 +153,6 @@ Costs and open edges, stated rather than left to be discovered:
   against one object identifier. The corpus surfaced this via `testIBM_DCA.rft`, which
   is byte-identical to three `testIBMDisplayWrite*.doc` files; fixing the `.doc` row
   resolved that instance, but the modelling question — what ledger's PREMIS Object
-  *is* — is not resolved here. `make real-corpus` reports the collision count so it
-  cannot recur unnoticed.
+  *is* — is not resolved here. Filed as
+  [#149](https://github.com/ChelseaKR/ledger/issues/149); `make real-corpus` reports
+  the collision count so it cannot recur unnoticed.
