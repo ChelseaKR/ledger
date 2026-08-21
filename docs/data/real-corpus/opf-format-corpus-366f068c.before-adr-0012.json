@@ -1,0 +1,57 @@
+{
+ "corpus": {
+  "commit": "366f068cec399d0cdfd61fa473de3ab6dc858098",
+  "repo": "openpreserve/format-corpus"
+ },
+ "measured_on": {
+  "date": "2026-08-21",
+  "how": "tools/real_corpus.py from ledger dc70b05 (the commit before #148) was run over the same pinned corpus with --keep-archive; the kept archive's bags were then read with the ADR 0012 detectors in tools/real_corpus.py (today's code). Nothing here was transcribed by hand.",
+  "ledger_commit": "dc70b05"
+ },
+ "premis": {
+  "contradiction_detail": [
+   {
+    "events": 4,
+    "object_id": "sha256:29e717605f1739b2cd9ba28f6fcecf31b083739bbe39cd8595d761a862dd6e06",
+    "object_type": "content-address",
+    "verdicts": [
+     "unidentified: identified as Unidentified [no-puid] via unknown; media-type application/octet-stream",
+     "at-risk: identified as Microsoft OLE2 (legacy Office 97-2003: .doc/.xls/.ppt) [fmt/111] via extension; media-type application/x-ole-storage; AT-RISK — Migrate to OOXML/ODF or PDF/A; the legacy binary format is obsolescent."
+    ]
+   }
+  ],
+  "contradictions": 1,
+  "distinct_linking_object_identifiers": 625,
+  "events_on_shared_identifiers": 70,
+  "format_events": 679,
+  "identifiers_with_more_than_one_event": 16,
+  "name_dependent_groups": [
+   {
+    "address": "sha256:29e717605f1739b2cd9ba28f6fcecf31b083739bbe39cd8595d761a862dd6e06",
+    "payloads": [
+     "office/wordprocessing/IBM_DCA/testIBM_DCA.rft",
+     "office/wordprocessing/IBM_DisplayWrite/testIBMDisplayWrite40.doc",
+     "office/wordprocessing/IBM_DisplayWrite/testIBMDisplayWrite42.doc",
+     "office/wordprocessing/IBM_DisplayWrite/testIBMDisplayWrite50.doc"
+    ],
+    "verdicts": [
+     "application/msword via ?",
+     "application/octet-stream via ?"
+    ]
+   }
+  ],
+  "name_dependent_verdict_groups": 1,
+  "outcomes": {
+   "at-risk": 25,
+   "success": 536,
+   "unidentified": 118
+  },
+  "payloads_checked": 679,
+  "payloads_on_shared_addresses": 70,
+  "payloads_with_exactly_one_event_about_them": 0,
+  "shared_addresses": 16,
+  "success_while_unidentified": 0,
+  "typed_payload_events": 0
+ },
+ "schema": "ledger-real-corpus-evidence/before-adr-0012/1"
+}

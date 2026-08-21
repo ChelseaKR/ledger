@@ -54,6 +54,8 @@ from ledger.metadata.dublincore import to_json as dublincore_to_json
 from ledger.metadata.pid import mint_urn
 from ledger.metadata.premis import PremisLog
 from ledger.models import (
+    OBJECT_TYPE_PAYLOAD,
+    OBJECT_TYPE_RECORD,
     AccessPolicy,
     ContentAddress,
     DisclosedRecord,
@@ -70,6 +72,7 @@ from ledger.models import (
     TranscriptCue,
     canonical_json,
     now_iso,
+    payload_object_id,
 )
 from ledger.oais import AIP, SIP
 from ledger.preservation import identify_file
@@ -470,7 +473,7 @@ def ingest_sip(  # noqa: C901 - the SIP pipeline's stages, in order (#83)
             #
             # The stated cost of preferring the identifier was that 17% of files would
             # fall back to ``application/octet-stream``. Widening the registry cut the
-            # unidentified share to 4.7%, and for a file nothing could identify,
+            # unidentified share to 4.9%, and for a file nothing could identify,
             # ``application/octet-stream`` is not a degradation — it is the accurate
             # IANA type for an unrecognised byte stream, and it warns the reader that
             # the deliberately-damaged PDF they are about to download will not open.
@@ -516,6 +519,15 @@ def ingest_sip(  # noqa: C901 - the SIP pipeline's stages, in order (#83)
                 cues=cues,
             )
         )
+        # The PREMIS Object these two events are about is the payload *within this
+        # record* — the File inside the Representation — not the content address
+        # (ADR 0012). Identification is a function of the bytes and the filename, and
+        # the store deduplicates bytes, so keying the event by address let two
+        # byte-identical payloads under differently-identifying names write two
+        # contradictory verdicts against one identifier (#149). The address still
+        # travels with the event, as the bytes that were examined, so the event stays
+        # bound to exactly what it checked.
+        object_id = payload_object_id(record.record_id, filename)
         # A fixity check per payload: the stored address re-derived from the bytes,
         # cross-checked by the independent BLAKE2b digest (integrity, redundancy).
         fixity_events.append(
@@ -524,7 +536,9 @@ def ingest_sip(  # noqa: C901 - the SIP pipeline's stages, in order (#83)
                 agent=agent,
                 outcome="success",
                 detail=f"sha256+blake2b verified ({digests[HashAlgo.BLAKE2B][:12]}…)",
-                linked_object=str(address),
+                linked_object=object_id,
+                linked_object_type=OBJECT_TYPE_PAYLOAD,
+                linked_content_address=str(address),
                 event_datetime=now,
             )
         )
@@ -559,7 +573,9 @@ def ingest_sip(  # noqa: C901 - the SIP pipeline's stages, in order (#83)
                 agent=agent,
                 outcome=outcome,
                 detail=fmt.summary(),
-                linked_object=str(address),
+                linked_object=object_id,
+                linked_object_type=OBJECT_TYPE_PAYLOAD,
+                linked_content_address=str(address),
                 event_datetime=now,
             )
         )
@@ -632,6 +648,7 @@ def ingest_sip(  # noqa: C901 - the SIP pipeline's stages, in order (#83)
                 outcome="success",
                 detail=f"ingested {len(payload_entries)} payload file(s) for {record.record_id}",
                 linked_object=record.record_id,
+                linked_object_type=OBJECT_TYPE_RECORD,
                 event_datetime=now,
             )
         )

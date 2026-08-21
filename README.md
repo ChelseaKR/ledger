@@ -62,9 +62,13 @@ the [Open Preservation Foundation format-corpus](https://github.com/openpreserve
 (CC0): JHOVE error cases, a PDF cabinet of horrors, real government PDFs that broke
 real harvesters, dead spreadsheet formats, JPEG 2000 masters, and deliberately hostile
 filenames. [`docs/REAL-CORPUS-REPORT.md`](docs/REAL-CORPUS-REPORT.md) is the honest
-write-up, defects first — including the ones still open. Nothing crashed and every bag
-validated; what the run found was a preservation log reporting confident success over
-material the pipeline had entirely failed to understand.
+write-up, defects first. Nothing crashed and every bag validated; what the run found was
+a preservation log reporting confident success over material the pipeline had entirely
+failed to understand — 156 of 679 files — and, once that was fixed, one content address
+carrying two contradictory verdicts. Ten defects, all now resolved (ADRs 0010–0012),
+and what the run measures is committed as evidence under
+[`docs/data/real-corpus/`](docs/data/real-corpus/) that a test re-derives every number
+from, so the write-up cannot drift from the run.
 
 **Why this domain.** Queer history is disproportionately undocumented, and the documentation that
 exists is fragile. It lives on a single laptop, a dead Facebook group, a hosted service that changes

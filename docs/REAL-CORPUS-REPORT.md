@@ -10,12 +10,15 @@ obsolete, and named by someone who was not thinking about BagIt.
 This is the write-up of running the whole ingest pipeline over a real corpus.
 Reproduce it with `make real-corpus`.
 
-Nine defects were found. Six were fixed in the corpus PR; the remaining three needed a
-product decision, a migration story, or a crypto review, were filed as issues rather
-than guessed at, and have since been resolved by
-[ADR 0010](adr/0010-identification-governs-what-a-record-asserts.md) and
-[ADR 0011](adr/0011-sealed-payloads-are-size-capped.md). Every number here is measured
-on the same pinned corpus commit and re-measured on every run.
+Ten defects were found. Six were fixed in the corpus PR; the remaining four needed a
+product decision, a migration story, a crypto review, or a data-model decision, were
+filed as issues rather than guessed at, and have since been resolved by
+[ADR 0010](adr/0010-identification-governs-what-a-record-asserts.md),
+[ADR 0011](adr/0011-sealed-payloads-are-size-capped.md), and
+[ADR 0012](adr/0012-the-premis-object-is-the-payload-within-a-record.md). Every number
+here is measured on the same pinned corpus commit, re-measured on every run, and —
+since ADR 0012 — committed as [evidence](#evidence) that a test re-derives, so no figure
+below is typed in by hand.
 
 **Lead finding: nothing crashed, and that was the problem.** All 22 collections
 ingested, all 22 bags validated against RFC 8493, every payload byte survived. The
@@ -337,25 +340,59 @@ reporting a count: since ADR 0010 this is an invariant, not a statistic.
 
 ---
 
-## A tenth defect, found while resolving the ninth
+## 10. One content address carried two contradictory verdicts
 
-PREMIS events are linked by content address, and the content store deduplicates — but
+PREMIS events were linked by content address, and the content store deduplicates — but
 identification is a function of the bytes *and the filename*. So two byte-identical
-payloads whose names identify differently write two contradictory
+payloads whose names identify differently wrote two contradictory
 `format identification` events against one object identifier, and a consumer reading
-PREMIS the correct way (keyed by `linkingObjectIdentifier`) sees whichever was written
+PREMIS the correct way (keyed by `linkingObjectIdentifier`) saw whichever was written
 last.
 
 The corpus surfaced it: `office/wordprocessing/IBM_DCA/testIBM_DCA.rft` is
-byte-identical to three `testIBMDisplayWrite*.doc` files. Removing the `.doc` extension
-row and adding the IBM DisplayWrite/DCA signature made all four identify the same way,
-so the collision count is **0** — but that resolved the instance, not the class.
-`a.txt` and `a.md` with identical contents is enough to reproduce it.
+byte-identical to three `testIBMDisplayWrite*.doc` files. Measured on the code as it
+stood before #148 (commit `dc70b05`, its trial archive kept and re-read with today's
+detectors), the 679 identification events were linked to **625** distinct identifiers;
+**16** identifiers carried more than one event (70 events between them — the 30
+zero-byte files share one address, and so on); **1** identifier carried more than one
+*verdict* — the IBM quartet, four events, `unidentified` against `at-risk` OLE2
+`fmt/111`; and **0 of 679** payloads had an event that was about *that payload*.
+Removing the `.doc` extension row and adding the IBM DisplayWrite/DCA signature (#148)
+made all four identify the same way, so the collision count printed 0 — but that
+resolved the instance, not the class. `a.txt` and `a.md` with identical contents is
+enough to reproduce it.
 
-**Not fixed.** The question is what ledger's PREMIS *Object* is — the content-addressed
-blob or the payload-within-a-record — and each answer implies a different serialisation.
-Filed as [#149](https://github.com/ChelseaKR/ledger/issues/149), with the harness
-reporting the count on every run.
+**Resolved** by [ADR 0012](adr/0012-the-premis-object-is-the-payload-within-a-record.md)
+([#149](https://github.com/ChelseaKR/ledger/issues/149)), which answers the question the
+issue asked — what ledger's PREMIS *Object* is — the way PREMIS and every file-level
+repository answer it: the Object is the **payload within a record**, identified as
+`<record_id>/<filename>` and typed `ledger-payload`; the content address is its fixity,
+carried on every event as a second link to the bytes examined, not its identity. Two
+byte-identical payloads are two objects, each with one verdict, and a consumer keyed by
+object identifier reads the log without contradiction.
+
+Three things make the class impossible to record silently rather than merely absent
+from this corpus:
+
+- `PremisLog.record` **refuses** a second, different verdict for the same object and the
+  same bytes (`PremisContradictionError`) before anything is appended; an agreeing repeat
+  is history, and different bytes under the same name are a revised deposit.
+- A bag written before the ADR — address-keyed, contradiction and all — is read without
+  a crash, and `PremisLog.contradictions()` **reports** every verdict it carries, typed
+  by how it was keyed, instead of surfacing whichever came last.
+- `make real-corpus` reads every bag through that same reader, joins every payload to
+  the one event about it, and **fails** on any contradiction, any payload without
+  exactly one event, any event that disagrees with its record, and any `success` logged
+  over an unidentified file.
+
+The legacy on-disk shape is unchanged — both new keys are omitted when unset — so every
+existing chain head and published attestation stands; a test pins that.
+
+After, on the same 679 files: **679 / 679** payloads have exactly one identification
+event about them, **0** identifiers carry more than one event, **0** objects carry more
+than one verdict. The 16 shared addresses (70 payloads) are still there — identical bytes
+are a property of the corpus, not a defect — and are now reported as what they are, with
+**0** of them differing in verdict by name.
 
 ---
 
@@ -399,7 +436,10 @@ And the signals a steward actually acts on:
 | reported `unassessable` | — | 33 (4.9%) |
 | **recall over the 66 known-obsolete files** | **0 / 66** | **57 / 66 (86%)** |
 | record media type contradicting the log | 100 | **0** |
-| one content address, contradictory verdicts | 1 | **0** |
+| identification events logged `success` over an unidentified file | 156 | **0** |
+| payloads whose identification event is about *that payload* (ADR 0012) | 0 / 679 | **679 / 679** |
+| object identifiers carrying more than one event | 16 (70 events) | **0** |
+| one object, contradictory verdicts | 1 | **0**, and refused at write |
 
 123 real files that the pipeline previously could not name, it now names: 18 JPEG 2000,
 20 displaced-header PDFs, 56 obsolete-format files, 30 correctly reported as empty
@@ -415,14 +455,68 @@ them are now reported as `unassessable` — not as safe.
 
 ---
 
+## Evidence
+
+Every number in this report is derived from one committed file,
+[`data/real-corpus/opf-format-corpus-366f068c.json`](data/real-corpus/opf-format-corpus-366f068c.json):
+one row per corpus file — path, the corpus's own git blob SHA-1, SHA-256, size, and the
+identifier's verdict — plus the counts derived from those rows and what the PREMIS logs
+of the run said. Metadata and hashes only; never a byte of the corpus. `make real-corpus`
+re-checks a fresh run against it and fails on drift, and
+`tests/test_real_corpus_evidence.py` re-derives every count from the rows and checks the
+table below, and every stated number above, against them. A number that stops matching
+fails the suite; a row that is deleted from this table fails it too.
+
+| measure | value |
+| --- | --- |
+| `files` | 679 |
+| `bytes` | 301690480 |
+| `distinct_addresses` | 625 |
+| `basis:signature` | 468 |
+| `basis:extension` | 106 |
+| `basis:unknown` | 33 |
+| `basis:empty` | 30 |
+| `basis:signature-offset` | 20 |
+| `basis:text` | 17 |
+| `basis:xml-declaration` | 5 |
+| `at_risk` | 80 |
+| `unassessable` | 33 |
+| `displaced_headers` | 20 |
+| `obsolete` | 66 |
+| `obsolete_flagged` | 57 |
+| `shared_addresses` | 16 |
+| `payloads_on_shared_addresses` | 70 |
+| `bags:collections` | 22 |
+| `bags:bags_valid` | 22 |
+| `bags:payloads_proven` | 679 |
+| `premis:format_events` | 679 |
+| `premis:outcomes:success` | 536 |
+| `premis:outcomes:at-risk` | 80 |
+| `premis:outcomes:unidentified` | 33 |
+| `premis:outcomes:empty` | 30 |
+| `premis:success_while_unidentified` | 0 |
+| `premis:record_log_divergence` | 0 |
+| `premis:payloads_checked` | 679 |
+| `premis:event_record_disagreements` | 0 |
+| `premis:contradictions` | 0 |
+| `premis:name_dependent_verdict_groups` | 0 |
+
+The "before" column of §10 is measured too, not remembered:
+[`data/real-corpus/opf-format-corpus-366f068c.before-adr-0012.json`](data/real-corpus/opf-format-corpus-366f068c.before-adr-0012.json)
+holds what today's detectors found in the trial archive that ledger `dc70b05` — the
+commit before #148 — produced from the same corpus, and the same test binds §10's
+before-numbers to it.
+
 ## Reproducing
 
 ```sh
-make real-corpus
+make real-corpus            # run, report, and check against the committed evidence
+make real-corpus-evidence   # run and REWRITE the evidence (then update what cites it)
 ```
 
 Fetches the pinned corpus into the gitignored `./real-corpus/` (~302 MB, verified
 file-by-file against its git blob SHA-1), ingests it into a temporary archive,
-validates every bag, proves byte-identity against the fetched originals, and prints
-the tables above. It is deliberately **not** part of `make verify`: a merge gate must
-not depend on the network.
+validates every bag, proves byte-identity against the fetched originals, prints the
+tables above, and compares the run to the committed evidence. It is deliberately
+**not** part of `make verify`: a merge gate must not depend on the network. The
+evidence test, which needs no network, *is* in `make verify`.

@@ -65,6 +65,18 @@ class BagValidationError(LedgerError):
     """A BagIt bag is malformed or fails manifest validation (RFC 8493)."""
 
 
+class PremisContradictionError(LedgerError):
+    """A format-identification event would contradict one already in the log.
+
+    The PREMIS log for one object may not carry two different identification
+    verdicts for the same object and the same bytes (ADR 0012). A second event that
+    agrees is history; one that disagrees is refused before it is written, so a
+    consumer reading the log keyed by object identifier can never be shown whichever
+    verdict happened to be written last. The message names only the object
+    identifier, never a payload's content (no-outing rule).
+    """
+
+
 class ReplicationError(LedgerError):
     """A replica location was unreachable or rejected a bag.
 

@@ -315,7 +315,7 @@ def _cmd_ingest(args: argparse.Namespace) -> int:  # noqa: C901 - argparse optio
         elif fmt.unassessable:
             # The steward is the only one who can say what this is, and they will
             # never be better placed to say it than at the moment they hand it over.
-            # Measured on a real archival corpus, this is 4.7% of files.
+            # Measured on a real archival corpus, this is 4.9% of files.
             print(
                 f"note: {src.name} could not be identified from its bytes, so it has "
                 "NOT been assessed for preservation risk — that is not the same as "

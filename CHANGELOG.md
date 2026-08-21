@@ -16,6 +16,46 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 > explicitly approved through the release workflow added below.
 
 ### Added
+- **The PREMIS Object is the payload within a record** (ADR 0012, #149). A
+  format-identification or fixity event is now about *one payload in one record* —
+  `linkingObjectIdentifier` is `<record_id>/<filename>`, typed `ledger-payload` via a new
+  `linkingObjectIdentifierType` — and carries the bytes it examined as a second link,
+  `linkingObjectContentAddress`. Identification is a function of the bytes *and the
+  filename*, while the content store deduplicates bytes, so keying events by address let
+  two byte-identical payloads under differently-identifying names write two
+  contradictory verdicts against one identifier; a consumer reading PREMIS the correct
+  way saw whichever was written last. Measured on the real corpus before the fix: 679
+  events on 625 identifiers, 16 identifiers carrying 70 events, 1 carrying two verdicts,
+  and 0 of 679 payloads with an event about *that payload*. After: **679 of 679**, 0,
+  and 0. The PREMIS XML export now emits the type the schema makes mandatory, and a
+  second typed `linkingObjectIdentifier` for the bytes. Both new JSON keys are omitted
+  when unset, so every existing log hash-chains byte-for-byte as before (pinned by a
+  test).
+- **A contradictory identification is refused, and an existing one is reported.**
+  `PremisLog.record` raises `PremisContradictionError` on a second, different verdict for
+  the same object and the same bytes, before anything is appended; an agreeing repeat is
+  history and different bytes under the same name are a revised deposit. A bag written
+  before ADR 0012 — address-keyed, contradiction and all — reads without a crash, and
+  `PremisLog.contradictions()` lists every verdict it carries, typed by how it was keyed.
+- **What `make real-corpus` measures is committed as evidence and re-derived by a test.**
+  [`docs/data/real-corpus/opf-format-corpus-366f068c.json`](docs/data/real-corpus/opf-format-corpus-366f068c.json)
+  holds one row per corpus file (path, git blob SHA-1, SHA-256, size, the identifier's
+  verdict — metadata and hashes only, never the files) plus the counts derived from them
+  and what the run's PREMIS logs said; a
+  [`…before-adr-0012.json`](docs/data/real-corpus/opf-format-corpus-366f068c.before-adr-0012.json)
+  beside it holds what today's detectors found in the trial archive ledger `dc70b05`
+  produced. `make real-corpus` fails when a fresh run drifts from the committed file
+  (`make real-corpus-evidence` rewrites it, deliberately); `tests/test_real_corpus_evidence.py`,
+  which needs no network and is in `make verify`, re-derives every count from the rows
+  and checks every number `docs/REAL-CORPUS-REPORT.md`, ADR 0012, the README and this
+  changelog state against it, so a figure in the docs can only ever come from the run.
+- **The harness now fails on four invariants it used to report or not check.** Any
+  object whose log carries more than one verdict; any payload without exactly one
+  identification event about it; any event whose media type or basis disagrees with the
+  record beside it; and any `success` logged over a file nothing identified (the 156-file
+  lead defect of the first run, now gated, not only fixed). The 16 content addresses the
+  corpus shares across 70 payloads are reported in full, with the number of groups whose
+  verdict differs by name (0), as the measured population the class could fire on.
 - **Preservation risk is now two signals, not one** (ADR 0010, #142). `at_risk` keeps
   its exact meaning — a positive finding about a *known* obsolescent format, with a
   named migration target — and `FormatId.unassessable` is added for a file nothing
