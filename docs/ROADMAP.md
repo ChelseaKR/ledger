@@ -21,12 +21,11 @@ their committed evidence; a roadmap sentence alone is not treated as a waiver.
 | Standard | Control(s) | Gap | Status | Closes when |
 |---|---|---|---|---|
 | Security & Supply-Chain | SEC-04 | 16 of 24 Harden-Runner jobs now enforce `egress-policy: block` with allowlists derived from observed runs. The 8 `release.yml` jobs stay in `audit`: that workflow has never run, so there is nothing to derive an allowlist from, and a wrong guess fails a release *after* the tag is public | Open — [#78](https://github.com/ChelseaKR/ledger/issues/78) | The first real release runs in audit, its observed endpoints are read off that run, and `release.yml` flips to `block` (needs [#80](https://github.com/ChelseaKR/ledger/issues/80) first) |
-| Security & Supply-Chain / CI/CD | SEC-11/13, CICD-13/27 | The `osv` job (OSV-Scanner over `uv.lock`) and the `semgrep` workflow both run fail-closed on every pull request, but neither context is in the live ruleset's required-check set, so a red run does not block a merge; local Semgrep parity is also still absent from `make verify` | Open — [#79](https://github.com/ChelseaKR/ledger/issues/79) tracks the ruleset half | Both contexts are added to `.github/rulesets/main.json` and to the live ruleset, and locked Semgrep tooling gives `make verify` the same coverage |
-| CI/CD | CICD-10–16, CQ-37–43, SEC-15 | The live `protect-main` ruleset is now mirrored in-tree at [`.github/rulesets/main.json`](../.github/rulesets/main.json) with its gaps itemized in [`.github/rulesets/README.md`](../.github/rulesets/README.md). It blocks deletion/force-push and requires eleven checks, but checks are non-strict and PR/review/CODEOWNER/signed-commit/linear-history rules are absent; Dependabot security updates are disabled (`GET /repos/ChelseaKR/ledger/automated-security-fixes` returned `{"enabled": false}` on 2026-08-15) | Open — [#79](https://github.com/ChelseaKR/ledger/issues/79) | Owner selects a solo-maintainer-safe review model, applies it live, and updates the committed mirror in the same change |
+| Security & Supply-Chain / CI/CD | SEC-11/13, CICD-13/27 | Local Semgrep parity is still absent from `make verify` — CI's `semgrep` workflow is the gate of record, matching the existing `osv-scanner`/`gitleaks` local-target pattern, but a contributor gets no pre-push signal for it | Open — no issue filed yet; narrower than #79, which closed the required-check half of this gap | Locked Semgrep tooling gives `make verify` the same coverage as CI |
 | Release & Versioning | REL-03/08/17/20 | Release workflow exists, but signer identity, PyPI Trusted Publisher/environment, and first end-to-end release remain owner actions | Open — [#80](https://github.com/ChelseaKR/ledger/issues/80) | First signed tag publishes and verifies successfully with an approved signer |
 | Accessibility / Quality | A11Y-02/03/09/11/12/16/18, QM-04 | Axe, Chromium keyboard traversal, and a **blocking 320px reflow gate** (`reflow.spec.ts`, SC 1.4.10) are live, and [`docs/accessibility/STATEMENT.md`](accessibility/STATEMENT.md) is published. A second scan engine (pa11y/Lighthouse) is an open dependency decision — Lighthouse's a11y category is axe-core, which already runs. The first real NVDA/VoiceOver evidence remains, and cannot be produced by any scan | Open — [#81](https://github.com/ChelseaKR/ledger/issues/81) | Human AT rows in `MANUAL-REVIEW-CADENCE.md` are dated by actual reviewers |
 | Responsible Tech | RTF-01/03/04/06, QM-09 | Ethics, bias, DPIA, crypto, and residual-risk artifacts are prepared but accountable-owner/independent sign-off cannot be automated | Open — [#82](https://github.com/ChelseaKR/ledger/issues/82) | Named humans review and sign the artifacts; no Production claim before then |
-| Code Quality | CQ-05/08/34/35 | Suppression hygiene is now a blocking gate (`make hygiene`, `tools/check_hygiene.py`): all 115 suppressions are coded and explained, and the 8 `C901` complexity waivers link #83. The branch-coverage floor is ratcheted 85% → 88% (measured 88.06%); CQ-08's published-library target of 90% needs ~2 more points of real tests, and the 8 complex functions are still waived rather than refactored | Open — [#83](https://github.com/ChelseaKR/ledger/issues/83) | Branch coverage reaches 90% and the 8 `C901` waivers are refactored away rather than tracked |
+| Code Quality | CQ-05/08/34/35 | Suppression hygiene is a blocking gate (`make hygiene`, `tools/check_hygiene.py`) and every suppression is coded, explained, and issue-linked where temporary; the 8 `C901` complexity waivers link #83. The branch-coverage floor is ratcheted 85% → 88% (measured 88.81%); CQ-08's published-library target of 90% needs ~1.2 more points of real tests, and the 8 complex functions — the public GET/POST route tables, the SIP ingest pipeline, BagIt validation, WCAG element/rule checks, CLI ingest option handling, and untrusted-form field validation — are still waived rather than refactored. Each is a dispatch table or an independent-branch sequence with a documented reason a mechanical split would make worse, not oversight; refactoring the ingest pipeline and the public route handlers with safety-preserving tests is real, non-mechanical work on the repo's most security-critical paths | Open — [#83](https://github.com/ChelseaKR/ledger/issues/83) | Branch coverage reaches 90% and the 8 `C901` waivers are refactored away rather than tracked |
 
 ## Closed in the 2026-07-11 conformance pass
 
@@ -39,6 +38,23 @@ their committed evidence; a roadmap sentence alone is not treated as a waiver.
   `deploy-caused` labels exist.
 - Incident-response, data-governance/data-card, and residual-risk artifacts are
   committed; human sign-off fields remain honest and issue-backed.
+
+## Closed in the 2026-08-21 ruleset pass
+
+- **CI/CD, CICD-10–16/CQ-37–43/SEC-15 ([#79](https://github.com/ChelseaKR/ledger/issues/79)).**
+  The live `protect-main` ruleset, mirrored in-tree at
+  [`.github/rulesets/main.json`](../.github/rulesets/main.json), now holds the §5.1
+  solo-maintainer profile: a `pull_request` rule (0 required approvals — the sole
+  code owner cannot self-approve, and §5.1 permits `false` on
+  `require_code_owner_review` for exactly this reason), `required_signatures`
+  (GitHub signs every squash-merge server-side), `required_linear_history`, and
+  `strict_required_status_checks_policy: true`. The required-check set grew from
+  eleven contexts to thirteen — `OSV lockfile scan (uv.lock)` and `Semgrep SAST
+  (p/ci)` now block a merge instead of only running fail-closed and being
+  ignorable. Dependabot security updates were enabled the same day
+  (`GET /repos/ChelseaKR/ledger/automated-security-fixes` had returned
+  `{"enabled": false}` on 2026-08-15). Full rationale in
+  [`.github/rulesets/README.md`](../.github/rulesets/README.md).
 
 ## Drafted conformance artifacts
 

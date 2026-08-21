@@ -1,10 +1,13 @@
 # CODEOWNERS — required-reviewer routing (CODE-QUALITY-STANDARD CQ-39, CI-CD-STANDARD
 # CICD-17/18). This file has no effect on its own; it becomes load-bearing only once
 # branch protection / a repository ruleset requires review from the matched code
-# owner. The live `protect-main` ruleset does not require code-owner review today —
-# it has no pull-request rule at all — so this routing is intent, not enforcement.
-# The committed mirror of that ruleset is `.github/rulesets/main.json`, and closing
-# the gap is issue #79.
+# owner. The live `protect-main` ruleset (#79) now has a `pull_request` rule — every
+# change to main goes through a PR — but `require_code_owner_review` is deliberately
+# `false`: the sole code owner below is also the only person who could approve, and
+# GitHub does not let a PR author approve their own PR, so requiring it would make
+# the repository unmergeable by its only contributor (CI-CD-STANDARD §5.1). This
+# routing therefore stays intent — legible ownership, not a second-reader gate — and
+# the committed mirror of the live ruleset is `.github/rulesets/main.json`.
 #
 # Solo-maintainer repo today: every path routes to the same owner. The workflow and
 # safety-critical paths are named explicitly anyway so the intent (these paths
