@@ -36,15 +36,23 @@ from __future__ import annotations
 import json
 import os
 from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from xml.sax.saxutils import escape as _sax_escape
 
 from ledger.chain import GENESIS_HASH, ChainVerification, build_chain, chain_head
 from ledger.chain import verify_chain as _verify_chain
-from ledger.models import PremisEvent, PremisEventType, PremisRights, canonical_json
+from ledger.errors import PremisContradictionError
+from ledger.models import (
+    OBJECT_TYPE_CONTENT_ADDRESS,
+    PremisEvent,
+    PremisEventType,
+    PremisRights,
+    canonical_json,
+)
 
-__all__ = ["PremisLog", "to_premis_xml"]
+__all__ = ["IdentificationContradiction", "PremisLog", "to_premis_xml"]
 
 # Schema history:
 #   1 — a bare JSON array of event dicts (no chaining).
@@ -103,6 +111,8 @@ def _event_from_dict(data: dict[str, Any]) -> PremisEvent:
     Kept private: the canonical on-disk shape is owned here, mirroring
     :meth:`PremisEvent.to_dict` so a written log round-trips exactly.
     """
+    object_type = data.get("linkingObjectIdentifierType")
+    content_address = data.get("linkingObjectContentAddress")
     return PremisEvent(
         event_type=PremisEventType(data["eventType"]),
         agent=str(data["linkingAgentIdentifier"]),
@@ -114,7 +124,50 @@ def _event_from_dict(data: dict[str, Any]) -> PremisEvent:
             else None
         ),
         event_datetime=str(data["eventDateTime"]),
+        # Absent on every event written before ADR 0012; ``None`` reads as "untyped",
+        # which :attr:`PremisEvent.object_identifier_type` resolves conservatively.
+        linked_object_type=str(object_type) if object_type is not None else None,
+        linked_content_address=str(content_address) if content_address is not None else None,
     )
+
+
+def _identification_key(event: PremisEvent) -> tuple[str | None, str | None]:
+    """What makes two format-identification events be about the *same* thing.
+
+    The object identifier and the bytes examined, together. Two events about one
+    payload whose bytes differ (a revised deposit) are about different things and
+    may legitimately disagree; two about the same payload and the same bytes may not
+    (ADR 0012). Events written before the address travelled separately carry the
+    address *as* the identifier and ``None`` here, so legacy events group by address
+    — exactly the keying under which #149 was observed, and therefore the keying
+    under which a legacy log's contradiction must still be reportable.
+    """
+    return (event.linked_object, event.linked_content_address)
+
+
+def _verdict(event: PremisEvent) -> str:
+    """The whole of what an identification event asserts, as one comparable string."""
+    return f"{event.outcome}: {event.detail}"
+
+
+@dataclass(frozen=True)
+class IdentificationContradiction:
+    """One object whose log asserts more than one format-identification verdict.
+
+    Returned by :meth:`PremisLog.contradictions` rather than raised, because a log
+    already on disk — a bag written before ADR 0012, or one doctored by hand — is a
+    finding for the steward to see, never a crash for the reader (failure
+    transparency). ``verdicts`` lists every distinct ``outcome: detail`` in the
+    order recorded, so the steward sees all of them, not whichever came last; and
+    ``object_type`` says how the object was keyed (``content-address`` for a legacy
+    log, ``ledger-payload`` for a current one). No payload content, no identity.
+    """
+
+    object_id: str
+    object_type: str | None
+    content_address: str | None
+    verdicts: tuple[str, ...]
+    events: int
 
 
 class PremisLog:
@@ -166,10 +219,72 @@ class PremisLog:
 
     def record(self, event: PremisEvent) -> None:
         """Append one event, chained to the current head. Append-only ->
-        auditability/provability; chained -> tamper-evidence (FIX-06)."""
+        auditability/provability; chained -> tamper-evidence (FIX-06).
+
+        A format-identification event is checked first: if the log already holds
+        one for the same object and the same bytes with a *different* verdict, it is
+        refused with :class:`~ledger.errors.PremisContradictionError` rather than
+        appended (ADR 0012). Nothing is written before the check, so a refused event
+        leaves the log exactly as it was. A second event that agrees is recorded —
+        that is history, not contradiction — and a future re-identification that
+        *means* to supersede an earlier verdict must say so through an explicit
+        path; none exists yet, and this guard is what keeps one from appearing by
+        accident.
+        """
+        if event.event_type is PremisEventType.FORMAT_IDENTIFICATION:
+            self._refuse_contradiction(event)
         prev = self.head
         self._events.append(event)
         self._prev_hashes.append(prev)
+
+    def _refuse_contradiction(self, event: PremisEvent) -> None:
+        """Raise if ``event`` would be the second, different verdict for its object."""
+        if event.linked_object is None:
+            return
+        key = _identification_key(event)
+        for prior in self._events:
+            if prior.event_type is not PremisEventType.FORMAT_IDENTIFICATION:
+                continue
+            if _identification_key(prior) != key:
+                continue
+            if _verdict(prior) != _verdict(event):
+                raise PremisContradictionError(
+                    f"refusing a format-identification event for {event.linked_object}: "
+                    "the log already records a different verdict for the same object and "
+                    "the same bytes, and a contradiction is never written silently "
+                    "(ADR 0012)"
+                )
+
+    def contradictions(self) -> list[IdentificationContradiction]:
+        """Every object this log asserts more than one identification verdict for.
+
+        Empty for any log :meth:`record` built, because the guard refuses the second
+        verdict. Non-empty only for a log read off disk that was written before ADR
+        0012 (keyed by content address, where two byte-identical payloads under
+        differently-identifying names collided — #149) or edited by hand. Either way
+        the reader reports it; it does not average, pick the latest, or raise.
+        """
+        groups: dict[tuple[str | None, str | None], list[PremisEvent]] = {}
+        for event in self._events:
+            if event.event_type is not PremisEventType.FORMAT_IDENTIFICATION:
+                continue
+            if event.linked_object is None:
+                continue
+            groups.setdefault(_identification_key(event), []).append(event)
+        found: list[IdentificationContradiction] = []
+        for (object_id, address), events in groups.items():
+            verdicts = tuple(dict.fromkeys(_verdict(e) for e in events))
+            if len(verdicts) > 1:
+                found.append(
+                    IdentificationContradiction(
+                        object_id=str(object_id),
+                        object_type=events[0].object_identifier_type,
+                        content_address=address,
+                        verdicts=verdicts,
+                        events=len(events),
+                    )
+                )
+        return found
 
     @property
     def events(self) -> list[PremisEvent]:
@@ -328,15 +443,35 @@ def _event_to_xml(event: PremisEvent, indent: str) -> list[str]:
         "</premis:linkingAgentIdentifierValue>"
     )
     lines.append(f"{inner}</premis:linkingAgentIdentifier>")
+    # PREMIS v3 makes linkingObjectIdentifierType mandatory inside a linking object
+    # identifier and lets the element repeat. The object itself comes first, typed
+    # explicitly where the writer said (ADR 0012), by the safe inference otherwise,
+    # and as "local" — the conventional repository-scoped type — when nothing can be
+    # said. The bytes examined follow as a second identifier of their own type, so
+    # a consumer can tell the object from its fixity instead of having to conflate
+    # them (the conflation behind #149).
     if event.linked_object is not None:
-        lines.append(f"{inner}<premis:linkingObjectIdentifier>")
-        lines.append(
-            f"{inner}  <premis:linkingObjectIdentifierValue>"
-            f"{escape(event.linked_object)}</premis:linkingObjectIdentifierValue>"
+        lines.extend(
+            _linking_object_xml(inner, event.object_identifier_type or "local", event.linked_object)
         )
-        lines.append(f"{inner}</premis:linkingObjectIdentifier>")
+    if event.linked_content_address is not None:
+        lines.extend(
+            _linking_object_xml(inner, OBJECT_TYPE_CONTENT_ADDRESS, event.linked_content_address)
+        )
     lines.append(f"{indent}</premis:event>")
     return lines
+
+
+def _linking_object_xml(inner: str, identifier_type: str, value: str) -> list[str]:
+    """One ``premis:linkingObjectIdentifier`` element with its type and value."""
+    return [
+        f"{inner}<premis:linkingObjectIdentifier>",
+        f"{inner}  <premis:linkingObjectIdentifierType>{escape(identifier_type)}"
+        "</premis:linkingObjectIdentifierType>",
+        f"{inner}  <premis:linkingObjectIdentifierValue>{escape(value)}"
+        "</premis:linkingObjectIdentifierValue>",
+        f"{inner}</premis:linkingObjectIdentifier>",
+    ]
 
 
 def _rights_to_xml(rights: PremisRights, indent: str) -> list[str]:

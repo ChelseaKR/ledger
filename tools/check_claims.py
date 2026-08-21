@@ -595,6 +595,40 @@ CLAIMS: tuple[Claim, ...] = (
         "count the review documents in docs/audits/ and restate the number (#124).",
         exclude=("docs/audits/README.md",),
     ),
+    # ADR 0012: the PREMIS Object is the payload within a record, not the content
+    # address. The write-up derives every number it states from a committed evidence
+    # file (tests/test_real_corpus_evidence.py does the re-deriving); this pins that the
+    # evidence exists at all, and that the places describing how events are keyed keep
+    # pointing at the ADR that records the decision (#149).
+    PathExists(
+        "real-corpus-evidence",
+        "docs/data/real-corpus/opf-format-corpus-366f068c.json",
+        "docs/REAL-CORPUS-REPORT.md derives every number from this file; regenerate it "
+        "with `make real-corpus-evidence` rather than deleting the claim (#149).",
+    ),
+    PathExists(
+        "real-corpus-before-evidence",
+        "docs/data/real-corpus/opf-format-corpus-366f068c.before-adr-0012.json",
+        "the before-column of ADR 0012 and section 10 of the report are bound to this "
+        "measurement of ledger dc70b05, which cannot be regenerated from main (#149).",
+    ),
+    *(
+        RequiredString(
+            f"premis-object-is-the-payload-{name}",
+            path,
+            "ADR 0012",
+            "this file describes how PREMIS events are keyed; it must keep pointing at "
+            "ADR 0012, which records that the Object is the payload within a record and "
+            "why the content address is its fixity, not its identity (#149).",
+        )
+        for name, path in (
+            ("report", "docs/REAL-CORPUS-REPORT.md"),
+            ("architecture", "docs/ARCHITECTURE.md"),
+            ("ingest", "src/ledger/ingest.py"),
+            ("premis", "src/ledger/metadata/premis.py"),
+            ("models", "src/ledger/models.py"),
+        )
+    ),
     # ADR 0011: five separate places claimed a payload is never held in RAM, and the
     # SEALED at-rest encryption path broke all five (1189 MB peak for a 157 MB file).
     # The claims were qualified rather than deleted, so each needs its caveat pinned:

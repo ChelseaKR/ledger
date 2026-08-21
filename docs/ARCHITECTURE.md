@@ -132,6 +132,21 @@ fixity check, replication, redaction, policy change, consent change, and takedow
 Writes are atomic. A `PremisEvent` carries an agent, an outcome, a detail, and an
 opaque `linked_object`, never an identity or a sealed value.
 
+**What the Object is** (ADR 0012). For format identification and fixity, ledger's PREMIS
+Object is the *payload within a record* — the File inside the Representation —
+identified as `<record_id>/<filename>` and typed `ledger-payload`
+(`linkingObjectIdentifierType`). The content address is the object's fixity, not its
+identity: it travels on every such event as a second link
+(`linkingObjectContentAddress`) to the bytes that were examined. Identification is a
+function of the bytes *and* the filename while the content store deduplicates bytes, so
+keying events by address let two byte-identical payloads under differently-identifying
+names write two contradictory verdicts against one identifier (#149). `PremisLog.record`
+now refuses a second, different verdict for the same object and bytes
+(`PremisContradictionError`), and `PremisLog.contradictions()` reports any a pre-ADR,
+address-keyed log already carries instead of surfacing whichever was written last. Both
+new keys are omitted when unset, so every log written before the ADR serialises — and
+hash-chains — exactly as it did.
+
 `metadata/dublincore.py` serializes a `DublinCore` (the fifteen ISO 15836 elements)
 to and from the canonical JSON sidecar and exports the standard `oai_dc:dc` XML for
 OAI-PMH harvesters. The no-outing rule is explicit here too: `dc.creator` and
@@ -229,7 +244,10 @@ order, so an item can never be stored un-hashed, un-bagged, or un-documented:
 1. **Fixity + store.** Each payload is hashed under both algorithms and `put_file`'d
    into the `ContentStore`; a `PayloadFile` is built carrying the content address,
    size, media type, and the file's intended policy (taken from the record if declared
-   there, else `default_policy`). One `FIXITY_CHECK` PREMIS event per payload.
+   there, else `default_policy`). One `FIXITY_CHECK` and one `FORMAT_IDENTIFICATION`
+   PREMIS event per payload, each about *that payload* (`ledger-payload`, ADR 0012)
+   and each naming the bytes it examined; the identification's outcome is `success`,
+   `at-risk`, `unidentified`, or `empty`, never `success` over a file nothing named.
 2. **Seal identity.** If the SIP carries an identity and a vault exists, the identity
    is `vault.add`'d and the returned opaque `identity_ref` is set on the record. The
    identity goes nowhere else.
@@ -238,8 +256,8 @@ order, so an item can never be stored un-hashed, un-bagged, or un-documented:
    record id as `External-Identifier`.
 4. **Document.** The record manifest (`record.json`), Dublin Core sidecar
    (`dublincore.json`), and PREMIS log (`premis.json`, one `INGESTION` plus the
-   per-payload `FIXITY_CHECK` events) are written as tag files *inside* the bag, so
-   their integrity is covered by the bag's own tag manifest.
+   per-payload `FIXITY_CHECK` and `FORMAT_IDENTIFICATION` events) are written as tag
+   files *inside* the bag, so their integrity is covered by the bag's own tag manifest.
 
 Defense in depth: `serialize_record` refuses to emit a record that still carries an
 in-memory `ContributorIdentity`, and before returning, `ingest_sip` re-scans
@@ -396,7 +414,10 @@ atomically. A config describes *where* the vault lives, never *what* is in it.
    (4)  DOCUMENT (tag files inside the bag, covered by the tag manifest)
         record.json      <- serialize_record (REFUSES in-memory identity)
         dublincore.json  <- metadata.dublincore.write_sidecar   (collection-level DC)
-        premis.json      <- metadata.premis.PremisLog            (INGESTION + FIXITY_CHECK)
+        premis.json      <- metadata.premis.PremisLog            (INGESTION + per-payload
+                                                                  FIXITY_CHECK and
+                                                                  FORMAT_IDENTIFICATION,
+                                                                  keyed by payload, ADR 0012)
                               │
         ┌─────────────────────────────────────────────┐
         │ DEFENSE IN DEPTH: _assert_identity_free over │

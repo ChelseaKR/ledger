@@ -153,16 +153,89 @@ class PremisEventType(StrEnum):
     QUERY = "query"  # EXP-14 reading-room enclave: an aggregate query, answered or refused
 
 
+# PREMIS ``linkingObjectIdentifierType`` values ledger writes (ADR 0012). PREMIS
+# leaves identifier types to the repository; these say what kind of thing the
+# identifier value names, so a consumer never has to guess from its shape.
+#
+# * ``ledger-payload`` — ``<record_id>/<filename>``: one *File* inside one record
+#   (the record is the PREMIS Representation). This is ledger's PREMIS Object for
+#   format identification and fixity: identification is a function of the bytes
+#   *and the filename*, so it is a fact about the payload, not about the bytes.
+# * ``ledger-record`` — a record id: the Representation an ingest or a consent
+#   change is about.
+# * ``content-address`` — ``<algo>:<hex>``: the bytes themselves, wherever they sit.
+#   The content store deduplicates, so two payloads may share one address; an
+#   event carries the address as a *second* link (what was examined), never as the
+#   object's identity — that conflation is what let one address carry two
+#   contradictory verdicts (#149).
+OBJECT_TYPE_PAYLOAD = "ledger-payload"
+OBJECT_TYPE_RECORD = "ledger-record"
+OBJECT_TYPE_CONTENT_ADDRESS = "content-address"
+
+
+def payload_object_id(record_id: str, filename: str) -> str:
+    """The PREMIS object identifier of one payload file within one record.
+
+    ``<record_id>/<filename>``. A record id is a single allow-listed path component
+    (letters, digits, ``_``, ``-``), so the first ``/`` always separates the record
+    from the bag-relative filename even when the filename itself has directories in
+    it. Refused, never silently mangled, if the record id could make that split
+    ambiguous (fail closed).
+    """
+    if not record_id or "/" in record_id:
+        raise ValueError(f"record id cannot form a payload object identifier: {record_id!r}")
+    return f"{record_id}/{filename}"
+
+
 @dataclass(frozen=True)
 class PremisEvent:
-    """A single auditable event with its agent and outcome (provability)."""
+    """A single auditable event with its agent and outcome (provability).
+
+    ``linked_object`` is the PREMIS ``linkingObjectIdentifier`` value — the object
+    the event is about — and ``linked_object_type`` says what kind of identifier it
+    is (one of the ``OBJECT_TYPE_*`` values; ``None`` on events written before ADR
+    0012 and on events whose writers have not been typed yet, see
+    :attr:`object_identifier_type`). ``linked_content_address`` is a second link,
+    to the bytes the event examined; it is what lets a fixity or identification
+    event stay bound to the exact bytes it was about even if the record it lives in
+    is later revised, without making the address the object's *identity*.
+
+    Both new fields are omitted from :meth:`to_dict` when unset, so an event written
+    before they existed serialises — and therefore hash-chains — byte-for-byte as it
+    always did (chain stability is the reason; see :mod:`ledger.chain`).
+    """
 
     event_type: PremisEventType
     agent: str
-    outcome: str  # "success" | "failure"
+    # "success" | "failure", plus the format-identification outcomes "at-risk",
+    # "unidentified", and "empty" (ADR 0010), and whatever a specific writer documents.
+    outcome: str
     detail: str = ""
-    linked_object: str | None = None  # content address, record id, or bag id
+    linked_object: str | None = None  # payload id, content address, record id, or bag id
     event_datetime: str = field(default_factory=now_iso)
+    linked_object_type: str | None = None
+    linked_content_address: str | None = None
+
+    @property
+    def object_identifier_type(self) -> str | None:
+        """The identifier type of :attr:`linked_object`, explicit or inferred.
+
+        Explicit when the writer said so (ADR 0012). Otherwise inferred only where
+        the inference is safe: a value that parses as a :class:`ContentAddress` is
+        one, which is how every fixity-check and format-identification event written
+        before ADR 0012 is keyed. Anything else stays ``None`` — a record id, a bag
+        name, and a proposal id all look alike, and guessing among them would be the
+        same defect this field exists to prevent.
+        """
+        if self.linked_object_type is not None:
+            return self.linked_object_type
+        if self.linked_object is None:
+            return None
+        try:
+            ContentAddress.parse(self.linked_object)
+        except ValueError:
+            return None
+        return OBJECT_TYPE_CONTENT_ADDRESS
 
     def to_dict(self) -> dict[str, str]:
         d = {
@@ -174,6 +247,10 @@ class PremisEvent:
         }
         if self.linked_object is not None:
             d["linkingObjectIdentifier"] = self.linked_object
+        if self.linked_object_type is not None:
+            d["linkingObjectIdentifierType"] = self.linked_object_type
+        if self.linked_content_address is not None:
+            d["linkingObjectContentAddress"] = self.linked_content_address
         return d
 
 
