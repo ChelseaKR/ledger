@@ -30,7 +30,7 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from ledger.errors import BagValidationError
 from ledger.fixity import CHUNK_SIZE, AuditReport, hash_file, hash_file_multi, verify_file
-from ledger.models import HashAlgo
+from ledger.models import FixityResult, HashAlgo
 
 _BAGIT_VERSION = "1.0"
 _TAG_FILE_ENCODING = "UTF-8"
@@ -39,6 +39,14 @@ _BAG_INFO_TXT = "bag-info.txt"
 _DATA_PREFIX = "data/"
 # Two-space separator between digest and path, per RFC 8493 manifest grammar.
 _SEP = "  "
+
+# Tag files ledger itself writes into a bag at ingest (:func:`ledger.ingest.
+# ingest_sip`) or export (:mod:`ledger.export_drive`). ``record.json`` is the
+# policy-bearing one: it carries every field's AccessPolicy, so it is precisely
+# the file an attacker rewrites to turn a sealed value into a public one. These
+# are required to be covered by EVERY tag manifest whenever they are present at
+# the bag root -- see :func:`_tag_coverage_results`.
+_LEDGER_TAG_FILES = ("record.json", "premis.json", "dublincore.json")
 
 
 def _reject_unsafe_relpath(relpath: str, *, context: str) -> None:
@@ -385,6 +393,67 @@ def migrate_manifest_encoding(bag_dir: Path) -> bool:
     return changed
 
 
+def _required_tag_files(bag_dir: Path) -> list[str]:
+    """The tag files every tag manifest in ``bag_dir`` MUST cover.
+
+    A bag's structural tag files (``bagit.txt``, ``bag-info.txt``, and every
+    payload manifest actually on disk) plus whichever of :data:`_LEDGER_TAG_FILES`
+    the bag contains. Deliberately *not* "every file at the bag root": an OS index
+    file or a crash-orphaned ``*.tmp`` that drifted in beside a bag was never part
+    of the bag's integrity claim, and :func:`refresh_tag_manifests` pointedly
+    refuses to seal such a stray in — so demanding coverage of it would turn
+    incidental filesystem litter into a permanent, unfixable audit failure
+    (operability). Every name here, by contrast, is one a ledger bag writer always
+    emits *and* always declares, so requiring its coverage can only ever fire on a
+    manifest that was edited after the fact.
+    """
+    required = [_BAGIT_TXT, _BAG_INFO_TXT]
+    required.extend(sorted(p.name for p in bag_dir.glob("manifest-*.txt")))
+    required.extend(name for name in _LEDGER_TAG_FILES if (bag_dir / name).is_file())
+    return required
+
+
+def _tag_coverage_results(bag_dir: Path, tagmanifest_paths: Sequence[Path]) -> list[FixityResult]:
+    """One failing result per tag file a tag manifest fails to declare.
+
+    Verifying only the entries a tag manifest *lists* is a check that cannot fail
+    for a file the manifest does not mention. An attacker with disk access needs no
+    hash collision and no re-sealing to exploit that: deleting ``record.json``'s
+    line from every ``tagmanifest-*.txt`` and then rewriting ``record.json`` to
+    flip a ``sealed-until`` field to ``public`` leaves the bag validating clean,
+    :meth:`~ledger.ingest.Archive.audit_fixity` green, and the signed health
+    attestation reporting ``fixity_ok: true`` — while the read path now discloses
+    the embargoed value to an anonymous viewer. The PREMIS hash chain does not
+    cover this: ``record.json`` is not in the log.
+
+    So completeness is enforced on the tag side exactly as it already is on the
+    payload side ("undeclared bytes are as suspicious as missing ones"), and it is
+    enforced per manifest rather than across their union, so dropping a line from
+    one algorithm's manifest cannot hide behind the other's.
+
+    Reported as failing :class:`~ledger.models.FixityResult` entries rather than a
+    raised :class:`~ledger.errors.BagValidationError` so the rest of the bag's
+    per-file outcomes still reach the steward in the same report (failure
+    transparency), and so a replica that arrives this way is quarantined by the
+    ordinary ``report.ok`` path.
+    """
+    required = _required_tag_files(bag_dir)
+    results: list[FixityResult] = []
+    for tagmanifest_path in tagmanifest_paths:
+        declared = set(_parse_manifest(tagmanifest_path))
+        for name in required:
+            if name not in declared:
+                results.append(
+                    FixityResult(
+                        path=name,
+                        algo=_algo_of_manifest(tagmanifest_path),
+                        expected=f"covered by {tagmanifest_path.name}",
+                        actual=f"absent from {tagmanifest_path.name}",
+                    )
+                )
+    return results
+
+
 def _parse_manifest(path: Path) -> dict[str, str]:
     """Parse a BagIt manifest into ``{path: hex_digest}``.
 
@@ -444,7 +513,10 @@ def validate_bag(bag_dir: Path) -> AuditReport:  # noqa: C901 - BagIt validation
     On a structurally sound bag, every payload file is verified against every
     payload manifest, and every tag file (``bagit.txt``, ``bag-info.txt``, the
     payload manifests, and any extra tag files such as ``record.json``) is verified
-    against every tag manifest. The combined :class:`~ledger.fixity.AuditReport` is
+    against every tag manifest -- including the check that each of those tag files
+    is *declared* by every tag manifest in the first place, so a manifest edited to
+    simply drop a line cannot exempt a file from being hashed
+    (:func:`_tag_coverage_results`). The combined :class:`~ledger.fixity.AuditReport` is
     returned so a caller sees each per-file outcome — so tampering with a record's
     access policy or identity_ref is caught, not just payload-byte rot
     (integrity, inspectability, failure transparency).
@@ -489,7 +561,12 @@ def validate_bag(bag_dir: Path) -> AuditReport:  # noqa: C901 - BagIt validation
 
     # --- tag manifests: verify the tag files (bagit/bag-info/manifests/extras) ---
     bag_root = bag_dir.resolve()
-    for tagmanifest_path in sorted(bag_dir.glob("tagmanifest-*.txt")):
+    tagmanifest_paths = sorted(bag_dir.glob("tagmanifest-*.txt"))
+    # Completeness FIRST: a tag file no manifest declares is never re-hashed below,
+    # so without this the loop is a check that cannot fail for exactly the file an
+    # attacker would rewrite (see _tag_coverage_results).
+    results.extend(_tag_coverage_results(bag_dir, tagmanifest_paths))
+    for tagmanifest_path in tagmanifest_paths:
         algo = _algo_of_manifest(tagmanifest_path)
         for rel in sorted(_parse_manifest(tagmanifest_path)):
             _reject_unsafe_relpath(rel, context=tagmanifest_path.name)

@@ -2070,13 +2070,17 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
     def _handle_healthz(self) -> None:
         """``GET /healthz`` — JSON health, with counts gated to stewards.
 
-        An outsider gets only ``status`` and an ``all_verified`` boolean. The
+        An outsider gets only ``status``, ``all_verified``, and ``ready``. The
         absolute counts (bags audited / files checked) include sealed and
         community records, so revealing them to the public would leak the TOTAL
         size of the archive — letting an observer learn that sealed records exist
-        and poll for when one is added (user research P2-2). Only a steward grant
-        sees the numbers; a monitor uses a provisioned grant. No path, digest, id,
-        or identity ever appears (no-outing rule).
+        and poll for when one is added (user research P2-2). The live
+        ``chain_head`` commitment is gated for the second half of that same
+        reason: it carries no count, but it moves the instant any record — sealed
+        included — is written, so polling it against the unchanged public
+        surfaces dates every non-public deposit. Only a steward grant sees
+        either; a monitor uses a provisioned grant. No path, digest, id, or
+        identity ever appears (no-outing rule).
         """
         archive = self._archive()
         grant = self._resolve_grant()
@@ -2102,14 +2106,20 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             "status": status,
             "all_verified": failed == 0,
             "ready": True,
-            # A single opaque commitment over every PREMIS chain head (FIX-06):
-            # safe for anyone, since — unlike the per-bag counts below — it
-            # reveals neither how many bags exist nor which ones they are
-            # (no-outing / P2-2), but changes the instant any recorded history is
-            # rewritten. A community member can note it over time and cross-check.
-            "chain_head": archive.chain_head_summary(),
         }
         if grant.is_steward:
+            # A single opaque commitment over every PREMIS chain head (FIX-06). It
+            # reveals neither how many bags exist nor which ones they are, but it is
+            # computed LIVE, so it changes the instant a sealed record is ingested or
+            # amended. Served to anyone, that is a per-request oracle for exactly the
+            # attack the counts below are gated against: poll it, watch it move while
+            # the sitemap, feed, and browse listing do not, and you have learned the
+            # minute a non-public record was deposited — the timeline correlation
+            # docs/VERIFYING-ATTESTATIONS.md says ledger does not publish. The public
+            # still gets a full-history commitment to note and compare, at the
+            # steward's publication cadence rather than per request, from the signed
+            # attestation at /proof/attestation.json (no-outing / P2-2).
+            body["chain_head"] = archive.chain_head_summary()
             body["fixity"] = {
                 "bags_audited": len(reports),
                 "bags_passed": passed,
@@ -2340,11 +2350,29 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         most recently published transparency attestation — a dated, optionally
         signed statement of archive health anyone can independently check — and
         links to its machine-readable form at ``/proof/attestation.json``.
+
+        The chain-head commitment shown here is the *published* one, read from
+        that attestation, never a live :meth:`~ledger.ingest.Archive.
+        chain_head_summary` computed per request. A live value moves the instant
+        any record is written, sealed ones included, so an anonymous visitor
+        reloading this page while the sitemap, feed, and browse listing stay
+        unchanged would learn the minute a non-public record was deposited — the
+        contributor-timeline correlation ``docs/VERIFYING-ATTESTATIONS.md`` says
+        ledger does not publish. The published value commits to exactly the same
+        full history and is signed, so the rollback cross-check a visitor is asked
+        to perform is unchanged; only its resolution drops from per-request to the
+        steward's publication cadence (no-outing / P2-2).
         """
         lang = self._lang()
-        chain_head = self._archive().chain_head_summary()
         attestation = self._load_latest_attestation()
         if attestation is None:
+            chain_html = (
+                "    <p>Preservation and moderation events are hash-chained, so editing "
+                "history after the fact changes the archive chain head. This archive has "
+                "not published an attestation yet, so there is no chain head here to note "
+                "— the value is not computed live for visitors, because a per-request "
+                "value would date every deposit, including a sealed one.</p>\n"
+            )
             attestation_html = (
                 "    <h2>Verify it yourself</h2>\n"
                 "    <p>No transparency attestation has been published yet. A steward "
@@ -2361,6 +2389,13 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
                 f"signed (format: {_esc(attestation.signature_format or 'unknown')})"
                 if attestation.signature
                 else "unsigned — this archive has not configured a signing key"
+            )
+            chain_html = (
+                "    <p>Preservation and moderation events are hash-chained, so editing "
+                "history after the fact changes the archive chain head. Anyone who "
+                "previously noted the head published on "
+                f"{_esc(attestation.generated_at)} can confirm it only moved forward: "
+                f"<code>{_esc(attestation.chain_head_summary)}</code>.</p>\n"
             )
             attestation_html = (
                 "    <h2>Verify it yourself</h2>\n"
@@ -2386,10 +2421,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             "    <p>The project's audit ingests a sentinel identity and then checks that it "
             "appears on no page, in no data file, in no backup, and in no log — and that a "
             "sealed record cannot even be confirmed to exist by an outsider.</p>\n"
-            "    <p>Preservation and moderation events are hash-chained, so editing history "
-            "after the fact changes the archive chain head. Anyone who previously noted it "
-            f"can confirm it only moved forward: <code>{_esc(chain_head)}</code> "
-            "(also available to stewards at <code>/healthz</code>).</p>\n"
+            f"{chain_html}"
             f"{attestation_html}"
         )
         self._send_html(
