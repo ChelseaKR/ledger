@@ -1,0 +1,26 @@
+# FUNDING configuration: ledger takes no money, on purpose.
+#
+# This project holds sealed records under a no-outing guarantee and is governed
+# by the community that uses it rather than by a platform or a funder. A
+# funding rail introduces exactly the outside interest that governance model
+# exists to exclude.
+#
+# The absence of a funder is a property of the design, not an oversight.
+#
+# Every platform key below is present and explicitly empty. With no active
+# entries GitHub renders no Sponsor button, and this file overrides the
+# organisation-wide default in ChelseaKR/.github rather than merging with it.
+
+github:           # no GitHub Sponsors
+patreon:          # not used
+open_collective:  # not used
+ko_fi:            # not used
+tidelift:         # not used
+community_bridge: # not used
+liberapay:        # not used
+issuehunt:        # not used
+lfx_crowdfunding: # not used
+polar:            # not used
+buy_me_a_coffee:  # not used
+thanks_dev:       # not used
+custom:           # no external donation links
