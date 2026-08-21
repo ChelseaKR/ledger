@@ -752,11 +752,6 @@ UNCOVERED: tuple[Uncovered, ...] = (
         "network request; the mirror is only as current as the change that last touched it",
     ),
     Uncovered(
-        "whether every merge-blocking gate is in the required-check set",
-        "which gates ought to be required is a policy decision, not a repo fact; today "
-        "Semgrep and the OSV lockfile scan run on every PR and are not required (#79)",
-    ),
-    Uncovered(
         "whether the SEALED memory cap is still the right number",
         "peak RSS is a measurement of a running ingest, not a property of the tree; "
         "the 7.4x multiplier behind ADR 0011's 64 MiB default is dated, not derived",

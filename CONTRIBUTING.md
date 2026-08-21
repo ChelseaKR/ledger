@@ -145,7 +145,6 @@ relying on a claim below, verify it yourself rather than reading a green build a
 - a roadmap pointer resolves to a defined roadmap row — the sweep proves the id is mentioned in `docs/ROADMAP.md`, not that a row defines it
 - standards control ids (SEC-04, A11Y-11, CQ-08 …) cited beside a roadmap pointer — they are defined in the portfolio's `STANDARDS/`, so this repo has nothing to resolve them against
 - whether .github/rulesets/main.json still matches the live protect-main ruleset — parity needs a GitHub API call, and this script makes no network request
-- whether every merge-blocking gate is in the required-check set — a policy decision, not a repo fact; Semgrep and the OSV scan run on every PR and are not required ([#79](https://github.com/ChelseaKR/ledger/issues/79))
 - whether the SEALED memory cap is still the right number — peak RSS is a measurement of a running ingest; the 7.4x multiplier behind ADR 0011's 64 MiB default is dated, and `docs/REAL-CORPUS-REPORT.md` §7 records how to re-measure it
 - whether ledger's bags are readable by a third-party BagIt implementation — that needs another tool (LoC `bagit-python`), and this repo is stdlib-only by ADR 0005; RFC 8493 §2.1.3 encoding is asserted against the spec's rules in `tests/test_real_corpus_issues.py`, not against a reader
 - the response shape of the browse server's routes — asserted live in `tests/test_server_remediation.py` instead, against the prose in `docs/ARCHITECTURE.md`

@@ -16,6 +16,16 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 > explicitly approved through the release workflow added below.
 
 ### Added
+- **The `main` branch ruleset now holds the CI-CD-STANDARD §5.1 solo-maintainer
+  profile** (#79). `pull_request` (0 required approvals — the sole code owner
+  cannot self-approve their own PR, and §5.1 permits `require_code_owner_review:
+  false` for exactly that reason), `required_signatures` (GitHub signs every
+  squash-merge server-side), `required_linear_history`, and
+  `strict_required_status_checks_policy: true` are all now enforced live, and the
+  required-check set grew from eleven contexts to thirteen — `OSV lockfile scan
+  (uv.lock)` and `Semgrep SAST (p/ci)` now block a merge instead of running
+  fail-closed but ignorable. Dependabot security updates enabled the same day.
+  Full rationale in [`.github/rulesets/README.md`](.github/rulesets/README.md).
 - **The PREMIS Object is the payload within a record** (ADR 0012, #149). A
   format-identification or fixity event is now about *one payload in one record* —
   `linkingObjectIdentifier` is `<record_id>/<filename>`, typed `ledger-payload` via a new

@@ -530,11 +530,15 @@ def test_a_ruleset_with_no_status_check_rule_at_all_fails(
 
 
 def test_the_committed_mirror_matches_the_required_contexts_the_workflows_declare() -> None:
-    """The repository as it stands: all eleven required contexts resolve to real jobs."""
+    """The repository as it stands: all thirteen required contexts resolve to real jobs.
+
+    Eleven through #148; #79 (2026-08-21) added `OSV lockfile scan (uv.lock)` and
+    `Semgrep SAST (p/ci)` to the live ruleset's required-check set.
+    """
     entry = ruleset_claim()
     contexts = entry.contexts()
     assert isinstance(contexts, list), contexts
-    assert len(contexts) == 11
+    assert len(contexts) == 13
     assert entry.check() is None
 
 
