@@ -54,6 +54,14 @@ from ledger.access.grants import (
     steward,
 )
 from ledger.access.redaction import redact_field, redact_payload
+from ledger.ai.ask import ask as ai_ask
+from ledger.ai.ask import contexts_for as ai_contexts_for
+from ledger.ai.client import AIUnavailable
+from ledger.ai.client import build_client as build_ai_client
+from ledger.ai.context import build_context as build_ai_context
+from ledger.ai.describe import generate_finding_aid
+from ledger.ai.limits import AIDailyCapExceeded, AIRateLimitError, RateLimitConfig, RateLimiter
+from ledger.ai.provenance import resolve_commit as resolve_ai_commit
 from ledger.attestation import build_attestation, publish_attestation, sign_attestation
 from ledger.backup import create_backup, prune_backups, restore_backup, verify_backup
 from ledger.config import Config, StorageLocation
@@ -106,6 +114,7 @@ from ledger.replicate import (
     verify_replicas,
     verify_sealed_attestation,
 )
+from ledger.search import search as text_search
 from ledger.server import serve
 from ledger.tombstones import TombstoneStore
 
@@ -1659,6 +1668,115 @@ def _cmd_redact_suggest(args: argparse.Namespace) -> int:
     return 0
 
 
+_AI_USAGE_FILENAME = "ai_usage.json"
+
+
+def _ai_rate_limiter(root: Path, config: Config) -> RateLimiter:
+    """The shared daily-cap/rate-limit state for ``root``'s AI commands.
+
+    The counter file lives beside ``config.json`` (``store/ai_usage.json``),
+    never inside ``bags/``/``records/``: it is cost-control bookkeeping, not
+    preservation content, and is never part of a bag or a disclosed record.
+    """
+    return RateLimiter(
+        RateLimitConfig(
+            per_client_per_minute=config.ai.per_client_rate_limit_per_minute,
+            daily_cap=config.ai.daily_request_cap,
+        ),
+        root / "store" / _AI_USAGE_FILENAME,
+    )
+
+
+def _require_ai_enabled(config: Config) -> LedgerError | None:
+    """``None`` if the AI layer is turned on for this archive, else the refusal."""
+    if config.ai.enabled:
+        return None
+    return LedgerError(
+        "AI features are disabled for this archive (config.ai.enabled is false); "
+        "no model call was made. A steward must opt in via the archive config — "
+        "see docs/adr/0013-ai-at-the-edges.md."
+    )
+
+
+def _cmd_ai_describe(args: argparse.Namespace) -> int:
+    """``ai-describe`` — a grounded, cited finding aid for one record (opt-in AI).
+
+    Every claim printed has already passed :func:`ledger.ai.grounding.verify_claims`
+    against this viewer's own disclosed evidence for the record — access control
+    (:func:`ledger.ai.context.build_context`, which calls
+    :meth:`~ledger.ingest.Archive.disclose` first) runs before any model call, and
+    the grounding verifier runs before any claim is printed. Output is always
+    labeled AI-generated and unreviewed (see the printed ``provenance``)."""
+    archive = _open_archive(Path(args.root))
+    refusal = _require_ai_enabled(archive.config)
+    if refusal is not None:
+        print(str(refusal), file=sys.stderr)
+        return 1
+    grant = _grant_for(args.as_subject)
+    now = args.now if args.now else now_iso()
+    try:
+        context = build_ai_context(archive, args.id, grant, now)
+    except LedgerError as exc:
+        print(f"cannot describe {args.id}: {exc}", file=sys.stderr)
+        return 1
+    limiter = _ai_rate_limiter(Path(args.root), archive.config)
+    try:
+        limiter.check_and_record(args.as_subject or "anonymous")
+    except (AIRateLimitError, AIDailyCapExceeded) as exc:
+        print(f"AI request refused: {exc}", file=sys.stderr)
+        return 1
+    try:
+        client = build_ai_client(model=archive.config.ai.model)
+    except AIUnavailable as exc:
+        print(f"AI features unavailable: {exc}", file=sys.stderr)
+        return 1
+    finding_aid = generate_finding_aid(
+        context, client, commit=resolve_ai_commit(), max_tokens=archive.config.ai.max_output_tokens
+    )
+    print(json.dumps(finding_aid.to_dict(), indent=2, sort_keys=True, ensure_ascii=False))
+    return 0
+
+
+def _cmd_ai_ask(args: argparse.Namespace) -> int:
+    """``ai-ask`` — grounded natural-language discovery over what this viewer may see.
+
+    Runs the existing deterministic :func:`ledger.search.search` over
+    :meth:`~ledger.ingest.Archive.browse` for this viewer FIRST — the AI layer adds
+    no record the viewer could not already browse or search to. Refuses (prints
+    "found nothing") rather than guessing when nothing matches, per the archive's
+    honest-refusal rule."""
+    archive = _open_archive(Path(args.root))
+    refusal = _require_ai_enabled(archive.config)
+    if refusal is not None:
+        print(str(refusal), file=sys.stderr)
+        return 1
+    grant = _grant_for(args.as_subject)
+    now = args.now if args.now else now_iso()
+    disclosed = archive.browse(grant, now=now)
+    matches = text_search(disclosed, args.question)
+    contexts = ai_contexts_for(archive, matches, grant, now)
+    limiter = _ai_rate_limiter(Path(args.root), archive.config)
+    try:
+        limiter.check_and_record(args.as_subject or "anonymous")
+    except (AIRateLimitError, AIDailyCapExceeded) as exc:
+        print(f"AI request refused: {exc}", file=sys.stderr)
+        return 1
+    try:
+        client = build_ai_client(model=archive.config.ai.model)
+    except AIUnavailable as exc:
+        print(f"AI features unavailable: {exc}", file=sys.stderr)
+        return 1
+    result = ai_ask(
+        args.question,
+        contexts,
+        client,
+        commit=resolve_ai_commit(),
+        max_tokens=archive.config.ai.max_output_tokens,
+    )
+    print(json.dumps(result.to_dict(), indent=2, sort_keys=True, ensure_ascii=False))
+    return 0
+
+
 def _transparency_log(args: argparse.Namespace) -> transparency.TransparencyLog:
     """The ``TransparencyLog`` at ``--log``, or configured on the archive at ``--root``."""
     if getattr(args, "log", None):
@@ -2258,6 +2376,28 @@ def _build_parser() -> argparse.ArgumentParser:
         "--file", help="path to a text file to scan (default: read stdin)"
     )
     p_redact_suggest.set_defaults(func=_cmd_redact_suggest)
+
+    p_ai_describe = sub.add_parser(
+        "ai-describe",
+        help="grounded, cited AI finding aid for one record (opt-in; config.ai.enabled)",
+    )
+    p_ai_describe.add_argument("--root", required=True)
+    p_ai_describe.add_argument("--id", required=True)
+    p_ai_describe.add_argument(
+        "--as", dest="as_subject", help="viewer subject (default: anonymous)"
+    )
+    p_ai_describe.add_argument("--now", help="ISO-8601 timestamp")
+    p_ai_describe.set_defaults(func=_cmd_ai_describe)
+
+    p_ai_ask = sub.add_parser(
+        "ai-ask",
+        help="grounded natural-language question over what this viewer may see (opt-in AI)",
+    )
+    p_ai_ask.add_argument("--root", required=True)
+    p_ai_ask.add_argument("--question", required=True)
+    p_ai_ask.add_argument("--as", dest="as_subject", help="viewer subject (default: anonymous)")
+    p_ai_ask.add_argument("--now", help="ISO-8601 timestamp")
+    p_ai_ask.set_defaults(func=_cmd_ai_ask)
 
     p_transparency = sub.add_parser(
         "transparency", help="legal-process transparency attestations (EXP-10, warrant canary)"

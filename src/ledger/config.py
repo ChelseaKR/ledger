@@ -52,6 +52,73 @@ DEFAULT_SEALED_PAYLOAD_MAX_BYTES: int = 64 * 1024 * 1024
 SEALED_PEAK_RSS_MULTIPLIER: float = 7.4
 
 
+@dataclass
+class AIConfig:
+    """Configuration for the optional AI layer (ADR 0013).
+
+    ``enabled`` defaults to ``False``: a fresh or existing archive that never
+    touches this section runs with zero AI, byte-for-byte the pre-AI system
+    (see ``tests/test_ai_isolation.py``). Turning it on is a deliberate,
+    per-archive steward decision — the same "default to narrowest, nothing
+    opens by inaction" posture the rest of this config already takes for
+    disclosure policy.
+
+    No credential lives here. The model provider's API key or AWS credentials
+    come from the environment only (``ledger.ai.client``), never from this
+    file, so an archive's config can be shared or committed without risk of
+    leaking one.
+    """
+
+    enabled: bool = False
+    #: "anthropic" (direct API) or "bedrock". See ``ledger.ai.client.AIBackend``.
+    provider: str = "anthropic"
+    #: Code default is Sonnet 5; ``LEDGER_AI_MODEL`` overrides at call time for
+    #: a deployment whose Bedrock access is scoped to a different model.
+    model: str = "claude-sonnet-5"
+    per_client_rate_limit_per_minute: int = 5
+    daily_request_cap: int = 200
+    max_output_tokens: int = 1024
+
+    def validate(self) -> None:
+        if self.provider not in ("anthropic", "bedrock"):
+            raise ConfigError(
+                f"ai.provider must be 'anthropic' or 'bedrock', got {self.provider!r}"
+            )
+        if not self.model:
+            raise ConfigError("ai.model must not be empty")
+        if self.per_client_rate_limit_per_minute < 1:
+            raise ConfigError("ai.per_client_rate_limit_per_minute must be at least 1")
+        if self.daily_request_cap < 1:
+            raise ConfigError("ai.daily_request_cap must be at least 1")
+        if self.max_output_tokens < 1:
+            raise ConfigError("ai.max_output_tokens must be at least 1")
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "enabled": self.enabled,
+            "provider": self.provider,
+            "model": self.model,
+            "per_client_rate_limit_per_minute": self.per_client_rate_limit_per_minute,
+            "daily_request_cap": self.daily_request_cap,
+            "max_output_tokens": self.max_output_tokens,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, object]) -> AIConfig:
+        config = cls(
+            enabled=_as_bool(data.get("enabled", False), "ai.enabled"),
+            provider=str(data.get("provider", "anthropic")),
+            model=str(data.get("model", "claude-sonnet-5")),
+            per_client_rate_limit_per_minute=int(
+                str(data.get("per_client_rate_limit_per_minute", 5))
+            ),
+            daily_request_cap=int(str(data.get("daily_request_cap", 200))),
+            max_output_tokens=int(str(data.get("max_output_tokens", 1024))),
+        )
+        config.validate()
+        return config
+
+
 @dataclass(frozen=True)
 class LockdownConfig:
     """Declarative duress posture, kept with configuration to avoid import cycles."""
@@ -279,6 +346,10 @@ class Config:
     # review (FIX-11), because inventing an AEAD framing on self-review is exactly
     # the wrong risk to take with this material.
     sealed_payload_max_bytes: int = DEFAULT_SEALED_PAYLOAD_MAX_BYTES
+    # ADR 0013: the optional AI layer, off by default (default to narrowest —
+    # same posture as `default_policy`). See `AIConfig` for why no credential
+    # lives here.
+    ai: AIConfig = field(default_factory=AIConfig)
     schema_version: int = CONFIG_SCHEMA_VERSION
 
     def validate(self) -> None:
@@ -320,6 +391,7 @@ class Config:
         if self.transparency_cadence_days < 1:
             raise ConfigError("transparency_cadence_days must be at least 1")
         self._validate_reading_room()
+        self.ai.validate()
         for location in self.locations:
             location.validate()
 
@@ -393,6 +465,7 @@ class Config:
             "reading_room_k_floor": self.reading_room_k_floor,
             "reading_room_enabled": self.reading_room_enabled,
             "sealed_payload_max_bytes": self.sealed_payload_max_bytes,
+            "ai": self.ai.to_dict(),
         }
 
     def save(self, path: Path) -> None:
@@ -453,6 +526,14 @@ class Config:
             for item in _as_dict_list(migrated.get("locations", []), "locations")
         ]
 
+        raw_ai = migrated.get("ai")
+        if raw_ai is None:
+            ai_config = AIConfig()
+        elif isinstance(raw_ai, dict):
+            ai_config = AIConfig.from_dict(raw_ai)
+        else:
+            raise ConfigError("ai must be a mapping")
+
         raw_lockdown = migrated.get("lockdown")
         if raw_lockdown is None:
             lockdown = None
@@ -488,6 +569,7 @@ class Config:
             sealed_payload_max_bytes=int(
                 str(migrated.get("sealed_payload_max_bytes", DEFAULT_SEALED_PAYLOAD_MAX_BYTES))
             ),
+            ai=ai_config,
             schema_version=CONFIG_SCHEMA_VERSION,
         )
         config.validate()

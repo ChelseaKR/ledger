@@ -13,7 +13,7 @@ PY   ?= $(if $(wildcard $(VENV)/bin/python),$(VENV)/bin/python,python3)
 .DEFAULT_GOAL := help
 .PHONY: help venv install lock lint format type test cov audit osv accessibility acr demo serve \
         i18n i18n-compile claims secret-scan workflow-lint perf real-corpus real-corpus-evidence \
-        container mutation verify clean
+        container mutation ai-eval ai-eval-evidence verify clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -205,6 +205,16 @@ mutation: ## ADVISORY (never a merge gate): mutation-test the safety-critical co
 	-$(PY) -m mutmut results
 	@echo "mutation: advisory run complete. Review any survivors above against the"
 	@echo "          documented baseline in docs/MUTATION-TESTING.md (equivalent mutants noted)."
+
+ai-eval: ## ADVISORY (never a merge gate): check the AI layer against the committed live-eval evidence
+	@echo "ai-eval: NOT part of 'make verify' -- needs a real model credential (ADR 0013)."
+	@echo "         See docs/AI-EVALUATION.md for how to set LEDGER_AI_BACKEND/LEDGER_AI_MODEL."
+	@$(PY) -c "import anthropic" 2>/dev/null || uv sync --locked --group dev --extra ai
+	$(PY) tools/ai_eval.py
+
+ai-eval-evidence: ## Re-run the live AI eval and REWRITE the committed evidence (then update docs/AI-EVALUATION.md)
+	@$(PY) -c "import anthropic" 2>/dev/null || uv sync --locked --group dev --extra ai
+	$(PY) tools/ai_eval.py --write-evidence
 
 # The full gate. Determinism + reproducibility: same inputs, same result, every run.
 # Matches CI's required-check set byte-for-byte (CICD-27): the `gate`, `i18n`,
