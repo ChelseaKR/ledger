@@ -59,6 +59,15 @@ Issues = "https://github.com/ChelseaKR/ledger/issues"
 print = [
     "segno>=1.5,<2",
 ]
+# ADR 0013: the optional AI layer (`ledger ai-describe`/`ledger ai-ask`,
+# off by default at `config.ai.enabled = false`). `anthropic` is imported with
+# the same guarded `try`/`except` pattern `print_edition.py` uses for `segno`
+# (`ledger/ai/client.py`), so the "no heavy dependency tree" property holds
+# for every install that does not opt into this extra. `[bedrock]` pulls in
+# `boto3` for the Amazon Bedrock backend alongside the direct Anthropic API.
+ai = [
+    "anthropic[bedrock]>=0.40,<2",
+]
 # CQ-47 mutation tooling is deliberately opt-in; it does not inflate the normal
 # contributor/CI dependency group or the runtime dependency surface.
 mutation = [
