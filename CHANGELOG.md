@@ -101,6 +101,41 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   merge-blocking `disclosure` test over twelve public surfaces. `make cov` gains a
   per-module floor for `moderate.py` reported on its own rather than folded into the
   pooled access/consent/dual-control figure.
+- **An optional, opt-in AI layer: grounded finding aids and tier-respecting
+  discovery** (ADR 0013, `src/ledger/ai/`). Off by default
+  (`config.ai.enabled = false`); a fresh or existing archive that never turns it
+  on runs exactly the pre-AI system, byte-for-byte
+  (`tests/test_ai_isolation.py`). `ledger ai-describe` generates a plain-language
+  finding aid for one record; `ledger ai-ask` answers a natural-language
+  question over what the requesting viewer's own tier already permits.
+  **Access control runs before the model, not around it:**
+  `ledger.ai.context.build_context` calls `Archive.disclose` first — the same
+  chokepoint every other read path uses — and the `GroundedContext` it returns
+  structurally cannot carry a withheld field or a contributor identity.
+  **A verifier sits before display:** `ledger.ai.grounding.verify_claims` checks
+  every model claim's citation against the disclosed evidence before anything is
+  shown; an unverifiable claim is withheld and counted, never shown. The same
+  verifier is a structural + behavioral backstop against outing (a claim naming
+  a person not verbatim present in the disclosed evidence, an identity-inference
+  phrasing, or a cross-record-id mention in an aggregation attempt, is
+  unconditionally withheld) and enforces preservation-metadata honesty (fixity
+  "verified"/"authentic" language must cite an actually-successful PREMIS
+  `FIXITY_CHECK` event). `anthropic` is the new opt-in `ai` extra
+  (`pip install ledger-archive[ai]`), never a runtime dependency — imported with
+  the same guarded pattern `print_edition.py` already uses for `segno`.
+  Credentials from the environment only (`ANTHROPIC_API_KEY` or the AWS
+  credential chain for Bedrock); a per-client rate limit and a persisted daily
+  cap are enforced before every model call. Committed eval harness
+  (`tools/ai_eval.py`) and deterministic adversarial test suites
+  (`tests/test_ai_outing_refusal.py`, `tests/test_ai_consent_tier.py`,
+  `tests/test_ai_grounding.py`, `tests/test_ai_fixity_honesty.py`) prove the
+  guardrails hold with no live model required; a live run against
+  `global.anthropic.claude-sonnet-4-6` on Bedrock (the code default stays
+  `claude-sonnet-5`) scored 24/24 across all five suites, recorded with full
+  provenance in [`docs/AI-EVALUATION.md`](docs/AI-EVALUATION.md). No CI job
+  calls a live model and no cloud infrastructure is provisioned by this change;
+  deployment and the third-party-processor/subprocessor question are recorded
+  as open decisions in the ADR and `docs/DATA-GOVERNANCE.md`.
 - **The `main` branch ruleset now holds the CI-CD-STANDARD §5.1 solo-maintainer
   profile** (#79). `pull_request` (0 required approvals — the sole code owner
   cannot self-approve their own PR, and §5.1 permits `require_code_owner_review:

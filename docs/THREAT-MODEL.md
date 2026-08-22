@@ -1,6 +1,6 @@
 # Threat model
 
-Last verified: 2026-07-05 · Recheck cadence: per release
+Last verified: 2026-08-22 · Recheck cadence: per release
 
 This document is written for hostile contexts. ledger holds records for people for
 whom exposure can be dangerous — someone not out, someone undocumented, someone who
@@ -72,6 +72,18 @@ where a property is enforced rather than assumed.
 6. **Local box ↔ network.** The browse server binds to `127.0.0.1` by default
    (`src/ledger/server.py`), so a freshly stood-up archive is reachable only locally
    until an operator deliberately exposes it behind a vetted reverse proxy.
+
+7. **Disclosed content ↔ model provider (ADR 0013).** The optional AI layer
+   (`src/ledger/ai/`) never sends a viewer's request to a model provider until
+   `ledger.ai.context.build_context` has already called `ledger.access.disclose`
+   for that exact `(record, grant, instant)` — the same chokepoint every other
+   read path uses. What crosses this boundary is therefore never more than
+   what the viewer's own `Grant` already permits, and never a contributor
+   identity (`GroundedContext` has no field for one, structurally, like
+   `DisclosedRecord`). It is off by default (`Config.ai.enabled = False`) and,
+   when on, the provider named by `LEDGER_AI_BACKEND` is a genuine new trust
+   dependency — see §4.8 and the subprocessor decision in
+   `docs/DATA-GOVERNANCE.md`.
 
 ---
 
@@ -348,6 +360,50 @@ This is the subtle one, and it is treated as a first-class leak in `SECURITY.md`
   confirms that *some* contributor is sealed behind that record, though not who; this is
   visible to anyone holding the bag (see §4.1, §4.5).
 
+`ledger.ai.ask`'s "found nothing" behavior is this same guarantee applied to
+the AI layer (ADR 0013): a record above the requester's tier is silently
+absent from `contexts_for`'s result, exactly like `browse` silently omits a
+non-listable record — there is no "1 record withheld" AI answer that would
+itself confirm something exists.
+
+### 4.8 A curious or compromised AI model provider (ADR 0013)
+
+*Adversary: the third party a `ledger ai-describe`/`ledger ai-ask` call sends
+disclosed evidence to — Anthropic's API or AWS Bedrock, whichever
+`LEDGER_AI_BACKEND` resolves to — reading, logging, or being compelled to
+disclose what it was sent.*
+
+This is a genuinely new class of trust dependency for ledger, not a variant
+of an existing one, and it is the one place this document names a real
+residual risk rather than a closed guarantee.
+
+- **What the provider can see.** Exactly what the requesting viewer's own
+  `Grant` already permits, for one record or a `browse`/`search`-scoped set at
+  a time: title, Dublin Core, visible field values, visible payload metadata
+  and transcripts, and identity-free PREMIS event summaries. **Never** a
+  contributor identity (`GroundedContext` cannot carry one — see trust
+  boundary 7) and **never** anything above the requester's tier (§4.7's
+  guarantee holds through this boundary too).
+- **What the provider cannot be prevented from doing with what it receives.**
+  Model providers apply their own data-handling and retention policies to a
+  request while it is processed; ledger has no technical control over that.
+  This is the subprocessor question named as a DECISION NEEDED in
+  `docs/DATA-GOVERNANCE.md` — it is a policy question a community's existing
+  consent language may not cover, not a solved problem.
+- **Mechanism (what IS controlled).** Access control happens before the
+  request is built (§ trust boundary 7), so the provider is bounded to the
+  same tier the requester already has — a curious provider learns nothing a
+  curious requester could not already learn by browsing. Credentials travel
+  by environment variable only, never written to a file this repository
+  controls. The feature is off by default and opt-in per archive.
+- **Residual risk, stated honestly.** A community that enables the AI layer
+  is extending trust to a party outside its own governance for every enabled
+  request — this is real and cannot be engineered away by ledger's own code;
+  it can only be made bounded (never above-tier, never identity-bearing) and
+  visible (this section, the ADR, and the data-governance decision exist so a
+  steward can make an informed, revocable choice by leaving
+  `config.ai.enabled` at its default of `false`).
+
 ---
 
 ## 5. Out of scope (stated honestly)
@@ -389,6 +445,7 @@ eyes, how to operate.
 | Hostile replica host (§4.5) | Bad copy never silently becomes truth | Dual-manifest fixity; verify-on-arrival; quarantine-and-heal | Host reads/deletes the content it was given; bags not encrypted at rest by ledger |
 | Network surveillance (§4.6) | App leaks no identity/sealed content by behavior; loopback by default | No identity in surface; deny-by-default header; CSP/referrer | TLS is operator's job; traffic analysis and timing remain |
 | Inference / what is not shown (§4.7) | Absence leaks nothing about sealed existence | Deny-by-default listability; uniform 404; aggregate-only health | Withheld field names; non-constant-time paths; aggregate counts |
+| AI model provider (§4.8, ADR 0013, opt-in) | Provider never sees above-tier content or identity | `disclose` runs before any model call; verifier before display | Provider's own data handling/retention while a request is processed (subprocessor question, DECISION NEEDED) |
 
 The no-outing guarantee (§3) is the requirement that ties the table together, and
 `tests/test_no_outing.py` is its enforcement.
