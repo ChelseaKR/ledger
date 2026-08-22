@@ -2,11 +2,13 @@
 
 Instantiates `QUALITY-AND-METRICS-STANDARD.md`'s per-repo Definition of Done
 (QM-18) for ledger's actual shape: a Python CLI + self-hosted web archive
-server, multilingual (EN/ES/FR/AR) UI, no AI/LLM component, no maintainer-operated
-production deployment (see `docs/DORA-DELIVERY-HEALTH-REVIEW.md`, QM-11, for
-why that last point matters to how "done" is measured over time). Reviewed
-quarterly alongside the DORA review; update this file in the same PR that
-changes what "done" means (e.g. adding a new gate).
+server, multilingual (EN/ES/FR/AR) UI, an optional opt-in AI layer
+(`src/ledger/ai/`, ADR 0013 — off by default, no maintainer-operated
+deployment of it exists), no maintainer-operated production deployment of the
+archive itself (see `docs/DORA-DELIVERY-HEALTH-REVIEW.md`, QM-11, for why that
+last point matters to how "done" is measured over time). Reviewed quarterly
+alongside the DORA review; update this file in the same PR that changes what
+"done" means (e.g. adding a new gate).
 
 CODEOWNER-protected: `.github/CODEOWNERS` routes every path, and `/.github/`,
 `/.github/rulesets/`, `/src/ledger/access/`, and `/src/ledger/identity.py`
@@ -61,8 +63,13 @@ tracked below under "Branch protection."
    placeholder-parity, all catalogs compile clean (`msgfmt --check
    --check-format --check-domain`), every authored locale tag is valid
    BCP-47.
-8. **AI-eval** — N/A. Ledger has no AI/LLM/RAG component
-   (`docs/adr/0009-expand-standards-applicability.md`).
+8. **AI-eval** — Applies since ADR 0013's optional, opt-in AI layer
+   (`src/ledger/ai/`). Deterministic adversarial suites gate every merge with
+   no live model required (`tests/test_ai_outing_refusal.py`,
+   `tests/test_ai_consent_tier.py`, `tests/test_ai_grounding.py`,
+   `tests/test_ai_fixity_honesty.py`); a live-model eval harness
+   (`tools/ai_eval.py`, not a merge gate) records results with full
+   provenance in `docs/AI-EVALUATION.md`.
 9. **Observability** — Tier C (structured-log opt-in, not a full OTel/SLO
    stack); no CI gate today beyond that declaration
    (`README.md#observability`). No `--log-format json` gate exists yet.
