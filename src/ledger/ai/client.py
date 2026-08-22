@@ -110,7 +110,6 @@ class ModelClient(Protocol):
 
     def complete(self, *, system: str, user: str, max_tokens: int) -> CompletionResult:
         """Return one completion for ``user`` under the fixed ``system`` prompt."""
-        ...
 
 
 class _AnthropicModelClient:

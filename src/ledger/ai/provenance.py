@@ -67,6 +67,10 @@ def resolve_commit(repo_root: Path | None = None) -> str:
             if sha:
                 return sha
         except (OSError, subprocess.SubprocessError):
+            # No git binary, not a checkout, or the rev-parse failed for any
+            # reason -- fall through to the package-version fallback below
+            # rather than raise; a provenance stamp must never be the reason
+            # an AI call fails.
             pass
 
     from ledger import __version__  # local import: avoid a cycle at module load
