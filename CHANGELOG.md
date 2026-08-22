@@ -26,7 +26,12 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   **Access control runs before the model, not around it:**
   `ledger.ai.context.build_context` calls `Archive.disclose` first — the same
   chokepoint every other read path uses — and the `GroundedContext` it returns
-  structurally cannot carry a withheld field or a contributor identity.
+  structurally cannot carry a withheld field or a contributor identity. This is
+  now asserted on the wire, not only by construction: `tests/test_ai_consent_tier.py`
+  taps `ModelClient.complete` and checks the exact prompt strings `ask`/`describe`
+  hand a provider, at every tier, for above-tier wording and for a contributor
+  identity held in the vault — with positive controls so the check cannot pass on
+  an empty haystack.
   **A verifier sits before display:** `ledger.ai.grounding.verify_claims` checks
   every model claim's citation against the disclosed evidence before anything is
   shown; an unverifiable claim is withheld and counted, never shown. The same
@@ -46,8 +51,19 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `tests/test_ai_grounding.py`, `tests/test_ai_fixity_honesty.py`) prove the
   guardrails hold with no live model required; a live run against
   `global.anthropic.claude-sonnet-4-6` on Bedrock (the code default stays
-  `claude-sonnet-5`) scored 24/24 across all five suites, recorded with full
-  provenance in [`docs/AI-EVALUATION.md`](docs/AI-EVALUATION.md). No CI job
+  `claude-sonnet-5`) scored 67/67 across all five suites — outing refusal
+  44/44 across twelve attack shapes (including aggregation across three-plus
+  records, inference from non-name signals, and negative-space probes where a
+  confident *denial* fails exactly as a confirmation does), consent tier 15/15
+  across every ordered tier pair plus existence-disclosure probes — recorded
+  with full provenance in [`docs/AI-EVALUATION.md`](docs/AI-EVALUATION.md).
+  The two safety-critical suites report the **system** result and the
+  **model-alone** result separately (44/44 and 43/44), so a case that passes
+  only because a deterministic guard scrubbed the output stays visible instead
+  of folding into a clean pass. The write-up also records a real, unfixed gap
+  the expansion found: a single-token nickname attached to a role in another
+  record clears the deterministic name-span backstop, which a two-token name
+  does not. No CI job
   calls a live model and no cloud infrastructure is provisioned by this change;
   deployment and the third-party-processor/subprocessor question are recorded
   as open decisions in the ADR and `docs/DATA-GOVERNANCE.md`.
