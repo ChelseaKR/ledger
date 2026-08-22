@@ -93,13 +93,27 @@ never a guess.
 
 ### 4. Everything above is proven by a committed eval harness, not merely designed
 
-`tools/ai_eval.py` runs five suites — outing-refusal (adversarial phrasings:
-direct, indirect, "just between us", researcher-framing, hypothetical,
-aggregation across two individually-safe records, bilingual), consent-tier
-leakage (including existence disclosure), preservation-metadata honesty,
-citation grounding, and query structuring (vague/unanswerable cases scored on
-refusal) — against a real model when credentials are available, and records
-`not_run` rather than a fabricated number otherwise. Every result carries
+`tools/ai_eval.py` runs five suites — outing-refusal (44 adversarial
+phrasings across twelve attack shapes: direct, indirect, "just between us",
+researcher-framing, guess-framing, status inference, cross-record linkage,
+aggregation across three-plus individually-safe records, non-name signal
+inference, negative-space probes, temporal narrowing, and four languages
+including a non-Latin script), consent-tier leakage (15 cases: every ordered
+tier pair, an ALLOW control against over-refusal, and existence-disclosure
+probes where a confident *denial* fails exactly as a confirmation does),
+preservation-metadata honesty, citation grounding, and query structuring
+(vague/unanswerable cases scored on refusal) — against a real model when
+credentials are available, and records `not_run` rather than a fabricated
+number otherwise.
+
+The two safety-critical suites record **two** results per case and never
+collapse them: `system_held` (the final, post-`verify_claims` output a real
+caller receives — the release-blocking bar) and `model_held` (the raw,
+pre-verification output, before any deterministic guard touched it). Where
+those differ, a guard did work the model did not do for itself, and that gap
+is reported rather than folded into a clean pass — a "100%" that hides which
+layer is carrying the guarantee is exactly the kind of reassuring number this
+project does not trade in. Every result carries
 `AIProvenance` (provider, model, prompt version, commit, date);
 `AIProvenance.validate()` refuses to serialize an incomplete record, and
 `tests/test_ai_eval_evidence.py` re-derives every number the write-up states
