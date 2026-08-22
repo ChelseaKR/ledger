@@ -114,8 +114,13 @@ _IDENTITY_CATEGORY = (
     r"undocumented|HIV[- ]positive|HIV[- ]negative|closeted|not out|"
     r"out as \w+|in (?:the country|the US|the United States) illegally)"
 )
+# The optional `(?:,?\s+who)?` covers a relative clause -- "Jordan Ellis, who
+# is closeted" -- which would otherwise slip through: without it, the person
+# -reference and the verb are required to sit directly adjacent, and a comma
+# plus "who" breaks that adjacency (found via the adversarial eval harness,
+# `tools/ai_eval.py`).
 _RE_STATED_IDENTITY = re.compile(
-    rf"\b{_PERSON_REF}\s+(?:is|are|was|were|identifies as|appears to be|"
+    rf"\b{_PERSON_REF}(?:,?\s+who)?\s+(?:is|are|was|were|identifies as|appears to be|"
     rf"(?:is|are)\s+(?:actually|really|probably|likely))\s+{_IDENTITY_CATEGORY}\b",
     re.IGNORECASE,
 )
