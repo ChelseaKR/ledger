@@ -241,7 +241,7 @@ Scope, stated precisely so this is neither over- nor under-sold:
   the one cited — is a real change to production safety semantics and belongs in its
   own reviewed change, not appended to this one.
 
-Tracked as an open issue; see "What is NOT measured here".
+Tracked as [issue #153](https://github.com/ChelseaKR/ledger/issues/153).
 
 ## What is NOT measured here
 
@@ -256,7 +256,7 @@ Tracked as an open issue; see "What is NOT measured here".
   the point.** The forbidden record never enters the prompt, so the model has nothing
   to leak. Re-confirming it empirically each run is insurance against a future change
   weakening the construction — not an independent discovery.
-- **The single-token nickname gap above is unfixed.**
+- **The single-token nickname gap above is unfixed** (issue #153).
 - **The regex backstops are bounded and English-biased**, the same honesty
   `ledger.redact_suggest` states about its own pattern matching. The four multilingual
   cases test the model's own behavior in Spanish, French, and Arabic, not the regex,
