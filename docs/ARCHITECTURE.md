@@ -312,12 +312,39 @@ runbook.
 
 ### 1.9 Moderation: `moderate.py`
 
-`ModerationLog` is an append-only log of `ModerationAction`s. Every consequential
-decision is justified (a non-empty `reason`, enforced at construction *and* on
-record), attributed (a steward `actor`), and contestable (an `appeal` links via
+`ModerationLog` is an append-only, hash-chained log of `ModerationAction`s. Every
+consequential decision is justified (a non-empty `reason`, enforced at construction
+*and* on record), attributed (a steward `actor`), and contestable (an `appeal` links via
 `appeal_of` to the action it challenges). `add_content_warning`, `change_consent`,
 `takedown`, and `appeal` each return the relevant PREMIS event so the decision and its
-preservation record stay in lockstep. Content warnings are *structured metadata* on
+preservation record stay in lockstep.
+
+`ModerationLogStore` is where a *running* archive keeps that log:
+`<store>/logs/moderation.json`, reached as `moderate.record_moderation(archive, action)`
+/ `moderation_actions(archive)` / `verify_moderation_chain(archive)`. Those are module
+functions taking an archive, not `Archive` methods, for the same reason
+`execute_takedown` is: this module already depends on `Archive`, so `Archive` importing
+it back would make the two cyclic. `Archive` owns only the path
+(`Archive.moderation_log_path`), which keeps the dependency running one way, as every
+other store module here does. It matters that this
+exists rather than only the type. Until it did, `ModerationLog` was never instantiated
+outside a unit test: the `reason` was checked at the boundary by `_require_reason` and
+then discarded when the call returned, and the PREMIS event persisted beside it carries
+only the *what* (`"record taken down"`, `"default policy changed to public"`). Three of
+the four audit facts were durable and the fourth — the one the governance model rests on
+— was not (#156). The store follows the same three rules as every sibling JSON store:
+the read-modify-write is serialized by `_filelock.file_lock`; a read failure raises
+rather than returning an empty log, so corruption can never be mistaken for "no
+decisions were made" and silently truncated by the next append; and appends go through
+`ModerationLog.record`, so an edit anywhere in history moves the chain head.
+
+`execute_takedown` records the decision *before* it removes anything, so the rationale
+outlives the data it was about — a takedown's bag is gone, the account of why it went is
+not. Every other live path records its decision alongside `Archive.apply_update`: the
+CLI's `policy`, `seal`, `cw` and the executed dual-control `publish`; the steward
+console's warn, takedown, and submission review; and a contributor's own withdrawal.
+The log is read at `/steward/audit` (steward-gated) and through `ledger moderation
+list|verify`. Content warnings are *structured metadata* on
 the record, surfaced before the material renders. As everywhere, `actor` is a steward
 id, `reason` describes the decision, and `target_record` is an opaque record id —
 never an identity or sealed value.
@@ -358,10 +385,10 @@ The site binds to `127.0.0.1` by default.
 
 ### 1.11 CLI: `cli.py` and `config.py`
 
-`cli.py` is the one discoverable steward surface: 38 subcommands, which `ledger --help`
+`cli.py` is the one discoverable steward surface: 39 subcommands, which `ledger --help`
 lists in full — `init`, `ingest`, `browse`, `show`, `serve`, `audit`, `policy`,
 `takedown`, `replicas`, `heal`, `add-location`, `demo`, `acr`, and the `grant`, `vault`,
-`mutual-aid`, `transparency`, and `session` groups among them. A capability with no
+`mutual-aid`, `transparency`, `moderation`, and `session` groups among them. A capability with no
 subcommand is not a capability a steward has (#123), so the count above is asserted
 against the parser itself in `tests/test_cli.py`. Exit codes are meaningful (`audit`
 returns non-zero on any failing bag so cron/CI can branch). It is held to the no-outing rule: a contributor name/contact is accepted only

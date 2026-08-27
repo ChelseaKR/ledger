@@ -179,6 +179,12 @@ msgstr "Par année (vue tableau)"
 msgid "Catalogue metadata"
 msgstr "Métadonnées de catalogue"
 
+msgid "Chain verification FAILED: a recorded decision was altered or removed after the fact. Compare this log against an off-box replica."
+msgstr "ÉCHEC de la vérification de la chaîne : une décision consignée a été modifiée ou supprimée après coup. Comparez ce journal avec une réplique hors machine."
+
+msgid "Chain verified: no recorded decision has been altered since it was recorded."
+msgstr "Chaîne vérifiée : aucune décision consignée n’a été modifiée depuis son enregistrement."
+
 msgid "Check a request"
 msgstr "Vérifier une demande"
 
@@ -259,6 +265,9 @@ msgstr "Morinom — désigne une personne par un nom qu’elle n’utilise plus"
 msgid "Death — describes the death of a person"
 msgstr "Mort — décrit le décès d’une personne"
 
+msgid "Decision"
+msgstr "Décision"
+
 msgid "Default access"
 msgstr "Accès par défaut"
 
@@ -309,6 +318,9 @@ msgstr ""
 
 msgid "Event"
 msgstr "Événement"
+
+msgid "Every accountable moderation decision, newest first: what was done, who did it, why, and to which record. Unlike the events above, the reason here is written by the acting steward, so this section is shown to stewards only."
+msgstr "Chaque décision de modération dont il faut rendre compte, la plus récente d’abord : ce qui a été fait, par qui, pourquoi et sur quel enregistrement. Contrairement aux événements ci-dessus, le motif est ici rédigé par la personne responsable qui agit, c’est pourquoi cette section n’est montrée qu’aux responsables."
 
 msgid ""
 "Every recorded action across the archive, newest first. This log carries "
@@ -420,6 +432,12 @@ msgstr "Marquer comme résolu"
 msgid "Medical — describes injury, illness, or clinical procedures"
 msgstr "Médical — décrit une blessure, une maladie ou des actes cliniques"
 
+msgid "Moderation decisions"
+msgstr "Décisions de modération"
+
+msgid "Moderation decisions, newest first"
+msgstr "Décisions de modération, la plus récente d’abord"
+
 msgid "Name"
 msgstr "Nom"
 
@@ -434,6 +452,9 @@ msgstr "Non"
 
 msgid "No earlier versions."
 msgstr "Aucune version antérieure."
+
+msgid "No moderation decisions recorded yet."
+msgstr "Aucune décision de modération n’a encore été consignée."
 
 msgid "No open requests."
 msgstr "Aucune demande en cours."
@@ -568,6 +589,9 @@ msgstr ""
 
 msgid "Publish (as requested)"
 msgstr "Publier (comme demandé)"
+
+msgid "Reason"
+msgstr "Motif"
 
 msgid "Reason (required)"
 msgstr "Motif (obligatoire)"
@@ -745,6 +769,9 @@ msgstr "Cet envoi est trop long."
 
 msgid "The language of the material, e.g. English or Spanish."
 msgstr "La langue du matériel, p. ex. anglais ou espagnol."
+
+msgid "The moderation log could not be read. It is not empty — it is unreadable, and that needs looking into before any further moderation decision is taken."
+msgstr "Le journal de modération n’a pas pu être lu. Il n’est pas vide — il est illisible, et cela doit être examiné avant toute nouvelle décision de modération."
 
 msgid "The takedown is confirmed at every storage location."
 msgstr "Le retrait est confirmé sur chaque emplacement de stockage."

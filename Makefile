@@ -47,12 +47,25 @@ type: ## Strict type checking (mypy)
 test: ## Run the test suite (preservation + disclosure + no-outing audit)
 	$(PY) -m pytest
 
-cov: ## Run tests with coverage (95% floor on the access/consent/dual-control core)
+cov: ## Run tests with coverage (95% floor on the access/consent/dual-control core; 90% on moderate.py)
 	$(PY) -m pytest --cov --cov-report=term-missing
 	# Per-module floor (CODE-QUALITY-STANDARD, security/crypto-critical paths): the
 	# access-policy, consent, and dual-control modules must hold >=95% branch
 	# coverage, above the 85% baseline. Scoped re-report over the .coverage data.
+	#
+	# NOTE ON THE POOL: `coverage report --fail-under` gates the TOTAL row, not each
+	# module, so this line passes at 95% overall while `grants.py` (92%) and
+	# `consent.py` (91%) sit below it. That is a known weakness of the pooled figure,
+	# not a claim that every module in the list clears 95.
 	$(PY) -m coverage report --include="src/ledger/access/*,src/ledger/consent.py,src/ledger/dualcontrol.py" --fail-under=95
+	# `moderate.py` gets its OWN scoped report and its own floor rather than joining
+	# the list above. Adding it there would have let its coverage average against
+	# `policy.py`/`dualcontrol.py` at 100% — a new module reading as covered because
+	# its neighbours are, which is the pooling weakness the note above describes,
+	# repeated deliberately. 90% is where the module measures with the accountable
+	# moderation log's tests in place (the remainder is pre-existing validation and
+	# refusal branches); it is a ratchet, so raise it when the number rises.
+	$(PY) -m coverage report --include="src/ledger/moderate.py" --fail-under=90
 
 backup-test: ## Exercise the full back-up -> wipe -> restore disaster-recovery cycle
 	$(PY) -m pytest -m recovery

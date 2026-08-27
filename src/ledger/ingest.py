@@ -735,6 +735,15 @@ class Archive:
         self.bags_dir = self.store_root / "bags"
         self.records_dir = self.store_root / "records"
         self.logs_dir = self.store_root / "logs"
+        # The archive's durable record of *why* a steward acted, read and written
+        # through `ledger.moderate` (`record_moderation`, `moderation_actions`). Only
+        # the *location* lives here: `moderate` depends on `Archive` for
+        # `execute_takedown`, so an import the other way would make the two modules
+        # cyclic, and the layering this repo documents runs one way. It sits beside
+        # the PREMIS logs rather than inside any bag because a moderation decision is
+        # about the archive's governance, and a takedown's rationale must outlive the
+        # bag it was about (accountability -- docs/GOVERNANCE.md).
+        self.moderation_log_path = self.logs_dir / "moderation.json"
         self.index_path = catalog_index.index_path(self.store_root)
         self.vault_path = Path(config.vault_path)
         self._vault: IdentityVault | None = None

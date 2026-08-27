@@ -174,11 +174,36 @@ needs:
 - **why** — the required non-empty `reason`;
 - **to which record** — the opaque `target_record` id.
 
-The log carries no identity and no sealed value, by construction — actors are steward
-ids, reasons describe the *decision*, and the target is an opaque record id (the
-no-outing rule holds in the log as everywhere). Serialization is canonical and writes are
-atomic, so the persisted log is byte-reproducible and a crash mid-write cannot truncate
-it. In parallel, preservation-significant actions also emit PREMIS events
+**Where the log lives.** `<store>/logs/moderation.json`, written by
+`ModerationLogStore` and reached through `moderate.record_moderation(archive, action)`
+and `moderate.moderation_actions(archive)`. Every live path that takes one of these decisions writes
+to it: `ledger policy`, `ledger seal`, `ledger cw`, `ledger takedown`, an executed
+dual-control `publish`, the steward console's warn / takedown / submission review, and a
+contributor's own withdrawal. A takedown records the decision *before* it removes
+anything, so the account of why a record went outlives the record. Serialization is
+canonical and writes are atomic, so the persisted log is byte-reproducible and a crash
+mid-write cannot truncate it; the read-modify-write is serialized by a file lock, so two
+stewards acting at once cannot lose one another's entry. Each entry is chained to the
+one before it, so an edit anywhere in history moves the head — `ledger moderation
+verify` exits non-zero when it does, and `/steward/audit` says so on the page.
+
+Until this was wired in, `ModerationLog` was a type the system modelled but never used:
+the `reason` was validated at the boundary and then discarded, and the PREMIS event
+kept beside it carries only the *what* (`"record taken down"`), never the rationale. A
+steward acting for a pretextual reason left a trace that *an* action happened, but not
+of what they claimed (#156).
+
+**Who can read it, and why that boundary is where it is.** Three of the four facts are
+identity-free by construction: `actor` is a steward id, `target_record` is an opaque
+record id, and the action comes from a fixed vocabulary. The **reason is prose a steward
+types**, and nothing can validate prose for whether it names someone. So the control is
+not that the field is safe by construction — it is that no ungated surface renders it.
+The rationale appears on `/steward/audit` behind the steward gate and in the
+steward-operated `ledger moderation list`, and nowhere else; a merge-blocking disclosure
+test asserts it is absent from every public surface. Stewards writing reasons should
+describe the *decision*, not the people in the record.
+
+In parallel, preservation-significant actions also emit PREMIS events
 (`MODERATION`, `TAKEDOWN`, `CONSENT_CHANGE`, `REDACTION`) with agent and outcome
 (`src/ledger/metadata/premis.py`), so the chain of custody is auditable alongside the
 moderation record.
