@@ -3,7 +3,8 @@
 Last verified: 2026-07-11 · Recheck cadence: per release and quarterly
 
 This file has two jobs: the feature roadmap belongs in
-[`docs/RESEARCH-ROADMAP.md`](RESEARCH-ROADMAP.md); this file is the **standards
+[`docs/RESEARCH-ROADMAP.md`](RESEARCH-ROADMAP.md), and the phased sequencing of both
+belongs in [`docs/MULTIYEAR-PLAN.md`](MULTIYEAR-PLAN.md); this file is the **standards
 conformance gap tracker** the README's
 [`## Standards conformance`](../README.md#standards-conformance) table links to
 (DOCUMENTATION-STANDARD DOC-13: every "gap" declaration must link something a

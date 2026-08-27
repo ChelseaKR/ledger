@@ -328,7 +328,7 @@ class ModerationLogStore:
 
         The whole read-append-write cycle is held under the advisory lock, so a
         concurrent append cannot be lost. Returning ``action`` lets a caller write
-        ``archive.record_moderation(action)`` inline without re-binding.
+        ``record_moderation(archive, action)`` inline without re-binding.
         """
         try:
             with file_lock(self._path):

@@ -1358,8 +1358,8 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         sealed value. Steward-gated; a non-steward gets a neutral 404.
 
         A second table renders the **moderation decisions**
-        (:func:`ledger.moderate.moderation_actions`). PREMIS answers *what happened*; only
-        this one answers *why a steward said they did it*, which is the fact
+        (:func:`ledger.moderate.moderation_actions`). PREMIS answers *what happened*;
+        only this one answers *why a steward said they did it*, which is the fact
         ``docs/GOVERNANCE.md`` and ``docs/THREAT-MODEL.md`` §4.4 rest the
         accountability model on. Its ``reason`` is steward-authored prose rather than
         a value the system derives, which is precisely why it renders here, behind the

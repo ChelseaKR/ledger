@@ -236,8 +236,8 @@ probing the archive's public surfaces, combining fields, or cross-referencing.*
   became durable only when the store was wired into the CLI and the browse server
   (#156); before that it was validated and discarded, and the PREMIS event beside it
   records only what was done. `ledger moderation verify` chain-verifies the log, and
-  `/steward/audit` reports a broken chain on the page. Preservation actions are PREMIS events with
-  agent and outcome (`src/ledger/metadata/premis.py`), so a steward's actions are
+  `/steward/audit` reports a broken chain on the page. Preservation actions are PREMIS
+  events with agent and outcome (`src/ledger/metadata/premis.py`), so a steward's actions are
   attributable after the fact.
 - **Residual risk.** **A steward who *also* holds the vault key and an `identity_unseal`
   grant can out the contributors whose refs that grant names.** This is exactly the
