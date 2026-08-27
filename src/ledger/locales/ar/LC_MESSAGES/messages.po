@@ -165,6 +165,12 @@ msgstr "حسب السنة (عرض الجدول)"
 msgid "Catalogue metadata"
 msgstr "بيانات الفهرسة الوصفية"
 
+msgid "Chain verification FAILED: a recorded decision was altered or removed after the fact. Compare this log against an off-box replica."
+msgstr "فشل التحقق من السلسلة: جرى تعديل قرار مُسجَّل أو حذفه بعد وقوعه. قارن هذا السجل بنسخة مكرَّرة خارج الجهاز."
+
+msgid "Chain verified: no recorded decision has been altered since it was recorded."
+msgstr "تم التحقق من السلسلة: لم يُعدَّل أي قرار مُسجَّل منذ تسجيله."
+
 msgid "Check a request"
 msgstr "التحقق من طلب"
 
@@ -241,6 +247,9 @@ msgstr "استخدام الاسم المتروك — يشير إلى اسم لم
 msgid "Death — describes the death of a person"
 msgstr "موت — يصف وفاة شخص"
 
+msgid "Decision"
+msgstr "القرار"
+
 msgid "Default access"
 msgstr "الوصول الافتراضي"
 
@@ -294,6 +303,9 @@ msgstr ""
 
 msgid "Event"
 msgstr "الحدث"
+
+msgid "Every accountable moderation decision, newest first: what was done, who did it, why, and to which record. Unlike the events above, the reason here is written by the acting steward, so this section is shown to stewards only."
+msgstr "كل قرار إشراف خاضع للمساءلة، الأحدث أولًا: ما الذي جرى، ومن قام به، ولماذا، وعلى أي سجل. وخلافًا للأحداث أعلاه، يكتب السببَ هنا المشرفُ الذي اتخذ القرار، ولذلك لا يُعرض هذا القسم إلا للمشرفين."
 
 msgid ""
 "Every recorded action across the archive, newest first. This log carries "
@@ -397,6 +409,12 @@ msgstr "وضع علامة كمحلول"
 msgid "Medical — describes injury, illness, or clinical procedures"
 msgstr "طبي — يصف إصابة أو مرضًا أو إجراءات سريرية"
 
+msgid "Moderation decisions"
+msgstr "قرارات الإشراف"
+
+msgid "Moderation decisions, newest first"
+msgstr "قرارات الإشراف، الأحدث أولًا"
+
 msgid "Name"
 msgstr "الاسم"
 
@@ -411,6 +429,9 @@ msgstr "لا"
 
 msgid "No earlier versions."
 msgstr "لا توجد نسخ سابقة."
+
+msgid "No moderation decisions recorded yet."
+msgstr "لم تُسجَّل أي قرارات إشراف بعد."
 
 msgid "No open requests."
 msgstr "لا توجد طلبات مفتوحة."
@@ -539,6 +560,9 @@ msgstr "عام — يمكن لأي شخص قراءته بمجرد موافقة �
 
 msgid "Publish (as requested)"
 msgstr "نشر (كما طُلب)"
+
+msgid "Reason"
+msgstr "السبب"
 
 msgid "Reason (required)"
 msgstr "السبب (مطلوب)"
@@ -711,6 +735,9 @@ msgstr "هذه المساهمة طويلة جدًا."
 
 msgid "The language of the material, e.g. English or Spanish."
 msgstr "لغة المادة، مثل الإنجليزية أو الإسبانية."
+
+msgid "The moderation log could not be read. It is not empty — it is unreadable, and that needs looking into before any further moderation decision is taken."
+msgstr "تعذَّرت قراءة سجل الإشراف. إنه ليس فارغًا — بل غير قابل للقراءة، وهذا يستدعي الفحص قبل اتخاذ أي قرار إشراف آخر."
 
 msgid "The takedown is confirmed at every storage location."
 msgstr "تم تأكيد الإزالة في كل موقع تخزين."

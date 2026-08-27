@@ -160,6 +160,12 @@ msgstr "Por año (vista de tabla)"
 msgid "Catalogue metadata"
 msgstr "Metadatos de catálogo"
 
+msgid "Chain verification FAILED: a recorded decision was altered or removed after the fact. Compare this log against an off-box replica."
+msgstr "FALLÓ la verificación de la cadena: una decisión registrada fue alterada o eliminada después de los hechos. Compare este registro con una réplica fuera del equipo."
+
+msgid "Chain verified: no recorded decision has been altered since it was recorded."
+msgstr "Cadena verificada: ninguna decisión registrada ha sido alterada desde que se registró."
+
 msgid "Check a request"
 msgstr "Consultar una solicitud"
 
@@ -225,6 +231,9 @@ msgstr "Nombre muerto — se refiere a un nombre que una persona ya no usa"
 msgid "Death — describes the death of a person"
 msgstr "Muerte — describe la muerte de una persona"
 
+msgid "Decision"
+msgstr "Decisión"
+
 msgid "Deportation — describes removal from a country or its threat"
 msgstr "Deportación — describe la expulsión de un país o su amenaza"
 
@@ -270,6 +279,9 @@ msgstr ""
 
 msgid "Event"
 msgstr "Evento"
+
+msgid "Every accountable moderation decision, newest first: what was done, who did it, why, and to which record. Unlike the events above, the reason here is written by the acting steward, so this section is shown to stewards only."
+msgstr "Cada decisión de moderación sujeta a rendición de cuentas, las más recientes primero: qué se hizo, quién lo hizo, por qué y sobre qué registro. A diferencia de los eventos anteriores, aquí el motivo lo escribe quien administra el archivo, por lo que esta sección solo se muestra a la administración."
 
 msgid ""
 "Every recorded action across the archive, newest first. This log carries "
@@ -373,6 +385,12 @@ msgstr "Marcar como resuelta"
 msgid "Medical — describes injury, illness, or clinical procedures"
 msgstr "Médico — describe lesiones, enfermedades o procedimientos clínicos"
 
+msgid "Moderation decisions"
+msgstr "Decisiones de moderación"
+
+msgid "Moderation decisions, newest first"
+msgstr "Decisiones de moderación, las más recientes primero"
+
 msgid "Name"
 msgstr "Nombre"
 
@@ -384,6 +402,9 @@ msgstr "Siguiente"
 
 msgid "No"
 msgstr "No"
+
+msgid "No moderation decisions recorded yet."
+msgstr "Aún no se ha registrado ninguna decisión de moderación."
 
 msgid "No open requests."
 msgstr "No hay solicitudes abiertas."
@@ -512,6 +533,9 @@ msgstr ""
 
 msgid "Publish (as requested)"
 msgstr "Publicar (como se solicitó)"
+
+msgid "Reason"
+msgstr "Motivo"
 
 msgid "Received — a steward has not acted on it yet."
 msgstr "Recibida — una persona responsable aún no ha actuado sobre ella."
@@ -669,6 +693,9 @@ msgstr "Ese envío es demasiado largo."
 
 msgid "The language of the material, e.g. English or Spanish."
 msgstr "El idioma del material, p. ej. inglés o español."
+
+msgid "The moderation log could not be read. It is not empty — it is unreadable, and that needs looking into before any further moderation decision is taken."
+msgstr "No se pudo leer el registro de moderación. No está vacío: es ilegible, y eso debe investigarse antes de tomar cualquier otra decisión de moderación."
 
 msgid "The takedown is confirmed at every storage location."
 msgstr "La retirada está confirmada en todas las ubicaciones de almacenamiento."

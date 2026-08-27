@@ -155,6 +155,12 @@ msgstr "By year (table view)"
 msgid "Catalogue metadata"
 msgstr "Catalogue metadata"
 
+msgid "Chain verification FAILED: a recorded decision was altered or removed after the fact. Compare this log against an off-box replica."
+msgstr "Chain verification FAILED: a recorded decision was altered or removed after the fact. Compare this log against an off-box replica."
+
+msgid "Chain verified: no recorded decision has been altered since it was recorded."
+msgstr "Chain verified: no recorded decision has been altered since it was recorded."
+
 msgid "Check a request"
 msgstr "Check a request"
 
@@ -219,6 +225,9 @@ msgstr "Deadnaming — refers to a name a person no longer uses"
 msgid "Death — describes the death of a person"
 msgstr "Death — describes the death of a person"
 
+msgid "Decision"
+msgstr "Decision"
+
 msgid "Deportation — describes removal from a country or its threat"
 msgstr "Deportation — describes removal from a country or its threat"
 
@@ -262,6 +271,9 @@ msgstr ""
 
 msgid "Event"
 msgstr "Event"
+
+msgid "Every accountable moderation decision, newest first: what was done, who did it, why, and to which record. Unlike the events above, the reason here is written by the acting steward, so this section is shown to stewards only."
+msgstr "Every accountable moderation decision, newest first: what was done, who did it, why, and to which record. Unlike the events above, the reason here is written by the acting steward, so this section is shown to stewards only."
 
 msgid ""
 "Every recorded action across the archive, newest first. This log carries "
@@ -361,6 +373,12 @@ msgstr "Mark resolved"
 msgid "Medical — describes injury, illness, or clinical procedures"
 msgstr "Medical — describes injury, illness, or clinical procedures"
 
+msgid "Moderation decisions"
+msgstr "Moderation decisions"
+
+msgid "Moderation decisions, newest first"
+msgstr "Moderation decisions, newest first"
+
 msgid "Name"
 msgstr "Name"
 
@@ -372,6 +390,9 @@ msgstr "Next"
 
 msgid "No"
 msgstr "No"
+
+msgid "No moderation decisions recorded yet."
+msgstr "No moderation decisions recorded yet."
 
 msgid "No open requests."
 msgstr "No open requests."
@@ -498,6 +519,9 @@ msgstr "Public — anyone may read it once a steward approves"
 
 msgid "Publish (as requested)"
 msgstr "Publish (as requested)"
+
+msgid "Reason"
+msgstr "Reason"
 
 msgid "Received — a steward has not acted on it yet."
 msgstr "Received — a steward has not acted on it yet."
@@ -652,6 +676,9 @@ msgstr "That submission is too long."
 
 msgid "The language of the material, e.g. English or Spanish."
 msgstr "The language of the material, e.g. English or Spanish."
+
+msgid "The moderation log could not be read. It is not empty — it is unreadable, and that needs looking into before any further moderation decision is taken."
+msgstr "The moderation log could not be read. It is not empty — it is unreadable, and that needs looking into before any further moderation decision is taken."
 
 msgid "The takedown is confirmed at every storage location."
 msgstr "The takedown is confirmed at every storage location."

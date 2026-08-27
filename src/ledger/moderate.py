@@ -25,6 +25,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from ledger._filelock import file_lock
 from ledger.chain import GENESIS_HASH, ChainVerification, build_chain, chain_head
 from ledger.chain import verify_chain as _verify_chain
 from ledger.errors import LedgerError, ModerationError
@@ -262,6 +263,144 @@ class ModerationLog:
     def read(cls, path: Path) -> ModerationLog:
         """Load a log from ``path`` (inverse of :meth:`write`)."""
         return cls.from_json(Path(path).read_text(encoding="utf-8"))
+
+
+class ModerationLogStore:
+    """The archive's :class:`ModerationLog` as a durable, concurrency-safe file.
+
+    :class:`ModerationLog` models the log; this class is where a *running* archive
+    keeps it. Without it the ``reason`` on every decision was validated at the
+    boundary and then discarded when the call returned, so the one fact the
+    governance model rests on -- *why* a steward acted -- outlived nothing. The
+    PREMIS event persisted alongside it carries only the *what* (``"record taken
+    down"``, ``"default policy changed to public"``), never the rationale.
+
+    Three properties, each matching a sibling store in this package:
+
+    * **Serialized.** The read-modify-write runs under
+      :func:`ledger._filelock.file_lock`, so two concurrent steward actions on the
+      threaded browse server cannot each read the same log and clobber one
+      another. A lost moderation entry is a decision that happened with no
+      recorded justification -- exactly the accountability hole this closes.
+    * **Fail-closed on read.** A missing file is an empty log (a fresh archive has
+      made no decisions). An *unreadable or malformed* file raises rather than
+      returning an empty log: silently reading corruption as "no decisions were
+      ever made" would let the very next append rewrite the file with one entry
+      and erase the history, which is the failure mode
+      :class:`~ledger.dualcontrol.ProposalStore` is tracked for.
+    * **Append-only and chained.** Appends go through :meth:`ModerationLog.record`,
+      so every entry is chained to the one before it and an edit anywhere in
+      history moves :attr:`head` (FIX-06 tamper evidence).
+
+    The no-outing rule holds as everywhere: ``actor`` is a steward id and
+    ``target_record`` an opaque record id. ``reason`` is steward-authored prose --
+    the log is therefore rendered only behind the steward gate, never on a public
+    surface (see ``docs/GOVERNANCE.md``).
+    """
+
+    def __init__(self, path: Path) -> None:
+        """Bind the store to ``path``; nothing is read or created until used."""
+        self._path = Path(path)
+
+    def load(self) -> ModerationLog:
+        """Return the persisted log, or an empty one when the archive has none.
+
+        Fail-closed: a file that exists but cannot be read or parsed raises
+        :class:`~ledger.errors.ModerationError` instead of yielding an empty log
+        (see the class docstring). Every failure mode -- an unreadable file, bytes
+        that are not JSON, a shape :meth:`ModerationLog.from_json` refuses -- leaves
+        by the same door, so a caller catches one error family and can never
+        mistake corruption for an empty history (analyzability).
+        """
+        try:
+            text = self._path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            return ModerationLog()
+        except OSError as exc:
+            raise ModerationError(f"moderation log could not be read: {self._path}") from exc
+        try:
+            return ModerationLog.from_json(text)
+        except ValueError as exc:  # JSONDecodeError is a ValueError; ModerationError is not
+            raise ModerationError(f"moderation log could not be parsed: {self._path}") from exc
+
+    def record(self, action: ModerationAction) -> ModerationAction:
+        """Append one decision durably and return it unchanged.
+
+        The whole read-append-write cycle is held under the advisory lock, so a
+        concurrent append cannot be lost. Returning ``action`` lets a caller write
+        ``archive.record_moderation(action)`` inline without re-binding.
+        """
+        try:
+            with file_lock(self._path):
+                log = self.load()
+                log.record(action)
+                log.write(self._path)
+        except OSError as exc:
+            raise LedgerError(f"moderation log could not be written: {self._path}") from exc
+        return action
+
+    def actions(self) -> list[ModerationAction]:
+        """Every recorded decision, oldest first (the order they were appended)."""
+        return self.load().actions
+
+    def recent(self, *, limit: int = 200) -> list[ModerationAction]:
+        """The most recent decisions, newest first, capped at ``limit``.
+
+        The reading order a steward audit view wants. ``limit`` is a cap, not a
+        promise of that many: a young archive returns fewer.
+        """
+        return self.actions()[::-1][:limit]
+
+    def verify_chain(self) -> ChainVerification:
+        """Recompute the persisted log's chain and compare it to its stored links.
+
+        An entry edited or removed on disk by someone with raw filesystem access --
+        the residual `docs/THREAT-MODEL.md` §4.4 names -- fails here.
+        """
+        return self.load().verify_chain()
+
+
+def moderation_log(archive: Archive) -> ModerationLogStore:
+    """The store holding ``archive``'s moderation decisions.
+
+    Lives here rather than on :class:`~ledger.ingest.Archive` because this module
+    already depends on ``Archive`` (see :func:`execute_takedown`) and the reverse
+    import would make the two cyclic; ``Archive`` therefore owns only the *path*,
+    ``Archive.moderation_log_path``. Constructed on demand and stateless, so it is
+    safe to call from each request thread of the browse server -- the
+    serialization that matters lives in the store's file lock, not in a shared
+    object.
+    """
+    return ModerationLogStore(archive.moderation_log_path)
+
+
+def record_moderation(archive: Archive, action: ModerationAction) -> ModerationAction:
+    """Persist one accountable moderation decision, returning it unchanged.
+
+    The counterpart to :meth:`~ledger.ingest.Archive.log_takedown` for the *why*: a
+    PREMIS event records that a policy changed or a record came down, but its
+    ``detail`` is built only from the *what*. This is where the steward's stated
+    rationale becomes durable, so a decision taken for a bad-faith reason leaves a
+    trace of what was claimed, not merely that something happened (accountability
+    -- ``docs/GOVERNANCE.md``, ``docs/THREAT-MODEL.md`` §4.4).
+    """
+    return moderation_log(archive).record(action)
+
+
+def moderation_actions(archive: Archive, *, limit: int = 200) -> list[ModerationAction]:
+    """``archive``'s recorded moderation decisions, newest first.
+
+    Steward-facing: ``actor`` and ``target_record`` are identity-free by
+    construction, but ``reason`` is steward-authored prose, so a caller must keep
+    this behind the steward gate (the no-outing rule -- see
+    :class:`ModerationLogStore`).
+    """
+    return moderation_log(archive).recent(limit=limit)
+
+
+def verify_moderation_chain(archive: Archive) -> ChainVerification:
+    """Verify ``archive``'s moderation-log hash chain (tamper evidence, FIX-06)."""
+    return moderation_log(archive).verify_chain()
 
 
 def add_content_warning(
@@ -517,6 +656,11 @@ def execute_takedown(
         had_identity = archive.get(record_id).identity_ref is not None
     except LedgerError:
         had_identity = False
+    # The decision, rationale included, is durable BEFORE anything is destroyed: if
+    # the removal below fails halfway, the archive still holds a full account of what
+    # a steward claimed and why. Recording it here rather than in each caller means
+    # neither the CLI nor the steward console can take a record down without it.
+    record_moderation(archive, action)
     archive.log_takedown(event)
     removed, revoked = archive.remove_all_copies(record_id)
     return action, removed, revoked, had_identity

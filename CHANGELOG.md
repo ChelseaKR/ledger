@@ -16,6 +16,45 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 > explicitly approved through the release workflow added below.
 
 ### Added
+- **The moderation `reason` is durable, and the moderation log is now part of the
+  running system** (#156). `docs/GOVERNANCE.md`, `docs/THREAT-MODEL.md` §4.4, and
+  `docs/ARCHITECTURE.md` §1.9 each describe `ModerationLog` as the accountable record of
+  *what, who, why, and to which record*, with the required non-empty `reason` as the
+  control against a coerced or bad-faith steward. Three of those four facts were durable
+  in the PREMIS event; the fourth was not. `ModerationLog` was never instantiated outside
+  a unit test — `moderate._require_reason` checked the rationale at the boundary and
+  every call site then discarded the returned `ModerationAction` (`_action`), while the
+  persisted PREMIS `detail` is built only from the *what* (`"record taken down"`,
+  `"default policy changed to public"`). A steward acting for a pretextual reason left a
+  trace that *an* action happened, never of what they claimed.
+
+  New `moderate.ModerationLogStore` persists the log at `<store>/logs/moderation.json`,
+  reached as `moderate.record_moderation(archive, action)` / `moderation_actions(archive)`
+  / `verify_moderation_chain(archive)` — module functions taking an archive rather than
+  `Archive` methods, because `moderate` already depends on `Archive` for
+  `execute_takedown` and the reverse import would make the two cyclic (CodeQL
+  `py/unsafe-cyclic-import` caught exactly that on the first draft). `Archive` owns only
+  `moderation_log_path`. It takes the same three rules as every sibling JSON
+  store: the read-modify-write is serialized by `_filelock.file_lock` (40 concurrent
+  appends lose none); a read failure raises instead of returning an empty log, so
+  corruption can never be mistaken for "no decisions were made" and truncated by the next
+  append; and appends chain, so an edit anywhere in history moves the head.
+
+  Every live path now records its decision: `ledger policy`, `ledger seal`, `ledger cw`,
+  `ledger takedown`, an executed dual-control `publish`, the steward console's warn /
+  takedown / submission review, and a contributor's own withdrawal. `execute_takedown`
+  records *before* it removes anything, making its own docstring's promise ("its audit
+  trail of *why* must outlive the data") true. Read it at `/steward/audit`, which gained
+  a steward-gated **Moderation decisions** table plus a chain-verification line
+  (localized across en/es/fr/ar), or with the new `ledger moderation list [--json]` and
+  `ledger moderation verify` (exit 2 on a broken chain, so a scheduled check can branch).
+
+  The rationale is prose a steward types, and nothing can validate prose for whether it
+  names someone, so the boundary is enforced by placement rather than claimed by
+  construction: it renders behind the steward gate and nowhere else, asserted by a
+  merge-blocking `disclosure` test over twelve public surfaces. `make cov` gains a
+  per-module floor for `moderate.py` reported on its own rather than folded into the
+  pooled access/consent/dual-control figure.
 - **The `main` branch ruleset now holds the CI-CD-STANDARD §5.1 solo-maintainer
   profile** (#79). `pull_request` (0 required approvals — the sole code owner
   cannot self-approve their own PR, and §5.1 permits `require_code_owner_review:

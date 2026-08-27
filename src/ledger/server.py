@@ -92,7 +92,15 @@ from ledger.models import (
     Record,
     now_iso,
 )
-from ledger.moderate import add_content_warning, change_consent, execute_takedown, takedown
+from ledger.moderate import (
+    add_content_warning,
+    change_consent,
+    execute_takedown,
+    moderation_actions,
+    record_moderation,
+    takedown,
+    verify_moderation_chain,
+)
 from ledger.parsing import cookie_value, parse_multipart, parse_urlencoded_multi
 from ledger.parsing import decode_id as _decode_id
 from ledger.parsing import safe_filename as _safe_filename
@@ -195,6 +203,70 @@ _STATIC_CONTENT_TYPES: dict[str, str] = {
     ".woff2": "font/woff2",
     ".txt": "text/plain; charset=utf-8",
 }
+
+
+def _moderation_section_html(archive: Archive, *, lang: str) -> str:
+    """Render the steward-gated moderation-decision table for ``/steward/audit``.
+
+    The four facts an audit needs -- what, who, why, which record -- plus the
+    chain-verification result, because an append-only log is only append-only as
+    enforced by the application: someone with raw write access to
+    ``logs/moderation.json`` can still edit it, and the chain is what makes that
+    visible (``docs/THREAT-MODEL.md`` §4.4).
+
+    Factored out of :meth:`_LedgerHandler._handle_steward_audit` so the handler
+    stays one page of dispatch rather than two interleaved table builders. Every
+    cell is escaped: ``reason`` is the one field on this page a human typed, so it
+    is the one field that must never be interpolated raw.
+
+    A log that cannot be read is reported as a failure *in place* rather than
+    raising: a steward looking at the audit page needs to be told the moderation
+    record is unreadable, not handed a 500 that says nothing (failure
+    transparency). It is never rendered as "no decisions were recorded".
+    """
+    try:
+        actions = moderation_actions(archive)
+        verification = verify_moderation_chain(archive)
+    except LedgerError:
+        return (
+            f"    <h2>{_esc(i18n.t(lang, 'modlog_heading'))}</h2>\n"
+            f"    <p>{_esc(i18n.t(lang, 'modlog_unreadable'))}</p>"
+        )
+    chain_key = "modlog_chain_ok" if verification.ok else "modlog_chain_broken"
+    if not actions:
+        body = f"    <p>{_esc(i18n.t(lang, 'modlog_none'))}</p>"
+    else:
+        rows = "\n".join(
+            "        <tr>\n"
+            f"          <td>{_esc(a.at)}</td>\n"
+            f"          <td>{_esc(a.action)}</td>\n"
+            f"          <td>{_esc(a.actor)}</td>\n"
+            f"          <td>{_esc(a.target_record)}</td>\n"
+            f"          <td>{_esc(a.reason)}</td>\n"
+            "        </tr>"
+            for a in actions
+        )
+        body = (
+            "    <table>\n"
+            f"      <caption>{_esc(i18n.t(lang, 'modlog_caption'))}</caption>\n"
+            "      <thead>\n"
+            "        <tr>\n"
+            f'          <th scope="col">{_esc(i18n.t(lang, "audit_col_when"))}</th>\n'
+            f'          <th scope="col">{_esc(i18n.t(lang, "modlog_col_decision"))}</th>\n'
+            f'          <th scope="col">{_esc(i18n.t(lang, "audit_col_agent"))}</th>\n'
+            f'          <th scope="col">{_esc(i18n.t(lang, "audit_col_object"))}</th>\n'
+            f'          <th scope="col">{_esc(i18n.t(lang, "modlog_col_reason"))}</th>\n'
+            "        </tr>\n"
+            "      </thead>\n"
+            f"      <tbody>\n{rows}\n      </tbody>\n"
+            "    </table>"
+        )
+    return (
+        f"    <h2>{_esc(i18n.t(lang, 'modlog_heading'))}</h2>\n"
+        f"    <p>{_esc(i18n.t(lang, 'modlog_intro'))}</p>\n"
+        f"{body}\n"
+        f"    <p>{_esc(i18n.t(lang, chain_key))}</p>"
+    )
 
 
 def _load_static_files() -> dict[str, Path]:
@@ -868,10 +940,11 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         else:
             target = AccessPolicy.STEWARDS
             reason = "withheld at steward review, pending revision"
-        updated, event, _action = change_consent(
+        updated, event, decision = change_consent(
             record, target, actor=actor, reason=reason, now=now_iso()
         )
         archive.apply_update(updated, event)
+        record_moderation(archive, decision)
         self._submission_queue().remove(record_id)
 
     def _post_bulk_withhold(self) -> None:
@@ -949,13 +1022,14 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             self._handle_not_found()
             return
         try:
-            updated, event, _action = add_content_warning(
+            updated, event, decision = add_content_warning(
                 record, warning, actor=grant.subject, reason=reason, now=now_iso()
             )
         except ModerationError:
             self._reject_moderation()
             return
         archive.apply_update(updated, event)
+        record_moderation(archive, decision)
         self._redirect_steward()
 
     def _post_steward_takedown(self, raw_id: str) -> None:
@@ -1281,13 +1355,22 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         consent/policy changes, takedowns, key rotations — newest first, as an
         accessible table. Every event is identity-free by construction
         (:meth:`Archive.audit_events`), so the log carries no contributor identity or
-        sealed value. Steward-gated; a non-steward gets a neutral 404."""
+        sealed value. Steward-gated; a non-steward gets a neutral 404.
+
+        A second table renders the **moderation decisions**
+        (:func:`ledger.moderate.moderation_actions`). PREMIS answers *what happened*; only
+        this one answers *why a steward said they did it*, which is the fact
+        ``docs/GOVERNANCE.md`` and ``docs/THREAT-MODEL.md`` §4.4 rest the
+        accountability model on. Its ``reason`` is steward-authored prose rather than
+        a value the system derives, which is precisely why it renders here, behind the
+        steward gate, and on no other surface (the no-outing rule)."""
         grant = self._resolve_grant()
         lang = self._lang()
         if not grant.is_steward:
             self._handle_not_found()
             return
-        events = self._archive().audit_events()
+        archive = self._archive()
+        events = archive.audit_events()
         if events:
             rows = "\n".join(
                 "        <tr>\n"
@@ -1322,6 +1405,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             f"    <h1>{_esc(i18n.t(lang, 'audit_heading'))}</h1>\n"
             f"    <p>{_esc(i18n.t(lang, 'audit_intro'))}</p>\n"
             f"{table}\n"
+            f"{_moderation_section_html(archive, lang=lang)}\n"
             f'    <p><a href="/steward">{_esc(i18n.t(lang, "audit_back"))}</a></p>'
         )
         self._send_html(
@@ -1946,12 +2030,13 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         # Record the accountable decision first (its "why" must outlive the data),
         # then erase every copy through the one shared removal effect. The actor is
         # the contributor themselves; the reason names no one.
-        event, _action = takedown(
+        event, decision = takedown(
             reference,
             actor="contributor",
             reason="contributor withdrawal before publication",
             now=now,
         )
+        record_moderation(archive, decision)
         archive.log_takedown(event)
         archive.remove_all_copies(reference)
         queue.remove(reference)

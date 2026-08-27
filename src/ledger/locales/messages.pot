@@ -151,6 +151,16 @@ msgstr ""
 msgid "Catalogue metadata"
 msgstr ""
 
+msgid ""
+"Chain verification FAILED: a recorded decision was altered or removed "
+"after the fact. Compare this log against an off-box replica."
+msgstr ""
+
+msgid ""
+"Chain verified: no recorded decision has been altered since it was "
+"recorded."
+msgstr ""
+
 msgid "Check a request"
 msgstr ""
 
@@ -225,6 +235,9 @@ msgstr ""
 msgid "Death — describes the death of a person"
 msgstr ""
 
+msgid "Decision"
+msgstr ""
+
 msgid "Default access"
 msgstr ""
 
@@ -269,6 +282,13 @@ msgid ""
 msgstr ""
 
 msgid "Event"
+msgstr ""
+
+msgid ""
+"Every accountable moderation decision, newest first: what was done, who "
+"did it, why, and to which record. Unlike the events above, the reason "
+"here is written by the acting steward, so this section is shown to "
+"stewards only."
 msgstr ""
 
 msgid ""
@@ -360,6 +380,12 @@ msgstr ""
 msgid "Medical — describes injury, illness, or clinical procedures"
 msgstr ""
 
+msgid "Moderation decisions"
+msgstr ""
+
+msgid "Moderation decisions, newest first"
+msgstr ""
+
 msgid "Name"
 msgstr ""
 
@@ -373,6 +399,9 @@ msgid "No"
 msgstr ""
 
 msgid "No earlier versions."
+msgstr ""
+
+msgid "No moderation decisions recorded yet."
 msgstr ""
 
 msgid "No open requests."
@@ -495,6 +524,9 @@ msgid "Public — anyone may read it once a steward approves"
 msgstr ""
 
 msgid "Publish (as requested)"
+msgstr ""
+
+msgid "Reason"
 msgstr ""
 
 msgid "Reason (required)"
@@ -664,6 +696,12 @@ msgid "That submission is too long."
 msgstr ""
 
 msgid "The language of the material, e.g. English or Spanish."
+msgstr ""
+
+msgid ""
+"The moderation log could not be read. It is not empty — it is unreadable,"
+" and that needs looking into before any further moderation decision is "
+"taken."
 msgstr ""
 
 msgid "The takedown is confirmed at every storage location."

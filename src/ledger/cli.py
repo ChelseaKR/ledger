@@ -83,6 +83,9 @@ from ledger.moderate import (
     add_content_warning,
     change_consent,
     execute_takedown,
+    moderation_actions,
+    moderation_log,
+    record_moderation,
     set_field_policy,
     set_payload_policy,
 )
@@ -548,6 +551,7 @@ def _cmd_policy(args: argparse.Namespace) -> int:
         record, level, actor=args.actor, reason=args.reason, now=now
     )
     _persist_record(archive, updated, event)
+    record_moderation(archive, action)
     print(f"policy for {args.id} changed to {level.value} by {action.actor}")
     return 0
 
@@ -567,6 +571,7 @@ def _cmd_cw(args: argparse.Namespace) -> int:
         record, args.warning, actor=args.actor, reason=args.reason, now=now
     )
     _persist_record(archive, updated, event)
+    record_moderation(archive, action)
     print(f"content warning {args.warning!r} added to {args.id} by {action.actor}")
     return 0
 
@@ -622,6 +627,7 @@ def _cmd_seal(args: argparse.Namespace) -> int:
         )
         target = "default policy"
     _persist_record(archive, updated, event)
+    record_moderation(archive, action)
     print(f"{target} for {args.id} set to {level.value} by {action.actor}")
     return 0
 
@@ -843,10 +849,11 @@ def _execute_proposal(
         )
     if proposal.action == "publish":
         record = archive.get(proposal.target)
-        updated, event, _action = change_consent(
+        updated, event, decision = change_consent(
             record, AccessPolicy.PUBLIC, actor=actor, reason=proposal.reason, now=now
         )
         archive.apply_update(updated, event)
+        record_moderation(archive, decision)
         return f"record {proposal.target} published by {actor}"
     if proposal.action == "unseal":
         return (
@@ -897,6 +904,57 @@ def _cmd_takedown(args: argparse.Namespace) -> int:
         return 0
     print(_perform_takedown(archive, args.id, actor=args.actor, reason=args.reason, now=now))
     return 0
+
+
+def _cmd_moderation_list(args: argparse.Namespace) -> int:
+    """``moderation list`` — print the archive's recorded moderation decisions.
+
+    The operator-side read of what ``/steward/audit`` shows in the browse console:
+    every accountable decision, newest first, with the four facts an audit needs --
+    what, who, why, and which record. The rationale is the reason this command
+    exists: a PREMIS event proves a takedown happened, but only this log says what
+    the steward claimed as justification (``docs/GOVERNANCE.md``).
+
+    ``reason`` is steward-authored prose, so this is a steward-operated command on
+    a machine that already holds the archive; it is never a public surface.
+    """
+    archive = _open_archive(Path(args.root))
+    actions = moderation_actions(archive, limit=args.limit)
+    if args.json:
+        print(json.dumps([a.to_dict() for a in actions], indent=2, sort_keys=True))
+        return 0
+    for a in actions:
+        appeal = f"\tappeal-of:{a.appeal_of}" if a.appeal_of else ""
+        print(f"{a.at}\t{a.action}\t{a.actor}\t{a.target_record}\t{a.reason}{appeal}")
+    print(f"({len(actions)} recorded decision(s))")
+    return 0
+
+
+def _cmd_moderation_verify(args: argparse.Namespace) -> int:
+    """``moderation verify`` — chain-verify the moderation log (tamper evidence).
+
+    The log is append-only *as enforced by the application*; someone with raw write
+    access to the file can still edit it (``docs/THREAT-MODEL.md`` §4.4). Every entry
+    carries a link to the one before it, so an edit or deletion anywhere in history
+    moves the head and fails here. Exit code 2 on a broken chain, so a scheduled
+    check can page on it (operability).
+    """
+    archive = _open_archive(Path(args.root))
+    log = moderation_log(archive).load()
+    result = log.verify_chain()
+    print(
+        json.dumps(
+            {
+                "entries": len(log.actions),
+                "chain_verified": result.ok,
+                "head": result.head,
+                "broken_at": result.broken_at,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+    return 0 if result.ok else 2
 
 
 # Actions the generic ``propose``/``approve`` path can *execute* (see
@@ -1890,6 +1948,28 @@ def _build_parser() -> argparse.ArgumentParser:
     p_takedown.add_argument("--reason", required=True, help="rationale (required, auditable)")
     p_takedown.add_argument("--now", help="ISO-8601 timestamp")
     p_takedown.set_defaults(func=_cmd_takedown)
+
+    p_moderation = sub.add_parser(
+        "moderation", help="read the archive's accountable moderation decisions"
+    )
+    moderation_sub = p_moderation.add_subparsers(
+        dest="moderation_command", required=True, metavar="SUBCOMMAND"
+    )
+    p_mod_list = moderation_sub.add_parser(
+        "list", help="print recorded moderation decisions, newest first"
+    )
+    p_mod_list.add_argument("--root", default=".", help="archive root")
+    p_mod_list.add_argument(
+        "--limit", type=int, default=200, help="most recent decisions to print (default 200)"
+    )
+    p_mod_list.add_argument("--json", action="store_true", help="print as JSON instead of TSV")
+    p_mod_list.set_defaults(func=_cmd_moderation_list)
+
+    p_mod_verify = moderation_sub.add_parser(
+        "verify", help="chain-verify the moderation log (exit 2 if tampered)"
+    )
+    p_mod_verify.add_argument("--root", default=".", help="archive root")
+    p_mod_verify.set_defaults(func=_cmd_moderation_verify)
 
     p_propose = sub.add_parser("propose", help="propose a high-stakes action (dual-control)")
     p_propose.add_argument("--root", required=True)

@@ -237,6 +237,23 @@ def _messages(translation: gettext.NullTranslations) -> dict[str, str]:
         "audit_col_detail": _("Detail"),
         "audit_no_events": _("No recorded events yet."),
         "audit_back": _("Back to the steward console"),
+        "modlog_heading": _("Moderation decisions"),
+        "modlog_intro": _(
+            "Every accountable moderation decision, newest first: what was done, who did it, why, and to which record. Unlike the events above, the reason here is written by the acting steward, so this section is shown to stewards only."
+        ),
+        "modlog_caption": _("Moderation decisions, newest first"),
+        "modlog_col_decision": _("Decision"),
+        "modlog_col_reason": _("Reason"),
+        "modlog_none": _("No moderation decisions recorded yet."),
+        "modlog_chain_ok": _(
+            "Chain verified: no recorded decision has been altered since it was recorded."
+        ),
+        "modlog_chain_broken": _(
+            "Chain verification FAILED: a recorded decision was altered or removed after the fact. Compare this log against an off-box replica."
+        ),
+        "modlog_unreadable": _(
+            "The moderation log could not be read. It is not empty — it is unreadable, and that needs looking into before any further moderation decision is taken."
+        ),
         "cs_heading": _("Check a request"),
         "cs_intro": _(
             "Enter the reference code you were given when you filed a consent or takedown request to see whether a steward has acted on it."

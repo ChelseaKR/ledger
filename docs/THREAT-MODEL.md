@@ -227,10 +227,16 @@ probing the archive's public surfaces, combining fields, or cross-referencing.*
 - **Mechanism.** The steward/unsealer split (a steward grant holds no `identity_unseal`
   tokens), least-privilege grant construction (`build_grant` requires every capability
   to be named explicitly — privilege never accrues by omission), and an append-only,
-  attributed moderation log (`ModerationLog`, `src/ledger/moderate.py`). Every
+  attributed moderation log (`ModerationLog` + `ModerationLogStore`,
+  `src/ledger/moderate.py`, persisted at `<store>/logs/moderation.json`). Every
   consequential action — warn, takedown, consent-change, appeal — is recorded with the
   acting steward, a required non-empty reason, and the target record id, and the log can
-  be appended to but not silently rewritten. Preservation actions are PREMIS events with
+  be appended to but not silently rewritten. The *reason* is the part that makes this a
+  control against a coerced or bad-faith steward rather than a bare activity feed, and it
+  became durable only when the store was wired into the CLI and the browse server
+  (#156); before that it was validated and discarded, and the PREMIS event beside it
+  records only what was done. `ledger moderation verify` chain-verifies the log, and
+  `/steward/audit` reports a broken chain on the page. Preservation actions are PREMIS events with
   agent and outcome (`src/ledger/metadata/premis.py`), so a steward's actions are
   attributable after the fact.
 - **Residual risk.** **A steward who *also* holds the vault key and an `identity_unseal`
@@ -242,7 +248,11 @@ probing the archive's public surfaces, combining fields, or cross-referencing.*
   disclosure gate does not constrain someone with raw disk access. The append-only log
   is append-only *as enforced by the application*; an attacker with raw write access to
   the log file on disk can tamper with it, which is why fixity and off-box replicas of
-  the log matter. Governance (`docs/GOVERNANCE.md`) is the control for a malicious
+  the log matter. Each entry's chain link narrows this rather than closing it: an edit
+  that does not also recompute every following link is detected by `ledger moderation
+  verify` and shown on `/steward/audit`, but an attacker who rewrites the whole chain
+  produces a locally self-consistent history, and only comparing the head against an
+  off-box replica catches that. Governance (`docs/GOVERNANCE.md`) is the control for a malicious
   steward: removal, multi-steward review of high-stakes actions, and not concentrating
   the vault key and unseal grants in one person.
 

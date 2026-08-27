@@ -158,10 +158,16 @@ Useful extras that are run individually above but are also handy standalone:
 
 ```sh
 make cov            # tests with a coverage report: the 88% branch-coverage floor
-                     # ([tool.coverage.report] fail_under in pyproject.toml) plus the scoped
-                     # 95% floor on access/consent/dual-control. verify's `test` target runs
-                     # pytest without coverage for speed, so run this before relying on
-                     # either floor locally.
+                     # ([tool.coverage.report] fail_under in pyproject.toml), the scoped
+                     # 95% floor on access/consent/dual-control, and a separate 90% floor
+                     # on moderate.py. verify's `test` target runs pytest without coverage
+                     # for speed, so run this before relying on any floor locally.
+                     # Each scoped floor gates the TOTAL row of its own report, not each
+                     # module in it: the 95% line passes while grants.py (92%) and
+                     # consent.py (91%) sit under it. A module added to a scoped list
+                     # therefore inherits its neighbours' average, which is why
+                     # moderate.py is reported on its own rather than appended to the
+                     # existing one. Give a newly-floored module its own line.
 make acr            # regenerate the Accessibility Conformance Report
 ```
 
