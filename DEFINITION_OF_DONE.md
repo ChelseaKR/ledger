@@ -145,13 +145,18 @@ exists and enforces this section on every `v*` tag:
 ## Branch protection
 
 An active `protect-main` GitHub ruleset blocks deletion and force-push and
-requires eleven named CI checks. It is mirrored in-tree at
+requires thirteen named CI checks. It is mirrored in-tree at
 `.github/rulesets/main.json` so the posture is reviewable in a diff; the gaps
-are itemized in `.github/rulesets/README.md`. It is not yet the complete
-portfolio posture: strict/up-to-date checks, PR approval, stale-review
-dismissal, CODEOWNER review, signed commits, and linear history remain issue
-#79, and the Semgrep and OSV contexts are missing from the required set. The
-target posture is:
+are itemized in `.github/rulesets/README.md`.
+
+The 2026-08-21 ruleset pass (#79) closed what this section used to list as
+outstanding. The ruleset now holds the CI-CD-STANDARD §5.1 solo-maintainer
+profile: a `pull_request` rule (0 required approvals — the sole code owner
+cannot self-approve, and §5.1 permits `require_code_owner_review: false` for
+exactly that reason), `required_signatures`, `required_linear_history`, and
+`strict_required_status_checks_policy: true`. `OSV lockfile scan (uv.lock)` and
+`Semgrep SAST (p/ci)` are in the required set and block a merge. The full
+portfolio posture, for reference, is:
 PR required (≥1 approval, ≥2 for
 changes to `src/ledger/access/` or `identity.py`), last-pusher cannot
 self-approve, stale reviews dismissed on new pushes, CODEOWNERS review

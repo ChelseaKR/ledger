@@ -235,6 +235,48 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   nothing to act on, over nearly a quarter of the archive.
 
 ### Fixed
+- **`make verify` now runs Semgrep, and four documents stopped describing a repository
+  that no longer exists** (MP-06, MP-07). `make semgrep` runs
+  `semgrep scan --config p/ci --error src tests` and joins `make verify`, in the same
+  CI-authoritative shape as `osv` and `secret-scan`: it skips with a message when the
+  binary is absent, and CI's required `Semgrep SAST (p/ci)` check remains the gate of
+  record. This closes the SEC-11/13 + CICD-13/27 row in `docs/ROADMAP.md`, where the
+  one required check `make verify` could not run had no pre-push signal.
+
+  It departs from that row's original closing condition, which asked for *locked*
+  Semgrep tooling. That was tried and reverted: pinning `semgrep==1.145.0` into the
+  dependency graph pins `click 8.1.8` and `mcp 1.16.0`, and OSV-Scanner reports **4
+  High-severity advisories** across those two (PYSEC-2026-2132; PYSEC-2026-1617,
+  -3482, -3483), none bumpable independently because semgrep pins them. Importing four
+  known-vulnerable packages to mirror a check CI already runs is a bad trade, and
+  SECURITY-AND-SUPPLY-CHAIN-STANDARD §4 forbids muting the audit gate instead. Semgrep
+  is therefore an external tool like `gitleaks` and `osv-scanner`, never a dependency
+  of this package. The measurement and the reasoning are recorded in the `Makefile`
+  beside the target and in the roadmap row.
+
+  The truth pass: **ADR 0006** carries a `Superseded by 0009` marker. ADR 0009 has said
+  `Supersedes: 0006` since the day it was accepted; the pointer was one-way for six
+  weeks, so a reader arriving at 0006 — the number older documents cite — was told
+  nothing and would have read a superseded decision as current. ADR 0001 permits
+  exactly this edit to an accepted ADR. **`DEFINITION_OF_DONE.md`** says thirteen
+  required checks rather than eleven, and no longer lists as outstanding the PR rule,
+  signatures, linear history, strict checks and Semgrep/OSV contexts that the
+  2026-08-21 ruleset pass closed. **ADR 0016** retroactively records the #159 decision,
+  which changed a safety guardrail and added a coverage threshold and merged without
+  the ADR that ADR 0000 requires.
+
+  Five new tests in `tests/test_adr_integrity.py` make the one-way-pointer defect
+  unreintroducible: `Supersedes: N` in any ADR now requires N's own status to say so,
+  checked over every committed ADR so a new one is covered when it is added rather
+  than when someone remembers a list.
+
+  The store sweep this pass called for is **done and found no further defects**, which
+  is worth recording as a rule rather than a result: *empty-on-damage is a defect only
+  where empty is the permissive direction.* `attest.py` returns an empty attested set,
+  keeping every conditional seal closed; `server.py` returns `None` for an unreadable
+  revocation list, which denies. Both fail safe. `reading_room_enclave.py` and
+  `identity.py` raise. Only `ProposalStore` and `SubmissionQueue` had empty meaning
+  permissive, and those were fixed alongside.
 - **Coverage floors are per module, and no security-core module may be unfloored**
   (ADR 0015). `make cov` and CI's `gate` job each carried
   `coverage report --include="src/ledger/access/*,src/ledger/consent.py,src/ledger/dualcontrol.py" --fail-under=95`.

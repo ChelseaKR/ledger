@@ -11,7 +11,7 @@ VENV ?= .venv
 PY   ?= $(if $(wildcard $(VENV)/bin/python),$(VENV)/bin/python,python3)
 
 .DEFAULT_GOAL := help
-.PHONY: help venv install lock lint format type test cov audit osv accessibility acr demo serve \
+.PHONY: help venv install lock lint format type test cov audit osv semgrep accessibility acr demo serve \
         i18n i18n-compile claims secret-scan workflow-lint perf real-corpus real-corpus-evidence \
         container mutation verify clean
 
@@ -136,6 +136,35 @@ claims: ## Truthfulness gate: verify README/doc factual claims against the repo
 hygiene: ## Suppression hygiene (CQ-34/35): every noqa/type-ignore is coded, explained, and — for complexity debt — issue-linked
 	$(PY) tools/check_hygiene.py
 
+semgrep: ## Semgrep SAST (p/ci) — mirrors semgrep.yml locally (SEC-11/13, CICD-13/27)
+	# CI-authoritative, in the same shape as `osv` and `secret-scan`: the
+	# `semgrep` workflow installs the pinned semgrep and scans on every push and PR
+	# regardless of what is on this machine, and `Semgrep SAST (p/ci)` is a required
+	# check, so CI is the gate of record. This target closes the gap
+	# `docs/ROADMAP.md` recorded under SEC-11/13 + CICD-13/27: a contributor had no
+	# pre-push signal for the one required check `make verify` could not run.
+	#
+	# Semgrep is deliberately NOT in the locked dependency graph, which is the one
+	# place this differs from what `docs/ROADMAP.md` originally proposed. Locking
+	# `semgrep==1.145.0` was tried and reverted: it pins `click 8.1.8` and
+	# `mcp 1.16.0`, and OSV-Scanner reports 4 High-severity advisories across those
+	# two (PYSEC-2026-2132; PYSEC-2026-1617 / -3482 / -3483), none of which can be
+	# bumped independently because semgrep pins them. Importing four known-vulnerable
+	# packages to gain a local mirror of a check CI already runs is a bad trade, and
+	# SECURITY-AND-SUPPLY-CHAIN-STANDARD §4 forbids muting the audit gate instead.
+	# So semgrep is treated exactly as `gitleaks` and `osv-scanner` are: an external
+	# tool this target uses when present, never a dependency of this package.
+	# Install it however you like, e.g. `pipx install semgrep==1.145.0`.
+	#
+	# `--config p/ci` fetches the ruleset from semgrep.dev, so this target needs
+	# network — a property of the dev tool, not of ledger, whose runtime stays
+	# offline (README hard rules).
+	@command -v semgrep >/dev/null 2>&1 || { \
+		echo "semgrep not found locally; skipping (CI is authoritative — see semgrep.yml). Install with: uv sync --extra sast"; \
+		exit 0; \
+	}
+	semgrep scan --config p/ci --error src tests
+
 secret-scan: ## Secret scan (gitleaks) — mirrors ci.yml's supply-chain job locally
 	# CI-authoritative: CI pins and downloads gitleaks 8.30.1 itself
 	# (.github/workflows/ci.yml, supply-chain job) regardless of what is on this
@@ -211,7 +240,7 @@ mutation: ## ADVISORY (never a merge gate): mutation-test the safety-critical co
 # job is `test`'s own `disclosure`-marked subset, run standalone in CI for
 # visibility, not a distinct local gate; `container` is intentionally excluded —
 # see its own target comment.)
-verify: lint type test i18n accessibility audit osv secret-scan claims hygiene workflow-lint ## Run the complete merge gate (== CI's required checks)
+verify: lint type test i18n accessibility audit osv semgrep secret-scan claims hygiene workflow-lint ## Run the complete merge gate (== CI's required checks)
 	@echo "verify: all gates green"
 
 clean: ## Remove caches and build artifacts (never touches an archive's data)

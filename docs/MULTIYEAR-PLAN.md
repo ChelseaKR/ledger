@@ -57,8 +57,8 @@ Priority and effort use `RESEARCH-ROADMAP.md`'s scale: **P0** now · **P1** next
 | MP-03 ✅ | **`ProposalStore` and `SubmissionQueue` stop reading corruption as an empty history.** Both swallowed `(OSError, ValueError)` and returned `[]`, and the next `add()` then rewrote the file | P0 | S | [#154](https://github.com/ChelseaKR/ledger/issues/154) · **[corroborates ADR 0014 decision 1]** · **shipped, see below** |
 | MP-04 ✅ | **Per-module coverage floors; retire the pooled figure.** `--fail-under` gated the TOTAL row, so the scoped 95% passed while `grants.py` (92%) and `consent.py` (91%) sat under it. Both raised to 100% and 97% rather than the floor lowered to meet them | P1 | M | `Makefile` `cov:`; ADR 0014 open edge · **[NET-NEW]** · **shipped, see below** |
 | MP-05 | **Retire the eight `C901` waivers and reach the 90% published-library floor.** The waived functions are the public GET/POST route tables, `ingest_sip`, `validate_bag`, WCAG element/rule checks, CLI ingest options, and untrusted-form validation | P1 | L | [#83](https://github.com/ChelseaKR/ledger/issues/83) · **[corroborates ROADMAP CQ-05/08]** |
-| MP-06 | **Local Semgrep parity in `make verify`.** CI is the gate of record; a contributor gets no pre-push signal, unlike `osv` and `secret-scan` which both have local targets | P2 | S | `ROADMAP.md` open gaps, SEC-11/13 CICD-13/27, "no issue filed yet" |
-| MP-07 | **Documentation truth pass, and the audit the ADRs imply.** ADR 0006 is superseded by 0009 but was never marked, against ADRs 0000/0001's own bidirectional rule; `DEFINITION_OF_DONE.md` still describes eleven required checks and calls Semgrep/OSV non-blocking, which the 2026-08-21 ruleset pass changed to thirteen and blocking; #99's body links a deleted branch; **#159 changed a safety guardrail and added a coverage threshold without the ADR ADR 0000 requires, and merged that way**; and the other JSON stores have not been swept for whether they too read damage as an empty collection | P1 | M | ADR 0000; `ROADMAP.md` 2026-08-21 pass; ADR 0014 open edges · **[NET-NEW]** |
+| MP-06 ✅ | **Local Semgrep parity in `make verify`.** CI is the gate of record; a contributor got no pre-push signal, unlike `osv` and `secret-scan` which both have local targets. Shipped as a target, **not** as a locked dependency: pinning semgrep imports 4 High-severity advisories via `click` and `mcp` that it pins and that cannot be bumped independently | P2 | S | `ROADMAP.md` open gaps, SEC-11/13 CICD-13/27 · **shipped, see below** |
+| MP-07 ✅ | **Documentation truth pass, and the audit the ADRs imply.** ADR 0006 is superseded by 0009 but was never marked, against ADRs 0000/0001's own bidirectional rule; `DEFINITION_OF_DONE.md` still describes eleven required checks and calls Semgrep/OSV non-blocking, which the 2026-08-21 ruleset pass changed to thirteen and blocking; #99's body links a deleted branch; **#159 changed a safety guardrail and added a coverage threshold without the ADR ADR 0000 requires, and merged that way**; and the other JSON stores have not been swept for whether they too read damage as an empty collection | P1 | M | ADR 0000; `ROADMAP.md` 2026-08-21 pass; ADR 0014 open edges · **[NET-NEW]** |
 | MP-08 | **Type the untyped PREMIS event writers, and label `media_type_basis` in browse.** Consent changes, takedowns, and replication still emit `linkingObjectIdentifierType: local`; the identification basis reaches the API but is not rendered, because it needs a user-facing string in four locales | P2 | M | ADR 0012 and ADR 0010, both "a follow-up" in their own consequences |
 | MP-09 | **Format migration / normalization for at-risk media.** RM4 identifies and flags; nothing migrates. Pairs with the registry ADR 0010 deliberately left non-convergent | P2 | L | `RESEARCH-ROADMAP.md` EX12; OAIS Preservation Planning · **[corroborates RESEARCH-ROADMAP EX12]** |
 | MP-10 | **Re-identification with an explicit PREMIS supersession shape.** ADR 0012's contradiction guard is the place it has to be added, and exists partly to stop one appearing by accident | P3 | L | ADR 0012 consequences, verbatim: "Re-identification does not exist" |
@@ -90,11 +90,10 @@ the prose equivalent.*
 **Done when:** 40 concurrent takedowns record 40 tombstones ✅; a truncated
 `proposals.json` raises instead of reading as an empty history ✅; every module in the
 security core reports against a floor of its own with no pooled `--include` remaining in
-`make cov` ✅; ADR 0006 carries `Superseded by 0009` and 0009 points back
-(MP-07, not yet); `DEFINITION_OF_DONE.md` names thirteen required checks (MP-07, not
-yet).
+`make cov` ✅; ADR 0006 carries `Superseded by 0009` and 0009 points back ✅;
+`DEFINITION_OF_DONE.md` names thirteen required checks ✅.
 
-**Phase three — the quality floor the standards actually ask for.** MP-05 · MP-06 · MP-08.
+**Phase three — the quality floor the standards actually ask for.** MP-05 · MP-06 ✅ · MP-08.
 *Theme: with per-module floors in place, #83's remaining half stops being a pooled
 average to chase and becomes eight named functions to refactor, each with a target of its
 own. The two documentation follow-ups the ADRs recorded ride along, because both are
@@ -220,4 +219,69 @@ published number lowered to meet them. Recorded as
 Verify: `make verify` green, 1309 tests; `make cov` total 89.25% against the 88% floor,
 and 8 modules each against a floor of its own with no pooled figure remaining.
 
-**MP-05 through MP-14 are planned only.** Nothing else in this document is built.
+**MP-06 and MP-07 shipped here too.**
+
+`make semgrep` runs `semgrep scan --config p/ci --error src tests` and joins
+`make verify`, in the same CI-authoritative shape as `osv` and `secret-scan`. It is
+deliberately **not** a locked dependency, which is where this departs from the closing
+condition `ROADMAP.md` originally wrote for the row. Pinning `semgrep==1.145.0` was
+tried and reverted: it pins `click 8.1.8` and `mcp 1.16.0`, and OSV-Scanner reports 4
+High-severity advisories across those two (PYSEC-2026-2132; PYSEC-2026-1617 / -3482 /
+-3483), none bumpable independently. Importing four known-vulnerable packages to
+mirror a check CI already runs is a bad trade, and §4 forbids muting the audit gate
+instead. Semgrep is therefore an external tool like `gitleaks` and `osv-scanner`.
+
+The truth pass: ADR 0006 carries the `Superseded by 0009` marker ADR 0001 permits and
+ADR 0000 implies (0009 had said `Supersedes: 0006` for six weeks, one-way);
+`DEFINITION_OF_DONE.md` says thirteen required checks rather than eleven and no longer
+lists as outstanding the approvals, signatures, linear history and Semgrep/OSV contexts
+that the 2026-08-21 ruleset pass closed; and
+[ADR 0016](adr/0016-the-moderation-reason-is-gated-by-placement.md) retroactively
+records the #159 decision that merged without the ADR ADR 0000 requires. Five new
+tests in `tests/test_adr_integrity.py` make the one-way-pointer defect
+unreintroducible.
+
+The store sweep MP-07 called for is **done, and found no further defects.** The other
+four sites that read a store and return an empty collection on damage are all correct,
+for a reason worth writing down: *empty on damage is a defect only where empty is the
+permissive direction.* `attest.py` returns an empty attested set, which keeps every
+conditional seal closed; `server.py` returns `None` for an unreadable revocation list,
+which denies. Both fail safe. `reading_room_enclave.py` and `identity.py` raise. Only
+`ProposalStore` and `SubmissionQueue` had empty meaning *permissive* -- a lost proposal,
+a forgotten submission -- and those were fixed in MP-03.
+
+## Phase status, stated exactly
+
+Three different things are not built, and collapsing them into one word would be the
+dishonest part. This table separates them.
+
+| Item | Status | Why |
+|---|---|---|
+| MP-01 | **Built** | Merged upstream as #159 |
+| MP-02 | **Built** | This stack |
+| MP-03 | **Built** | This stack |
+| MP-04 | **Built** | This stack |
+| MP-06 | **Built** | This stack, with a documented departure from its original closing condition |
+| MP-07 | **Built** | This stack |
+| MP-05 | **Not built — tractable, and large** | Eight `C901` waivers over the public GET/POST route tables, `ingest_sip`, `validate_bag`, WCAG element/rule checks, CLI ingest options, and untrusted-form validation, plus ~0.8 points of coverage. `ROADMAP.md` calls it "real, non-mechanical work on the repo's most security-critical paths" and it is. Nothing blocks it but size; a partly-refactored route table is worse than an un-refactored one, so it is left whole |
+| MP-08 | **Not built — tractable** | Typing the untyped PREMIS event writers is mechanical; labelling `media_type_basis` in browse needs a user-facing string in four locales |
+| MP-09 | **Not built — tractable, and large** | A format migration pipeline is new subsystem work (OAIS Preservation Planning), sized **L** in the backlog it comes from |
+| MP-10 | **Not built — tractable, and large** | Re-identification needs an explicit PREMIS supersession shape; ADR 0012 says so and put the guard where it will have to go |
+| MP-12 | **Not built — tractable, and large** | Federation and a verifiable deposit bundle, both **L** |
+| MP-11 | **Not built — gated on people** | `RESEARCH-ROADMAP.md`'s own rule: "Confirm before you build; ship nothing that can endanger a contributor on the strength of a synthetic exercise alone." A community-authored access vocabulary designed without the communities is the failure mode the item exists to avoid. **Unblocked by:** real-user validation, which needs #99's reviewer or equivalent |
+| MP-13 | **Blocked** | Chunked at-rest AEAD framing supersedes ADR 0011's 64 MiB cap. ADR 0011: the sealing layer's crypto "must not ship on self-review" (FIX-11). **Unblocked by:** a commissioned external cryptography review, tracked as #82; `docs/audits/crypto-design-review-sealing-layer.md` records "Date reviewed: (not yet scheduled)" |
+| MP-14 | **Blocked** | Threshold / split-knowledge vault key (RM1). Same review gate as MP-13. The backlog additionally records a risk this plan will not decide around: a 2-of-N key can *reduce* safety for a small collective, where losing one holder can mean losing the archive. That is a design decision for the owner and the communities, not an implementation detail. **Unblocked by:** #82, then an explicit decision on the N and the recovery story |
+
+Four further items are owner or human actions that `DEFINITION_OF_DONE.md` says
+automation must prepare evidence for but never impersonate. They are listed in *Held,
+not scheduled* above and are **not** in this table, because they were never
+engineering: #80 (first trusted release: PyPI credentials, signer identity), #81
+(dated NVDA/VoiceOver walkthrough), #82 (accountable-owner and independent sign-off),
+#99 (community-archivist review), and #78, which is blocked on #80 having run once so
+an egress allowlist can be derived from observation rather than guessed.
+
+One item the record showed as outstanding turned out to be **already done**:
+`FIX-01` (AIP revisioning) landed in #50. `Archive.apply_update` calls
+`refresh_tag_manifests` and records a PREMIS `VALIDATION` event carrying the digest
+transition; a bag re-validates after a lawful update, verified by running one and
+comparing every expected digest against its actual. It is not re-listed as a gap.
