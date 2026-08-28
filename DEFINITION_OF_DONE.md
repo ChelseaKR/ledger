@@ -23,8 +23,11 @@ tracked below under "Branch protection."
 3. **Tests + coverage** — full suite green on Python 3.12 (the floor per
    CQ-01 and, for now, the ceiling — the CI matrix is a single interpreter);
    the 88% branch-coverage floor (`[tool.coverage.report] fail_under` and
-   `[tool.coverage.run] branch = true` in `pyproject.toml`) plus a ≥ 95%
-   per-module floor on `access/`/consent/dual-control; cyclomatic complexity
+   `[tool.coverage.run] branch = true` in `pyproject.toml`) plus a genuine
+   per-module floor for every security-core module, each measured on its own by
+   `tools/check_coverage_floors.py` against `[tool.ledger.coverage_floors]` in
+   `pyproject.toml` (this line described a per-module floor for months while the
+   implementation was a single pooled `--fail-under`); cyclomatic complexity
    ≤ 10 (`ruff` `C901`, `max-complexity = 10`) — pre-existing functions over
    the limit are waived with `# noqa: C901` comments that link issue #83
    pending a deliberate split (CQ-05). CQ-08's 90% published-library floor
@@ -94,7 +97,7 @@ so "green locally" is not read as more than it is:
 
 - **Coverage floors are CI-only.** `verify` calls `test` (plain `pytest`), not
   `cov`, because the coverage run roughly doubles the suite's wall time; CI's
-  `gate` job runs `pytest --cov` plus the scoped `--fail-under=95` re-report.
+  `gate` job runs `pytest --cov` plus `tools/check_coverage_floors.py`.
   Run `make cov` before relying on either floor locally.
 - **`osv` and `secret-scan` no-op when the binary is absent** and say so; CI
   installs pinned copies and is the gate of record for both.

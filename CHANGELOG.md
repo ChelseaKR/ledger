@@ -235,6 +235,39 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   nothing to act on, over nearly a quarter of the archive.
 
 ### Fixed
+- **Coverage floors are per module, and no security-core module may be unfloored**
+  (ADR 0015). `make cov` and CI's `gate` job each carried
+  `coverage report --include="src/ledger/access/*,src/ledger/consent.py,src/ledger/dualcontrol.py" --fail-under=95`.
+  That flag gates a report's **TOTAL row**, not each module in it, so the line passed at
+  exactly 95% while `grants.py` sat at 92% and `consent.py` at 91%, carried by three
+  neighbours at 100%. Two of the six modules in the declared security core were under
+  the floor their own gate advertised, and the gate could not say so.
+  `DEFINITION_OF_DONE.md` had described this as a "per-module floor" for months; the
+  document was right about the intent, the implementation was one pooled number.
+
+  Both modules were raised to meet the published figure rather than the figure lowered
+  to meet them: `grants.py` 92% → **100%**, `consent.py` 91% → **97%**. What was
+  uncovered was not incidental — in `grants.py` it was every refusal path of the
+  bearer-capability verifier (malformed base64, base64 that decodes to non-UTF-8, an
+  unparseable expiry), all reachable from an untrusted `X-Ledger-Grant` header, where an
+  uncovered `except` is a public route that can be made to raise.
+
+  `tools/check_coverage_floors.py` replaces the pooled line in both places. Floors live
+  as data in `pyproject.toml` (`[tool.ledger.coverage_floors]`), each module is measured
+  on its own, and **every** violation is reported rather than the first — a chain of
+  `--fail-under` lines tells you about one module per run. Two shapes of drift the
+  pooled report could never see are now build failures: a module matching
+  `[tool.ledger].security_core` with no floor (previously invisible, and the obvious
+  remedy of appending it to the pooled `--include` would have bought it a passing grade
+  from its neighbours), and a floor naming a module that no longer exists. An empty
+  floors table fails too. The comparison is coverage's own `should_fail_under` at its
+  own precision, so this gate cannot disagree with `--fail-under` elsewhere in the repo
+  at the rounding boundary.
+
+  34 new tests across `tests/test_access_and_consent_edges.py` (the refusal and
+  corruption edges) and `tests/test_coverage_floors_gate.py`, which holds the new gate
+  to the standard the old line failed: every rule it claims is shown failing on input
+  that violates it, including that a neighbour at 100% cannot lift a module at 91%.
 - **The archive's remaining silent-loss stores: takedown tombstones are serialized, and
   a damaged store fails closed** (#155, #154). `src/ledger/_filelock.py` exists because
   a whole-document read-modify-write loses concurrent writes, and says so in this

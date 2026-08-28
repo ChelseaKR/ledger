@@ -47,33 +47,22 @@ type: ## Strict type checking (mypy)
 test: ## Run the test suite (preservation + disclosure + no-outing audit)
 	$(PY) -m pytest
 
-cov: ## Run tests with coverage (95% pooled on access/consent/dual-control; own floors for moderate/tombstones/review)
+cov: ## Run tests with coverage (global 88% floor + a per-module floor for every security-core module)
 	$(PY) -m pytest --cov --cov-report=term-missing
-	# Per-module floor (CODE-QUALITY-STANDARD, security/crypto-critical paths): the
-	# access-policy, consent, and dual-control modules must hold >=95% branch
-	# coverage, above the 85% baseline. Scoped re-report over the .coverage data.
+	# Per-module floors (CODE-QUALITY-STANDARD CQ-08). This replaced a pooled
+	# `coverage report --include="access/*,consent.py,dualcontrol.py" --fail-under=95`.
+	# `--fail-under` gates a report's TOTAL row, not each module in it, so that line
+	# passed at 95% for weeks while `grants.py` sat at 92% and `consent.py` at 91%,
+	# carried by three neighbours at 100%: two modules were under the floor their own
+	# gate advertised, and the gate could not say so.
 	#
-	# NOTE ON THE POOL: `coverage report --fail-under` gates the TOTAL row, not each
-	# module, so this line passes at 95% overall while `grants.py` (92%) and
-	# `consent.py` (91%) sit below it. That is a known weakness of the pooled figure,
-	# not a claim that every module in the list clears 95.
-	$(PY) -m coverage report --include="src/ledger/access/*,src/ledger/consent.py,src/ledger/dualcontrol.py" --fail-under=95
-	# `moderate.py` gets its OWN scoped report and its own floor rather than joining
-	# the list above. Adding it there would have let its coverage average against
-	# `policy.py`/`dualcontrol.py` at 100% — a new module reading as covered because
-	# its neighbours are, which is the pooling weakness the note above describes,
-	# repeated deliberately. 90% is where the module measures with the accountable
-	# moderation log's tests in place (the remainder is pre-existing validation and
-	# refusal branches); it is a ratchet, so raise it when the number rises.
-	$(PY) -m coverage report --include="src/ledger/moderate.py" --fail-under=90
-	# `tombstones.py` and `review.py`, likewise on their own. Both hold a safety
-	# guarantee the pooled figure would average away: a lost tombstone is a
-	# taken-down record resurrecting on a replica, and a review queue read as empty
-	# is a contributor's submission nobody ever sees (#155, #154). Each floor is set
-	# where the module measures with the silent-loss tests in place, and each is a
-	# ratchet — raise it when the number rises, never lower it to make a run pass.
-	$(PY) -m coverage report --include="src/ledger/tombstones.py" --fail-under=89
-	$(PY) -m coverage report --include="src/ledger/review.py" --fail-under=97
+	# `tools/check_coverage_floors.py` measures each module on its own, reports every
+	# violation rather than stopping at the first, and catches two shapes of drift the
+	# pooled report never could -- a security-core module with no floor, and a floor
+	# naming a module that no longer exists. Floors and the security-core globs live in
+	# `pyproject.toml` ([tool.ledger.coverage_floors] / [tool.ledger].security_core);
+	# each is a ratchet, raised when the number rises, never lowered to pass a run.
+	$(PY) tools/check_coverage_floors.py
 
 backup-test: ## Exercise the full back-up -> wipe -> restore disaster-recovery cycle
 	$(PY) -m pytest -m recovery

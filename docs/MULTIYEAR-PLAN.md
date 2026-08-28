@@ -55,7 +55,7 @@ Priority and effort use `RESEARCH-ROADMAP.md`'s scale: **P0** now · **P1** next
 | MP-01 ✅ | **The recorded reason becomes durable.** `ModerationLogStore`, every live write path, two steward-gated read surfaces | P0 | L | [#156](https://github.com/ChelseaKR/ledger/issues/156); `GOVERNANCE.md`, `THREAT-MODEL.md` §4.4 · **merged as [#159](https://github.com/ChelseaKR/ledger/pull/159), without the ADR its own rules require — see MP-07** |
 | MP-02 ✅ | **`TombstoneStore` gets the file lock every sibling store has.** Measured 39 of 40 tombstones lost at 40 concurrent takedowns; a lost tombstone means a reattaching replica is never told to delete its stale copy | P0 | S | [#155](https://github.com/ChelseaKR/ledger/issues/155); Hard Rule 4 · **[corroborates README Hard rules]** · **shipped, see below** |
 | MP-03 ✅ | **`ProposalStore` and `SubmissionQueue` stop reading corruption as an empty history.** Both swallowed `(OSError, ValueError)` and returned `[]`, and the next `add()` then rewrote the file | P0 | S | [#154](https://github.com/ChelseaKR/ledger/issues/154) · **[corroborates ADR 0014 decision 1]** · **shipped, see below** |
-| MP-04 | **Per-module coverage floors; retire the pooled figure.** `--fail-under` gates the TOTAL row, so the scoped 95% passes while `grants.py` (92%) and `consent.py` (91%) sit under it | P1 | M | `Makefile` `cov:`; ADR 0014 open edge · **[NET-NEW]** |
+| MP-04 ✅ | **Per-module coverage floors; retire the pooled figure.** `--fail-under` gated the TOTAL row, so the scoped 95% passed while `grants.py` (92%) and `consent.py` (91%) sat under it. Both raised to 100% and 97% rather than the floor lowered to meet them | P1 | M | `Makefile` `cov:`; ADR 0014 open edge · **[NET-NEW]** · **shipped, see below** |
 | MP-05 | **Retire the eight `C901` waivers and reach the 90% published-library floor.** The waived functions are the public GET/POST route tables, `ingest_sip`, `validate_bag`, WCAG element/rule checks, CLI ingest options, and untrusted-form validation | P1 | L | [#83](https://github.com/ChelseaKR/ledger/issues/83) · **[corroborates ROADMAP CQ-05/08]** |
 | MP-06 | **Local Semgrep parity in `make verify`.** CI is the gate of record; a contributor gets no pre-push signal, unlike `osv` and `secret-scan` which both have local targets | P2 | S | `ROADMAP.md` open gaps, SEC-11/13 CICD-13/27, "no issue filed yet" |
 | MP-07 | **Documentation truth pass, and the audit the ADRs imply.** ADR 0006 is superseded by 0009 but was never marked, against ADRs 0000/0001's own bidirectional rule; `DEFINITION_OF_DONE.md` still describes eleven required checks and calls Semgrep/OSV non-blocking, which the 2026-08-21 ruleset pass changed to thirteen and blocking; #99's body links a deleted branch; **#159 changed a safety guardrail and added a coverage threshold without the ADR ADR 0000 requires, and merged that way**; and the other JSON stores have not been swept for whether they too read damage as an empty collection | P1 | M | ADR 0000; `ROADMAP.md` 2026-08-21 pass; ADR 0014 open edges · **[NET-NEW]** |
@@ -80,7 +80,7 @@ say it produces is the one defect class that undermines every other claim, so it
 first.* **Delivered in this PR.**
 
 **Phase two — the rest of the silent-loss class, and the gate that would have caught it.**
-MP-02 ✅ · MP-03 ✅ · MP-04 · MP-07.
+MP-02 ✅ · MP-03 ✅ · MP-04 ✅ · MP-07.
 *Theme: MP-01 built one store correctly and its docstrings cite the two stores that are
 still wrong. Fixing them is finishing a thought, not starting one. MP-04 belongs here
 because a pooled coverage figure is the same defect in the measuring instrument: a number
@@ -90,7 +90,7 @@ the prose equivalent.*
 **Done when:** 40 concurrent takedowns record 40 tombstones ✅; a truncated
 `proposals.json` raises instead of reading as an empty history ✅; every module in the
 security core reports against a floor of its own with no pooled `--include` remaining in
-`make cov` (MP-04, not yet); ADR 0006 carries `Superseded by 0009` and 0009 points back
+`make cov` ✅; ADR 0006 carries `Superseded by 0009` and 0009 points back
 (MP-07, not yet); `DEFINITION_OF_DONE.md` names thirteen required checks (MP-07, not
 yet).
 
@@ -207,8 +207,17 @@ tombstones survived each time, 34 to 37 writers raising. After: 40 of 40, no wri
 raising. A `disclosure`-marked test asserting the old empty-read behaviour was replaced
 by its inverse.
 
-Verify: `make verify` green, 1274 tests; `make cov` total 89.05% against the 88% floor,
-the pooled scope unchanged at 95%, and `moderate.py` (90%), `tombstones.py` (89%) and
-`review.py` (97%) each against a floor of its own.
+**MP-04 shipped here too.** The pooled
+`coverage report --include=<four modules> --fail-under=95` is gone from both `make cov`
+and CI. `tools/check_coverage_floors.py` gates each of the 8 security-core modules on
+its own measured value, reports every violation rather than stopping at the first, and
+refuses two shapes of drift the pooled report could not see: a security-core module with
+no floor, and a floor naming a module that no longer exists. `grants.py` (92% to 100%)
+and `consent.py` (91% to 97%) were raised to meet the published 95% rather than the
+published number lowered to meet them. Recorded as
+[ADR 0015](adr/0015-per-module-coverage-floors.md).
 
-**MP-04 through MP-14 are planned only.** Nothing else in this document is built.
+Verify: `make verify` green, 1309 tests; `make cov` total 89.25% against the 88% floor,
+and 8 modules each against a floor of its own with no pooled figure remaining.
+
+**MP-05 through MP-14 are planned only.** Nothing else in this document is built.
