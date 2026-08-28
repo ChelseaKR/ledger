@@ -78,8 +78,8 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   reached as `moderate.record_moderation(archive, action)` / `moderation_actions(archive)`
   / `verify_moderation_chain(archive)` — module functions taking an archive rather than
   `Archive` methods, because `moderate` already depends on `Archive` for
-  `execute_takedown` and the reverse import would make the two cyclic (CodeQL
-  `py/unsafe-cyclic-import` caught exactly that on the first draft). `Archive` owns only
+  `execute_takedown` and the reverse import would make the two cyclic, against the
+  one-way layering `docs/ARCHITECTURE.md` §1 states. `Archive` owns only
   `moderation_log_path`. It takes the same three rules as every sibling JSON
   store: the read-modify-write is serialized by `_filelock.file_lock` (40 concurrent
   appends lose none); a read failure raises instead of returning an empty log, so
@@ -100,7 +100,20 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   construction: it renders behind the steward gate and nowhere else, asserted by a
   merge-blocking `disclosure` test over twelve public surfaces. `make cov` gains a
   per-module floor for `moderate.py` reported on its own rather than folded into the
-  pooled access/consent/dual-control figure.
+  pooled access/consent/dual-control figure. Recorded as
+  [ADR 0014](docs/adr/0014-the-moderation-reason-is-gated-by-placement.md), which ADR
+  0000 requires for a change to a safety guardrail or a coverage threshold.
+- **A multiyear plan**, [`docs/MULTIYEAR-PLAN.md`](docs/MULTIYEAR-PLAN.md) (MP-01 to
+  MP-14). The third and narrowest planning document here: `ROADMAP.md` tracks standards
+  conformance and `RESEARCH-ROADMAP.md` holds the research-derived feature backlog, while
+  this one sequences what is already written down — the open issues, the unclosed backlog
+  rows, and the open edges ADRs 0010, 0011, and 0012 each recorded on their way past —
+  into four dependency-ordered phases, each stating what it delivers, what it depends on,
+  and what would tell you it is done. It proposes no new direction, and it keeps the work
+  that is blocked on a person (the first release, the assistive-technology walkthrough,
+  the accountable-owner and independent crypto reviews, a community-archivist reviewer, a
+  second maintainer) in a section of its own, un-sequenced, rather than scheduling other
+  people's consent.
 - **The `main` branch ruleset now holds the CI-CD-STANDARD §5.1 solo-maintainer
   profile** (#79). `pull_request` (0 required approvals — the sole code owner
   cannot self-approve their own PR, and §5.1 permits `require_code_owner_review:
@@ -222,6 +235,46 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   nothing to act on, over nearly a quarter of the archive.
 
 ### Fixed
+- **The archive's remaining silent-loss stores: takedown tombstones are serialized, and
+  a damaged store fails closed** (#155, #154). `src/ledger/_filelock.py` exists because
+  a whole-document read-modify-write loses concurrent writes, and says so in this
+  repository's strongest terms: "a lost withdrawal is the worst class of bug this
+  project can have". Eleven modules took that lesson; three did not take all of it.
+
+  `TombstoneStore.add` and `.confirm` were unlocked read-modify-writes. A tombstone is
+  not an audit row — it is the durable instruction that tells a reattaching replica to
+  delete a copy it still holds, so losing one leaves a taken-down record alive on a
+  mirror with nothing left that will ever ask for its removal (Hard Rule 4). Measured
+  over three trials of 40 concurrent takedowns released from a common barrier, **1 of
+  40** tombstones survived each time. The loss ran worse than #155's ~85% estimate for
+  a second reason the issue did not name: `_write` built its temp file from
+  `os.getpid()`, which every thread of the browse server shares, so 34 to 37 writers per
+  trial also raised outright as they raced to rename a path another had already renamed
+  away. Both mutations now hold `ledger._filelock.file_lock`, and the temp name carries
+  a random suffix like `ModerationLog.write` does. 40 of 40 now survive, none raising.
+
+  `ProposalStore._read` and `SubmissionQueue._read` swallowed `(OSError, ValueError)`
+  and returned `[]`, so a damaged file read as "nothing was ever filed" — and because
+  every mutation is a read-modify-write, the next `add` wrote that empty list back over
+  the damaged bytes and turned a recoverable file into an unrecoverable one. Both now
+  distinguish absence from damage: a missing file is still an empty store, while an
+  unreadable one, bytes that are not JSON, and valid JSON of the wrong shape each raise
+  `LedgerError` and leave the file byte-for-byte intact. `ledger propose` against a
+  damaged store prints `error: proposal store could not be parsed: <path>` and exits 2.
+
+  Because the read can now raise, `/steward` says so: it catches `LedgerError` around
+  the queue read and renders a new **review queue could not be read** message
+  (en/es/fr/ar) instead of the empty-queue text. Hard Rule 2 says nothing is published
+  by inaction; the mirror of that rule is that nothing may be forgotten by inaction, and
+  a steward shown an empty console while submissions wait is exactly that.
+
+  A `disclosure`-marked, merge-blocking test named `test_corrupt_proposal_file_reads_as_empty`
+  had asserted the empty-read behaviour: the defect was not merely untested, it was
+  pinned in place by a safety-marked test. It is replaced by its inverse. 17 new tests
+  in `tests/test_silent_loss_stores.py`, and `tombstones.py` (89%) and `review.py` (97%)
+  each gain a coverage floor of their own rather than joining the pooled scope, where
+  they would have read as covered because their neighbours are. Recorded as
+  [ADR 0014](docs/adr/0014-json-stores-fail-closed-and-serialize.md).
 - **BagIt manifests are percent-encoded per RFC 8493 §2.1.3** (#143). `%`, CR, and LF
   are encoded on write and decoded on read; ledger previously wrote a payload named
   `%` into the manifest raw, so the Library of Congress `bagit-python` reference

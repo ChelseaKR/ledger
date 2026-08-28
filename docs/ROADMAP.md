@@ -3,7 +3,8 @@
 Last verified: 2026-07-11 · Recheck cadence: per release and quarterly
 
 This file has two jobs: the feature roadmap belongs in
-[`docs/RESEARCH-ROADMAP.md`](RESEARCH-ROADMAP.md); this file is the **standards
+[`docs/RESEARCH-ROADMAP.md`](RESEARCH-ROADMAP.md), and the phased sequencing of both
+belongs in [`docs/MULTIYEAR-PLAN.md`](MULTIYEAR-PLAN.md); this file is the **standards
 conformance gap tracker** the README's
 [`## Standards conformance`](../README.md#standards-conformance) table links to
 (DOCUMENTATION-STANDARD DOC-13: every "gap" declaration must link something a
@@ -66,10 +67,10 @@ their committed evidence; a roadmap sentence alone is not treated as a waiver.
 
 | Metric | Value | Measured by | Date |
 |---|---|---|---|
-| Test suite | 1257 passed | `make test` | 2026-08-27 |
-| Branch coverage | 89.0% (floor: 88%, `fail_under` in `pyproject.toml`); scoped access/consent/dual-control floor 95% held exactly; `moderate.py` 90% against its own separate floor | `make cov` | 2026-08-27 |
+| Test suite | 1274 passed | `make test` | 2026-08-27 |
+| Branch coverage | 89.05% (floor: 88%, `fail_under` in `pyproject.toml`); scoped access/consent/dual-control floor 95% held exactly; `moderate.py` (90%), `tombstones.py` (89%) and `review.py` (97%) each against a separate floor of its own | `make cov` | 2026-08-27 |
 | Tier-1 mechanical score | 31/31 after remediation | `portfolio-standards/automation/conformance_check.py --repo . --strict` | 2026-07-11 |
-| `make verify` portable gate | Green: lint, strict types, 1257 tests, i18n, structural accessibility, dependency/secret scans, truthfulness, suppression hygiene, zizmor | `make verify` | 2026-08-27 |
+| `make verify` portable gate | Green: lint, strict types, 1274 tests, i18n, structural accessibility, dependency/secret scans, truthfulness, suppression hygiene, zizmor | `make verify` | 2026-08-27 |
 | Real-corpus invariants (network; not a merge gate) | 679/679 payloads with exactly one identification event about them; 0 contradictions; 0 success-while-unidentified; 0 record/log divergence; run matches the committed evidence | `make real-corpus` against [`docs/data/real-corpus/`](data/real-corpus/) | 2026-08-21 |
 | Mutation score, safety core (advisory, not a gate) | 76.5% (406/531 killed) across `access/`, `identity.py`, `fixity.py` | `make mutation` (mutmut); see `docs/MUTATION-TESTING.md` | 2026-07-07 |
 
