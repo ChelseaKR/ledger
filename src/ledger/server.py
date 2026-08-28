@@ -81,6 +81,7 @@ from ledger.fixity import CHUNK_SIZE
 from ledger.ingest import Archive
 from ledger.lockdown import is_locked_down
 from ledger.models import (
+    OBJECT_TYPE_RECORD,
     AccessPolicy,
     ContentAddress,
     DisclosedRecord,
@@ -2127,6 +2128,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
                 outcome="success",
                 detail="contributor edited a pending submission",
                 linked_object=reference,
+                linked_object_type=OBJECT_TYPE_RECORD,
                 event_datetime=now_iso(),
             )
             archive.apply_update(updated, event)

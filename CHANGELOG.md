@@ -235,6 +235,37 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   nothing to act on, over nearly a quarter of the archive.
 
 ### Fixed
+- **Every PREMIS event now says what kind of object it is about** (ADR 0017, closing
+  the follow-up ADR 0012 recorded in its own consequences). ADR 0012 wrote down what it
+  had not finished: `linkingObjectIdentifierType` "is emitted as `local` in XML for
+  events whose writers have not been typed yet (consent changes, takedowns,
+  replication)". `local` is honest and useless — PREMIS leaves identifier types to the
+  repository precisely so a consumer never has to guess, and ledger writes five kinds
+  of identifier that are indistinguishable as strings.
+
+  `PremisEvent.object_identifier_type` already refuses to guess among them, inferring
+  only the content-address case where the parse is unambiguous. That refusal is
+  correct, and it is exactly what made an untyped writer permanently *unanswerable*
+  rather than merely unanswered: the reader cannot fix this, only the writer can.
+
+  **Eighteen writers across six modules** named an object without its kind —
+  `access/redaction.py` (2), `ingest.py` (1), `moderate.py` (5),
+  `reading_room_enclave.py` (1), `replicate.py` (8), `server.py` (1). All now declare
+  one. The vocabulary gains `ledger-bag` and `ledger-proposal`: a bag name equals its
+  record id today, but the two are not the same *kind* of thing — one names a storage
+  container a replica holds, the other names the Representation, and an event that
+  quarantines a bag is not an event about the record's content. Three writers pass
+  `linked_object=None` and stay that way, being explicitly about no single object.
+
+  Enforced structurally rather than by sweep: `tests/test_premis_linking_identifier_types.py`
+  parses the package and fails on any `PremisEvent(...)` that names an object without a
+  type, reporting file and line, so it covers writers no behavioural test exercises and
+  refuses the next one. Against the pre-change tree it names all eighteen.
+
+  Nothing migrates and no chain moves. `to_dict` still omits the field when unset, so
+  every event already on disk serialises — and hash-chains — byte-for-byte as it always
+  did, and the XML `or "local"` fallback now applies only to pre-ADR-0012 events, which
+  is what it was always for.
 - **`make verify` now runs Semgrep, and four documents stopped describing a repository
   that no longer exists** (MP-06, MP-07). `make semgrep` runs
   `semgrep scan --config p/ci --error src tests` and joins `make verify`, in the same

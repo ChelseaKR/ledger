@@ -59,7 +59,7 @@ Priority and effort use `RESEARCH-ROADMAP.md`'s scale: **P0** now · **P1** next
 | MP-05 | **Retire the eight `C901` waivers and reach the 90% published-library floor.** The waived functions are the public GET/POST route tables, `ingest_sip`, `validate_bag`, WCAG element/rule checks, CLI ingest options, and untrusted-form validation | P1 | L | [#83](https://github.com/ChelseaKR/ledger/issues/83) · **[corroborates ROADMAP CQ-05/08]** |
 | MP-06 ✅ | **Local Semgrep parity in `make verify`.** CI is the gate of record; a contributor got no pre-push signal, unlike `osv` and `secret-scan` which both have local targets. Shipped as a target, **not** as a locked dependency: pinning semgrep imports 4 High-severity advisories via `click` and `mcp` that it pins and that cannot be bumped independently | P2 | S | `ROADMAP.md` open gaps, SEC-11/13 CICD-13/27 · **shipped, see below** |
 | MP-07 ✅ | **Documentation truth pass, and the audit the ADRs imply.** ADR 0006 is superseded by 0009 but was never marked, against ADRs 0000/0001's own bidirectional rule; `DEFINITION_OF_DONE.md` still describes eleven required checks and calls Semgrep/OSV non-blocking, which the 2026-08-21 ruleset pass changed to thirteen and blocking; #99's body links a deleted branch; **#159 changed a safety guardrail and added a coverage threshold without the ADR ADR 0000 requires, and merged that way**; and the other JSON stores have not been swept for whether they too read damage as an empty collection | P1 | M | ADR 0000; `ROADMAP.md` 2026-08-21 pass; ADR 0014 open edges · **[NET-NEW]** |
-| MP-08 | **Type the untyped PREMIS event writers, and label `media_type_basis` in browse.** Consent changes, takedowns, and replication still emit `linkingObjectIdentifierType: local`; the identification basis reaches the API but is not rendered, because it needs a user-facing string in four locales | P2 | M | ADR 0012 and ADR 0010, both "a follow-up" in their own consequences |
+| MP-08 ◑ | **Type the untyped PREMIS event writers** ✅ **, and label `media_type_basis` in browse** (not done). 18 writers across 6 modules named an object without saying what kind it was; all now do, and a structural test refuses the next one. The identification basis still is not rendered: it needs a user-facing string in four locales | P2 | M | ADR 0012 and ADR 0010, both "a follow-up" in their own consequences · **half shipped, see below** |
 | MP-09 | **Format migration / normalization for at-risk media.** RM4 identifies and flags; nothing migrates. Pairs with the registry ADR 0010 deliberately left non-convergent | P2 | L | `RESEARCH-ROADMAP.md` EX12; OAIS Preservation Planning · **[corroborates RESEARCH-ROADMAP EX12]** |
 | MP-10 | **Re-identification with an explicit PREMIS supersession shape.** ADR 0012's contradiction guard is the place it has to be added, and exists partly to stop one appearing by accident | P3 | L | ADR 0012 consequences, verbatim: "Re-identification does not exist" |
 | MP-11 | **Community-authored graduated access labels, extended *through* `access/`.** The backlog's own warning is that this must not become a back door around the single disclosure decision point | P2 | L | `RESEARCH-ROADMAP.md` EX5 · **[corroborates RESEARCH-ROADMAP EX5]** |
@@ -93,7 +93,7 @@ security core reports against a floor of its own with no pooled `--include` rema
 `make cov` ✅; ADR 0006 carries `Superseded by 0009` and 0009 points back ✅;
 `DEFINITION_OF_DONE.md` names thirteen required checks ✅.
 
-**Phase three — the quality floor the standards actually ask for.** MP-05 · MP-06 ✅ · MP-08.
+**Phase three — the quality floor the standards actually ask for.** MP-05 · MP-06 ✅ · MP-08 ◑.
 *Theme: with per-module floors in place, #83's remaining half stops being a pooled
 average to chase and becomes eight named functions to refactor, each with a target of its
 own. The two documentation follow-ups the ADRs recorded ride along, because both are
@@ -219,6 +219,15 @@ published number lowered to meet them. Recorded as
 Verify: `make verify` green, 1309 tests; `make cov` total 89.25% against the 88% floor,
 and 8 modules each against a floor of its own with no pooled figure remaining.
 
+**MP-08's first half shipped here.** Eighteen PREMIS writers across six modules named
+an object without saying what kind of identifier it was, so every consent change,
+takedown, redaction, replication, quarantine, correction and reading-room query
+serialised as the uninformative `local` in XML. ADR 0012 recorded typing them as a
+follow-up; this is it. The vocabulary gains `ledger-bag` and `ledger-proposal`, and a
+structural test over the package refuses the next untyped writer by file and line.
+Recorded as [ADR 0017](adr/0017-every-premis-event-is-typed.md). No event already on
+disk changes, and no chain moves.
+
 **MP-06 and MP-07 shipped here too.**
 
 `make semgrep` runs `semgrep scan --config p/ci --error src tests` and joins
@@ -264,7 +273,7 @@ dishonest part. This table separates them.
 | MP-06 | **Built** | This stack, with a documented departure from its original closing condition |
 | MP-07 | **Built** | This stack |
 | MP-05 | **Not built — tractable, and large** | Eight `C901` waivers over the public GET/POST route tables, `ingest_sip`, `validate_bag`, WCAG element/rule checks, CLI ingest options, and untrusted-form validation, plus ~0.8 points of coverage. `ROADMAP.md` calls it "real, non-mechanical work on the repo's most security-critical paths" and it is. Nothing blocks it but size; a partly-refactored route table is worse than an un-refactored one, so it is left whole |
-| MP-08 | **Not built — tractable** | Typing the untyped PREMIS event writers is mechanical; labelling `media_type_basis` in browse needs a user-facing string in four locales |
+| MP-08 | **Half built** | The writer typing is done (ADR 0017). Labelling `media_type_basis` in browse is not: it needs a user-facing string in four locales, which is the same translation discipline the row was always gated on |
 | MP-09 | **Not built — tractable, and large** | A format migration pipeline is new subsystem work (OAIS Preservation Planning), sized **L** in the backlog it comes from |
 | MP-10 | **Not built — tractable, and large** | Re-identification needs an explicit PREMIS supersession shape; ADR 0012 says so and put the guard where it will have to go |
 | MP-12 | **Not built — tractable, and large** | Federation and a verifiable deposit bundle, both **L** |
