@@ -47,7 +47,7 @@ type: ## Strict type checking (mypy)
 test: ## Run the test suite (preservation + disclosure + no-outing audit)
 	$(PY) -m pytest
 
-cov: ## Run tests with coverage (95% floor on the access/consent/dual-control core; 90% on moderate.py)
+cov: ## Run tests with coverage (95% pooled on access/consent/dual-control; own floors for moderate/tombstones/review)
 	$(PY) -m pytest --cov --cov-report=term-missing
 	# Per-module floor (CODE-QUALITY-STANDARD, security/crypto-critical paths): the
 	# access-policy, consent, and dual-control modules must hold >=95% branch
@@ -66,6 +66,14 @@ cov: ## Run tests with coverage (95% floor on the access/consent/dual-control co
 	# moderation log's tests in place (the remainder is pre-existing validation and
 	# refusal branches); it is a ratchet, so raise it when the number rises.
 	$(PY) -m coverage report --include="src/ledger/moderate.py" --fail-under=90
+	# `tombstones.py` and `review.py`, likewise on their own. Both hold a safety
+	# guarantee the pooled figure would average away: a lost tombstone is a
+	# taken-down record resurrecting on a replica, and a review queue read as empty
+	# is a contributor's submission nobody ever sees (#155, #154). Each floor is set
+	# where the module measures with the silent-loss tests in place, and each is a
+	# ratchet — raise it when the number rises, never lower it to make a run pass.
+	$(PY) -m coverage report --include="src/ledger/tombstones.py" --fail-under=89
+	$(PY) -m coverage report --include="src/ledger/review.py" --fail-under=97
 
 backup-test: ## Exercise the full back-up -> wipe -> restore disaster-recovery cycle
 	$(PY) -m pytest -m recovery

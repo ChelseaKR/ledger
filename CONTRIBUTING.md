@@ -168,6 +168,8 @@ make cov            # tests with a coverage report: the 88% branch-coverage floo
                      # therefore inherits its neighbours' average, which is why
                      # moderate.py is reported on its own rather than appended to the
                      # existing one. Give a newly-floored module its own line.
+                     # moderate.py (90), tombstones.py (89) and review.py (97) each
+                     # have one; each is a ratchet, raised when the number rises.
 make acr            # regenerate the Accessibility Conformance Report
 ```
 

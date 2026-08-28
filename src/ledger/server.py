@@ -1231,8 +1231,19 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             self._handle_not_found()
             return
         archive = self._archive()
-        pending = self._submission_queue().pending()
-        if pending:
+        # A queue that cannot be read is reported *in place* rather than raising: a
+        # steward needs to be told the review queue is unreadable, not handed a 500
+        # that says nothing, and above all not shown an empty console that reads as
+        # "nothing is waiting" while contributors wait (#154, failure transparency).
+        try:
+            pending = self._submission_queue().pending()
+            unreadable = False
+        except LedgerError:
+            pending = []
+            unreadable = True
+        if unreadable:
+            submissions_html = f"    <p>{_esc(i18n.t(lang, 'sw_queue_unreadable'))}</p>"
+        elif pending:
             sub_rows = []
             for item in pending:
                 edited = ""
@@ -1358,8 +1369,8 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         sealed value. Steward-gated; a non-steward gets a neutral 404.
 
         A second table renders the **moderation decisions**
-        (:func:`ledger.moderate.moderation_actions`). PREMIS answers *what happened*; only
-        this one answers *why a steward said they did it*, which is the fact
+        (:func:`ledger.moderate.moderation_actions`). PREMIS answers *what happened*;
+        only this one answers *why a steward said they did it*, which is the fact
         ``docs/GOVERNANCE.md`` and ``docs/THREAT-MODEL.md`` §4.4 rest the
         accountability model on. Its ``reason`` is steward-authored prose rather than
         a value the system derives, which is precisely why it renders here, behind the

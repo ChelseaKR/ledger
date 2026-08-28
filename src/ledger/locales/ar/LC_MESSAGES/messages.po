@@ -739,6 +739,9 @@ msgstr "لغة المادة، مثل الإنجليزية أو الإسباني�
 msgid "The moderation log could not be read. It is not empty — it is unreadable, and that needs looking into before any further moderation decision is taken."
 msgstr "تعذَّرت قراءة سجل الإشراف. إنه ليس فارغًا — بل غير قابل للقراءة، وهذا يستدعي الفحص قبل اتخاذ أي قرار إشراف آخر."
 
+msgid "The review queue could not be read. It is not empty — it is unreadable, so submissions may be waiting that this page cannot show. Look into it before deciding anything here."
+msgstr "تعذَّرت قراءة قائمة انتظار المراجعة. إنها ليست فارغة — بل غير قابلة للقراءة، لذا قد تكون هناك مشاركات في الانتظار لا تستطيع هذه الصفحة عرضها. افحص الأمر قبل اتخاذ أي قرار هنا."
+
 msgid "The takedown is confirmed at every storage location."
 msgstr "تم تأكيد الإزالة في كل موقع تخزين."
 
