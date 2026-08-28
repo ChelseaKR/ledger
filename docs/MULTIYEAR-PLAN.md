@@ -59,7 +59,7 @@ Priority and effort use `RESEARCH-ROADMAP.md`'s scale: **P0** now · **P1** next
 | MP-05 | **Retire the eight `C901` waivers and reach the 90% published-library floor.** The waived functions are the public GET/POST route tables, `ingest_sip`, `validate_bag`, WCAG element/rule checks, CLI ingest options, and untrusted-form validation | P1 | L | [#83](https://github.com/ChelseaKR/ledger/issues/83) · **[corroborates ROADMAP CQ-05/08]** |
 | MP-06 ✅ | **Local Semgrep parity in `make verify`.** CI is the gate of record; a contributor got no pre-push signal, unlike `osv` and `secret-scan` which both have local targets. Shipped as a target, **not** as a locked dependency: pinning semgrep imports 4 High-severity advisories via `click` and `mcp` that it pins and that cannot be bumped independently | P2 | S | `ROADMAP.md` open gaps, SEC-11/13 CICD-13/27 · **shipped, see below** |
 | MP-07 ✅ | **Documentation truth pass, and the audit the ADRs imply.** ADR 0006 is superseded by 0009 but was never marked, against ADRs 0000/0001's own bidirectional rule; `DEFINITION_OF_DONE.md` still describes eleven required checks and calls Semgrep/OSV non-blocking, which the 2026-08-21 ruleset pass changed to thirteen and blocking; #99's body links a deleted branch; **#159 changed a safety guardrail and added a coverage threshold without the ADR ADR 0000 requires, and merged that way**; and the other JSON stores have not been swept for whether they too read damage as an empty collection | P1 | M | ADR 0000; `ROADMAP.md` 2026-08-21 pass; ADR 0014 open edges · **[NET-NEW]** |
-| MP-08 ◑ | **Type the untyped PREMIS event writers** ✅ **, and label `media_type_basis` in browse** (not done). 18 writers across 6 modules named an object without saying what kind it was; all now do, and a structural test refuses the next one. The identification basis still is not rendered: it needs a user-facing string in four locales | P2 | M | ADR 0012 and ADR 0010, both "a follow-up" in their own consequences · **half shipped, see below** |
+| MP-08 ◑ | **Type the untyped PREMIS event writers** ✅ **, and label `media_type_basis` in browse** (declined, not deferred). 18 writers across 6 modules named an object without saying what kind it was; all now do, and a structural test refuses the next one. The browse label is a *decision already taken against*, not a gap: see the correction below | P2 | M | ADR 0012's follow-up ✅; ADR 0010 §"The browse UI is not yet labelled" · **half shipped, see below** |
 | MP-09 | **Format migration / normalization for at-risk media.** RM4 identifies and flags; nothing migrates. Pairs with the registry ADR 0010 deliberately left non-convergent | P2 | L | `RESEARCH-ROADMAP.md` EX12; OAIS Preservation Planning · **[corroborates RESEARCH-ROADMAP EX12]** |
 | MP-10 | **Re-identification with an explicit PREMIS supersession shape.** ADR 0012's contradiction guard is the place it has to be added, and exists partly to stop one appearing by accident | P3 | L | ADR 0012 consequences, verbatim: "Re-identification does not exist" |
 | MP-11 | **Community-authored graduated access labels, extended *through* `access/`.** The backlog's own warning is that this must not become a back door around the single disclosure decision point | P2 | L | `RESEARCH-ROADMAP.md` EX5 · **[corroborates RESEARCH-ROADMAP EX5]** |
@@ -273,7 +273,7 @@ dishonest part. This table separates them.
 | MP-06 | **Built** | This stack, with a documented departure from its original closing condition |
 | MP-07 | **Built** | This stack |
 | MP-05 | **Not built — tractable, and large** | Eight `C901` waivers over the public GET/POST route tables, `ingest_sip`, `validate_bag`, WCAG element/rule checks, CLI ingest options, and untrusted-form validation, plus ~0.8 points of coverage. `ROADMAP.md` calls it "real, non-mechanical work on the repo's most security-critical paths" and it is. Nothing blocks it but size; a partly-refactored route table is worse than an un-refactored one, so it is left whole |
-| MP-08 | **Half built** | The writer typing is done (ADR 0017). Labelling `media_type_basis` in browse is not: it needs a user-facing string in four locales, which is the same translation discipline the row was always gated on |
+| MP-08 | **Half built; the other half is gated on a person, not on size** | The writer typing is done (ADR 0017). The browse label is **not** tractable work left undone — ADR 0010 declined it, and this plan mis-filed it as an engineering follow-up. See *A correction to this plan* below. **Unblocked by:** a reviewer for the four locales |
 | MP-09 | **Not built — tractable, and large** | A format migration pipeline is new subsystem work (OAIS Preservation Planning), sized **L** in the backlog it comes from |
 | MP-10 | **Not built — tractable, and large** | Re-identification needs an explicit PREMIS supersession shape; ADR 0012 says so and put the guard where it will have to go |
 | MP-12 | **Not built — tractable, and large** | Federation and a verifiable deposit bundle, both **L** |
@@ -288,6 +288,35 @@ engineering: #80 (first trusted release: PyPI credentials, signer identity), #81
 (dated NVDA/VoiceOver walkthrough), #82 (accountable-owner and independent sign-off),
 #99 (community-archivist review), and #78, which is blocked on #80 having run once so
 an egress allowlist can be derived from observation rather than guessed.
+
+### A correction to this plan
+
+MP-08 was written here as one engineering row with two mechanical halves. That was
+wrong about the second half, and the error is worth leaving visible rather than
+quietly editing away, because it is the exact mistake this document's framing warns
+against: *work the record shows as rejected is a decision with reasons attached, not a
+gap.*
+
+ADR 0010 did not defer the browse label. It declined it, and said why:
+
+> **The browse UI is not yet labelled.** `media_type_basis` reaches the record and the
+> API but is not rendered as "unverified" in the HTML, because that needs a new
+> user-facing string in four locales including Arabic, and **authoring translations
+> that nobody can review is its own honesty problem**. The data is there for the UI to
+> use.
+
+That is not a size problem. It belongs with MP-11 among the items gated on a person:
+what unblocks it is a reviewer for es/fr/ar, not an afternoon. Building it would mean
+shipping four unreviewed translations onto a public record page, which is the thing
+the ADR refused.
+
+**And this stack did exactly that once, in a smaller way.** MP-07 added
+`sw_queue_unreadable` in en/es/fr/ar with no native review, to stop a damaged review
+queue from rendering as an empty one. The reasoning was that a steward-gated failure
+message is a narrower surface than a public record page, and that the alternative was
+a silently wrong state rather than a missing label. That reasoning may be right, but
+it is the same trade ADR 0010 declined, made without an ADR of its own, and it should
+be reviewed rather than treated as settled. It is recorded here so a reviewer sees it.
 
 One item the record showed as outstanding turned out to be **already done**:
 `FIX-01` (AIP revisioning) landed in #50. `Archive.apply_update` calls

@@ -107,9 +107,11 @@ Costs and open edges, stated rather than left to be discovered:
 - **Nothing yet consumes the new types.** The value is in the log being answerable,
   not in a feature reading it; the steward audit surfaces still render events without
   distinguishing kinds. That is not a gap this ADR creates.
-- **The second half of MP-08 is not done here.** Labelling `media_type_basis` in the
-  browse UI needs a user-facing string in four locales and is independent of this
-  change.
+- **The second half of MP-08 is not done here, and is not merely undone.** ADR 0010
+  declined the browse `media_type_basis` label rather than deferring it: it "needs a
+  new user-facing string in four locales including Arabic, and authoring translations
+  that nobody can review is its own honesty problem." What unblocks it is a reviewer,
+  not an implementation. This ADR does not reopen that.
 
 ### Alternatives considered
 
