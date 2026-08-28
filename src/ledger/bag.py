@@ -23,6 +23,7 @@ ledger replicates and exports. Design choices and quality attributes:
 from __future__ import annotations
 
 import os
+import secrets
 import shutil
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -117,14 +118,26 @@ def atomic_write_text(path: Path, text: str) -> None:
     tolerance). Note this makes each *file* atomic; a multi-file sequence (e.g.
     a manifest rewrite followed by a reseal) still has a between-files crash
     window, which the caller must keep as small as possible.
+
+    The temp file carries a random suffix rather than ``os.getpid()``. Every thread of
+    the browse server shares one process id, so a pid-derived temp name is the *same*
+    path in each of them: two concurrent writers truncate and write one another's temp
+    file, then race to ``os.replace`` a path the other already renamed away, surfacing
+    as :class:`FileNotFoundError` out of a request thread (#155's second cause). A
+    failed write also removes its own temp file rather than leaving a stray ``.tmp``
+    beside a bag that BagIt validation would then have to account for.
     """
     path = Path(path)
-    tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
-    with open(tmp, "wb") as handle:
-        handle.write(text.encode("utf-8"))
-        handle.flush()
-        os.fsync(handle.fileno())
-    os.replace(tmp, path)
+    tmp = path.with_name(f"{path.name}.{secrets.token_hex(8)}.tmp")
+    try:
+        with open(tmp, "wb") as handle:
+            handle.write(text.encode("utf-8"))
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
 
 
 def _write_text(path: Path, text: str) -> None:

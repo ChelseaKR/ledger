@@ -31,6 +31,7 @@ import tempfile
 from pathlib import Path
 
 from ledger import catalog_index
+from ledger._filelock import file_lock
 from ledger.access import disclose, is_listable
 from ledger.attest import attested_conditions
 from ledger.bag import (
@@ -52,7 +53,7 @@ from ledger.fixity import AuditReport, hash_file_multi
 from ledger.identity import ContributorIdentity, IdentityVault
 from ledger.metadata.dublincore import to_json as dublincore_to_json
 from ledger.metadata.pid import mint_urn
-from ledger.metadata.premis import PremisLog
+from ledger.metadata.premis import PremisLog, append_event
 from ledger.models import (
     OBJECT_TYPE_PAYLOAD,
     OBJECT_TYPE_RECORD,
@@ -962,57 +963,73 @@ class Archive:
         manifest = serialize_record(record)
         fast = self.records_dir / f"{record.record_id}.json"
 
-        # Snapshot the manifest being superseded into the CAS and note it in the
-        # append-only version index, oldest first. Done before the overwrite so the
-        # previous revision is preserved; the very first update of a freshly ingested
-        # record snapshots its as-ingested manifest.
-        if fast.exists():
-            prior = fast.read_bytes()
-            address = self.store.put_bytes(prior)
-            self._append_version(record.record_id, str(address), event.event_type.value)
+        # Serialized on the record's own manifest path (:func:`ledger._filelock.
+        # file_lock`). This method is a multi-file read-modify-write over one record --
+        # the fast manifest copy, the in-bag manifest, the bag's hash-chained
+        # ``premis.json``, and the tag manifests that reseal over all of them -- and two
+        # updates to the same record arriving together on the threaded browse server
+        # would otherwise interleave: each reads the same starting PREMIS log, appends
+        # its own event, and the second write drops the first one's. That is a lawful
+        # change to a record with no surviving event saying it happened, in the very log
+        # whose reseal is supposed to make an unlogged edit impossible.
+        #
+        # The lock file is a sibling of the fast manifest (``<id>.json.lock``), never a
+        # file inside the bag: a bag holds only what its tag manifests cover.
+        # :meth:`_append_version` takes its own lock on ``<id>.versions.json`` nested
+        # inside this one, and that is the only nesting in this package, so the order is
+        # unambiguous and cannot deadlock.
+        with file_lock(fast):
+            # Snapshot the manifest being superseded into the CAS and note it in the
+            # append-only version index, oldest first. Done before the overwrite so the
+            # previous revision is preserved; the very first update of a freshly
+            # ingested record snapshots its as-ingested manifest.
+            if fast.exists():
+                prior = fast.read_bytes()
+                address = self.store.put_bytes(prior)
+                self._append_version(record.record_id, str(address), event.event_type.value)
 
-        atomic_write_text(fast, manifest)
+            atomic_write_text(fast, manifest)
 
-        bag_dir = self.bags_dir / record.record_id
-        will_reseal = next(bag_dir.glob("tagmanifest-*.txt"), None) is not None
-        resealed = False
-        transitions: list[str] = []
-        in_bag = bag_dir / _RECORD_FILENAME
-        if in_bag.exists():
-            old_digest = hashlib.sha256(in_bag.read_bytes()).hexdigest()
-            new_digest = hashlib.sha256(manifest.encode("utf-8")).hexdigest()
-            atomic_write_text(in_bag, manifest)
-            transitions.append(f"{_RECORD_FILENAME} sha256 {old_digest} -> {new_digest}")
-            resealed = True
-        premis_path = bag_dir / _PREMIS_FILENAME
-        if premis_path.exists():
-            old_premis = hashlib.sha256(premis_path.read_bytes()).hexdigest()
-            log = PremisLog.read(premis_path)
-            log.record(event)
-            if will_reseal:
-                # The digest-transition record: what changed and from/to which
-                # bytes. The new premis.json digest cannot name itself (it would
-                # be self-referential); the refreshed tag manifest carries it.
-                transitions.append(f"{_PREMIS_FILENAME} sha256 before append {old_premis}")
-                log.record(
-                    PremisEvent(
-                        event_type=PremisEventType.VALIDATION,
-                        agent=event.agent,
-                        outcome="success",
-                        detail="bag resealed after lawful manifest update: "
-                        + "; ".join(transitions),
-                        linked_object=record.record_id,
-                        event_datetime=event.event_datetime,
+            bag_dir = self.bags_dir / record.record_id
+            will_reseal = next(bag_dir.glob("tagmanifest-*.txt"), None) is not None
+            resealed = False
+            transitions: list[str] = []
+            in_bag = bag_dir / _RECORD_FILENAME
+            if in_bag.exists():
+                old_digest = hashlib.sha256(in_bag.read_bytes()).hexdigest()
+                new_digest = hashlib.sha256(manifest.encode("utf-8")).hexdigest()
+                atomic_write_text(in_bag, manifest)
+                transitions.append(f"{_RECORD_FILENAME} sha256 {old_digest} -> {new_digest}")
+                resealed = True
+            premis_path = bag_dir / _PREMIS_FILENAME
+            if premis_path.exists():
+                old_premis = hashlib.sha256(premis_path.read_bytes()).hexdigest()
+                log = PremisLog.read(premis_path)
+                log.record(event)
+                if will_reseal:
+                    # The digest-transition record: what changed and from/to which
+                    # bytes. The new premis.json digest cannot name itself (it would
+                    # be self-referential); the refreshed tag manifest carries it.
+                    transitions.append(f"{_PREMIS_FILENAME} sha256 before append {old_premis}")
+                    log.record(
+                        PremisEvent(
+                            event_type=PremisEventType.VALIDATION,
+                            agent=event.agent,
+                            outcome="success",
+                            detail="bag resealed after lawful manifest update: "
+                            + "; ".join(transitions),
+                            linked_object=record.record_id,
+                            event_datetime=event.event_datetime,
+                        )
                     )
-                )
-            log.write(premis_path)
-            resealed = True
+                log.write(premis_path)
+                resealed = True
 
-        # Reseal: recompute the tag manifests so the rewritten tag files re-validate.
-        # Guarded by the presence of a tag manifest so a records-only update (no bag
-        # on disk) stays a no-op rather than raising (robustness).
-        if resealed and will_reseal:
-            refresh_tag_manifests(bag_dir)
+            # Reseal: recompute the tag manifests so the rewritten tag files
+            # re-validate. Guarded by the presence of a tag manifest so a records-only
+            # update (no bag on disk) stays a no-op rather than raising (robustness).
+            if resealed and will_reseal:
+                refresh_tag_manifests(bag_dir)
 
     def _append_version(self, record_id: str, address: str, event_type: str) -> None:
         """Append one superseded-manifest snapshot to the record's version index.
@@ -1021,27 +1038,49 @@ class Archive:
         is byte-stable and cannot be silently rewritten (auditability, reproducibility).
         Each entry names only the snapshot's opaque CAS ``address``, when it was saved,
         and the kind of event that superseded it — never a contributor identity or a
-        sealed value (no-outing rule)."""
+        sealed value (no-outing rule).
+
+        The read-append-write is held under :func:`~ledger._filelock.file_lock`, like
+        every other whole-document rewriter in this package. Two updates to the same
+        record arriving together on the threaded browse server would otherwise each
+        read the same starting index and drop the other's snapshot, leaving a
+        superseded manifest in the CAS that no index entry points at — a version of
+        the record that silently stopped being reachable."""
         path = self._versions_path(record_id)
-        entries = self._read_versions(path)
-        entries.append({"address": address, "saved_at": now_iso(), "event_type": event_type})
-        path.parent.mkdir(parents=True, exist_ok=True)
-        # Atomic (temp + os.replace), like every other write in this module: a
-        # crash mid-write must leave the prior index intact rather than a torn
-        # file that `_read_versions` would silently read back as empty history.
-        atomic_write_text(path, canonical_json(entries))
+        with file_lock(path):
+            entries = self._read_versions(path)
+            entries.append({"address": address, "saved_at": now_iso(), "event_type": event_type})
+            path.parent.mkdir(parents=True, exist_ok=True)
+            # Atomic (temp + os.replace), like every other write in this module: a
+            # crash mid-write must leave the prior index intact rather than a torn
+            # file that `_read_versions` would then have to make sense of.
+            atomic_write_text(path, canonical_json(entries))
 
     @staticmethod
     def _read_versions(path: Path) -> list[dict[str, str]]:
-        """Load a version index as a list of string maps, empty if absent/unreadable."""
+        """Load a version index as a list of string maps; absent means no history.
+
+        Fail-closed on damage, like :meth:`ledger.tombstones.TombstoneStore._read` and
+        every sibling store: an unreadable file, invalid JSON, or a non-list top-level
+        shape raises :class:`~ledger.errors.LedgerError` rather than reading back as
+        "this record has no prior versions".
+
+        The distinction is not stylistic, because this reader feeds a *writer*. If a
+        damaged index returned ``[]``, the next :meth:`_append_version` would rewrite
+        the file with only the new entry and permanently erase every prior
+        superseded-manifest snapshot -- no exception, no PREMIS event, no warning. An
+        absent file genuinely means no history; a *damaged* one means the history is
+        unknown, and reporting unknown history as no history is the failure this
+        project's fail-closed rule exists to prevent.
+        """
         if not path.exists():
             return []
         try:
             raw = json.loads(path.read_text(encoding="utf-8"))
-        except (ValueError, OSError):
-            return []
+        except (ValueError, OSError) as exc:
+            raise LedgerError(f"version index is unreadable or not valid JSON: {path}") from exc
         if not isinstance(raw, list):
-            return []
+            raise LedgerError(f"version index must be a JSON list: {path}")
         return [{str(k): str(v) for k, v in item.items()} for item in raw if isinstance(item, dict)]
 
     def record_versions(self, record_id: str) -> list[dict[str, str]]:
@@ -1079,12 +1118,17 @@ class Archive:
         ``logs/takedowns.premis.json`` so it outlives the data it documents. The one
         place a removal decision is persisted, shared by a steward takedown and a
         contributor's pre-publication withdrawal (accountability, separation of
-        concerns)."""
+        concerns).
+
+        Appended through :func:`~ledger.metadata.premis.append_event`, which holds the
+        lock across the whole read-modify-write. Two takedowns issued at once on the
+        threaded browse server -- or a steward takedown racing the per-location receipt
+        ``ledger.replicate.apply_tombstones`` writes to this same file from a separate
+        process -- would otherwise each read the same starting log and discard the
+        other's entry, losing the accountable record of *why* a record was removed."""
         log_path = self.logs_dir / "takedowns.premis.json"
         self.logs_dir.mkdir(parents=True, exist_ok=True)
-        log = PremisLog.read(log_path) if log_path.exists() else PremisLog()
-        log.record(event)
-        log.write(log_path)
+        append_event(log_path, event)
 
     def log_grant_use(self, subject: str, route_class: str, *, now: str | None = None) -> None:
         """Append a scrubbed record that an authenticated grant was used on a request.
@@ -1096,11 +1140,17 @@ class Archive:
         never a real contributor name) and a coarse route class: never the bearer
         token, never a record id, never a query string, so the audit trail itself
         discloses nothing (no-outing rule — logs disclose nothing).
+
+        Serialization lives here, in the writer, not in the caller. ``server.py`` also
+        holds a process-wide :class:`threading.Lock` around this call, which serializes
+        that one call site's threads and nothing else: it cannot serialize a second
+        process, and it does not protect any other caller. The
+        :func:`~ledger.metadata.premis.append_event` lock covers both.
         """
         self.logs_dir.mkdir(parents=True, exist_ok=True)
         log_path = self.logs_dir / "grant-uses.premis.json"
-        log = PremisLog.read(log_path) if log_path.exists() else PremisLog()
-        log.record(
+        append_event(
+            log_path,
             PremisEvent(
                 event_type=PremisEventType.VALIDATION,
                 agent=subject,
@@ -1108,9 +1158,8 @@ class Archive:
                 detail=f"authenticated grant used on {route_class} route",
                 linked_object=None,
                 event_datetime=now if now is not None else now_iso(),
-            )
+            ),
         )
-        log.write(log_path)
 
     def _revoke_identity_if_present(self, record_id: str) -> bool:
         """Revoke ``record_id``'s sealed identity from the vault, if it has one.
@@ -1375,8 +1424,8 @@ class Archive:
 
         self.logs_dir.mkdir(parents=True, exist_ok=True)
         log_path = self.logs_dir / "key-rotations.premis.json"
-        log = PremisLog.read(log_path) if log_path.exists() else PremisLog()
-        log.record(
+        append_event(
+            log_path,
             PremisEvent(
                 event_type=PremisEventType.REKEY,
                 agent=agent,
@@ -1384,9 +1433,8 @@ class Archive:
                 detail=f"identity vault rekeyed; {count} identity(ies) re-encrypted",
                 linked_object=None,
                 event_datetime=stamp,
-            )
+            ),
         )
-        log.write(log_path)
         return count
 
     # --- readiness ----------------------------------------------------------

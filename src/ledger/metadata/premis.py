@@ -35,12 +35,14 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from xml.sax.saxutils import escape as _sax_escape
 
+from ledger._filelock import file_lock
 from ledger.chain import GENESIS_HASH, ChainVerification, build_chain, chain_head
 from ledger.chain import verify_chain as _verify_chain
 from ledger.errors import PremisContradictionError
@@ -52,7 +54,7 @@ from ledger.models import (
     canonical_json,
 )
 
-__all__ = ["IdentificationContradiction", "PremisLog", "to_premis_xml"]
+__all__ = ["IdentificationContradiction", "PremisLog", "append_event", "to_premis_xml"]
 
 # Schema history:
 #   1 — a bare JSON array of event dicts (no chaining).
@@ -403,21 +405,72 @@ class PremisLog:
         Atomic write (temp file + ``os.replace``) -> integrity/fault-tolerance: a
         reader never observes a half-written log, and a crash mid-write leaves the
         previous good file intact.
+
+        The temp file carries a random suffix, not ``os.getpid()``. Every thread of
+        the browse server shares one process id, so a pid-derived name is the *same*
+        name in each of them: two concurrent writers would open, truncate, and write
+        the same temp path, then race to ``os.replace`` a file the other has already
+        renamed away (raising :class:`FileNotFoundError` out of a request thread).
+        A random suffix makes each writer's temp file its own (#155's second cause,
+        the same fix ``ledger.tombstones`` takes).
+
+        Atomicity is still not serialization: this method makes one write indivisible,
+        it does not stop two whole-document rewrites from losing one another. Anything
+        that reads a log, appends, and writes it back must hold the lock for the whole
+        cycle -- use :func:`append_event`, which does.
         """
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+        tmp = path.with_name(f"{path.name}.{secrets.token_hex(8)}.tmp")
         data = self.to_json().encode("utf-8")
-        with open(tmp, "wb") as handle:
-            handle.write(data)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(tmp, path)
+        try:
+            with open(tmp, "wb") as handle:
+                handle.write(data)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(tmp, path)
+        except BaseException:
+            # Never leave a stray temp file behind on a failed write; the log
+            # directory is read by `audit_log_chains`, which globs it.
+            tmp.unlink(missing_ok=True)
+            raise
 
     @classmethod
     def read(cls, path: Path) -> PremisLog:
         """Read a log written by :meth:`write`."""
         return cls.from_json(Path(path).read_text(encoding="utf-8"))
+
+
+def append_event(path: Path, *events: PremisEvent) -> None:
+    """Append ``events`` to the log at ``path``, serialized against other appenders.
+
+    **This is the only correct way to add an entry to a log that already exists on
+    disk.** A log is persisted as one JSON document that an append rewrites *whole*
+    (read -> :meth:`PremisLog.record` -> :meth:`PremisLog.write`), so two appenders
+    running at once each read the same starting log, add their own entry, and the
+    second rename discards the first one's. :func:`ledger._filelock.file_lock` holds
+    the whole read-modify-write, exactly as every JSON workflow store in this package
+    does, so the appends serialize instead of racing.
+
+    Losing an append here is not the same class of harm as losing one from a workflow
+    store, and it is worse in one specific way: **the hash chain cannot detect it.**
+    Each surviving writer rebuilds a chain that is internally consistent over whatever
+    it happened to read, so
+    :meth:`~ledger.ingest.Archive.audit_log_chains` reports a log that silently lost
+    most of its entries as ``ok``. Tamper-evidence answers "was an entry altered",
+    never "was an entry ever written" -- which is precisely why the serialization has
+    to be here, in the writer, rather than left to a later check to notice.
+
+    The lock is single-host advisory (see :mod:`ledger._filelock`): it serializes the
+    browse server's request threads and a separately-invoked CLI or replication
+    process on one machine, which is the contention that exists today.
+    """
+    path = Path(path)
+    with file_lock(path):
+        log = PremisLog.read(path) if path.exists() else PremisLog()
+        for event in events:
+            log.record(event)
+        log.write(path)
 
 
 def _event_to_xml(event: PremisEvent, indent: str) -> list[str]:

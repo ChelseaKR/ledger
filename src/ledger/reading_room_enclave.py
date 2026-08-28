@@ -63,7 +63,7 @@ from ledger._filelock import file_lock
 from ledger.dualcontrol import ActionProposal, ProposalStore
 from ledger.errors import AggregationRefused, LedgerError
 from ledger.ingest import Archive
-from ledger.metadata.premis import PremisLog
+from ledger.metadata.premis import append_event
 from ledger.models import PremisEvent, PremisEventType, Record, now_iso
 
 __all__ = [
@@ -441,8 +441,16 @@ class ReadingRoomEnclave:
     # --- PREMIS audit trail ------------------------------------------------
 
     def _log(self, *, outcome: str, proposal_id: str, actor: str, detail: str, now: str) -> None:
-        log = PremisLog.read(self._events_path) if self._events_path.exists() else PremisLog()
-        log.record(
+        """Append one QUERY event to the enclave's audit trail, serialized.
+
+        Held under :func:`~ledger.metadata.premis.append_event`'s lock, like
+        :meth:`_save_manifest` and the history file in this same class. This method
+        was the one whole-document rewriter here that took no lock, so a supervised
+        aggregate query running concurrently with another could lose the record that
+        it ran -- the enclave's whole accountability claim.
+        """
+        append_event(
+            self._events_path,
             PremisEvent(
                 event_type=PremisEventType.QUERY,
                 agent=actor,
@@ -450,9 +458,8 @@ class ReadingRoomEnclave:
                 detail=detail,
                 linked_object=proposal_id,
                 event_datetime=now,
-            )
+            ),
         )
-        log.write(self._events_path)
 
     # --- query-manifest persistence (steward-side only; never served) --------
 

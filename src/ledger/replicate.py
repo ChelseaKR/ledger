@@ -66,7 +66,7 @@ from ledger.bag import validate_bag
 from ledger.config import StorageLocation
 from ledger.errors import BagValidationError, FixityError, LedgerError, ReplicationError
 from ledger.fixity import AuditReport
-from ledger.metadata.premis import PremisLog
+from ledger.metadata.premis import PremisLog, append_event
 from ledger.models import PremisEvent, PremisEventType, now_iso
 from ledger.tombstones import TombstoneStore
 
@@ -100,11 +100,17 @@ def _is_safe_component(name: str) -> bool:
 
 
 def _append_takedown_receipt(log_path: Path, event: PremisEvent) -> None:
-    """Append one TAKEDOWN receipt to the archive takedown log (append-only)."""
+    """Append one TAKEDOWN receipt to the archive takedown log (append-only).
+
+    This is the cross-*process* case the lock exists for: ``apply_tombstones`` is
+    invoked separately from the browse server, and both write this one file. A
+    ``threading.Lock`` cannot serialize two processes;
+    :func:`~ledger.metadata.premis.append_event`'s ``flock`` does. A receipt lost to a
+    racing write makes the archive under-report which locations have applied a
+    removal -- the honesty ``/consent-status`` reports from.
+    """
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    log = PremisLog.read(log_path) if log_path.exists() else PremisLog()
-    log.record(event)
-    log.write(log_path)
+    append_event(log_path, event)
 
 
 def apply_tombstones(
