@@ -16,6 +16,52 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 > explicitly approved through the release workflow added below.
 
 ### Added
+- **Every PREMIS append is serialized, and an archive never attests history it could
+  not read** (ADR 0018). `ledger._filelock` says a whole-document read-modify-write
+  loses concurrent writes and calls a lost withdrawal "the worst class of bug this
+  project can have". Eleven modules took that lesson; the PREMIS **logs** and the record
+  version index did not.
+
+  `Archive.log_takedown`, `log_grant_use`, `rekey_identity_vault`,
+  `replicate._append_takedown_receipt`, `ReadingRoomEnclave._log`, and `apply_update`
+  were bare read-append-writes, and `PremisLog.write` named its temp file from
+  `os.getpid()` — one shared name across every thread of a process, so writers clobbered
+  each other's temp file and raced to rename a path another had already renamed away.
+  Measured on 40 concurrent `log_takedown` calls released from a common barrier, three
+  trials: **1, 2, and 1** of 40 events survived; 35, 33, and 36 writers raised
+  `FileNotFoundError`.
+
+  The reason it stayed invisible is the finding worth keeping: `verify_chain().ok` was
+  **`True` in every trial**. A hash chain answers "was an entry altered", never "was an
+  entry ever written" — each surviving writer rebuilds a chain that is self-consistent
+  over whatever it read. `audit_log_chains` reported a log that had lost 95% of its
+  entries as intact. New `metadata.premis.append_event` holds `file_lock` across the
+  whole cycle, temp names are random, and every appender was moved onto it (`demo.py`
+  included, since it is the example a reader copies from).
+
+  Separately, `attestation._every_log_head` read each bag's log through the *lenient*
+  `record_events`, so a corrupted `premis.json` produced `_log_head([])` — the genesis
+  sentinel, which that function documents as the value meaning "no history yet". A
+  damaged bag was therefore attested as having **no history**, inside
+  `chain_head_summary`: published at `/proof`, optionally signed, and described as what
+  makes "two dated attestations enough to catch a rollback". Corrupting one file was a
+  way to make the archive sign that the file's log was empty (measured: healthy head
+  `ebaf4736…`, head after truncation `0000…0000`). `_read_or_refuse` now raises, so no
+  attestation is produced; an *absent* log still attests as empty, because that is
+  genuinely no history, and a test pins it so the fix is not a different lie.
+
+  `Archive._read_versions` gets the same fail-closed treatment, where it mattered more
+  than a read gate usually does: it feeds a writer, so reading a damaged index as "no
+  prior versions" meant the next append rewrote the file with one entry and erased every
+  superseded-manifest snapshot, with no exception and no event.
+
+  Closed structurally rather than by enumeration: `tests/test_no_unlocked_log_rewrites.py`
+  is an AST gate with **no allowlist** that fails the build on any `PremisLog` write-back
+  outside `file_lock`, and carries eight tests of its own teeth, because an AST gate is
+  exactly the kind that silently matches nothing after a rename.
+  `tests/test_audit_log_concurrency.py` covers the sites behaviourally; the suite had no
+  concurrency coverage of any PREMIS log before this.
+
 - **The moderation `reason` is durable, and the moderation log is now part of the
   running system** (#156). `docs/GOVERNANCE.md`, `docs/THREAT-MODEL.md` §4.4, and
   `docs/ARCHITECTURE.md` §1.9 each describe `ModerationLog` as the accountable record of
