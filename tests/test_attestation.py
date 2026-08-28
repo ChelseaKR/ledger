@@ -32,6 +32,7 @@ from ledger.attestation import (
     sign_attestation,
 )
 from ledger.config import Config
+from ledger.errors import LedgerError
 from ledger.identity import ContributorIdentity
 from ledger.ingest import Archive
 from ledger.models import AccessPolicy, DublinCore, Field, Record
@@ -369,3 +370,51 @@ def test_proof_attestation_route_serves_published_attestation(tmp_path: Path) ->
             httpd.shutdown()
             thread.join(timeout=5)
             httpd.server_close()
+
+
+# --- an unreadable log must never be attested as an empty one ----------------
+
+
+def test_unreadable_bag_log_refuses_to_attest_instead_of_claiming_genesis(
+    tmp_path: Path,
+) -> None:
+    """A damaged ``premis.json`` stops the attestation; it never publishes genesis.
+
+    ``_log_head`` documents the genesis sentinel as the value that distinguishes "no
+    history yet" from any real history. Routing a *present but unreadable* log through
+    the lenient reader yielded exactly that sentinel, so corrupting one bag's log made
+    the archive sign a public statement that the bag had no history -- inside the one
+    field (``chain_head_summary``) whose stated purpose is that two dated attestations
+    catch a rollback. Unknown history is not empty history, and it must not be signed.
+    """
+    archive = _seed_archive(tmp_path)
+    healthy = chain_head_summary(archive)
+
+    bag = next(p for p in archive.bags_dir.iterdir() if p.is_dir())
+    premis_path = bag / "premis.json"
+    genesis_only = "0" * 64
+    premis_path.write_text("{ truncated mid-write", encoding="utf-8")
+
+    with pytest.raises(LedgerError, match="present but unreadable"):
+        chain_head_summary(archive)
+    with pytest.raises(LedgerError, match="present but unreadable"):
+        build_attestation(archive, now=_NOW)
+
+    # And the failure is not merely "it changed": the value it used to publish for a
+    # damaged log was the genesis sentinel, i.e. the claim "this log is empty".
+    assert healthy != genesis_only
+
+
+def test_a_bag_with_no_premis_log_still_attests_as_empty(tmp_path: Path) -> None:
+    """An *absent* log genuinely is no history, and must keep attesting cleanly.
+
+    The counterpart to the test above: failing closed on damage must not turn a
+    legitimately empty bag into a refusal, or the fix would just be a different lie.
+    """
+    archive = _seed_archive(tmp_path)
+    bag = next(p for p in archive.bags_dir.iterdir() if p.is_dir())
+    (bag / "premis.json").unlink()
+
+    summary = chain_head_summary(archive)
+    assert len(summary) == 64
+    assert build_attestation(archive, now=_NOW).chain_head_summary == summary
