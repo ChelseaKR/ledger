@@ -104,3 +104,50 @@ def test_legacy_bare_array_moderation_log_migrates_and_verifies() -> None:
     assert migrated.actions == actions
     assert migrated.verify_chain().ok
     assert migrated.head != GENESIS_HASH
+
+
+def test_deleting_the_newest_entry_leaves_a_chain_that_verifies() -> None:
+    """Documented blind spot (threat model §4.4): tail truncation is locally clean.
+
+    A consistently shortened log is a valid chain that simply stops earlier, so
+    the local check passes and only the head moves; comparing the head against
+    an off-box replica is what catches it. If this test ever fails, the local
+    check has grown a completeness guarantee, and the threat model, the CLI's
+    ``not_proven`` note, and both verify docstrings must change with it.
+    """
+    log = ModerationLog()
+    for action in _sample_actions():
+        log.record(action)
+    full = json.loads(log.to_json())
+    full_head = log.verify_chain().head
+
+    truncated_doc = dict(full, entries=full["entries"][:-1])
+    truncated = ModerationLog.from_json(json.dumps(truncated_doc))
+    result = truncated.verify_chain()
+
+    assert result.ok is True
+    assert result.broken_at is None
+    assert result.head != full_head
+
+
+def test_deleting_a_mid_chain_entry_breaks_the_chain() -> None:
+    """Removal anywhere before the newest entry is caught locally."""
+    third = ModerationAction(
+        action="warn",
+        actor="steward-3",
+        reason="third decision",
+        target_record="rec-0000000000000000",
+        action_id="action-0003",
+        at="2026-01-03T00:00:00Z",
+    )
+    log = ModerationLog()
+    for action in [*_sample_actions(), third]:
+        log.record(action)
+    full = json.loads(log.to_json())
+
+    gapped_doc = dict(full, entries=[full["entries"][0], full["entries"][2]])
+    gapped = ModerationLog.from_json(json.dumps(gapped_doc))
+    result = gapped.verify_chain()
+
+    assert result.ok is False
+    assert result.broken_at == 1

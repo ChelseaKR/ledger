@@ -92,11 +92,15 @@ A change merges when the full gate is green. Reproduce it locally with:
 make verify
 ```
 
-`make verify` runs **lint + type + test + i18n + accessibility + audit + secret-scan + claims +
-workflow-lint** — the same
-`make` targets CI's required checks run, on the same pinned toolchain, so green locally means green
-in CI (CI-CD-STANDARD CICD-27: local `make verify` and the CI required-check set are kept in parity
-by hand; if you add a CI job, add its target to `verify` in the same PR).
+`make verify` runs **lint + type + test + i18n + accessibility + audit + osv + secret-scan +
+claims + hygiene + workflow-lint** — the *portable subset* of CI's required checks, on the same
+pinned toolchain. It reproduces seven of the thirteen contexts the live ruleset requires; CodeQL
+(twice), Semgrep, Trivy, the performance budgets and the browser axe run have no local target, so
+green here is a necessary condition for green in CI and not a sufficient one. The `verify` target's
+comment in the `Makefile` lists all thirteen and says which is which, and `make claims` fails the
+build if a context in `.github/rulesets/main.json` is not named there (CI-CD-STANDARD CICD-27:
+local `make verify` and the CI required-check set are kept in parity by hand; if you add a CI job,
+add its target to `verify` in the same PR, or say in that comment why it cannot have one).
 
 | Gate | Command | What it checks |
 | --- | --- | --- |
@@ -132,7 +136,10 @@ regression in either must be unmistakable, not buried:
 README and docs make about this repo: paths that must exist, corrected claims that must not
 come back, the evidence a corrected claim rests on, a stated count re-derived from the tree,
 a documented threshold re-derived from the config that enforces it, the required-check set in
-the committed branch-protection mirror, and every "tracked in `docs/ROADMAP.md`, <ID>"
+the committed branch-protection mirror (that every context names a real job, that the contexts
+the docs call merge-blocking are in it, that the number the prose states is its size, and that
+the `Makefile`'s parity note accounts for every one of them), a value re-derived from the file
+that owns it, and every "tracked in `docs/ROADMAP.md`, <ID>"
 pointer. It was green for weeks while five
 load-bearing statements were false (#124), because a claim it does not hold cannot fail it.
 So it now prints its own boundary on every run, and this is the same list — if you are
@@ -145,6 +152,7 @@ relying on a claim below, verify it yourself rather than reading a green build a
 - a roadmap pointer resolves to a defined roadmap row — the sweep proves the id is mentioned in `docs/ROADMAP.md`, not that a row defines it
 - standards control ids (SEC-04, A11Y-11, CQ-08 …) cited beside a roadmap pointer — they are defined in the portfolio's `STANDARDS/`, so this repo has nothing to resolve them against
 - whether .github/rulesets/main.json still matches the live protect-main ruleset — parity needs a GitHub API call, and this script makes no network request
+- whether `make verify` reproduces the required context the Makefile pairs it with — the gate proves the parity note names every required context, and a name is not a proof; six of the thirteen have no local target that could settle it
 - whether the SEALED memory cap is still the right number — peak RSS is a measurement of a running ingest; the 7.4x multiplier behind ADR 0011's 64 MiB default is dated, and `docs/REAL-CORPUS-REPORT.md` §7 records how to re-measure it
 - whether ledger's bags are readable by a third-party BagIt implementation — that needs another tool (LoC `bagit-python`), and this repo is stdlib-only by ADR 0005; RFC 8493 §2.1.3 encoding is asserted against the spec's rules in `tests/test_real_corpus_issues.py`, not against a reader
 - the response shape of the browse server's routes — asserted live in `tests/test_server_remediation.py` instead, against the prose in `docs/ARCHITECTURE.md`
