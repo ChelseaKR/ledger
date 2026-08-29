@@ -24,7 +24,11 @@ archive, a record, or an identity.
 
 from __future__ import annotations
 
+import argparse
+import difflib
+import sys
 from dataclasses import dataclass
+from pathlib import Path
 
 # Conformance vocabulary, per the VPAT 2.5 instructions. Used verbatim so the
 # report's terms are the standard ones a procurement reviewer expects.
@@ -660,12 +664,61 @@ def render() -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
-def main() -> int:
-    """Print the Accessibility Conformance Report to stdout; return ``0``.
+def check(path: Path) -> int:
+    """Compare the committed report at ``path`` with :func:`render`; write nothing.
 
-    ``make acr`` redirects this into ``docs/accessibility/ACR.md`` so the checked-in
-    report is always regenerable from code (reproducibility).
+    The committed ACR stood in for a computation nothing re-ran. ``make acr`` writes
+    it, ``make acr`` is not part of ``make verify``, and no test read it, so an edit to
+    the ``_SECTIONS`` data below could ship a conformance level the committed document
+    still contradicted — and a procurement reviewer reads the document, not the code.
+
+    This is the missing comparison, and it is deliberately a *check*: it renders into
+    memory and diffs. Regenerating into the working tree instead would be the same
+    defect wearing a gate's clothes — drift would heal silently on every local run
+    while the committed bytes stayed stale, which is exactly how such drift hides.
     """
+    if not path.is_file():
+        print(f"ACR check FAILED: {path} does not exist.", file=sys.stderr)
+        return 1
+    committed = path.read_text(encoding="utf-8")
+    expected = render()
+    if committed == expected:
+        print(f"ACR OK: {path} is byte-identical to ledger.acr_gen's output.")
+        return 0
+    print(
+        f"ACR check FAILED: {path} has drifted from ledger.acr_gen.\n"
+        "  Run `make acr` and commit the result.",
+        file=sys.stderr,
+    )
+    diff = difflib.unified_diff(
+        committed.splitlines(keepends=True),
+        expected.splitlines(keepends=True),
+        fromfile=f"{path} (committed)",
+        tofile="ledger.acr_gen.render() (expected)",
+    )
+    sys.stderr.writelines(diff)
+    return 1
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Print the report to stdout, or with ``--check PATH`` compare and return ``1``.
+
+    ``make acr`` redirects the default mode into ``docs/accessibility/ACR.md`` so the
+    checked-in report is always regenerable from code (reproducibility); ``make
+    acr-check``, which ``make verify`` composes, runs ``--check`` so a stale committed
+    report is a red build rather than a document nobody re-derives.
+    """
+    parser = argparse.ArgumentParser(description="Generate or check ledger's ACR.")
+    parser.add_argument(
+        "--check",
+        metavar="PATH",
+        type=Path,
+        help="compare PATH with the generated report and fail on any difference; "
+        "writes nothing anywhere",
+    )
+    args = parser.parse_args(argv)
+    if args.check is not None:
+        return check(args.check)
     print(render(), end="")
     return 0
 

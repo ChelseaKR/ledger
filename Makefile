@@ -12,8 +12,8 @@ PY   ?= $(if $(wildcard $(VENV)/bin/python),$(VENV)/bin/python,python3)
 
 .DEFAULT_GOAL := help
 .PHONY: help venv install lock lint format type test cov audit osv accessibility acr demo serve \
-        i18n i18n-compile claims secret-scan workflow-lint perf real-corpus real-corpus-evidence \
-        container mutation verify clean
+        i18n i18n-extract i18n-compile claims secret-scan workflow-lint perf real-corpus real-corpus-evidence \
+        acr-check container mutation verify clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -95,6 +95,18 @@ acr: ## Regenerate the Accessibility Conformance Report (VPAT 2.5)
 	$(PY) -m ledger.acr_gen > docs/accessibility/ACR.md
 	@echo "ACR regenerated at docs/accessibility/ACR.md"
 
+acr-check: ## The committed ACR is byte-identical to what ledger.acr_gen renders today
+	# The ACR is a committed artifact standing in for a computation, and until this
+	# target existed nothing re-ran that computation: `acr` writes the file and is
+	# not part of `verify`, and no test read it. A conformance level edited in
+	# `src/ledger/acr_gen.py` could ship while `docs/accessibility/ACR.md` still said
+	# the opposite, and the document is what a procurement reviewer reads.
+	#
+	# `--check` renders into memory and diffs. It deliberately does NOT regenerate
+	# into the working tree: a gate that rewrites the artifact it is checking heals
+	# drift locally on every run while the committed bytes stay stale.
+	$(PY) -m ledger.acr_gen --check docs/accessibility/ACR.md
+
 demo: ## Scripted end-to-end: ingest -> seal -> grant -> verified-replica -> no-outing proof
 	$(PY) -m ledger.demo
 
@@ -102,15 +114,33 @@ serve: ## Run the accessible archive browse server locally
 	$(PY) -m ledger.cli serve --root ./local-archive
 
 i18n: ## i18n gettext catalog gate: POT current + en/es/fr/ar parity + PO compiles + UTF-8 + BCP-47 + CLDR pin
-	# G2-lite — regenerate the extraction template and fail if it drifts from the
-	# committed one (a new/changed user-facing string without a re-extract is a
-	# merge-blocker). The normalizer freezes volatile header/flag noise so this is a
-	# meaningful diff, not a flaky timestamp check. Local == CI.
+	# G2-lite — re-extract the template into a TEMPORARY directory and fail if it
+	# drifts from the committed one (a new/changed user-facing string without a
+	# re-extract is a merge-blocker). The normalizer freezes volatile header/flag
+	# noise so this is a meaningful diff, not a flaky timestamp check. Local == CI.
+	#
+	# The extraction used to write straight over `src/ledger/locales/messages.pot`
+	# and then `git diff --exit-code` the working tree. That compares, so it caught
+	# drift — but it also means the merge gate REPAIRS the artifact it is judging.
+	# Every local `make verify` silently rewrote the committed template, so drift
+	# healed on the contributor's disk whether or not they noticed the red line, and
+	# a gate that edits its own subject is one `git add -A` away from committing a
+	# regeneration nobody reviewed. `git diff` is blind in a second way that matters
+	# for any future artifact added here: it cannot see an UNTRACKED file, so the
+	# same shape applied to a new catalog would exit 0 on a file that was never
+	# committed at all. Extract to a temp dir, diff, write nothing. `make
+	# i18n-extract` is the authoring path that writes the template on purpose.
+	@tmp="$$(mktemp -d)"; \
+	trap 'rm -rf "$$tmp"' EXIT INT TERM; \
 	$(PY) -m babel.messages.frontend extract -F babel.cfg --no-location \
 		--sort-output --project=ledger-archive --version=0.1.0 \
-		-o src/ledger/locales/messages.pot src/
-	$(PY) tools/i18n_normalize_pot.py src/ledger/locales/messages.pot
-	git diff --exit-code -- src/ledger/locales/messages.pot
+		-o "$$tmp/messages.pot" src/ || exit 1; \
+	$(PY) tools/i18n_normalize_pot.py "$$tmp/messages.pot" || exit 1; \
+	if ! diff -u src/ledger/locales/messages.pot "$$tmp/messages.pot"; then \
+		echo "i18n G2-lite: FAIL — src/ledger/locales/messages.pot is stale." >&2; \
+		echo "  Regenerate it with: make i18n-extract" >&2; \
+		exit 1; \
+	fi
 	# G7 — every PO compiles cleanly (format + domain checks), no msgfmt errors.
 	for lang in en es fr ar; do \
 		msgfmt --check --check-format --check-domain -o /dev/null \
@@ -124,7 +154,37 @@ i18n: ## i18n gettext catalog gate: POT current + en/es/fr/ar parity + PO compil
 	$(PY) tools/check_bcp47.py
 	# G12 — CLDR/locale-data freshness pin (Babel within the reviewed range, data loads).
 	$(PY) tools/check_i18n_deps.py
-	@echo "i18n: POT current; en/es/fr/ar key-parity + completeness; PO compiles; UTF-8; BCP-47 valid; CLDR pinned."
+	# G13 — every committed `messages.mo` carries exactly the messages its
+	# `messages.po` declares, compared through the same gettext reader the running
+	# program uses.
+	#
+	# The `.mo` files are committed (docs/I18N.md explains why) and `make
+	# i18n-compile` is the only thing that writes them. It is not part of `verify`,
+	# so until this check existed the compiled catalog that actually ships was a
+	# committed artifact standing in for a computation nothing re-ran: edit a
+	# `msgstr`, skip `make i18n-compile`, and every gate above stays green while the
+	# running program serves the OLD translation. G5/G6 read the `.po` and never
+	# open the `.mo`. docs/I18N.md claimed the render/server tests guarded this;
+	# they assert a handful of specific strings ("Browse" -> "Explorar"), so they
+	# guard those strings and nothing else.
+	#
+	# This compares MEANING, not bytes, and tools/check_mo_current.py records why:
+	# msgfmt's MO hash-table layout changed between gettext releases, so the same
+	# `.po` compiles to different bytes under 0.21 than under 0.23.1/1.0 while the
+	# message maps stay identical. Byte equality would have pinned every contributor
+	# and every runner to one gettext build. The excluded subset is named in that
+	# file: the MO byte layout, and header fields other than Plural-Forms.
+	$(PY) tools/check_mo_current.py
+	@echo "i18n: POT current; MO compiled from the committed PO; en/es/fr/ar key-parity + completeness; PO compiles; UTF-8; BCP-47 valid; CLDR pinned."
+
+i18n-extract: ## Regenerate src/ledger/locales/messages.pot (the authoring path that writes)
+	# `make i18n`'s G2-lite step extracts into a temp dir and only compares, so this
+	# is the one target allowed to write the committed template.
+	$(PY) -m babel.messages.frontend extract -F babel.cfg --no-location \
+		--sort-output --project=ledger-archive --version=0.1.0 \
+		-o src/ledger/locales/messages.pot src/
+	$(PY) tools/i18n_normalize_pot.py src/ledger/locales/messages.pot
+	@echo "i18n-extract: rewrote src/ledger/locales/messages.pot; review and commit it."
 
 i18n-compile: ## Compile the committed PO catalogs to MO (run after editing a .po)
 	for lang in en es fr ar; do \
@@ -217,7 +277,7 @@ mutation: ## ADVISORY (never a merge gate): mutation-test the safety-critical co
 #   dependency & secret scan           <- audit, secret-scan
 #   no-outing audit (safety gate)      <- test's own `disclosure`-marked subset, which
 #                                         CI also runs standalone for visibility
-#   accessibility gate (WCAG 2.2 AA)   <- accessibility
+#   accessibility gate (WCAG 2.2 AA)   <- accessibility, acr-check
 #   i18n (gettext catalog gate)        <- i18n
 #   OSV lockfile scan (uv.lock)        <- osv
 #   workflow linter (zizmor)           <- workflow-lint
@@ -241,7 +301,7 @@ mutation: ## ADVISORY (never a merge gate): mutation-test the safety-critical co
 # `osv` and `secret-scan` no-op with a message when their binary is absent, so even the
 # two they mirror are only as strong locally as the tooling actually installed.
 # `tools/check_claims.py` fails the build if a context in the mirror is not named above.
-verify: lint type test i18n accessibility audit osv secret-scan claims hygiene workflow-lint ## Run the portable subset of CI's required checks (7 of 13 contexts)
+verify: lint type test i18n accessibility acr-check audit osv secret-scan claims hygiene workflow-lint ## Run the portable subset of CI's required checks (7 of 13 contexts)
 	@echo "verify: all gates green (the portable subset — see the comment above this target)"
 
 clean: ## Remove caches and build artifacts (never touches an archive's data)
