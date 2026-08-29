@@ -250,9 +250,13 @@ probing the archive's public surfaces, combining fields, or cross-referencing.*
   the log file on disk can tamper with it, which is why fixity and off-box replicas of
   the log matter. Each entry's chain link narrows this rather than closing it: an edit
   that does not also recompute every following link is detected by `ledger moderation
-  verify` and shown on `/steward/audit`, but an attacker who rewrites the whole chain
-  produces a locally self-consistent history, and only comparing the head against an
-  off-box replica catches that. Governance (`docs/GOVERNANCE.md`) is the control for a malicious
+  verify` and shown on `/steward/audit`, but an attacker who rewrites the whole chain --
+  or who simply deletes the newest entries, which needs no recomputation at all -- produces
+  a locally self-consistent history, and only comparing the head against an
+  off-box replica catches that. `ledger moderation verify` states this beside its own
+  result: `chain_verified: true` is a statement about self-consistency, never about
+  completeness, and an action that was never recorded left nothing for any chain to
+  protect. Governance (`docs/GOVERNANCE.md`) is the control for a malicious
   steward: removal, multi-steward review of high-stakes actions, and not concentrating
   the vault key and unseal grants in one person.
 
