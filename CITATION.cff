@@ -12,8 +12,15 @@ authors:
 license: AGPL-3.0-or-later
 repository-code: "https://github.com/ChelseaKR/ledger"
 url: "https://github.com/ChelseaKR/ledger"
-version: "0.1.0"
-date-released: 2026-06-16
+# `version` mirrors the in-development version in pyproject.toml, which is the single
+# source of truth for it; tools/check_claims.py re-derives this line from there.
+# A release date is deliberately absent: no `git tag` exists for this project yet.
+# The date that used to sit here, 2026-06-16, was the day a 0.1.0 release candidate
+# was prepared and NOT tagged — see CHANGELOG.md's note under Unreleased and the
+# unchecked box in docs/RELEASE-0.1.0.md. Publishing it as `date-released` in the file
+# citation tooling reads made a rejected candidate look like a shipped release.
+# Add `date-released` back in the same commit that cuts the tag, not before.
+version: "0.1.0.dev0"
 keywords:
   - digital-preservation
   - community-archives

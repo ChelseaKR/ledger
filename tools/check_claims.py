@@ -9,7 +9,7 @@ alone. This tripwire pins a *small* inventory of load-bearing, checkable claims 
 fails the build when reality and documentation diverge, so a correction stays
 corrected and a future edit cannot silently reintroduce a dead claim.
 
-Seven claim kinds, all pure standard library (no new dependency — ledger's runtime is
+Eleven claim kinds, all pure standard library (no new dependency — ledger's runtime is
 stdlib-first and this tool runs in the same gate):
 
 * ``path_exists`` — a repo-relative path the docs promise the repo ships (e.g. the
@@ -39,6 +39,24 @@ stdlib-first and this tool runs in the same gate):
   ``.github/workflows/``. Renaming a job is otherwise a silent way to drop a
   merge-blocking gate: the ruleset keeps requiring a context nothing will ever report.
   An empty required-check list is a failure too, not a vacuous pass.
+* ``ruleset_requires`` — a context the prose says blocks a merge must be *in* that
+  required-check set. ``ruleset_contexts`` looks the other way (does every required
+  context name a real job?) and so could not see a document telling a reader that a
+  merge-blocking check is advisory. The README told exactly that story about the OSV
+  lockfile scan for the 164 lines between one paragraph and the standards table that
+  contradicted it.
+* ``ruleset_count`` — the size of the required-check set, as the prose states it,
+  re-derived from the mirror. ``config_number`` for branch protection: two documents
+  said eleven while three said thirteen, and nothing tied any of the five to the file
+  that decides. Fails both ways, like every other stated number here.
+* ``contexts_accounted_for`` — every required context must be *named* in the document
+  that claims local/CI parity. It does not prove ``make verify`` reproduces a context
+  (see ``UNCOVERED``); it proves a fourteenth required check cannot be added while the
+  parity note silently keeps its old shape.
+* ``mirrored_string`` — a string one file states, re-derived from the file that owns
+  it. ``config_number`` for values that are not integers: ``CITATION.cff`` is what
+  citation tooling reads, and a version it states on its own is a second source of
+  truth for the one ``pyproject.toml`` owns.
 
 Keep the inventory deliberately small: a noisy tripwire that flags prose churn trains
 reviewers to ignore it. Add a claim only when it is factual, load-bearing, and cheap to
@@ -130,6 +148,14 @@ _NUMBER_WORDS: dict[str, int] = {
     "ten": 10,
     "eleven": 11,
     "twelve": 12,
+    "thirteen": 13,
+    "fourteen": 14,
+    "fifteen": 15,
+    "sixteen": 16,
+    "seventeen": 17,
+    "eighteen": 18,
+    "nineteen": 19,
+    "twenty": 20,
 }
 
 
@@ -371,6 +397,37 @@ def _job_name_patterns(workflows: Path) -> list[re.Pattern[str]]:
     return patterns
 
 
+def _required_contexts(ruleset: str) -> list[str] | str:
+    """The required contexts in the committed mirror, or a message saying why not.
+
+    Shared by every claim that reasons about branch protection, so they cannot disagree
+    with each other about what the mirror says.
+    """
+    target = ROOT / ruleset
+    if not target.is_file():
+        return f"{ruleset!r} is missing — the committed ruleset mirror is the evidence"
+    try:
+        data: Any = json.loads(target.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return f"{ruleset} cannot be parsed: {exc}"
+    if not isinstance(data, dict) or not isinstance(data.get("rules"), list):
+        return f"{ruleset} has no `rules` array"
+    for rule in data["rules"]:
+        if not isinstance(rule, dict) or rule.get("type") != "required_status_checks":
+            continue
+        parameters = rule.get("parameters")
+        if not isinstance(parameters, dict):
+            return f"{ruleset}: required_status_checks has no `parameters` object"
+        checks = parameters.get("required_status_checks")
+        if not isinstance(checks, list):
+            return f"{ruleset}: `required_status_checks` must be an array"
+        found = [c["context"] for c in checks if isinstance(c, dict) and "context" in c]
+        if len(found) != len(checks):
+            return f"{ruleset}: every required status check needs a `context`"
+        return found
+    return f"{ruleset} declares no `required_status_checks` rule"
+
+
 @dataclass(frozen=True)
 class RulesetContexts:
     """Every required status check in the committed ruleset must name a real job.
@@ -391,29 +448,7 @@ class RulesetContexts:
 
     def contexts(self) -> list[str] | str:
         """The required contexts, or a message explaining why they cannot be read."""
-        target = ROOT / self.ruleset
-        if not target.is_file():
-            return f"{self.ruleset!r} is missing — the committed ruleset mirror is the evidence"
-        try:
-            data: Any = json.loads(target.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
-            return f"{self.ruleset} cannot be parsed: {exc}"
-        if not isinstance(data, dict) or not isinstance(data.get("rules"), list):
-            return f"{self.ruleset} has no `rules` array"
-        for rule in data["rules"]:
-            if not isinstance(rule, dict) or rule.get("type") != "required_status_checks":
-                continue
-            parameters = rule.get("parameters")
-            if not isinstance(parameters, dict):
-                return f"{self.ruleset}: required_status_checks has no `parameters` object"
-            checks = parameters.get("required_status_checks")
-            if not isinstance(checks, list):
-                return f"{self.ruleset}: `required_status_checks` must be an array"
-            found = [c["context"] for c in checks if isinstance(c, dict) and "context" in c]
-            if len(found) != len(checks):
-                return f"{self.ruleset}: every required status check needs a `context`"
-            return found
-        return f"{self.ruleset} declares no `required_status_checks` rule"
+        return _required_contexts(self.ruleset)
 
     def check(self) -> str | None:
         contexts = self.contexts()
@@ -443,6 +478,184 @@ class RulesetContexts:
 
 
 @dataclass(frozen=True)
+class RulesetRequires:
+    """Contexts the docs say block a merge, checked against the committed mirror.
+
+    ``ruleset_contexts`` asks whether every required context names a real job. This asks
+    the opposite question, and it is the one the documentation actually gets wrong: a
+    sentence telling a reader that a merge-blocking check is advisory. The README said
+    the OSV lockfile scan was "not yet one of the required status checks ... so a red OSV
+    run does not block a merge today" for the whole time it had been blocking merges, and
+    its own standards table said the opposite 164 lines later.
+
+    The correction is an *upward* one, which is why nobody noticed: understating a gate
+    reads as caution. It costs the same reader the same time, and a self-contradicting
+    README is worse for trust than either half alone.
+    """
+
+    name: str
+    ruleset: str
+    contexts: tuple[str, ...]
+    hint: str
+
+    def check(self) -> str | None:
+        required = _required_contexts(self.ruleset)
+        if isinstance(required, str):
+            return f"{self.name}: {required} — {self.hint}"
+        missing = [context for context in self.contexts if context not in required]
+        if missing:
+            listed = ", ".join(repr(context) for context in missing)
+            return f"{self.name}: {self.ruleset} does not require {listed} — {self.hint}"
+        return None
+
+
+@dataclass(frozen=True)
+class RulesetCount:
+    """The size of the required-check set the prose states, re-derived from the mirror.
+
+    ``config_number`` re-derives a threshold from the config that enforces it; this is
+    the same move for branch protection, where the enforcing artifact is the committed
+    ruleset. Five documents stated this number and none was tied to the file that
+    decides it, so when the set grew from eleven contexts to thirteen, three were updated
+    and two were not, and a reader had no way to tell which pair was current.
+
+    Fails when the number is wrong *and* when the sentence stating it disappears.
+    """
+
+    name: str
+    ruleset: str
+    file: str
+    pattern: str
+    hint: str
+
+    def check(self) -> str | None:
+        target = ROOT / self.file
+        if not target.is_file():
+            return f"{self.name}: {self.file!r} is missing — cannot check the stated count"
+        required = _required_contexts(self.ruleset)
+        if isinstance(required, str):
+            return f"{self.name}: {required} — {self.hint}"
+        found = re.findall(self.pattern, target.read_text(encoding="utf-8"))
+        if not found:
+            return (
+                f"{self.name}: {self.file} no longer states the size of the required-check "
+                f"set (pattern {self.pattern!r} matched nothing) — restate it, or delete "
+                "this claim rather than leaving a check that verifies nothing"
+            )
+        for raw in found:
+            stated = _NUMBER_WORDS.get(str(raw).lower())
+            if stated is None:
+                if not str(raw).isdigit():
+                    return f"{self.name}: {self.file} states {raw!r}, which is not a number"
+                stated = int(raw)
+            if stated != len(required):
+                return (
+                    f"{self.name}: {self.file} states {raw} but {self.ruleset} requires "
+                    f"{len(required)} contexts — {self.hint}"
+                )
+        return None
+
+
+@dataclass(frozen=True)
+class ContextsAccountedFor:
+    """Every required context is named in the document that claims local/CI parity.
+
+    The Makefile said ``make verify`` matched CI's required-check set "byte-for-byte"
+    while six of the thirteen contexts had no local target at all. That is the dangerous
+    direction for this particular claim: a contributor reads green locally as green in
+    CI and stops looking.
+
+    This does not prove ``verify`` reproduces a context — nothing local can, for CodeQL
+    or Trivy or a Playwright run, and ``UNCOVERED`` says so. It proves the parity note
+    *says something* about every context the ruleset requires, so a fourteenth cannot
+    join the required set while the note keeps its old shape and its old promise.
+    """
+
+    name: str
+    ruleset: str
+    file: str
+    hint: str
+
+    def check(self) -> str | None:
+        target = ROOT / self.file
+        if not target.is_file():
+            return f"{self.name}: {self.file!r} is missing — cannot check the parity claim"
+        required = _required_contexts(self.ruleset)
+        if isinstance(required, str):
+            return f"{self.name}: {required} — {self.hint}"
+        text = target.read_text(encoding="utf-8")
+        unnamed = [context for context in required if context not in text]
+        if unnamed:
+            listed = ", ".join(repr(context) for context in unnamed)
+            return (
+                f"{self.name}: {self.file} says nothing about {listed}, which "
+                f"{self.ruleset} requires — {self.hint}"
+            )
+        return None
+
+
+@dataclass(frozen=True)
+class MirroredString:
+    """A string one file states, re-derived from the file that owns it.
+
+    ``config_number`` does this for integers; a version is the same problem with the
+    same failure mode, and the file it lives in is the one machines read. ``CITATION.cff``
+    carried ``version: "0.1.0"`` and ``date-released: 2026-06-16`` while ``pyproject.toml``
+    said ``0.1.0.dev0``, ``git tag`` returned nothing, and ``CHANGELOG.md`` said in as many
+    words that the 0.1.0 candidate prepared on that date was never tagged. The date of a
+    rejected release candidate was published as the date of a release.
+    """
+
+    name: str
+    file: str
+    pattern: str
+    source: str
+    key_path: tuple[str, ...]
+    hint: str
+
+    def actual(self) -> str | None:
+        source = ROOT / self.source
+        if not source.is_file():
+            return None
+        try:
+            data: Any = tomllib.loads(source.read_text(encoding="utf-8"))
+        except (OSError, tomllib.TOMLDecodeError):
+            return None
+        for key in self.key_path:
+            if not isinstance(data, dict) or key not in data:
+                return None
+            data = data[key]
+        return data if isinstance(data, str) else None
+
+    def check(self) -> str | None:
+        target = ROOT / self.file
+        if not target.is_file():
+            return f"{self.name}: {self.file!r} is missing — cannot check the stated value"
+        dotted = ".".join(self.key_path)
+        actual = self.actual()
+        if actual is None:
+            return (
+                f"{self.name}: cannot read {dotted} from {self.source} — the documented "
+                "value has no source to be checked against, which is not the same as the "
+                "documentation being right"
+            )
+        found = re.findall(self.pattern, target.read_text(encoding="utf-8"), flags=re.M)
+        if not found:
+            return (
+                f"{self.name}: {self.file} no longer states the value this gate re-derives "
+                f"(pattern {self.pattern!r} matched nothing) — restate it, or delete this "
+                "claim rather than leaving a check that verifies nothing"
+            )
+        for raw in found:
+            if str(raw) != actual:
+                return (
+                    f"{self.name}: {self.file} states {raw!r} but {self.source} sets "
+                    f"{dotted} = {actual!r} — {self.hint}"
+                )
+        return None
+
+
+@dataclass(frozen=True)
 class Uncovered:
     """A load-bearing claim this gate cannot check, named rather than left implicit.
 
@@ -464,6 +677,10 @@ Claim = (
     | ReferenceExists
     | ConfigNumber
     | RulesetContexts
+    | RulesetRequires
+    | RulesetCount
+    | ContextsAccountedFor
+    | MirroredString
 )
 
 # The inventory. Small on purpose (see module docstring). Each entry pins one
@@ -712,6 +929,104 @@ CLAIMS: tuple[Claim, ...] = (
         ("tool", "coverage", "report", "fail_under"),
         "restate the floor pyproject.toml actually enforces, or change the floor.",
     ),
+    # The 2026-08-21 ruleset pass (#79, merged as #151) put `OSV lockfile scan (uv.lock)`
+    # and `Semgrep SAST (p/ci)` into the live required-check set and the committed mirror
+    # with it, and enforced strict checks, a pull-request rule, stale-review dismissal,
+    # signed commits and linear history. Three documents were updated and two were not.
+    # The README kept BOTH halves: its standards table said thirteen required contexts
+    # 164 lines after a paragraph said OSV was not one of them. Nothing tied a sentence
+    # about the required-check set to the required-check set, so all five were invisible.
+    RulesetRequires(
+        "osv-and-semgrep-are-required-contexts",
+        ".github/rulesets/main.json",
+        ("OSV lockfile scan (uv.lock)", "Semgrep SAST (p/ci)"),
+        "the README and DEFINITION_OF_DONE.md now say a red OSV or Semgrep run blocks a "
+        "merge; if either context leaves the required set, both sentences stop being true.",
+    ),
+    ForbiddenString(
+        "osv-is-not-advisory-in-the-readme",
+        "README.md",
+        "not yet one of the required status",
+        "the OSV lockfile scan has blocked a merge since 2026-08-21 (#151); this underclaim "
+        "contradicted the README's own standards table 164 lines further down.",
+    ),
+    ForbiddenString(
+        "osv-and-semgrep-are-not-advisory-in-the-definition-of-done",
+        "DEFINITION_OF_DONE.md",
+        "absent from the required-check set",
+        "second home of the same underclaim: both contexts have been merge-blocking since "
+        "2026-08-21 (#151).",
+    ),
+    ForbiddenString(
+        "ruleset-gaps-are-closed-in-the-definition-of-done",
+        "DEFINITION_OF_DONE.md",
+        "signed commits, and linear history remain issue",
+        "strict checks, the pull-request rule, stale-review dismissal, signed commits and "
+        "linear history are all enforced live and mirrored in-tree; listing them as "
+        "outstanding understates the gate that actually runs (#151).",
+    ),
+    RulesetCount(
+        "required-check-count-in-the-readme",
+        ".github/rulesets/main.json",
+        "README.md",
+        r"all (\w+) in the live ruleset's required-check set",
+        "restate the number of contexts the committed mirror requires.",
+    ),
+    RulesetCount(
+        "required-check-count-in-the-definition-of-done",
+        ".github/rulesets/main.json",
+        "DEFINITION_OF_DONE.md",
+        r"requires (\w+) named CI checks",
+        "restate the number of contexts the committed mirror requires.",
+    ),
+    RulesetCount(
+        "required-check-count-in-the-ruleset-readme",
+        ".github/rulesets/main.json",
+        ".github/rulesets/README.md",
+        r"Required-check set: (\w+) contexts",
+        "restate the number of contexts the committed mirror requires.",
+    ),
+    ContextsAccountedFor(
+        "verify-accounts-for-every-required-context",
+        ".github/rulesets/main.json",
+        "Makefile",
+        "`verify`'s comment is where local/CI parity is claimed (CICD-27), so every context "
+        "the ruleset requires has to be named there — as reproduced, or as out of local "
+        "reach and why. A new required check must not be able to appear while the parity "
+        "note keeps its old shape.",
+    ),
+    ForbiddenString(
+        "verify-does-not-claim-byte-for-byte-parity",
+        "Makefile",
+        "byte-for-byte",
+        "`make verify` reaches seven of the thirteen required contexts. CodeQL (twice), "
+        "Semgrep, Trivy, the performance budgets and the browser axe run have no local "
+        "target, so green here cannot mean green in CI.",
+    ),
+    # CITATION.cff is the machine-readable file citation tooling reads, which makes a
+    # wrong value in it more durable than the same wrong value in prose. It recorded
+    # `date-released: 2026-06-16` — the date CHANGELOG.md says a 0.1.0 candidate was
+    # prepared and never tagged, and which docs/RELEASE-0.1.0.md still lists as an
+    # unchecked box. `olive-bark-logger` hit this first and fixed it the same way.
+    MirroredString(
+        "citation-version-mirrors-pyproject",
+        "CITATION.cff",
+        r'^version: "([^"]+)"',
+        "pyproject.toml",
+        ("project", "version"),
+        "pyproject.toml owns the version; a second copy that drifts is how CITATION.cff "
+        "came to advertise a release the repository cannot produce.",
+    ),
+    ForbiddenString(
+        "citation-claims-no-release-date",
+        "CITATION.cff",
+        # The key at the start of a line, not the word: the comment that replaced the key
+        # has to be able to name the thing it is explaining the absence of.
+        "\ndate-released:",
+        "no tag has ever been cut, so there is no release date to record. Add the key back "
+        "in the same commit that cuts the tag — docs/RELEASE-0.1.0.md's checklist says so — "
+        "and retire this claim then, not before.",
+    ),
 )
 
 # What this gate cannot see. Published in CONTRIBUTING.md ("What the truthfulness gate
@@ -752,6 +1067,12 @@ UNCOVERED: tuple[Uncovered, ...] = (
         "network request; the mirror is only as current as the change that last touched it",
     ),
     Uncovered(
+        "whether `make verify` reproduces the required context the Makefile pairs it with",
+        "contexts_accounted_for proves the parity note names every required context, and a "
+        "name is not a proof; six of the thirteen (CodeQL twice, Semgrep, Trivy, the perf "
+        "budgets, the browser axe run) have no local target that could settle it",
+    ),
+    Uncovered(
         "whether the SEALED memory cap is still the right number",
         "peak RSS is a measurement of a running ingest, not a property of the tree; "
         "the 7.4x multiplier behind ADR 0011's 64 MiB default is dated, not derived",
@@ -782,6 +1103,22 @@ _KIND_LABEL: dict[str, tuple[str, str]] = {
     "RulesetContexts": (
         "required-check set resolved",
         "required-check sets resolved",
+    ),
+    "RulesetRequires": (
+        "merge-blocking context confirmed",
+        "merge-blocking contexts confirmed",
+    ),
+    "RulesetCount": (
+        "required-check count re-derived from the mirror",
+        "required-check counts re-derived from the mirror",
+    ),
+    "ContextsAccountedFor": (
+        "parity note accounts for every required context",
+        "parity notes account for every required context",
+    ),
+    "MirroredString": (
+        "value re-derived from the file that owns it",
+        "values re-derived from the file that owns it",
     ),
     # ReferenceExists is reported by the number of pointers it swept, not by the
     # number of inventory entries: "1 claim" would hide how much it looked at.

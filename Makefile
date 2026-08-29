@@ -206,16 +206,43 @@ mutation: ## ADVISORY (never a merge gate): mutation-test the safety-critical co
 	@echo "mutation: advisory run complete. Review any survivors above against the"
 	@echo "          documented baseline in docs/MUTATION-TESTING.md (equivalent mutants noted)."
 
-# The full gate. Determinism + reproducibility: same inputs, same result, every run.
-# Matches CI's required-check set byte-for-byte (CICD-27): the `gate`, `i18n`,
-# `accessibility`, `supply-chain`, `osv`, and `workflow-lint` jobs in ci.yml run
-# exactly these targets, so green here means green in CI. (`hygiene` runs in the
-# `gate` job alongside lint.) (The `no-outing-audit`
-# job is `test`'s own `disclosure`-marked subset, run standalone in CI for
-# visibility, not a distinct local gate; `container` is intentionally excluded —
-# see its own target comment.)
-verify: lint type test i18n accessibility audit osv secret-scan claims hygiene workflow-lint ## Run the complete merge gate (== CI's required checks)
-	@echo "verify: all gates green"
+# The full local gate. Determinism + reproducibility: same inputs, same result, every
+# run. It is the PORTABLE SUBSET of CI's required-check set, not the whole of it
+# (CICD-27), and the difference is written out here rather than implied, because a
+# contributor who reads "parity" reads green locally as green in CI and stops looking.
+#
+# Seven of the thirteen contexts `.github/rulesets/main.json` requires are reproduced:
+#
+#   lint · type · test (py3.12)        <- lint, type, test, claims, hygiene
+#   dependency & secret scan           <- audit, secret-scan
+#   no-outing audit (safety gate)      <- test's own `disclosure`-marked subset, which
+#                                         CI also runs standalone for visibility
+#   accessibility gate (WCAG 2.2 AA)   <- accessibility
+#   i18n (gettext catalog gate)        <- i18n
+#   OSV lockfile scan (uv.lock)        <- osv
+#   workflow linter (zizmor)           <- workflow-lint
+#
+# Six have no local target at all, and a green `verify` says nothing about them:
+#
+#   CodeQL analyze (python)            no local CodeQL database is built
+#   CodeQL analyze (actions)           the same
+#   Semgrep SAST (p/ci)                no local target; pinning semgrep would pull four
+#                                      known-vulnerable transitive packages into the
+#                                      graph, so CI is the gate of record. See
+#                                      .github/rulesets/README.md.
+#   container image CVE scan (Trivy)   `container` is excluded on purpose — see its own
+#                                      target comment
+#   performance budgets (QM-02)        `perf` is excluded on purpose — a contributor's
+#                                      laptop is not a stable timing surface
+#   accessibility (browser axe over the served site)
+#                                      Playwright + Chromium are CI-only dev deps;
+#                                      `accessibility` is the static half of that pair
+#
+# `osv` and `secret-scan` no-op with a message when their binary is absent, so even the
+# two they mirror are only as strong locally as the tooling actually installed.
+# `tools/check_claims.py` fails the build if a context in the mirror is not named above.
+verify: lint type test i18n accessibility audit osv secret-scan claims hygiene workflow-lint ## Run the portable subset of CI's required checks (7 of 13 contexts)
+	@echo "verify: all gates green (the portable subset — see the comment above this target)"
 
 clean: ## Remove caches and build artifacts (never touches an archive's data)
 	rm -rf build dist .pytest_cache .mypy_cache .ruff_cache *.egg-info src/*.egg-info
