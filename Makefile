@@ -154,8 +154,9 @@ i18n: ## i18n gettext catalog gate: POT current + en/es/fr/ar parity + PO compil
 	$(PY) tools/check_bcp47.py
 	# G12 — CLDR/locale-data freshness pin (Babel within the reviewed range, data loads).
 	$(PY) tools/check_i18n_deps.py
-	# G13 — every committed `messages.mo` is msgfmt's output for the `messages.po`
-	# beside it, compared BYTE FOR BYTE against a compile into a temp dir.
+	# G13 — every committed `messages.mo` carries exactly the messages its
+	# `messages.po` declares, compared through the same gettext reader the running
+	# program uses.
 	#
 	# The `.mo` files are committed (docs/I18N.md explains why) and `make
 	# i18n-compile` is the only thing that writes them. It is not part of `verify`,
@@ -165,27 +166,15 @@ i18n: ## i18n gettext catalog gate: POT current + en/es/fr/ar parity + PO compil
 	# running program serves the OLD translation. G5/G6 read the `.po` and never
 	# open the `.mo`. docs/I18N.md claimed the render/server tests guarded this;
 	# they assert a handful of specific strings ("Browse" -> "Explorar"), so they
-	# guard those strings and nothing else. msgfmt is deterministic for a given
-	# `.po`, so byte equality is the right comparison and needs no exclusions.
-	@tmp="$$(mktemp -d)"; \
-	trap 'rm -rf "$$tmp"' EXIT INT TERM; \
-	for lang in en es fr ar; do \
-		po="src/ledger/locales/$$lang/LC_MESSAGES/messages.po"; \
-		mo="src/ledger/locales/$$lang/LC_MESSAGES/messages.mo"; \
-		msgfmt -o "$$tmp/$$lang.mo" "$$po" || exit 1; \
-		if [ ! -f "$$mo" ]; then \
-			echo "i18n G13: FAIL — $$mo is missing." >&2; \
-			echo "  Compile it with: make i18n-compile" >&2; \
-			exit 1; \
-		fi; \
-		if ! cmp -s "$$mo" "$$tmp/$$lang.mo"; then \
-			echo "i18n G13: FAIL — $$mo is not msgfmt's output for $$po." >&2; \
-			echo "  The shipped catalog and the reviewed catalog disagree." >&2; \
-			echo "  Recompile with: make i18n-compile" >&2; \
-			exit 1; \
-		fi; \
-	done; \
-	echo "i18n G13: OK — en/es/fr/ar messages.mo are byte-identical to msgfmt of their .po."
+	# guard those strings and nothing else.
+	#
+	# This compares MEANING, not bytes, and tools/check_mo_current.py records why:
+	# msgfmt's MO hash-table layout changed between gettext releases, so the same
+	# `.po` compiles to different bytes under 0.21 than under 0.23.1/1.0 while the
+	# message maps stay identical. Byte equality would have pinned every contributor
+	# and every runner to one gettext build. The excluded subset is named in that
+	# file: the MO byte layout, and header fields other than Plural-Forms.
+	$(PY) tools/check_mo_current.py
 	@echo "i18n: POT current; MO compiled from the committed PO; en/es/fr/ar key-parity + completeness; PO compiles; UTF-8; BCP-47 valid; CLDR pinned."
 
 i18n-extract: ## Regenerate src/ledger/locales/messages.pot (the authoring path that writes)
