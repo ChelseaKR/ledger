@@ -71,6 +71,11 @@ SIGNATURE_NAMESPACE: str = "ledger-health-attestation"
 # module chains — a fixed, well-known value rather than a magic empty string.
 _GENESIS: str = "0" * 64
 
+#: A bag's own PREMIS log filename. Mirrors ``ledger.ingest._PREMIS_FILENAME``;
+#: named here rather than importing a private so this module keeps its own
+#: dependency surface.
+_PREMIS_FILENAME = "premis.json"
+
 _ATTESTATIONS_DIRNAME = "attestations"
 _LATEST_FILENAME = "latest.json"
 
@@ -92,6 +97,25 @@ def _log_head(events: list[PremisEvent]) -> str:
     return head
 
 
+def _read_or_refuse(log_path: Path) -> list[PremisEvent]:
+    """Read one PREMIS log's events, or raise rather than let damage go unstated.
+
+    The strict counterpart to :meth:`~ledger.ingest.Archive.record_events`. That reader
+    is deliberately lenient because it feeds a browse surface where one damaged bag must
+    not blank the page; this one feeds a signed public claim, where a damaged bag must
+    not be summarised at all.
+    """
+    try:
+        return list(PremisLog.read(log_path).events)
+    except (LedgerError, ValueError, OSError) as exc:
+        raise LedgerError(
+            f"cannot attest: PREMIS log is present but unreadable: {log_path.name}. "
+            "An attestation states what every log's history is; an unreadable log "
+            "makes that unknown, and publishing the genesis head for it would claim "
+            "the log was empty. Repair or restore the log, then re-run."
+        ) from exc
+
+
 def _every_log_head(archive: Archive) -> dict[str, str]:
     """Every log's current head, keyed by bag id or archive-level log filename.
 
@@ -99,18 +123,36 @@ def _every_log_head(archive: Archive) -> dict[str, str]:
     the enumeration :func:`chain_head_summary` exists to avoid publishing. Kept
     private to this module rather than exported for a steward view, so there is
     only one path (the summary) a caller can reach for (least surprise).
+
+    **Fails closed on a log it cannot read.** A log that is *absent* genuinely means
+    "no history yet", and :func:`_log_head` returns the genesis sentinel for it. A log
+    that is *present but unreadable* means the history is **unknown**, which is not the
+    same statement -- and every way of carrying on says something false:
+
+    * reading it through :meth:`~ledger.ingest.Archive.record_events` (which swallows a
+      damaged log and returns no events, correctly, for the lenient browse surface)
+      would attest the **genesis head** for it, affirmatively publishing "this bag has
+      no history" over a bag whose history could not be read; and
+    * skipping it would silently drop it from the summary instead.
+
+    Either way the damage is laundered into a signed, published document whose entire
+    stated purpose is that "two dated attestations are enough to catch a rollback".
+    Corrupting one ``premis.json`` must not be a way to get an archive to sign a
+    statement that the log was empty. So this raises, and
+    :func:`build_attestation` produces nothing, which is the one honest outcome: an
+    archive that cannot read its own history does not get to attest to it.
     """
     heads: dict[str, str] = {}
     if archive.bags_dir.exists():
         for bag_path in sorted(p for p in archive.bags_dir.iterdir() if p.is_dir()):
-            heads[bag_path.name] = _log_head(archive.record_events(bag_path.name))
+            premis_path = bag_path / _PREMIS_FILENAME
+            if not premis_path.exists():
+                heads[bag_path.name] = _log_head([])
+                continue
+            heads[bag_path.name] = _log_head(_read_or_refuse(premis_path))
     if archive.logs_dir.exists():
         for log_path in sorted(archive.logs_dir.glob("*.premis.json")):
-            try:
-                events = PremisLog.read(log_path).events
-            except (LedgerError, ValueError, OSError):
-                continue
-            heads[log_path.name] = _log_head(events)
+            heads[log_path.name] = _log_head(_read_or_refuse(log_path))
     return heads
 
 

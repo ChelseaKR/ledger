@@ -37,7 +37,7 @@ from ledger.access.grants import anonymous, build_grant, issue_grant_token, stew
 from ledger.config import Config, StorageLocation
 from ledger.identity import ContributorIdentity
 from ledger.ingest import Archive, serialize_record
-from ledger.metadata.premis import PremisLog
+from ledger.metadata.premis import PremisLog, append_event
 from ledger.models import (
     AccessPolicy,
     DublinCore,
@@ -423,9 +423,11 @@ def main() -> int:
     manifest = serialize_record(updated)
     (archive.records_dir / f"{rid}.json").write_text(manifest, encoding="utf-8", newline="\n")
     (bag_dir / "record.json").write_text(manifest, encoding="utf-8", newline="\n")
-    premis_log = PremisLog.read(aip.premis_path)
-    premis_log.record(consent_event)
-    premis_log.write(aip.premis_path)
+    # Through the locked appender, like every other writer: the demo is
+    # single-threaded, but it is also the worked example a reader copies from, and
+    # a hand-rolled read-record-write here would model the defect the appender exists
+    # to prevent.
+    append_event(aip.premis_path, consent_event)
 
     anon_after = archive.browse(anonymous(), now=_NOW_CONSENT)
     reloaded_log = PremisLog.read(aip.premis_path)
