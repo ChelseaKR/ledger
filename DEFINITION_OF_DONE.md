@@ -154,7 +154,18 @@ changes to `src/ledger/access/` or `identity.py`), last-pusher cannot
 self-approve, stale reviews dismissed on new pushes, CODEOWNERS review
 required on the routed paths above, required status checks in strict mode
 covering every AUTO-GATE job that exists today, signed commits, linear
-history, no force-push, no admin bypass on `main`.
+history, no force-push.
+
+The one thing that is **not** on that target list, and used to be, is "no admin
+bypass on `main`". `bypass_actors` holds exactly the repository owner's standing
+bypass (`RepositoryRole` 5, `bypass_mode: always`), deliberately and permanently:
+an agent once applied a ruleset with no bypass and locked the owner out of their
+own repository, and restoring access took a sweep across eighteen repositories.
+An empty list there is not a stricter gate, it is the lockout. Done for a
+branch-protection change therefore means the owner's bypass is present and no
+*other* actor has one — checked on each side independently by
+`tools/check_claims.py`, never by diffing the live list against the committed one.
+See `.github/rulesets/README.md`, "Why the owner can bypass".
 
 ## Delivery-health signal
 

@@ -5,14 +5,46 @@ ruleset named `protect-main`, so the branch-protection posture is reviewable in 
 tree instead of only in a settings page nobody can diff. `CI-CD-STANDARD.md` §5 asks
 for exactly this artifact, and `CODEOWNERS` routes this directory to the maintainer.
 
-Fetched from `GET /repos/ChelseaKR/ledger/rulesets/18823575` on **2026-08-21**. The
-live ruleset carried `"updated_at": "2026-08-21T04:00:06.895-07:00"` at that moment —
-the same change that closed the gaps below (#79). The API returned
-`"bypass_actors": []` — a *visible* empty list, not a redaction.
+Fetched from `GET /repos/ChelseaKR/ledger/rulesets/18823575` on **2026-08-21**, and
+re-read on **2026-08-28**. The live ruleset carried
+`"updated_at": "2026-08-21T04:00:06.895-07:00"` at the first of those moments — the
+same change that closed the gaps below (#79).
 
 Two fields are dropped from the mirror on purpose because they are server-assigned
 and would make an honest diff impossible: `id` and `updated_at`. Everything the
 standard treats as a security-relevant setting is reproduced verbatim.
+
+## Why the owner can bypass
+
+`bypass_actors` holds exactly the repository owner's standing bypass
+(`RepositoryRole` 5, `bypass_mode: always`), deliberately and permanently: an agent
+once applied a ruleset with no bypass and locked the owner out of their own
+repository, and restoring access took a sweep across eighteen repositories. An empty
+list here is not a stricter gate, it is the lockout.
+
+This file used to read the other way. It said the API returned `"bypass_actors": []`
+— "a *visible* empty list, not a redaction" — and offered that as evidence the
+posture was tight. The mirror was wrong, not the live ruleset: the 2026-08-28 read of
+`GET /repos/ChelseaKR/ledger/rulesets/18823575` returns the owner's bypass and
+`"current_user_can_bypass": "always"`, and it has been the correct configuration
+throughout. The committed file is what changed to match; **no live ruleset or
+repository setting was touched.**
+
+The distinction that mattered in the old sentence still holds and is worth keeping:
+GitHub redacts `bypass_actors` from callers without ruleset write access, so an empty
+list read by an unprivileged token proves nothing. What the old sentence got wrong was
+treating *empty* as the good answer. The good answer is *exactly one actor, and it is
+the owner's own*: a second bypass handed to a team, a GitHub App or another repository
+role is the thing actually worth catching, and so is the owner's going missing.
+
+A standing admin bypass is a recovery path, not a merge policy. Every change to `main`
+still goes through a pull request with the thirteen required checks green; using the
+bypass routinely would be a defect in practice, which no ruleset field can prevent and
+an empty list does not either — it only removes the way back in.
+
+If you are reading this because the empty list looked more secure and you are about to
+restore it: re-applying a ruleset file that omits the owner's bypass is how the lockout
+happens. Do not.
 
 ## The solo-maintainer-safe review model this profile chose
 
@@ -67,8 +99,19 @@ mirror at all. Two things guard it:
 - `tools/check_claims.py` fails the build if any `context` named here does not match
   the `name:` of a real job in `.github/workflows/`, which is how a renamed job would
   otherwise quietly drop out of the required set.
+- `tools/check_claims.py` also fails the build if this file stops recording the
+  owner's standing bypass, or starts recording a second bypass actor. That is the
+  committed half of the check; `check_claims.bypass_findings()` is the whole of it,
+  and it holds the live ruleset and this file against the owner's bypass
+  **independently** rather than comparing the two to each other. Comparing them is
+  what a mirror-parity check naturally does, and it is exactly wrong here: if a future
+  edit put the empty list back into this file on a day the owner had also been locked
+  out, the two sides would agree and the parity check would report conformance on the
+  incident it exists to catch. Both sides emptied together is two findings, not zero,
+  and `tests/test_claims_gate.py` pins that case.
 - Any change to the live ruleset must land here in the same breath. There is no
   automated live-versus-committed parity check in this repo yet; the portfolio
   standards repo's `automation/check_ruleset_profile.py --hosted` is the tool that
   does it, and wiring it in here is now unblocked (the review-model decision it was
-  waiting on is made) but not yet done.
+  waiting on is made) but not yet done. When it is wired in, it must feed
+  `bypass_findings()` rather than diff the two bypass lists.

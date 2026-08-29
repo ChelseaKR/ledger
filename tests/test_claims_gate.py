@@ -26,14 +26,17 @@ import pytest
 from tools import check_claims
 from tools.check_claims import (
     CLAIMS,
+    OWNER_BYPASS,
     UNCOVERED,
     ConfigNumber,
     ForbiddenString,
     PathExists,
     ReferenceExists,
     RequiredString,
+    RulesetBypass,
     RulesetContexts,
     StatedCount,
+    bypass_findings,
 )
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -578,3 +581,130 @@ def test_the_truthfulness_gate_actually_runs_on_a_pull_request() -> None:
     """
     ci = (REPO_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
     assert "tools/check_claims.py" in ci
+
+
+# --- ruleset_bypass: an empty list is the lockout, not the tighter setting -------
+#
+# Live ruleset 18823575, read 2026-08-28 from
+# `gh api repos/ChelseaKR/ledger/rulesets/18823575`: `bypass_actors` is exactly the
+# owner's standing bypass and `current_user_can_bypass` is "always". Reproduced here
+# rather than fetched, because the gate makes no network request. The mirror declared
+# `[]` for a week and the README argued that was the tight posture; re-applying it
+# would have locked the owner out of the repository, which has already happened once
+# across eighteen of them.
+
+_LIVE_RULESET: dict[str, object] = {
+    "id": 18823575,
+    "name": "protect-main",
+    "target": "branch",
+    "enforcement": "active",
+    "bypass_actors": [dict(OWNER_BYPASS)],
+    "current_user_can_bypass": "always",
+}
+
+
+def _committed_ruleset() -> dict[str, object]:
+    """The mirror as it stands on disk, not a fixture of it."""
+    import json
+
+    return json.loads((REPO_ROOT / ".github/rulesets/main.json").read_text(encoding="utf-8"))
+
+
+def bypass_claim() -> RulesetBypass:
+    entry = claim("ruleset-records-the-owner-bypass")
+    assert isinstance(entry, RulesetBypass)
+    return entry
+
+
+def test_the_committed_mirror_records_the_owner_bypass_and_nothing_else() -> None:
+    """Not a fixture: the actual `.github/rulesets/main.json`."""
+    assert _committed_ruleset()["bypass_actors"] == [OWNER_BYPASS]
+    assert bypass_claim().check() is None
+
+
+def test_the_real_live_configuration_reads_as_conformance() -> None:
+    """The configuration the repository is actually in must pass.
+
+    A check that fails forever against a correct repository is not a stricter check,
+    it is a broken one — which is what asserting `bypass_actors == []` was.
+    """
+    assert bypass_findings(_LIVE_RULESET, _committed_ruleset()) == []
+
+
+def test_a_second_bypass_actor_is_reported_on_either_side() -> None:
+    """The threat actually worth guarding: a team, a GitHub App or a second
+    repository role handed the ability to skip the merge gate."""
+    committed = _committed_ruleset()
+    for extra in (
+        {"actor_id": 4242, "actor_type": "Team", "bypass_mode": "pull_request"},
+        {"actor_id": 99, "actor_type": "Integration", "bypass_mode": "always"},
+        {"actor_id": 2, "actor_type": "RepositoryRole", "bypass_mode": "always"},
+    ):
+        live = dict(_LIVE_RULESET, bypass_actors=[dict(OWNER_BYPASS), extra])
+        found = bypass_findings(live, committed)
+        assert len(found) == 1, found
+        assert "unreviewed bypass actor" in found[0]
+
+        planted = dict(committed, bypass_actors=[dict(OWNER_BYPASS), extra])
+        found = bypass_findings(_LIVE_RULESET, planted)
+        assert len(found) == 1, found
+        assert "committed and not enforced" in found[0]
+
+
+def test_the_owner_losing_their_live_bypass_is_reported() -> None:
+    """The incident the rule exists for. An empty list coming back from the API is
+    the owner locked out of their own repository."""
+    found = bypass_findings(dict(_LIVE_RULESET, bypass_actors=[]), _committed_ruleset())
+    assert len(found) == 1, found
+    assert "the live protect-main ruleset" in found[0]
+    assert "lockout" in found[0]
+
+
+def test_both_sides_emptied_together_is_two_findings_not_zero() -> None:
+    """The case a parity check would pass with a green tick on it.
+
+    A tidy revert of the mirror on a day the owner had also been locked out makes the
+    two sides agree, which is exactly why the owner's bypass is held against each side
+    separately rather than compared between them.
+    """
+    live = dict(_LIVE_RULESET, bypass_actors=[])
+    committed = dict(_committed_ruleset(), bypass_actors=[])
+    found = bypass_findings(live, committed)
+    assert len(found) == 2, found
+    assert any("the live protect-main ruleset" in line for line in found), found
+    assert any(".github/rulesets/main.json" in line for line in found), found
+
+
+def test_the_gate_fails_when_the_mirror_goes_back_to_an_empty_list(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The offline half, proved against a broken tree rather than a repaired one."""
+    entry = bypass_claim()
+    fake_repo(tmp_path, monkeypatch, {".github/rulesets/main.json": '{"bypass_actors": []}'})
+    problem = entry.check()
+    assert problem is not None
+    assert "lockout" in problem
+
+
+def test_the_gate_fails_when_a_second_actor_is_planted_in_the_mirror(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    entry = bypass_claim()
+    mirror = (
+        '{"bypass_actors": ['
+        '{"actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always"},'
+        '{"actor_id": 4242, "actor_type": "Team", "bypass_mode": "always"}]}'
+    )
+    fake_repo(tmp_path, monkeypatch, {".github/rulesets/main.json": mirror})
+    problem = entry.check()
+    assert problem is not None
+    assert "4242" in problem
+
+
+def test_the_gate_fails_when_the_mirror_has_no_bypass_field_at_all(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A missing key must not read as a vacuous pass."""
+    entry = bypass_claim()
+    fake_repo(tmp_path, monkeypatch, {".github/rulesets/main.json": '{"name": "protect-main"}'})
+    assert entry.check() is not None
