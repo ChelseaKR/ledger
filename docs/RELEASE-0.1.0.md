@@ -19,7 +19,10 @@ owner-controlled and human-review prerequisites that cannot honestly be automate
   for `ChelseaKR/ledger`, `.github/workflows/release.yml`, environment `pypi`.
 - [ ] The GitHub `pypi` environment exists with the intended protection rule.
 - [ ] `CHANGELOG.md` has a dated `## [0.1.0]` section that reflects the exact tag.
-- [ ] `CITATION.cff`'s release date matches the tag date.
+- [ ] `CITATION.cff` gets a `date-released` matching the tag date, and its `version`
+  matches the tagged `pyproject.toml` version. Both are gated: the
+  `citation-claims-no-release-date` claim in `tools/check_claims.py` forbids the key
+  while no tag exists, so retire that claim in the same commit that cuts the tag.
 - [ ] `make verify` passes at the exact commit to be tagged.
 
 ## Tag and verify

@@ -195,6 +195,20 @@ five-area Functional Performance Criteria (Chapter 3).
 
   which runs `python -m ledger.acr_gen > docs/accessibility/ACR.md`.
 
+  Being generated is not the same as being current, and for most of this report's
+  life nothing checked the difference: `make acr` writes the file, `make acr` was not
+  part of `make verify`, and no test opened it. An edit to `acr_gen.py` could ship a
+  conformance level the committed document contradicted, with every gate green.
+  `make verify` now composes **`make acr-check`**, which renders the report into
+  memory and fails on any byte of difference, and `tests/test_acr_current.py` asserts
+  the same thing from the suite. Both compare; neither regenerates into the working
+  tree, because a check that repairs its own subject hides exactly the drift it exists
+  to find.
+
+  ```
+  make acr-check
+  ```
+
 - **It is regenerated and re-committed on each release**, the same
   audit-as-artifact discipline ledger applies to fixity. The placeholder
   `docs/accessibility/.gitkeep` reserves the directory; `make acr` produces the
@@ -215,6 +229,7 @@ five-area Functional Performance Criteria (Chapter 3).
 ```
 make accessibility   # run the automated structural gate over the web/ surface
 make acr             # regenerate docs/accessibility/ACR.md from src/ledger/acr_gen.py
+make acr-check       # fail if the committed ACR has drifted from acr_gen (in `verify`)
 ```
 
 The browser-real axe pass (the same one CI's `accessibility-browser` job runs) is

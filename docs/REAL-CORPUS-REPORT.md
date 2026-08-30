@@ -16,9 +16,18 @@ filed as issues rather than guessed at, and have since been resolved by
 [ADR 0010](adr/0010-identification-governs-what-a-record-asserts.md),
 [ADR 0011](adr/0011-sealed-payloads-are-size-capped.md), and
 [ADR 0012](adr/0012-the-premis-object-is-the-payload-within-a-record.md). Every number
-here is measured on the same pinned corpus commit, re-measured on every run, and —
-since ADR 0012 — committed as [evidence](#evidence) that a test re-derives, so no figure
-below is typed in by hand.
+here is measured on the same pinned corpus commit and re-measured on every run.
+
+Two of the three are committed as [evidence](#evidence) a test re-derives on every
+`make verify`: the pipeline as it stands today, and — since ADR 0012 — the state of it
+at ledger `dc70b05`, which is the "after fixes 1-6" column below. **The third, the
+original corpus run, has no committed evidence file.** It predates the convention and
+cannot be regenerated from `main`, so its figures are checked the only two ways they
+can be: every column of §10's basis table has to count the same 679 files, every
+percentage has to be its own column's count over that total, and the four places
+stating what the corpus run could not identify have to agree with each other. That is
+weaker than the other two columns, and it is said here rather than left for a reader to
+discover from the test.
 
 **Lead finding: nothing crashed, and that was the problem.** All 22 collections
 ingested, all 22 bags validated against RFC 8493, every payload byte survived. The
@@ -213,6 +222,14 @@ Measured, on one 157 MB payload:
 | --- | --- |
 | PUBLIC (streamed) | **38 MB** |
 | SEALED (encrypted at rest) | **1178 MB** |
+
+These two are the corpus run's own single-file probe. They are **not** the numbers ADR
+0011 and the code carry: the re-measurement further down this section reads 38.9 MB and
+1189.3 MB on a 157.3 MB payload, and that is the run every other document quotes. The
+two peak figures are under 1% apart, and neither is a correction of the other — both are
+true of the run that produced them. They are kept apart rather than reconciled into one,
+because silently replacing a measurement with a later one is how a document stops being
+a record of what was observed.
 
 The streaming claim holds everywhere it was fixed under FIX-03 — and fails on the one
 path that was not: `ingest.py` reads the entire file into memory to encrypt it
