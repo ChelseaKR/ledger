@@ -9,7 +9,7 @@ alone. This tripwire pins a *small* inventory of load-bearing, checkable claims 
 fails the build when reality and documentation diverge, so a correction stays
 corrected and a future edit cannot silently reintroduce a dead claim.
 
-Eleven claim kinds, all pure standard library (no new dependency — ledger's runtime is
+Twelve claim kinds, all pure standard library (no new dependency — ledger's runtime is
 stdlib-first and this tool runs in the same gate):
 
 * ``path_exists`` — a repo-relative path the docs promise the repo ships (e.g. the
@@ -39,6 +39,12 @@ stdlib-first and this tool runs in the same gate):
   ``.github/workflows/``. Renaming a job is otherwise a silent way to drop a
   merge-blocking gate: the ruleset keeps requiring a context nothing will ever report.
   An empty required-check list is a failure too, not a vacuous pass.
+* ``ruleset_bypass`` — the same mirror must record exactly the repository owner's
+  standing bypass, and no second actor. An empty ``bypass_actors`` list reads like the
+  tighter setting and is not: an agent once applied a ruleset with no bypass and locked
+  the owner out of their own repository, and restoring access took a sweep across
+  eighteen repositories. Re-applying a mirror that omits the owner's bypass is how that
+  happens again, so the file has to be right and not only the live ruleset.
 * ``ruleset_requires`` — a context the prose says blocks a merge must be *in* that
   required-check set. ``ruleset_contexts`` looks the other way (does every required
   context name a real job?) and so could not see a document telling a reader that a
@@ -477,6 +483,123 @@ class RulesetContexts:
         return None
 
 
+# --- ruleset_bypass ---------------------------------------------------------
+#
+# The repository owner's standing bypass, exactly as GitHub returns it for live
+# ruleset 18823575 (read 2026-08-28, alongside `"current_user_can_bypass": "always"`).
+# It is deliberate and permanent. The mirror declared `"bypass_actors": []` for a
+# week, and `.github/rulesets/README.md` offered that empty list as evidence the
+# posture was tight; both were wrong, and re-applying the mirror as it stood would
+# have locked the owner out of the repository. See "Why the owner can bypass" in
+# that file.
+OWNER_BYPASS: dict[str, Any] = {
+    "actor_id": 5,
+    "actor_type": "RepositoryRole",
+    "bypass_mode": "always",
+}
+
+
+def _bypass_side_findings(actors: list[Any], side: str, remedy: str) -> list[str]:
+    """One side's bypass list held against ``OWNER_BYPASS``, on its own terms."""
+    findings: list[str] = []
+    if OWNER_BYPASS not in actors:
+        findings.append(
+            f"{side} no longer records the repository owner's standing bypass "
+            f"({OWNER_BYPASS}). An empty or owner-less list is not a stricter gate, "
+            f"it is the lockout. {remedy}"
+        )
+    return findings
+
+
+def bypass_findings(live: dict[str, Any], committed: dict[str, Any]) -> list[str]:
+    """Both bypass lists checked, each against the owner's bypass rather than each other.
+
+    Equality between the two sides is the obvious check and the wrong one. If a future
+    edit put ``"bypass_actors": []`` back into the mirror on a day the owner had also
+    been locked out of the repository, the live list and the committed list would agree
+    and a parity check would report conformance on precisely the incident this exists to
+    catch. So the owner's bypass is asserted against each side absolutely, and only
+    *other* actors — a team, a GitHub App, a second repository role — are compared
+    between them. Both sides emptied together is two findings, not zero.
+
+    Pure and offline by design: the caller supplies the live JSON. ``tools/`` makes no
+    network request, so whatever fetches and whatever judges stay separable.
+    """
+    live_actors = list(live.get("bypass_actors") or [])
+    committed_actors = list(committed.get("bypass_actors") or [])
+
+    findings = _bypass_side_findings(
+        live_actors,
+        "the live protect-main ruleset",
+        "Restore it on GitHub rather than re-applying the mirror over it.",
+    )
+    findings += _bypass_side_findings(
+        committed_actors,
+        ".github/rulesets/main.json",
+        "Restore it in the file; re-applying the file as it stands is how the lockout "
+        "happens.",
+    )
+
+    other_live = [actor for actor in live_actors if actor != OWNER_BYPASS]
+    other_committed = [actor for actor in committed_actors if actor != OWNER_BYPASS]
+    findings += [
+        f"unreviewed bypass actor: {actor} may skip the gate on the live ruleset and is "
+        f"not in .github/rulesets/main.json. Only the owner's own bypass is expected."
+        for actor in other_live
+        if actor not in other_committed
+    ]
+    findings += [
+        f"bypass actor committed and not enforced: {actor}"
+        for actor in other_committed
+        if actor not in other_live
+    ]
+    return findings
+
+
+@dataclass(frozen=True)
+class RulesetBypass:
+    """The committed mirror must record the owner's bypass, and no other actor.
+
+    This is the half of :func:`bypass_findings` that runs offline. The live half needs a
+    GitHub API call, which this script deliberately never makes (``UNCOVERED`` says so),
+    but the file is worth gating on its own: re-applying a mirror whose ``bypass_actors``
+    is empty is how the owner gets locked out of their own repository, and that has
+    already happened once across eighteen of them.
+    """
+
+    name: str
+    ruleset: str
+    hint: str
+
+    def check(self) -> str | None:
+        target = ROOT / self.ruleset
+        if not target.is_file():
+            return f"{self.name}: {self.ruleset!r} is missing — {self.hint}"
+        try:
+            data: Any = json.loads(target.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            return f"{self.name}: {self.ruleset} cannot be parsed: {exc}"
+        if not isinstance(data, dict) or not isinstance(data.get("bypass_actors"), list):
+            return f"{self.name}: {self.ruleset} has no `bypass_actors` array — {self.hint}"
+        actors = data["bypass_actors"]
+        problems = _bypass_side_findings(
+            actors,
+            self.ruleset,
+            "Restore it in the file; re-applying the file as it stands is how the "
+            "lockout happens.",
+        )
+        problems += [
+            f"{self.ruleset} records a bypass actor that is not the owner's: {actor}. "
+            f"A team, a GitHub App or a second repository role skipping the merge gate "
+            f"is the thing actually worth catching."
+            for actor in actors
+            if actor != OWNER_BYPASS
+        ]
+        if problems:
+            return f"{self.name}: " + " ".join(problems) + f" — {self.hint}"
+        return None
+
+
 @dataclass(frozen=True)
 class RulesetRequires:
     """Contexts the docs say block a merge, checked against the committed mirror.
@@ -677,6 +800,7 @@ Claim = (
     | ReferenceExists
     | ConfigNumber
     | RulesetContexts
+    | RulesetBypass
     | RulesetRequires
     | RulesetCount
     | ContextsAccountedFor
@@ -905,6 +1029,13 @@ CLAIMS: tuple[Claim, ...] = (
         "a required context that matches no job name is a check that will never report, "
         "which leaves the branch reading as protected by a gate that cannot run.",
     ),
+    RulesetBypass(
+        "ruleset-records-the-owner-bypass",
+        ".github/rulesets/main.json",
+        "the mirror must record exactly the owner's standing bypass; an empty list is "
+        "the lockout waiting to be re-applied, and a second actor is an unreviewed way "
+        "past the merge gate. See .github/rulesets/README.md, 'Why the owner can bypass'.",
+    ),
     ConfigNumber(
         "coverage-floor-in-definition-of-done",
         "DEFINITION_OF_DONE.md",
@@ -1064,7 +1195,10 @@ UNCOVERED: tuple[Uncovered, ...] = (
     Uncovered(
         "whether .github/rulesets/main.json still matches the live protect-main ruleset",
         "parity needs a GitHub API call, and this stdlib script deliberately makes no "
-        "network request; the mirror is only as current as the change that last touched it",
+        "network request; the mirror is only as current as the change that last touched "
+        "it. `bypass_findings()` here is the judge when a caller does supply the live "
+        "JSON, and it holds each side against the owner's bypass rather than diffing "
+        "the two",
     ),
     Uncovered(
         "whether `make verify` reproduces the required context the Makefile pairs it with",
@@ -1103,6 +1237,10 @@ _KIND_LABEL: dict[str, tuple[str, str]] = {
     "RulesetContexts": (
         "required-check set resolved",
         "required-check sets resolved",
+    ),
+    "RulesetBypass": (
+        "bypass list holding exactly the owner's own",
+        "bypass lists holding exactly the owner's own",
     ),
     "RulesetRequires": (
         "merge-blocking context confirmed",

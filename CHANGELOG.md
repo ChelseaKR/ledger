@@ -240,6 +240,29 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   to leave a branch requiring a context nothing will ever report.
 
 ### Changed
+- **The committed `protect-main` mirror now records the repository owner's standing
+  bypass, and the gate checks each side against it independently.**
+  `.github/rulesets/main.json` declared `"bypass_actors": []` while live ruleset
+  `18823575` has carried `{"actor_id": 5, "actor_type": "RepositoryRole",
+  "bypass_mode": "always"}` throughout, and `.github/rulesets/README.md` offered that
+  empty list as evidence the posture was tight while `DEFINITION_OF_DONE.md` put "no
+  admin bypass on `main`" on the target posture. All three were wrong in the same
+  direction: an agent once applied a ruleset with no bypass and locked the owner out
+  of their own repository, and restoring access took a sweep across eighteen
+  repositories, so re-applying this mirror as it stood would have reproduced that.
+  The mirror is what changed to match reality; **no live ruleset or repository
+  setting was touched.**
+
+  `tools/check_claims.py` gains an eighth claim kind, `ruleset_bypass`: the mirror
+  must record exactly the owner's bypass and no second actor. Its `bypass_findings()`
+  is the whole check for a caller that does have the live JSON, and it holds the two
+  sides against the owner's bypass **separately** rather than diffing them. Diffing is
+  what a mirror-parity check naturally does and it is the wrong shape here — a future
+  edit restoring the empty list on a day the owner had also been locked out would make
+  both sides agree, and parity would report conformance on the incident it exists to
+  catch. That case is pinned in `tests/test_claims_gate.py` and must produce two
+  findings rather than zero.
+
 - **A payload whose format could not be identified is no longer logged as a
   successful ingest.** It now records PREMIS `eventOutcome: "unidentified"`, and
   `ledger ingest` says so on stderr. Measured on the real corpus this was 156 of 679

@@ -140,8 +140,9 @@ come back, the evidence a corrected claim rests on, a stated count re-derived fr
 a documented threshold re-derived from the config that enforces it, the required-check set in
 the committed branch-protection mirror (that every context names a real job, that the contexts
 the docs call merge-blocking are in it, that the number the prose states is its size, and that
-the `Makefile`'s parity note accounts for every one of them), a value re-derived from the file
-that owns it, and every "tracked in `docs/ROADMAP.md`, <ID>"
+the `Makefile`'s parity note accounts for every one of them), that the same mirror records
+exactly the repository owner's standing bypass and no second actor, a value re-derived from
+the file that owns it, and every "tracked in `docs/ROADMAP.md`, <ID>"
 pointer. It was green for weeks while five
 load-bearing statements were false (#124), because a claim it does not hold cannot fail it.
 So it now prints its own boundary on every run, and this is the same list — if you are
