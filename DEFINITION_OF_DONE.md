@@ -159,9 +159,20 @@ is `false`, because the sole code owner cannot approve their own pull request
 and requiring an approval nobody can give would make the repository
 unmergeable by its only contributor — `CI-CD-STANDARD` §5.1 permits exactly
 this for a solo-maintainer repo, and the choice is dated and reasoned in
-`.github/rulesets/README.md` rather than silently absent. Still open: ≥2
-approvals for changes to `src/ledger/access/` or `identity.py`, and no admin
-bypass on `main`, both of which need a second maintainer to be meaningful.
+`.github/rulesets/README.md` rather than silently absent. Still open: >=2
+approvals for changes to `src/ledger/access/` or `identity.py`, which needs a
+second maintainer to be meaningful.
+
+The one thing that is **not** on that target list, and used to be, is "no admin
+bypass on `main`". `bypass_actors` holds exactly the repository owner's standing
+bypass (`RepositoryRole` 5, `bypass_mode: always`), deliberately and permanently:
+an agent once applied a ruleset with no bypass and locked the owner out of their
+own repository, and restoring access took a sweep across eighteen repositories.
+An empty list there is not a stricter gate, it is the lockout. Done for a
+branch-protection change therefore means the owner's bypass is present and no
+*other* actor has one — checked on each side independently by
+`tools/check_claims.py`, never by diffing the live list against the committed one.
+See `.github/rulesets/README.md`, "Why the owner can bypass".
 
 ## Delivery-health signal
 
