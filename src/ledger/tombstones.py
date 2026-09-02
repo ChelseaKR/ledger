@@ -28,15 +28,27 @@ Integrity/fault-tolerance: the store is a single JSON document written atomicall
 (temp file in the same directory, then :func:`os.replace`), mirroring
 ``logs/takedowns.premis.json`` and the other archive logs — a reader never sees a
 half-written file and a crash mid-write leaves the prior state intact.
+
+Concurrency: atomicity is not serialization. Every mutation here rewrites the whole
+document, so two takedowns issued at once under the threaded browse server would each
+read the same starting list, append their own tombstone, and race to rename over one
+another — and a tombstone lost that way is a reattaching replica that is never told to
+delete the stale copy it still holds, which is a taken-down record quietly resurrecting
+(Hard Rule 4). The read-modify-write is therefore held under
+:func:`ledger._filelock.file_lock`, as every sibling JSON store in this package is, and
+the temp file carries a random suffix rather than the process id, so two threads of one
+process cannot name the same one (#155).
 """
 
 from __future__ import annotations
 
 import json
 import os
+import secrets
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from ledger._filelock import file_lock
 from ledger.errors import LedgerError
 
 __all__ = ["PRIMARY_LOCATION", "Tombstone", "TombstoneStore"]
@@ -143,13 +155,20 @@ class TombstoneStore:
         takedown of the same id is a no-op that preserves the existing confirmations
         and the original ``issued_at`` — so retrying a takedown never loses the
         receipts already collected (idempotence, fault tolerance).
+
+        The whole read-append-write cycle is held under
+        :func:`ledger._filelock.file_lock`, so two takedowns issued at once cannot each
+        read the same list and clobber one another. A tombstone lost that way would
+        leave a stale copy on a reattaching replica that nothing ever tells to delete
+        (#155).
         """
-        tombs = self._read()
-        for tomb in tombs:
-            if tomb.record_id == record_id:
-                return
-        tombs.append(Tombstone(record_id=record_id, issued_at=issued_at))
-        self._write(tombs)
+        with file_lock(self._path):
+            tombs = self._read()
+            for tomb in tombs:
+                if tomb.record_id == record_id:
+                    return
+            tombs.append(Tombstone(record_id=record_id, issued_at=issued_at))
+            self._write(tombs)
 
     def pending_for(self, location_name: str) -> list[str]:
         """Record ids taken down but not yet confirmed removed at ``location_name``.
@@ -167,31 +186,36 @@ class TombstoneStore:
         *first* confirmed there. A ``record_id`` with no tombstone raises
         :class:`~ledger.errors.LedgerError` (the id is opaque, not identity) so a
         confirm against an unknown takedown fails loudly rather than silently.
+
+        Locked like :meth:`add`: a fleet of replicas reattaching together writes
+        receipts concurrently, and a receipt lost to a racing write makes the archive
+        under-report which locations have applied a removal.
         """
-        tombs = self._read()
-        found = False
-        updated: list[Tombstone] = []
-        for tomb in tombs:
-            if tomb.record_id == record_id:
-                found = True
-                if location_name in tomb.confirmed:
-                    updated.append(tomb)
-                else:
-                    merged = dict(tomb.confirmed)
-                    merged[location_name] = when
-                    updated.append(
-                        Tombstone(
-                            record_id=tomb.record_id,
-                            issued_at=tomb.issued_at,
-                            action=tomb.action,
-                            confirmed=merged,
+        with file_lock(self._path):
+            tombs = self._read()
+            found = False
+            updated: list[Tombstone] = []
+            for tomb in tombs:
+                if tomb.record_id == record_id:
+                    found = True
+                    if location_name in tomb.confirmed:
+                        updated.append(tomb)
+                    else:
+                        merged = dict(tomb.confirmed)
+                        merged[location_name] = when
+                        updated.append(
+                            Tombstone(
+                                record_id=tomb.record_id,
+                                issued_at=tomb.issued_at,
+                                action=tomb.action,
+                                confirmed=merged,
+                            )
                         )
-                    )
-            else:
-                updated.append(tomb)
-        if not found:
-            raise LedgerError(f"no tombstone for record id {record_id!r}")
-        self._write(updated)
+                else:
+                    updated.append(tomb)
+            if not found:
+                raise LedgerError(f"no tombstone for record id {record_id!r}")
+            self._write(updated)
 
     def status(self, record_id: str) -> dict[str, str] | None:
         """Per-location confirmation for ``record_id``: ``{location: receipt_ts}``.
@@ -229,10 +253,16 @@ class TombstoneStore:
         rename on the same filesystem; a crash mid-write leaves the prior store
         intact and a reader never sees a half-written list (integrity, fault
         tolerance).
+
+        The temp name carries a random suffix rather than the process id: every thread
+        of the browse server shares one pid, so a pid-named temp file is a *shared*
+        name, and two writers would overwrite each other's temp and then race to rename
+        a file one of them had already renamed away. Callers hold the lock, so this is
+        the belt to that braces (#155).
         """
         self.logs_dir.mkdir(parents=True, exist_ok=True)
         payload = json.dumps([tomb.to_dict() for tomb in tombs], indent=2, ensure_ascii=False)
-        tmp = self._path.with_name(f"{self._path.name}.{os.getpid()}.tmp")
+        tmp = self._path.with_name(f"{self._path.name}.{secrets.token_hex(8)}.tmp")
         try:
             tmp.write_text(payload + "\n", encoding="utf-8")
             os.replace(tmp, self._path)

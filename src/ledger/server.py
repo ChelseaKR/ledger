@@ -81,6 +81,7 @@ from ledger.fixity import CHUNK_SIZE
 from ledger.ingest import Archive
 from ledger.lockdown import is_locked_down
 from ledger.models import (
+    OBJECT_TYPE_RECORD,
     AccessPolicy,
     ContentAddress,
     DisclosedRecord,
@@ -1231,8 +1232,22 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             self._handle_not_found()
             return
         archive = self._archive()
-        pending = self._submission_queue().pending()
-        if pending:
+        # A queue that cannot be read is reported *in place* rather than raising: a
+        # steward needs to be told the review queue is unreadable, not handed a 500
+        # that says nothing, and above all not shown an empty console that reads as
+        # "nothing is waiting" while contributors wait (#154, failure transparency).
+        # ``None`` is "the queue could not be read", which is a different fact from
+        # ``[]`` ("nothing is waiting"). Keeping them apart in the binding itself,
+        # rather than in a second flag beside an empty list nothing ever reads, is
+        # what stops an unreadable queue from being rendered as an empty one.
+        pending: list[review.PendingSubmission] | None
+        try:
+            pending = self._submission_queue().pending()
+        except LedgerError:
+            pending = None
+        if pending is None:
+            submissions_html = f"    <p>{_esc(i18n.t(lang, 'sw_queue_unreadable'))}</p>"
+        elif pending:
             sub_rows = []
             for item in pending:
                 edited = ""
@@ -1358,8 +1373,8 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         sealed value. Steward-gated; a non-steward gets a neutral 404.
 
         A second table renders the **moderation decisions**
-        (:func:`ledger.moderate.moderation_actions`). PREMIS answers *what happened*; only
-        this one answers *why a steward said they did it*, which is the fact
+        (:func:`ledger.moderate.moderation_actions`). PREMIS answers *what happened*;
+        only this one answers *why a steward said they did it*, which is the fact
         ``docs/GOVERNANCE.md`` and ``docs/THREAT-MODEL.md`` §4.4 rest the
         accountability model on. Its ``reason`` is steward-authored prose rather than
         a value the system derives, which is precisely why it renders here, behind the
@@ -2116,6 +2131,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
                 outcome="success",
                 detail="contributor edited a pending submission",
                 linked_object=reference,
+                linked_object_type=OBJECT_TYPE_RECORD,
                 event_datetime=now_iso(),
             )
             archive.apply_update(updated, event)

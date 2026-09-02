@@ -67,7 +67,13 @@ from ledger.config import StorageLocation
 from ledger.errors import BagValidationError, FixityError, LedgerError, ReplicationError
 from ledger.fixity import AuditReport
 from ledger.metadata.premis import PremisLog, append_event
-from ledger.models import PremisEvent, PremisEventType, now_iso
+from ledger.models import (
+    OBJECT_TYPE_BAG,
+    OBJECT_TYPE_RECORD,
+    PremisEvent,
+    PremisEventType,
+    now_iso,
+)
 from ledger.tombstones import TombstoneStore
 
 _PREMIS_FILENAME = "premis.json"
@@ -166,6 +172,7 @@ def apply_tombstones(
                         f"{location.name!r} on reattach"
                     ),
                     linked_object=record_id,
+                    linked_object_type=OBJECT_TYPE_RECORD,
                     event_datetime=stamp,
                 )
                 _append_takedown_receipt(takedowns_path, event)
@@ -300,6 +307,7 @@ def replicate_bag(
                 f"validation on arrival ({exc}); quarantined to {quarantine_path}"
             ),
             linked_object=bag_name,
+            linked_object_type=OBJECT_TYPE_BAG,
             event_datetime=now,
         )
         raise _rejected(
@@ -320,6 +328,7 @@ def replicate_bag(
                 f"quarantined to {quarantine_path}"
             ),
             linked_object=bag_name,
+            linked_object_type=OBJECT_TYPE_BAG,
             event_datetime=now,
         )
         raise _rejected(
@@ -336,6 +345,7 @@ def replicate_bag(
             f"verified on arrival ({report.checked} file(s) checked)"
         ),
         linked_object=bag_name,
+        linked_object_type=OBJECT_TYPE_BAG,
         event_datetime=now,
     )
 
@@ -549,6 +559,7 @@ def heal(
                         f"arrived torn; quarantined to {quarantine_path}"
                     ),
                     linked_object=bag_name,
+                    linked_object_type=OBJECT_TYPE_BAG,
                     event_datetime=now,
                 )
             )
@@ -565,6 +576,7 @@ def heal(
                     f"({checked} file(s) checked)"
                 ),
                 linked_object=bag_name,
+                linked_object_type=OBJECT_TYPE_BAG,
                 event_datetime=now,
             )
         )
@@ -762,6 +774,7 @@ def replicate_sealed_bag(
                 f"arrived with a mismatched digest; quarantined to {quarantine_target}"
             ),
             linked_object=sealed.bag,
+            linked_object_type=OBJECT_TYPE_BAG,
             event_datetime=now,
         )
         raise _rejected(
@@ -779,6 +792,7 @@ def replicate_sealed_bag(
             "read the contents"
         ),
         linked_object=sealed.bag,
+        linked_object_type=OBJECT_TYPE_BAG,
         event_datetime=now,
     )
     return event, sealed.sealed_sha256

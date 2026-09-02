@@ -680,6 +680,9 @@ msgstr "The language of the material, e.g. English or Spanish."
 msgid "The moderation log could not be read. It is not empty — it is unreadable, and that needs looking into before any further moderation decision is taken."
 msgstr "The moderation log could not be read. It is not empty — it is unreadable, and that needs looking into before any further moderation decision is taken."
 
+msgid "The review queue could not be read. It is not empty — it is unreadable, so submissions may be waiting that this page cannot show. Look into it before deciding anything here."
+msgstr "The review queue could not be read. It is not empty — it is unreadable, so submissions may be waiting that this page cannot show. Look into it before deciding anything here."
+
 msgid "The takedown is confirmed at every storage location."
 msgstr "The takedown is confirmed at every storage location."
 

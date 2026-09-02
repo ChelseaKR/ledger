@@ -175,9 +175,20 @@ def test_mark_rejects_unknown_status_and_unknown_id(tmp_path: Path) -> None:
 
 
 @pytest.mark.disclosure
-def test_corrupt_proposal_file_reads_as_empty(tmp_path: Path) -> None:
+def test_corrupt_proposal_file_raises_rather_than_reading_as_empty(tmp_path: Path) -> None:
+    """A damaged proposal store is an error, never an empty history (#154).
+
+    This test previously asserted the opposite — that a corrupt file "reads as
+    empty" — and so pinned the defect in place under a merge-blocking marker. An
+    empty read is not a safe default here: every mutation is a read-modify-write, so
+    the next `add` would write the empty list back and destroy the proposals the
+    damaged file still held. Fail-closed keeps the bytes on disk for a human to
+    recover. See `tests/test_silent_loss_stores.py` for the truncation case.
+    """
     path = tmp_path / "proposals.json"
     path.write_text("not json at all", encoding="utf-8")
-    assert ProposalStore(path).all() == []
+    with pytest.raises(LedgerError, match="could not be parsed"):
+        ProposalStore(path).all()
     path.write_text(json.dumps({"not": "a list"}), encoding="utf-8")
-    assert ProposalStore(path).all() == []
+    with pytest.raises(LedgerError, match="must contain a JSON list"):
+        ProposalStore(path).all()

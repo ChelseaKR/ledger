@@ -176,8 +176,8 @@ needs:
 
 **Where the log lives.** `<store>/logs/moderation.json`, written by
 `ModerationLogStore` and reached through `moderate.record_moderation(archive, action)`
-and `moderate.moderation_actions(archive)`. Every live path that takes one of these decisions writes
-to it: `ledger policy`, `ledger seal`, `ledger cw`, `ledger takedown`, an executed
+and `moderate.moderation_actions(archive)`. Every live path that takes one of these
+decisions writes to it: `ledger policy`, `ledger seal`, `ledger cw`, `ledger takedown`, an executed
 dual-control `publish`, the steward console's warn / takedown / submission review, and a
 contributor's own withdrawal. A takedown records the decision *before* it removes
 anything, so the account of why a record went outlives the record. Serialization is

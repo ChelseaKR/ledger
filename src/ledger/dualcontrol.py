@@ -198,19 +198,37 @@ class ProposalStore:
     # --- persistence --------------------------------------------------------
 
     def _read(self) -> list[ActionProposal]:
-        if not self._path.exists():
-            return []
+        """Load the persisted proposals; a missing file is an empty store.
+
+        Fail-closed on damage, not on absence. A file that exists but cannot be read
+        or parsed raises :class:`~ledger.errors.LedgerError` instead of yielding an
+        empty list. Reading corruption as "no proposals were ever filed" is not merely
+        a wrong answer: every mutation here is a read-modify-write, so the very next
+        :meth:`add` would write that empty list back over the damaged file and destroy
+        the history for real, turning a recoverable file into an unrecoverable one
+        (#154). Dual control is a safety control, and a proposal that stops counting
+        toward a threshold is an approval silently withdrawn.
+
+        Every failure mode leaves by the same door, so a caller catches one error
+        family and can never mistake corruption for an empty history (analyzability).
+        """
         try:
-            raw = json.loads(self._path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
+            text = self._path.read_text(encoding="utf-8")
+        except FileNotFoundError:
             return []
+        except OSError as exc:
+            raise LedgerError(f"proposal store could not be read: {self._path}") from exc
+        try:
+            raw = json.loads(text)
+        except ValueError as exc:  # JSONDecodeError is a ValueError
+            raise LedgerError(f"proposal store could not be parsed: {self._path}") from exc
         if not isinstance(raw, list):
-            return []
+            raise LedgerError(f"proposal store {self._path} must contain a JSON list")
         return [ActionProposal.from_dict(item) for item in raw if isinstance(item, dict)]
 
     def _write(self, items: list[ActionProposal]) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         payload = json.dumps([p.to_dict() for p in items], ensure_ascii=False, indent=2)
-        tmp = self._path.with_name(f"{self._path.name}.{os.getpid()}.tmp")
+        tmp = self._path.with_name(f"{self._path.name}.{secrets.token_hex(8)}.tmp")
         tmp.write_text(payload, encoding="utf-8")
         os.replace(tmp, self._path)

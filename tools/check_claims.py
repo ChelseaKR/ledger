@@ -1130,9 +1130,9 @@ CLAIMS: tuple[Claim, ...] = (
         "verify-does-not-claim-byte-for-byte-parity",
         "Makefile",
         "byte-for-byte",
-        "`make verify` reaches seven of the thirteen required contexts. CodeQL (twice), "
-        "Semgrep, Trivy, the performance budgets and the browser axe run have no local "
-        "target, so green here cannot mean green in CI.",
+        "`make verify` reaches eight of the thirteen required contexts. CodeQL (twice), "
+        "Trivy, the performance budgets and the browser axe run have no local target, so "
+        "green here cannot mean green in CI.",
     ),
     # CITATION.cff is the machine-readable file citation tooling reads, which makes a
     # wrong value in it more durable than the same wrong value in prose. It recorded

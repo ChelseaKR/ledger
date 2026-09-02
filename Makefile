@@ -11,7 +11,7 @@ VENV ?= .venv
 PY   ?= $(if $(wildcard $(VENV)/bin/python),$(VENV)/bin/python,python3)
 
 .DEFAULT_GOAL := help
-.PHONY: help venv install lock lint format type test cov audit osv accessibility acr demo serve \
+.PHONY: help venv install lock lint format type test cov audit osv semgrep accessibility acr demo serve \
         i18n i18n-extract i18n-compile claims secret-scan workflow-lint perf real-corpus real-corpus-evidence \
         acr-check container mutation verify clean
 
@@ -199,6 +199,35 @@ claims: ## Truthfulness gate: verify README/doc factual claims against the repo
 hygiene: ## Suppression hygiene (CQ-34/35): every noqa/type-ignore is coded, explained, and — for complexity debt — issue-linked
 	$(PY) tools/check_hygiene.py
 
+semgrep: ## Semgrep SAST (p/ci) — mirrors semgrep.yml locally (SEC-11/13, CICD-13/27)
+	# CI-authoritative, in the same shape as `osv` and `secret-scan`: the
+	# `semgrep` workflow installs the pinned semgrep and scans on every push and PR
+	# regardless of what is on this machine, and `Semgrep SAST (p/ci)` is a required
+	# check, so CI is the gate of record. This target closes the gap
+	# `docs/ROADMAP.md` recorded under SEC-11/13 + CICD-13/27: a contributor had no
+	# pre-push signal for the one required check `make verify` could not run.
+	#
+	# Semgrep is deliberately NOT in the locked dependency graph, which is the one
+	# place this differs from what `docs/ROADMAP.md` originally proposed. Locking
+	# `semgrep==1.145.0` was tried and reverted: it pins `click 8.1.8` and
+	# `mcp 1.16.0`, and OSV-Scanner reports 4 High-severity advisories across those
+	# two (PYSEC-2026-2132; PYSEC-2026-1617 / -3482 / -3483), none of which can be
+	# bumped independently because semgrep pins them. Importing four known-vulnerable
+	# packages to gain a local mirror of a check CI already runs is a bad trade, and
+	# SECURITY-AND-SUPPLY-CHAIN-STANDARD §4 forbids muting the audit gate instead.
+	# So semgrep is treated exactly as `gitleaks` and `osv-scanner` are: an external
+	# tool this target uses when present, never a dependency of this package.
+	# Install it however you like, e.g. `pipx install semgrep==1.145.0`.
+	#
+	# `--config p/ci` fetches the ruleset from semgrep.dev, so this target needs
+	# network — a property of the dev tool, not of ledger, whose runtime stays
+	# offline (README hard rules).
+	@command -v semgrep >/dev/null 2>&1 || { \
+		echo "semgrep not found locally; skipping (CI is authoritative — see semgrep.yml). Install it as an external tool, e.g. pipx install semgrep==1.145.0"; \
+		exit 0; \
+	}
+	semgrep scan --config p/ci --error src tests
+
 secret-scan: ## Secret scan (gitleaks) — mirrors ci.yml's supply-chain job locally
 	# CI-authoritative: CI pins and downloads gitleaks 8.30.1 itself
 	# (.github/workflows/ci.yml, supply-chain job) regardless of what is on this
@@ -271,7 +300,7 @@ mutation: ## ADVISORY (never a merge gate): mutation-test the safety-critical co
 # (CICD-27), and the difference is written out here rather than implied, because a
 # contributor who reads "parity" reads green locally as green in CI and stops looking.
 #
-# Seven of the thirteen contexts `.github/rulesets/main.json` requires are reproduced:
+# Eight of the thirteen contexts `.github/rulesets/main.json` requires are reproduced:
 #
 #   lint · type · test (py3.12)        <- lint, type, test, claims, hygiene
 #   dependency & secret scan           <- audit, secret-scan
@@ -280,16 +309,13 @@ mutation: ## ADVISORY (never a merge gate): mutation-test the safety-critical co
 #   accessibility gate (WCAG 2.2 AA)   <- accessibility, acr-check
 #   i18n (gettext catalog gate)        <- i18n
 #   OSV lockfile scan (uv.lock)        <- osv
+#   Semgrep SAST (p/ci)                <- semgrep
 #   workflow linter (zizmor)           <- workflow-lint
 #
-# Six have no local target at all, and a green `verify` says nothing about them:
+# Five have no local target at all, and a green `verify` says nothing about them:
 #
 #   CodeQL analyze (python)            no local CodeQL database is built
 #   CodeQL analyze (actions)           the same
-#   Semgrep SAST (p/ci)                no local target; pinning semgrep would pull four
-#                                      known-vulnerable transitive packages into the
-#                                      graph, so CI is the gate of record. See
-#                                      .github/rulesets/README.md.
 #   container image CVE scan (Trivy)   `container` is excluded on purpose — see its own
 #                                      target comment
 #   performance budgets (QM-02)        `perf` is excluded on purpose — a contributor's
@@ -298,10 +324,13 @@ mutation: ## ADVISORY (never a merge gate): mutation-test the safety-critical co
 #                                      Playwright + Chromium are CI-only dev deps;
 #                                      `accessibility` is the static half of that pair
 #
-# `osv` and `secret-scan` no-op with a message when their binary is absent, so even the
-# two they mirror are only as strong locally as the tooling actually installed.
+# `osv`, `secret-scan` and `semgrep` no-op with a message when their binary is absent,
+# so the three they mirror are only as strong locally as the tooling actually installed.
+# Semgrep is deliberately not in the locked graph — pinning it pulls four
+# known-vulnerable transitive packages, see the `semgrep` target — so CI's required
+# `Semgrep SAST (p/ci)` context remains the gate of record for it.
 # `tools/check_claims.py` fails the build if a context in the mirror is not named above.
-verify: lint type test i18n accessibility acr-check audit osv secret-scan claims hygiene workflow-lint ## Run the portable subset of CI's required checks (7 of 13 contexts)
+verify: lint type test i18n accessibility acr-check audit osv semgrep secret-scan claims hygiene workflow-lint ## Run the portable subset of CI's required checks (8 of 13 contexts)
 	@echo "verify: all gates green (the portable subset — see the comment above this target)"
 
 clean: ## Remove caches and build artifacts (never touches an archive's data)

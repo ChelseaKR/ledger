@@ -17,11 +17,13 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
 from ledger._filelock import file_lock
+from ledger.errors import LedgerError
 
 __all__ = ["PendingSubmission", "SubmissionQueue"]
 
@@ -86,19 +88,33 @@ class SubmissionQueue:
     # --- persistence --------------------------------------------------------
 
     def _read(self) -> list[PendingSubmission]:
-        if not self._path.exists():
-            return []
+        """Load the persisted queue; a missing file is an empty queue.
+
+        Fail-closed on damage, not on absence, for the same reason
+        :class:`~ledger.dualcontrol.ProposalStore` is (#154). Hard Rule 2 says nothing
+        is published by inaction; the mirror of that rule is that nothing may be
+        *forgotten* by inaction. A damaged queue read as "nothing awaiting review"
+        shows a steward an empty console while contributors wait, and because
+        :meth:`add` and :meth:`remove` both rewrite the whole file, the next one would
+        make that emptiness true.
+        """
         try:
-            raw = json.loads(self._path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
+            text = self._path.read_text(encoding="utf-8")
+        except FileNotFoundError:
             return []
+        except OSError as exc:
+            raise LedgerError(f"submission queue could not be read: {self._path}") from exc
+        try:
+            raw = json.loads(text)
+        except ValueError as exc:  # JSONDecodeError is a ValueError
+            raise LedgerError(f"submission queue could not be parsed: {self._path}") from exc
         if not isinstance(raw, list):
-            return []
+            raise LedgerError(f"submission queue {self._path} must contain a JSON list")
         return [PendingSubmission.from_dict(item) for item in raw if isinstance(item, dict)]
 
     def _write(self, items: list[PendingSubmission]) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
         payload = json.dumps([item.to_dict() for item in items], ensure_ascii=False, indent=2)
-        tmp = self._path.with_name(f"{self._path.name}.{os.getpid()}.tmp")
+        tmp = self._path.with_name(f"{self._path.name}.{secrets.token_hex(8)}.tmp")
         tmp.write_text(payload, encoding="utf-8")
         os.replace(tmp, self._path)

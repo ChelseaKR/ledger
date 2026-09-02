@@ -697,6 +697,9 @@ msgstr "El idioma del material, p. ej. inglés o español."
 msgid "The moderation log could not be read. It is not empty — it is unreadable, and that needs looking into before any further moderation decision is taken."
 msgstr "No se pudo leer el registro de moderación. No está vacío: es ilegible, y eso debe investigarse antes de tomar cualquier otra decisión de moderación."
 
+msgid "The review queue could not be read. It is not empty — it is unreadable, so submissions may be waiting that this page cannot show. Look into it before deciding anything here."
+msgstr "No se pudo leer la cola de revisión. No está vacía: es ilegible, por lo que puede haber envíos esperando que esta página no puede mostrar. Investíguelo antes de decidir nada aquí."
+
 msgid "The takedown is confirmed at every storage location."
 msgstr "La retirada está confirmada en todas las ubicaciones de almacenamiento."
 
