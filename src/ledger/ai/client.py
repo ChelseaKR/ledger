@@ -24,22 +24,29 @@ without a code change.
 
 from __future__ import annotations
 
+import importlib
 import os
 from dataclasses import dataclass
 from typing import Any, Protocol
 
 from ledger.errors import LedgerError
 
-# `anthropic` is checked by mypy in whichever configuration the checker runs in:
-# with the `ai` extra installed it resolves to the real package, without it the
-# import fails and the `Any` fallback keeps the module checkable either way.
-# `Any` rather than `None` because the two configurations otherwise disagree
-# about this name's type, and CI only ever sees one of them -- `make install`
-# does not install the extra, so a real-SDK type error would never be caught.
+# Imported by name through `importlib` rather than with a bare `import
+# anthropic`, so this module type-checks identically in BOTH configurations.
+# `make install` does not install the `ai` extra, so CI's mypy never sees the
+# package and needs `type: ignore[import-not-found]`; a developer who HAS
+# installed the extra then trips `warn_unused_ignores` on that very comment.
+# The two configurations cannot both be satisfied by a static import plus a
+# suppression -- whichever one is written is wrong in the other environment,
+# and the failure lands in CI rather than on the machine that made the change.
+#
+# The cost is honest and bounded: `anthropic` is `Any` here, so the SDK's own
+# types are not checked. That surface is exactly one class,
+# `_AnthropicModelClient`, whose inputs and outputs are typed; everything else
+# in this package speaks `ModelClient` and `CompletionResult`.
 anthropic: Any
 try:  # pragma: no cover - exercised in whichever branch the `ai` extra provides
-    import anthropic
-
+    anthropic = importlib.import_module("anthropic")
     _HAVE_ANTHROPIC = True
 except ImportError:  # pragma: no cover - exercised when the optional extra is absent
     anthropic = None
