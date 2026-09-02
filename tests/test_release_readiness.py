@@ -217,16 +217,56 @@ def test_the_workflow_filename_is_the_one_the_docs_tell_pypi_to_expect() -> None
 def test_the_runbook_still_says_no_release_has_been_published() -> None:
     """The one claim in this area that must be retired deliberately, not drift.
 
-    `docs/RELEASE-0.1.0.md` describes an unpublished release candidate. When a
-    release is actually cut, this file has to change in the same commit -- and
-    this test is the reminder that it does.
+    `docs/RELEASE-0.1.0.md` describes a release that has been prepared and not
+    published. Publication is a fact about the remote's tags and about PyPI, not
+    about this tree, which is why it sits in the claims gate's published
+    ``UNCOVERED`` list rather than being asserted here. What this test holds is
+    the direction that *is* local: the sentence stays until someone deletes it on
+    purpose, in the commit that follows a real publish.
     """
-    text = _RUNBOOK.read_text(encoding="utf-8")
-    assert "not yet a published release" in text
+    assert "not yet a published release" in _RUNBOOK.read_text(encoding="utf-8")
+
+
+def test_the_changelog_has_a_section_for_the_declared_version() -> None:
+    """`release.yml`'s REL-10 check, run on every build instead of after the tag.
+
+    The workflow refuses to build a ``vX.Y.Z`` tag whose version has no matching
+    ``## [X.Y.Z]`` heading in CHANGELOG.md. That check is correct and it is also
+    far too late: it runs against a tag that is already public, and a PyPI version
+    number cannot be reused, so failing it burns the version rather than retrying
+    it. Running the identical check here makes the same mistake a red pull request.
+
+    The reverse direction is the other half of the same coupling. A ``.dev``
+    version with a dated section for it would announce a release that cannot be
+    installed at all -- ``pip install`` skips PEP 440 developmental releases unless
+    asked for one by name -- so a dated section and a ``.dev`` version must never
+    appear together.
+    """
     version = tomllib.loads((_ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"][
         "version"
     ]
-    assert re.match(r"^\d+\.\d+\.\d+\.dev\d+$", version), (
-        f"pyproject version {version!r} is no longer a .dev version, but the release "
-        "runbook still says nothing has been published; retire one or the other"
+    changelog = (_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    developmental = re.match(r"^(\d+\.\d+\.\d+)\.dev\d+$", version)
+    if developmental:
+        # The heading a `.dev` version would wrongly claim is the one for the release
+        # it is developing *toward* -- `0.1.0`, not `0.1.0.dev0`. Checking for the
+        # literal version string here would look for `## [0.1.0.dev0]`, which is
+        # absent for the boring reason that nobody writes a changelog heading that
+        # way, and the check would pass on exactly the state it exists to catch.
+        heading = f"## [{developmental.group(1)}]"
+        assert heading not in changelog, (
+            f"CHANGELOG.md has a {heading!r} section, but pyproject declares the "
+            f"developmental version {version!r}, which `pip install` will not install; "
+            "finish the release bump or move the section back under [Unreleased]"
+        )
+        return
+    heading = f"## [{version}]"
+    assert re.match(r"^\d+\.\d+\.\d+$", version), (
+        f"pyproject version {version!r} is neither a stable SemVer version nor a .dev "
+        "version; release.yml only accepts a `vX.Y.Z` tag and matches it against this"
+    )
+    assert heading in changelog, (
+        f"pyproject declares {version!r} but CHANGELOG.md has no {heading!r} section. "
+        "release.yml (REL-10) would fail this check *after* the tag is public, which "
+        "burns the version number instead of retrying it"
     )

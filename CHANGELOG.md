@@ -6,14 +6,18 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-> **Note (2026-07-05):** this project has **not yet shipped a tagged release** —
-> `git tag` returns nothing. The `0.1.0` heading below was prepared on 2026-06-16 as
-> a release candidate but the tag was never cut, so it is recorded here under
-> Unreleased rather than as a released version (a changelog claiming a release the
-> repo cannot produce is exactly the kind of unbacked claim this project's own
-> conformance audit exists to catch). It will move to a real `## [0.1.0] — YYYY-MM-DD`
-> section, with a matching signed annotated git tag, once the first `vX.Y.Z` tag is
-> explicitly approved through the release workflow added below.
+_Nothing yet._
+
+## [0.1.0] — 2026-09-01
+
+> **Note (2026-09-01):** this is the content of the first release, gathered from the
+> `Unreleased` section it was accumulated in. It is dated for the `v0.1.0` tag it is
+> cut against. The section has to exist *before* the tag is applied, because
+> `release.yml` refuses to build a `vX.Y.Z` tag that has no matching `## [X.Y.Z]`
+> heading here (REL-10) — so a dated heading in this file means "prepared for that
+> tag", and the tag itself, the PyPI upload, and the GitHub Release are what make it
+> published. Until the owner cuts and dispatches that signed tag, nothing is
+> published, and `README.md` and `docs/RELEASE-0.1.0.md` both still say so.
 
 ### Added
 - **The AI layer's two "release blocker" gates could not block, and now can** (#152).
@@ -944,12 +948,12 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   incident [#86](https://github.com/ChelseaKR/ledger/issues/86) and the committed
   postmortem under `docs/incidents/`.
 
-### Prepared as 0.1.0 (2026-06-16) — first reference implementation, not yet tagged
+### The first reference implementation (prepared 2026-06-16)
 
 A small collective can install ledger, self-host it on one inexpensive box with no
 cloud account, and run the full preservation + selective-disclosure cycle. This was
-the intended `0.1.0` content; it ships as a real tagged release once the release
-workflow lands.
+the content of the original 2026-06-16 release candidate, which was never tagged; it
+ships here as part of `0.1.0`.
 
 - **Preservation core.** Content-addressed store (`cas`) with dual-algorithm
   fixity (`fixity`, SHA-256 + BLAKE2b); deterministic, byte-reproducible BagIt bags
@@ -976,6 +980,13 @@ workflow lands.
   `pip-audit`, and secret scanning.
 
 [Unreleased]: https://github.com/ChelseaKR/ledger/commits/main
-<!-- No v0.1.0 tag exists yet (see the note above), so there is no compare link or
-     release link to give until one is actually cut — a placeholder link here would
-     be exactly the kind of unbacked claim this changelog is now correcting. -->
+<!-- The `[0.1.0]` heading above deliberately has no link definition yet. The tag it
+     is prepared for has not been cut, so `releases/tag/v0.1.0` and a
+     `compare/v0.1.0...HEAD` range both 404 — a link here would be exactly the kind of
+     unbacked claim this changelog exists to avoid. Add:
+
+         [Unreleased]: https://github.com/ChelseaKR/ledger/compare/v0.1.0...HEAD
+         [0.1.0]: https://github.com/ChelseaKR/ledger/releases/tag/v0.1.0
+
+     in the follow-up commit that lands after the release actually publishes, alongside
+     CITATION.cff's `date-released` and the README's "no release has shipped yet". -->
