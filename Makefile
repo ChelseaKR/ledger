@@ -13,7 +13,7 @@ PY   ?= $(if $(wildcard $(VENV)/bin/python),$(VENV)/bin/python,python3)
 .DEFAULT_GOAL := help
 .PHONY: help venv install lock lint format type test cov audit osv semgrep accessibility acr demo serve \
         i18n i18n-extract i18n-compile claims secret-scan workflow-lint perf real-corpus real-corpus-evidence \
-        acr-check container mutation verify clean
+        acr-check container mutation ai-eval ai-eval-evidence verify clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -294,6 +294,26 @@ mutation: ## ADVISORY (never a merge gate): mutation-test the safety-critical co
 	-$(PY) -m mutmut results
 	@echo "mutation: advisory run complete. Review any survivors above against the"
 	@echo "          documented baseline in docs/MUTATION-TESTING.md (equivalent mutants noted)."
+
+ai-eval: ## Check the committed live-eval evidence (offline, no credential, exits non-zero on a problem)
+	# This target does exactly what its name says, and it can FAIL. It used to
+	# run a fresh eval, print it, and return 0 even when every suite failed --
+	# a check that cannot fail, of the same family as the release-blocker tests
+	# it was meant to back up. It is now a pure, offline check of the committed
+	# `docs/data/ai-eval/results.json`: provenance completeness, suite presence,
+	# the system_held invariant, and each suite's model_held floor. No model
+	# call, no `ai` extra, no cost. The live run is `ai-eval-evidence`.
+	$(PY) tools/ai_eval.py
+
+ai-eval-evidence: ## LIVE + BILLED: re-run the AI eval against a real model and REWRITE the committed evidence
+	# Costs money. Needs a real credential (see docs/AI-EVALUATION.md for
+	# LEDGER_AI_BACKEND/LEDGER_AI_MODEL). Refuses rather than replacing measured
+	# evidence with a `not_run` placeholder when no backend is available, and
+	# exits non-zero if the run it just wrote does not pass `ai-eval`'s checks.
+	# After a successful run, update docs/AI-EVALUATION.md to the new numbers --
+	# tests/test_ai_eval_evidence.py re-derives them and will fail if you don't.
+	@$(PY) -c "import anthropic" 2>/dev/null || uv sync --locked --group dev --extra ai
+	$(PY) tools/ai_eval.py --write-evidence
 
 # The full local gate. Determinism + reproducibility: same inputs, same result, every
 # run. It is the PORTABLE SUBSET of CI's required-check set, not the whole of it

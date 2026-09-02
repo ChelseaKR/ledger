@@ -156,7 +156,11 @@ ledger/
 │   ├── accessibility_check.py / acr_gen.py  # WCAG CI gate + Accessibility Conformance Report generator
 │   ├── checkup.py / demo.py          # adoption-readiness checkup; deterministic end-to-end proof run
 │   ├── server.py                     # accessible archive browse/search + JSON API (read-gated)
-│   └── config.py                     # storage locations, policies, prompts as versioned files
+│   ├── config.py                     # storage locations, policies, prompts as versioned files
+│   └── ai/                     # OPTIONAL, opt-in: grounded finding aids + tier-respecting
+│                                # search (ADR 0013). context.py gates on Archive.disclose()
+│                                # before any model call; grounding.py verifies every claim
+│                                # before display. Off by default; zero footprint when unused.
 ├── web/                         # framework-free WCAG 2.2 AA archive UI (browse + list/table view)
 ├── infra/                       # self-host deploy (Docker Compose, Terraform for AWS); no hosted dependency
 ├── tests/
@@ -166,9 +170,9 @@ ledger/
                                   # incidents/, accessibility/ (ACR)
 ```
 
-`src/ledger/` is ~54 modules today, grouped above by responsibility rather than listed
-file-by-file; see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full layered design,
-dependency direction, and data flow.
+`src/ledger/` is ~65 modules today (including the optional `ai/` package), grouped above by
+responsibility rather than listed file-by-file; see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+for the full layered design, dependency direction, and data flow.
 
 Records move through the OAIS pipeline as Submission, Archival, and Dissemination Information
 Packages. Ingest produces a SIP, normalizes it into an AIP (a BagIt bag with PREMIS preservation
@@ -407,7 +411,7 @@ project owner can do (tracked below).
 | Performance | Applies | A CI `perf` job (`make perf`, [`tools/perf_budget.py`](tools/perf_budget.py)) asserts time budgets over content-addressed put/get, streaming fixity hashing, a full ingest, and a browse listing on every push and pull request; CI is the gate of record because a contributor's laptop is not a stable timing surface. See [Performance, scale, cost](#performance-scale-cost). |
 | Accessibility | Applies | The human-facing HTML surface is checked structurally and with Playwright + axe in Chromium; keyboard traversal, a dated ACR, and a manual assistive-technology review cadence are committed under [`docs/accessibility/`](docs/accessibility/). |
 | Internationalization | Applies | Packaged gettext catalogs ship complete EN/ES/FR/AR translations, including Arabic RTL, with blocking extraction, BCP-47, parity, completeness, compilation, pseudolocale, and response-header checks. |
-| AI Evaluation | N/A — no model or LLM component | Ingest, fixity, access policy, and disclosure are deterministic. ADR 0009 records that the first model dependency reopens this decision before merge. |
+| AI Evaluation | Applies | An optional, opt-in AI layer ([`src/ledger/ai/`](src/ledger/ai/), [ADR 0013](docs/adr/0013-ai-at-the-edges.md)) generates grounded finding aids and tier-respecting search, off by default (`config.ai.enabled = false`). Ingest, fixity, access policy, and disclosure remain fully deterministic and untouched. Access control runs before the model ([`ledger.ai.context.build_context`](src/ledger/ai/context.py) calls `Archive.disclose` first) and a verifier runs before display ([`ledger.ai.grounding`](src/ledger/ai/grounding.py)). Eval harness and live results with full provenance: [`docs/AI-EVALUATION.md`](docs/AI-EVALUATION.md). |
 | Documentation | Applies | README, ADR log, roadmap/metrics ledger, changelog, citation, security, contribution, incident, data-governance, and responsible-tech artifacts are committed and currency-stamped where externally dependent. |
 | Quality & Metrics | Applies | CI enforces functional, safety, performance, maintainability, container, accessibility, and i18n signals; the dated DORA review and root `DEFINITION_OF_DONE.md` hold the human-review side. |
 | AI Development Measurement | Applies | The outcome side is held by the dated [`docs/DORA-DELIVERY-HEALTH-REVIEW.md`](docs/DORA-DELIVERY-HEALTH-REVIEW.md) and the root [`DEFINITION_OF_DONE.md`](DEFINITION_OF_DONE.md), reviewed on a cadence rather than gated per pull request. The diagnostic side (session, token, and AI-assistance counters) is not instrumented in this repository, and by design it would never gate a merge if it were. |
@@ -415,9 +419,12 @@ project owner can do (tracked below).
 | Incident Response | Applies | [`docs/INCIDENT-RESPONSE.md`](docs/INCIDENT-RESPONSE.md) defines the local-first severity ladder, issue-label convention, secret-leak sequence, and committed postmortem template. |
 | Data Governance | Applies — **L3 identity-sensitive** | [`docs/DATA-GOVERNANCE.md`](docs/DATA-GOVERNANCE.md) classifies archive and identity stores, defines contributor-directed retention and encrypted-backup rules, and links the community-contribution data card. |
 
-No standard is a bare `N/A`: AI Evaluation carries both a reason and a re-entry
-trigger. Any remaining review or account-setting work is tracked, dated, and
-owned in [`docs/ROADMAP.md`](docs/ROADMAP.md#open-conformance-gaps).
+All thirteen standards now `Applies`: AI Evaluation moved from a reasoned `N/A`
+to `Applies` on 2026-08-22 when [ADR 0013](docs/adr/0013-ai-at-the-edges.md)
+added the optional AI layer that reopened it, exactly as
+[ADR 0009](docs/adr/0009-expand-standards-applicability.md) said it would. Any
+remaining review or account-setting work is tracked, dated, and owned in
+[`docs/ROADMAP.md`](docs/ROADMAP.md#open-conformance-gaps).
 
 ## Observability
 

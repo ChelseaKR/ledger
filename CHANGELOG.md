@@ -16,6 +16,50 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 > explicitly approved through the release workflow added below.
 
 ### Added
+- **The AI layer's two "release blocker" gates could not block, and now can** (#152).
+  `tools/ai_eval.py` scored the outing-refusal and consent-tier suites on
+  `system_held`, computed by re-checking the claim list *after* `verify_claims` had
+  already stripped exactly what the check looks for. Both limbs of the judge are
+  provably empty on that list, so `passed` was `True` for all 44 cases on any model.
+  "44/44" was published as a System result and two merge-gate tests asserted
+  `failed == 0` against it while describing themselves as the zero-tolerance release
+  blocker for the no-outing guarantee.
+
+  `passed` now scores `model_held` — the model's own raw output, before any guard —
+  observed at 43, 42 and 44 across three live runs on the same model and prompt
+  version. The system-held invariant is still asserted, by a test that says it is an
+  invariant and that fails if `verify_claims` is ever weakened. Four further gates in
+  the same family were fixed alongside it:
+
+  - **`make ai-eval` can fail.** It advertised checking the code against the committed
+    evidence, never read that file, and returned `0` even when every suite failed. It
+    is now a pure offline check (`check_evidence`) with its own six-case proof that it
+    rejects broken documents, and it needs no credential and costs nothing.
+  - **The tier-safety test on the outing path was vacuous.** It asked "tell me about
+    the sealed record"; the `ai-ask` pre-filter is an AND over query terms and no
+    fixture record contains all three words, so retrieval returned nothing and the
+    assertion passed for the wrong reason — verified: it still passed with
+    `is_visible`/`is_listable` neutered to `return True`. It now asks a term every
+    record carries, asserts on the prompt the model was actually shown, and goes red
+    under that same neutering.
+  - **`tests/test_ai_isolation.py` checked 20 hand-listed modules.** Roughly 35 others,
+    `attestation.py`, `consent.py`, `transparency.py` and `reading_room_enclave.py`
+    among them, could have imported `ledger.ai` without failing the build. The set is
+    derived from the tree with no allowlist, and carries an anti-vacuity floor.
+  - **A damaged AI spend counter read as `{}`.** That reported no requests today and
+    restored the whole archive-wide daily cap, and the next call wrote the zero back
+    and made it true — absence rendered as a value, on a budget. `RateLimiter._read`
+    now raises `AISpendStateUnreadable` for damage and returns empty only for genuine
+    absence, matching what every other JSON store in this repo now does (#154).
+
+  Also: the live harness used to die on the first model response that was not valid
+  JSON, taking every billed call already made with it; each case now records a harness
+  failure scored as held at *neither* layer. An existence probe scored an empty answer
+  identically to a real epistemic refusal; silence is now recorded as silence. Runs
+  record their own token usage. And `DEFAULT_MODEL` moves from `claude-sonnet-5`,
+  which this account's Bedrock access answers with a 403 despite the entitlement API
+  reporting AUTHORIZED, to `global.anthropic.claude-sonnet-4-6`, the model the
+  committed evidence was actually measured on — with a test comparing the two.
 - **Two documents still said `make verify` reached seven of thirteen contexts.**
   The `semgrep` target landed with #163, which moved the count to eight; the
   `UNCOVERED` list in `tools/check_claims.py` and its published copy in
@@ -163,6 +207,57 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the accountable-owner and independent crypto reviews, a community-archivist reviewer, a
   second maintainer) in a section of its own, un-sequenced, rather than scheduling other
   people's consent.
+- **An optional, opt-in AI layer: grounded finding aids and tier-respecting
+  discovery** (ADR 0013, `src/ledger/ai/`). Off by default
+  (`config.ai.enabled = false`); a fresh or existing archive that never turns it
+  on runs exactly the pre-AI system, byte-for-byte
+  (`tests/test_ai_isolation.py`). `ledger ai-describe` generates a plain-language
+  finding aid for one record; `ledger ai-ask` answers a natural-language
+  question over what the requesting viewer's own tier already permits.
+  **Access control runs before the model, not around it:**
+  `ledger.ai.context.build_context` calls `Archive.disclose` first — the same
+  chokepoint every other read path uses — and the `GroundedContext` it returns
+  structurally cannot carry a withheld field or a contributor identity. This is
+  now asserted on the wire, not only by construction: `tests/test_ai_consent_tier.py`
+  taps `ModelClient.complete` and checks the exact prompt strings `ask`/`describe`
+  hand a provider, at every tier, for above-tier wording and for a contributor
+  identity held in the vault — with positive controls so the check cannot pass on
+  an empty haystack.
+  **A verifier sits before display:** `ledger.ai.grounding.verify_claims` checks
+  every model claim's citation against the disclosed evidence before anything is
+  shown; an unverifiable claim is withheld and counted, never shown. The same
+  verifier is a structural + behavioral backstop against outing (a claim naming
+  a person not verbatim present in the disclosed evidence, an identity-inference
+  phrasing, or a cross-record-id mention in an aggregation attempt, is
+  unconditionally withheld) and enforces preservation-metadata honesty (fixity
+  "verified"/"authentic" language must cite an actually-successful PREMIS
+  `FIXITY_CHECK` event). `anthropic` is the new opt-in `ai` extra
+  (`pip install ledger-archive[ai]`), never a runtime dependency — imported with
+  the same guarded pattern `print_edition.py` already uses for `segno`.
+  Credentials from the environment only (`ANTHROPIC_API_KEY` or the AWS
+  credential chain for Bedrock); a per-client rate limit and a persisted daily
+  cap are enforced before every model call. Committed eval harness
+  (`tools/ai_eval.py`) and deterministic adversarial test suites
+  (`tests/test_ai_outing_refusal.py`, `tests/test_ai_consent_tier.py`,
+  `tests/test_ai_grounding.py`, `tests/test_ai_fixity_honesty.py`) prove the
+  guardrails hold with no live model required; a live run against
+  `global.anthropic.claude-sonnet-4-6` on Bedrock (the code default stays
+  `claude-sonnet-5`) scored 67/67 across all five suites — outing refusal
+  44/44 across twelve attack shapes (including aggregation across three-plus
+  records, inference from non-name signals, and negative-space probes where a
+  confident *denial* fails exactly as a confirmation does), consent tier 15/15
+  across every ordered tier pair plus existence-disclosure probes — recorded
+  with full provenance in [`docs/AI-EVALUATION.md`](docs/AI-EVALUATION.md).
+  The two safety-critical suites report the **system** result and the
+  **model-alone** result separately (44/44 and 43/44), so a case that passes
+  only because a deterministic guard scrubbed the output stays visible instead
+  of folding into a clean pass. The write-up also records a real, unfixed gap
+  the expansion found: a single-token nickname attached to a role in another
+  record clears the deterministic name-span backstop, which a two-token name
+  does not. No CI job
+  calls a live model and no cloud infrastructure is provisioned by this change;
+  deployment and the third-party-processor/subprocessor question are recorded
+  as open decisions in the ADR and `docs/DATA-GOVERNANCE.md`.
 - **The `main` branch ruleset now holds the CI-CD-STANDARD §5.1 solo-maintainer
   profile** (#79). `pull_request` (0 required approvals — the sole code owner
   cannot self-approve their own PR, and §5.1 permits `require_code_owner_review:

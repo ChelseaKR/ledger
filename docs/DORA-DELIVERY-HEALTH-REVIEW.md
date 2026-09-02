@@ -5,6 +5,14 @@
 > (DOC-15) and `QUALITY-AND-METRICS-STANDARD.md`'s DORA section. Instantiates
 > QM-11 for ledger; the companion `DEFINITION_OF_DONE.md` at repo root
 > instantiates QM-18.
+>
+> **Addendum, 2026-08-22 (not a full recheck):** ADR 0013 added an optional,
+> opt-in AI layer after this review's date, so the "AI Capabilities Model does
+> not apply" finding below is no longer current — see
+> `docs/adr/0013-ai-at-the-edges.md` and `DEFINITION_OF_DONE.md`'s AI-eval row.
+> The historical "Results" section is left as measured on 2026-07-07 and is
+> not restated; a full DORA AI-Capabilities-Model assessment is due at the
+> next quarterly recheck rather than backfilled here.
 
 This is a **portfolio-level delivery-health signal**, not a per-PR gate, per
 `QUALITY-AND-METRICS-STANDARD.md` — measured from CI/CD events and reviewed on
