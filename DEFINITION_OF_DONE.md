@@ -22,7 +22,7 @@ tracked below under "Branch protection."
 2. **Type-check** — `mypy` strict config, zero errors (`ci.yml`; `make type`).
 3. **Tests + coverage** — full suite green on Python 3.12 (the floor per
    CQ-01 and, for now, the ceiling — the CI matrix is a single interpreter);
-   the 88% branch-coverage floor (`[tool.coverage.report] fail_under` and
+   the 90% branch-coverage floor (`[tool.coverage.report] fail_under` and
    `[tool.coverage.run] branch = true` in `pyproject.toml`) plus a ≥ 95%
    per-module floor on `access/`/consent/dual-control; cyclomatic complexity
    ≤ 10 (`ruff` `C901`, `max-complexity = 10`) — pre-existing functions over

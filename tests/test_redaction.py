@@ -150,3 +150,24 @@ def test_redact_payload_event_names_filename_only() -> None:
     assert "raw-with-names.wav" in event.detail
     assert event.linked_object == "rec-audio"
     assert event.event_datetime == _NOW
+
+
+def test_the_oais_dip_stage_routes_through_the_one_disclosure_point() -> None:
+    """`ledger.oais.to_dip` names the OAIS dissemination stage, and the whole point
+    of it being a thin wrapper is that naming the stage adds no second way out of
+    the archive. Pinned in both directions: it returns exactly what `disclose`
+    returns for a grant that may read, and it refuses for one that may not, rather
+    than being a quieter door out (#83)."""
+    from ledger.access import disclose
+    from ledger.access.grants import anonymous, steward
+    from ledger.errors import AccessDenied
+    from ledger.oais import to_dip
+
+    record = _record_with_sensitive_field()
+    grant = steward("steward-a")
+    dip = to_dip(record, grant, _NOW)
+    assert dip == disclose(record, grant, _NOW)
+    assert getattr(dip, "identity_ref", None) in (None, "")
+
+    with pytest.raises(AccessDenied):
+        to_dip(record, anonymous(), _NOW)

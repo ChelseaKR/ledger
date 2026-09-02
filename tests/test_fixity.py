@@ -16,6 +16,7 @@ import pytest
 
 from ledger.fixity import (
     AuditReport,
+    _new_hasher,
     audit_files,
     hash_bytes,
     hash_file,
@@ -159,3 +160,11 @@ def test_audit_report_isolates_failures(
     report = audit_files(tmp_path, manifest, HashAlgo.SHA256)
     assert not report.ok
     assert [r.path for r in report.failed] == [str(tmp_path / "bad.bin")]
+
+
+def test_an_unknown_hash_algorithm_is_refused_rather_than_defaulted() -> None:
+    """`_new_hasher` dispatches on identity, and its final line raises. A new member
+    of `HashAlgo` added without a branch here must fail loudly rather than fall
+    through to whichever algorithm happens to be first (#83)."""
+    with pytest.raises(ValueError, match="unsupported hash algorithm"):
+        _new_hasher("sha1")  # type: ignore[arg-type]  # a non-HashAlgo value is the case

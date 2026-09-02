@@ -684,7 +684,8 @@ class ContextsAccountedFor:
     """Every required context is named in the document that claims local/CI parity.
 
     The Makefile said ``make verify`` matched CI's required-check set "byte-for-byte"
-    while six of the thirteen contexts had no local target at all. That is the dangerous
+    while six of the thirteen contexts had no local target at all (five today, after the
+    ``semgrep`` target landed). That is the dangerous
     direction for this particular claim: a contributor reads green locally as green in
     CI and stops looking.
 
@@ -1203,8 +1204,9 @@ UNCOVERED: tuple[Uncovered, ...] = (
     Uncovered(
         "whether `make verify` reproduces the required context the Makefile pairs it with",
         "contexts_accounted_for proves the parity note names every required context, and a "
-        "name is not a proof; six of the thirteen (CodeQL twice, Semgrep, Trivy, the perf "
-        "budgets, the browser axe run) have no local target that could settle it",
+        "name is not a proof; five of the thirteen (CodeQL twice, Trivy, the perf budgets, "
+        "the browser axe run) have no local target that could settle it, and `semgrep`, "
+        "`osv` and `secret-scan` only settle theirs when the external binary is installed",
     ),
     Uncovered(
         "whether the SEALED memory cap is still the right number",

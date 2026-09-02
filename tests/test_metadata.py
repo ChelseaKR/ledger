@@ -429,3 +429,32 @@ def test_mint_urn_maps_stable_imported_ids_deterministically() -> None:
     assert mint_urn("rec-audit") == mint_urn("rec-audit")
     assert mint_urn("rec-audit") != mint_urn("rec-other")
     assert is_pid(mint_urn("rec-audit"))
+
+
+# --- rejection and alternate paths (#83) ------------------------------------
+
+
+@pytest.mark.parametrize("record_id", ["", "   "])
+def test_mint_urn_refuses_an_empty_record_id(record_id: str) -> None:
+    """A non-UUID id is mapped through UUIDv5, but an empty one has nothing to map:
+    minting a URN for it would produce a stable, real-looking identifier for no
+    record at all."""
+    with pytest.raises(ValueError, match="record id must not be empty"):
+        mint_urn(record_id)
+
+
+def test_mint_urn_maps_a_stable_non_uuid_id_deterministically() -> None:
+    """The positive control for the test above: a non-empty non-UUID id is accepted
+    and always maps to the same URN."""
+    assert mint_urn("importer-42") == mint_urn("importer-42")
+    assert mint_urn("importer-42") != mint_urn("importer-43")
+
+
+def test_dublin_core_json_that_is_not_an_object_is_rejected() -> None:
+    with pytest.raises(ValueError, match="must be an object"):
+        from_json("[]")
+
+
+def test_a_dublin_core_element_that_is_not_a_list_is_rejected() -> None:
+    with pytest.raises(ValueError, match="must be a list of strings"):
+        from_json(json.dumps({"title": "not a list"}))

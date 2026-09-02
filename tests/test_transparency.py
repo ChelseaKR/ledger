@@ -173,3 +173,215 @@ def test_total_demands_sums_all_types() -> None:
         demand_counts={"subpoena": 2, "court_order": 1},
     )
     assert entry.total_demands() == 3
+
+
+# --- rejection paths (#83) ---------------------------------------------------
+#
+# The canary's value is entirely in what it REFUSES to record. Every guard below
+# was reachable-but-unexercised: `transparency.py` sat at 84% branch coverage with
+# all eighteen uncovered lines being `raise` statements. An unexercised rejection
+# path is indistinguishable from an absent one until the day it matters, and on
+# this module the day it matters is a legal demand arriving under a gag order.
+
+
+@pytest.mark.disclosure
+def test_a_malformed_attested_date_is_rejected() -> None:
+    with pytest.raises(LedgerError, match="attested_date"):
+        Attestation(attested_date="20260101", attested_by="s", statement_text="x")
+
+
+@pytest.mark.disclosure
+def test_an_empty_attester_is_rejected() -> None:
+    """A canary signed by nobody is not a canary."""
+    with pytest.raises(LedgerError, match="attested_by"):
+        Attestation(attested_date="2026-01-01", attested_by="   ", statement_text="x")
+
+
+@pytest.mark.disclosure
+def test_an_empty_statement_is_rejected() -> None:
+    with pytest.raises(LedgerError, match="statement_text"):
+        Attestation(attested_date="2026-01-01", attested_by="s", statement_text="  ")
+
+
+@pytest.mark.disclosure
+def test_a_non_boolean_counsel_review_flag_is_rejected() -> None:
+    """`1` is truthy, and a truthy value here would read as "counsel reviewed this"
+    in the rendered canary. The check is `type(...) is not bool` for that reason."""
+    with pytest.raises(LedgerError, match="counsel_reviewed"):
+        Attestation(
+            attested_date="2026-01-01",
+            attested_by="s",
+            statement_text="x",
+            counsel_reviewed=1,  # type: ignore[arg-type]  # deliberately wrong type: that is the test
+        )
+
+
+@pytest.mark.disclosure
+def test_claiming_counsel_review_without_a_note_is_rejected() -> None:
+    with pytest.raises(LedgerError, match="counsel_review_note"):
+        Attestation(
+            attested_date="2026-01-01",
+            attested_by="s",
+            statement_text="x",
+            counsel_reviewed=True,
+        )
+
+
+@pytest.mark.disclosure
+@pytest.mark.parametrize("field_name", ["prev_digest", "digest"])
+@pytest.mark.parametrize("bad", ["deadbeef", "z" * 64, "A" * 64])
+def test_a_digest_that_is_not_sha256_hex_is_rejected(field_name: str, bad: str) -> None:
+    """Short, non-hex, and upper-case are each rejected; only lower-case hex of
+    exactly 64 characters, or the empty string, is a digest here."""
+    with pytest.raises(LedgerError, match=field_name):
+        Attestation(
+            attested_date="2026-01-01",
+            attested_by="s",
+            statement_text="x",
+            **{field_name: bad},
+        )
+
+
+@pytest.mark.disclosure
+def test_an_empty_digest_is_allowed_so_the_first_entry_can_chain_from_nothing() -> None:
+    """The positive control for the test above: without it, `_validate_digest`
+    could be made to pass by rejecting everything."""
+    entry = Attestation(
+        attested_date="2026-01-01", attested_by="s", statement_text="x", prev_digest=""
+    )
+    assert entry.prev_digest == ""
+
+
+@pytest.mark.disclosure
+def test_from_dict_rejects_demand_counts_that_are_not_an_object() -> None:
+    with pytest.raises(LedgerError, match="demand_counts must be an object"):
+        Attestation.from_dict({"attested_date": "2026-01-01", "demand_counts": []})
+
+
+@pytest.mark.disclosure
+@pytest.mark.parametrize("counts", [{"subpoena": "1"}, {"subpoena": True}, {1: 1}])
+def test_from_dict_rejects_demand_counts_that_are_not_string_to_int(
+    counts: dict[object, object],
+) -> None:
+    """`True` is an `int` to `isinstance`, so the check is `type(value) is not int`:
+    a boolean must not be able to pose as a demand count."""
+    with pytest.raises(LedgerError, match="demand_counts must map"):
+        Attestation.from_dict({"attested_date": "2026-01-01", "demand_counts": counts})
+
+
+@pytest.mark.disclosure
+def test_from_dict_rejects_a_non_boolean_counsel_review_flag() -> None:
+    with pytest.raises(LedgerError, match="counsel_reviewed"):
+        Attestation.from_dict({"attested_date": "2026-01-01", "counsel_reviewed": "yes"})
+
+
+@pytest.mark.disclosure
+def test_from_dict_rejects_a_non_string_text_field() -> None:
+    with pytest.raises(LedgerError, match="statement_text must be a string"):
+        Attestation.from_dict({"attested_date": "2026-01-01", "statement_text": 7})
+
+
+@pytest.mark.disclosure
+def test_a_damaged_log_raises_rather_than_reading_as_no_attestations(tmp_path: Path) -> None:
+    """The absence-vs-damage rule the JSON stores now hold (#154) applies here with
+    more force: "no attestations" is exactly what a triggered canary looks like, so
+    a log that cannot be parsed must never render as one."""
+    path = tmp_path / "transparency.json"
+    path.write_text("not json at all", encoding="utf-8")
+    with pytest.raises(LedgerError, match="not valid JSON"):
+        TransparencyLog(path).all()
+
+
+@pytest.mark.disclosure
+def test_a_log_that_is_not_a_list_is_rejected(tmp_path: Path) -> None:
+    path = tmp_path / "transparency.json"
+    path.write_text(json.dumps({"attested_date": "2026-01-01"}), encoding="utf-8")
+    with pytest.raises(LedgerError, match="must contain a JSON list"):
+        TransparencyLog(path).all()
+
+
+@pytest.mark.disclosure
+def test_a_log_whose_entries_are_not_objects_is_rejected(tmp_path: Path) -> None:
+    path = tmp_path / "transparency.json"
+    path.write_text(json.dumps(["2026-01-01"]), encoding="utf-8")
+    with pytest.raises(LedgerError, match="every transparency log entry"):
+        TransparencyLog(path).all()
+
+
+@pytest.mark.disclosure
+def test_an_unreadable_log_raises_rather_than_reading_as_empty(tmp_path: Path) -> None:
+    """A directory where the log file should be: `read_text` raises `OSError`, and
+    the store must not translate that into "nothing has been attested"."""
+    path = tmp_path / "transparency.json"
+    path.mkdir()
+    with pytest.raises(LedgerError, match="could not be read"):
+        TransparencyLog(path).all()
+
+
+@pytest.mark.disclosure
+def test_a_missing_log_is_still_an_empty_log(tmp_path: Path) -> None:
+    """The positive control for the four tests above: absence is not damage."""
+    assert TransparencyLog(tmp_path / "nothing-here.json").all() == []
+
+
+@pytest.mark.disclosure
+def test_append_reports_a_write_failure_rather_than_losing_the_attestation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An `OSError` during the write must surface as a `LedgerError`, never as a
+    silent no-op that leaves the steward believing they re-attested."""
+    log = TransparencyLog(tmp_path / "transparency.json")
+
+    def boom(self: object, items: object) -> None:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(TransparencyLog, "_write", boom)
+    with pytest.raises(LedgerError, match="could not be written"):
+        log.append(attested_date="2026-01-01", attested_by="s", statement_text="x")
+
+
+@pytest.mark.disclosure
+def test_a_failed_write_leaves_no_temp_file_behind(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`_write` unlinks its temp file before re-raising, so a full disk does not
+    leave a half-written attestation sitting next to the real log."""
+    path = tmp_path / "transparency.json"
+    log = TransparencyLog(path)
+
+    def boom(src: object, dst: object) -> None:
+        raise OSError("rename failed")
+
+    monkeypatch.setattr("ledger.transparency.os.replace", boom)
+    with pytest.raises(LedgerError, match="could not be written"):
+        log.append(attested_date="2026-01-01", attested_by="s", statement_text="x")
+    assert list(path.parent.glob("transparency.json.*.tmp")) == []
+
+
+@pytest.mark.disclosure
+def test_verify_chain_rejects_a_broken_link() -> None:
+    """`verify_chain` has two ways to fail — a `prev_digest` that does not match the
+    predecessor, and a `digest` that does not match its own content. Both are
+    checked, because either alone would let a whole class of edit through."""
+    first = Attestation(attested_date="2026-01-01", attested_by="s", statement_text="one")
+    first = Attestation(
+        attested_date=first.attested_date,
+        attested_by=first.attested_by,
+        statement_text=first.statement_text,
+        digest=first.content_digest(),
+    )
+    second = Attestation(
+        attested_date="2026-02-01",
+        attested_by="s",
+        statement_text="two",
+        prev_digest="0" * 64,  # not `first.digest`
+    )
+    second = Attestation(
+        attested_date=second.attested_date,
+        attested_by=second.attested_by,
+        statement_text=second.statement_text,
+        prev_digest=second.prev_digest,
+        digest=second.content_digest(),
+    )
+    assert verify_chain([first]) is True
+    assert verify_chain([first, second]) is False

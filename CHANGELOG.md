@@ -16,6 +16,42 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 > explicitly approved through the release workflow added below.
 
 ### Added
+- **Two documents still said `make verify` reached seven of thirteen contexts.**
+  The `semgrep` target landed with #163, which moved the count to eight; the
+  `UNCOVERED` list in `tools/check_claims.py` and its published copy in
+  `CONTRIBUTING.md` were still saying "six of the thirteen … have no local target",
+  naming Semgrep among them. Both now say five, and both name the three targets
+  (`semgrep`, `osv`, `secret-scan`) that only settle their context when the
+  external binary is installed — which is the honest shape of that claim.
+- **The published-library coverage floor is met, not lowered** (#83, CQ-08). The
+  global branch-coverage floor moves 88% → **90%**, the figure
+  `CODE-QUALITY-STANDARD` sets for a published library, and it is met at 90.13%
+  measured — reached by writing the missing tests rather than by adjusting the bar.
+
+  The bulk came from `transparency.py`, the warrant canary, which sat at 84% with
+  **all eighteen of its uncovered lines being `raise` statements**. A module whose
+  entire value is what it refuses to record had every refusal path unexercised: a
+  malformed date, an unsigned attestation, a truthy-but-not-`bool`
+  `counsel_reviewed`, a counsel-review claim with no note, a digest that is not
+  SHA-256 hex, a `demand_counts` mapping with a boolean posing as an integer, a log
+  file that is damaged rather than absent, and a failed write that must surface as
+  an error instead of a silent no-op. It is now at 100%, with positive controls
+  beside the rejections so the guards cannot be satisfied by refusing everything.
+
+  The remaining points came from the refusal branches of `fixity._new_hasher` (an
+  unknown algorithm must raise, not fall through to whichever hash is listed
+  first), `metadata.pid.mint_urn` (an empty record id must not mint a stable,
+  real-looking identifier for no record), `metadata.dublincore.from_json`,
+  `metadata.ead` (`unitid` is the public URL when a base URL is configured and the
+  bare record id when it is not — both directions pinned), `oais.to_dip` (naming
+  the OAIS dissemination stage adds no second way out of the archive: it returns
+  exactly what `disclose` returns and refuses exactly where `disclose` refuses),
+  `upload.sniff_media_type`, and `succession.build_handoff`'s
+  `attest_steward` path, which files the `group-dissolved` dissolution proposal
+  without one person opening a seal alone.
+
+  The other half of #83 — the eight `C901` complexity waivers — is unchanged and
+  the issue stays open for it.
 - **`ledger moderation verify` names what a green result cannot prove.** The local
   chain check catches an entry edited, removed, or reordered anywhere before the
   newest entry, and always did; it has never been able to see entries deleted from
