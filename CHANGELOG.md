@@ -8,7 +8,7 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 _Nothing yet._
 
-## [0.1.0] — 2026-09-01
+## [0.1.0] — 2026-09-02
 
 > **Note (2026-09-01):** this is the content of the first release, gathered from the
 > `Unreleased` section it was accumulated in. It is dated for the `v0.1.0` tag it is
