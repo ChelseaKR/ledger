@@ -827,8 +827,6 @@ _LIVE_RULESET: dict[str, object] = {
 
 def _committed_ruleset() -> dict[str, object]:
     """The mirror as it stands on disk, not a fixture of it."""
-    import json
-
     return json.loads((REPO_ROOT / ".github/rulesets/main.json").read_text(encoding="utf-8"))
 
 
