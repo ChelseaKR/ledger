@@ -1,6 +1,12 @@
 # Release checklist — ledger 0.1.0
 
-**Status:** release candidate; not yet a published release.
+**Status:** prepared; not yet a published release.
+
+The repository side is done. `pyproject.toml` declares `0.1.0` (not a `.dev`
+version, which `pip install` would skip), `CHANGELOG.md` carries a dated
+`## [0.1.0]` section, and `CITATION.cff` mirrors the version. What is left is
+owner-only: the three pypi.org / GitHub settings below, then a signed tag and one
+`workflow_dispatch`.
 
 This checklist separates work that is verifiable from the repository from the
 owner-controlled and human-review prerequisites that cannot honestly be automated.
@@ -75,22 +81,73 @@ CHANGELOG section check, tag-signature verification against the committed
 allowed-signers list, the CycloneDX SBOM, SLSA build provenance, keyless cosign
 signatures, the PyPI publish, the re-download-and-verify pass, and the GitHub
 Release.
-- [ ] `CHANGELOG.md` has a dated `## [0.1.0]` section that reflects the exact tag.
-- [ ] `CITATION.cff` gets a `date-released` matching the tag date, and its `version`
-  matches the tagged `pyproject.toml` version. Both are gated: the
-  `citation-claims-no-release-date` claim in `tools/check_claims.py` forbids the key
-  while no tag exists, so retire that claim in the same commit that cuts the tag.
+- [x] `pyproject.toml` declares the release version `0.1.0`. It is deliberately not
+  a `.dev` version: `pip install ledger-archive` skips PEP 440 developmental
+  releases, so a `.dev` string cannot be what ships. Nothing bumps this
+  automatically — `release.yml`'s build job *asserts* the dispatched tag matches it.
+- [x] `CHANGELOG.md` has a dated `## [0.1.0]` section. **Check the date matches the
+  day you actually tag** — it is written as the day the release was prepared, and
+  `release.yml` only greps for the `## [0.1.0]` heading, so a stale date will not
+  fail the build. It is the one value here a machine will not catch for you.
+- [x] `CITATION.cff`'s `version` matches `pyproject.toml` (gated by the
+  `citation-version-mirrors-pyproject` claim).
+- [ ] `CITATION.cff` gets a `date-released` matching the tag date. Deliberately still
+  absent: the `citation-claims-no-release-date` claim in `tools/check_claims.py`
+  forbids the key while no tag exists, and a prepared release has no release date.
+  Add the key and retire that claim in the follow-up commit after publication —
+  see "After it publishes" below.
 - [ ] `make verify` passes at the exact commit to be tagged.
 
 ## Tag and verify
 
-- [ ] Create and verify a signed annotated `v0.1.0` tag at the checked commit.
-- [ ] Push the tag and let `release.yml` run its full gate, build, SBOM,
-  provenance, cosign signing, trusted PyPI publishing, and post-publication
-  checksum verification.
+`release.yml` is **`workflow_dispatch` only** — it has no `push: tags:` trigger.
+Pushing the tag does not start it; pushing the tag and then dispatching the
+workflow does. That is deliberate (the tag exists and is signed *before* anything
+reads it), but it means a pushed tag sitting with no run is the expected state, not
+a broken one.
+
+- [ ] Create a signed annotated tag at the merge commit on `main`, with the key in
+  `.github/allowed_signers`:
+
+  ```sh
+  git -C ~/portfolio/ledger checkout main && git pull
+  git tag -s v0.1.0 -m "ledger 0.1.0"
+  git verify-tag v0.1.0     # must pass locally before the tag is pushed
+  git push origin v0.1.0
+  ```
+
+- [ ] Dispatch the workflow against that tag — this is the button press:
+
+  ```sh
+  gh workflow run release.yml --repo ChelseaKR/ledger --ref main -f tag=v0.1.0
+  gh run watch --repo ChelseaKR/ledger
+  ```
+
+  `--ref main` is required: the `verify` job asserts `GITHUB_REF` is
+  `refs/heads/main` and that the tagged commit is an ancestor of `origin/main`.
+
 - [ ] Confirm the GitHub Release contains the wheel, source distribution, SBOM, and
   signatures and that its notes match `CHANGELOG.md`.
 - [ ] Install the published package into a clean environment and run `ledger --help`.
+
+## After it publishes
+
+These retire claims that are true only while nothing is published, and must not be
+changed before the release actually succeeds:
+
+- [ ] `CITATION.cff`: add `date-released: <tag date>` and delete the comment
+  explaining its absence; retire the `citation-claims-no-release-date` claim in
+  `tools/check_claims.py` and its test in `tests/test_claims_gate.py`.
+- [ ] `README.md`: replace the four "no release has shipped yet" statements
+  (§ badges, § release-producing, § standards table, § supply chain).
+- [ ] `CHANGELOG.md`: add the `[Unreleased]` compare link and the `[0.1.0]` release
+  link recorded in the comment at the foot of the file.
+- [ ] `docs/RELEASE-0.1.0.md`: this file's "not yet a published release" status, and
+  the test in `tests/test_release_readiness.py` that holds it there.
+- [ ] `docs/ROADMAP.md`: the REL-03/08/17/20 row and the SEC-04 row — the first real
+  run is what unblocks flipping `release.yml`'s eight Harden-Runner jobs from
+  `audit` to `block` ([#78](https://github.com/ChelseaKR/ledger/issues/78)); read
+  the observed endpoints off that run rather than guessing them.
 
 ## Rollback and communication
 

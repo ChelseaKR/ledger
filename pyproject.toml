@@ -7,10 +7,14 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ledger-archive"
-# In development toward 0.1.0 — no `vX.Y.Z` tag has been cut, so this stays a PEP 440
-# developmental release (`.dev0`) to match the CHANGELOG "Unreleased" section. The
-# release workflow bumps this to the final `0.1.0` when the signed `v0.1.0` tag ships.
-version = "0.1.0.dev0"
+# The single source of version truth (RELEASE-AND-VERSIONING-STANDARD §2). Nothing
+# bumps this automatically: `release.yml`'s build job *asserts* that the dispatched
+# `vX.Y.Z` tag matches this string and fails the release if it does not, so the value
+# has to be correct in the commit that gets tagged. It is no longer a `.dev` version
+# because a PEP 440 developmental release is skipped by a plain `pip install`, which
+# makes it unreleasable by construction. `0.1.0` is prepared here and becomes real
+# when the owner cuts the signed `v0.1.0` tag — see docs/RELEASE-0.1.0.md.
+version = "0.1.0"
 description = "A privacy-first community archive for queer histories and mutual-aid knowledge."
 readme = "README.md"
 requires-python = ">=3.12"
