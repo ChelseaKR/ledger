@@ -271,3 +271,29 @@ def test_ead_empty_collection_still_produces_valid_document() -> None:
     )
     root = ET.fromstring(xml)  # noqa: S314 - parsing XML this test just generated, not untrusted input
     assert root.findall(f".//{_EAD_NS}c01") == []
+
+
+@pytest.mark.preservation
+def test_ead_unitid_is_the_public_url_when_a_base_url_is_configured() -> None:
+    """`unitid` is the item's stable identifier. With a `base_url` it is the record's
+    public URL, so a finding aid deposited with an aggregator resolves back here;
+    without one it falls back to the bare record id rather than emitting a
+    half-formed URL. Both directions pinned, and the trailing slash is not doubled
+    (#83)."""
+    record = _sample_record()
+    with_url = to_ead_xml(
+        "Collection",
+        [record],
+        created="2026-07-07T00:00:00Z",
+        collection_id="coll-1",
+        base_url="https://archive.example/",
+    )
+    without_url = to_ead_xml(
+        "Collection",
+        [record],
+        created="2026-07-07T00:00:00Z",
+        collection_id="coll-1",
+    )
+    assert f"<unitid>https://archive.example/record/{record.record_id}</unitid>" in with_url
+    assert f"<unitid>{record.record_id}</unitid>" in without_url
+    assert "example//record" not in with_url
