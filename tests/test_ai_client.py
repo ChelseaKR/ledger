@@ -13,12 +13,14 @@ reason) without needing the real SDK.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import pytest
 
 from ledger.ai import client as client_mod
-from ledger.ai.client import AIUnavailable, build_client, have_anthropic
+from ledger.ai.client import DEFAULT_MODEL, AIUnavailable, build_client, have_anthropic
 
 
 @dataclass
@@ -147,10 +149,32 @@ def test_unknown_backend_is_unavailable(
         build_client()
 
 
-def test_model_defaults_to_sonnet_5(fake_anthropic: _FakeAnthropicModule) -> None:
+def test_the_code_default_is_the_model_the_committed_evidence_was_measured_on(
+    fake_anthropic: _FakeAnthropicModule,
+) -> None:
+    """The default and the recorded run must name the same model.
+
+    It used to be `"claude-sonnet-5"`, which this account's Bedrock access does
+    not answer for -- the entitlement API says AUTHORIZED and `InvokeModel`
+    still 403s. So the default named a model no committed number ever came
+    from. Pinning it to what `docs/data/ai-eval/results.json` actually records
+    is the point of this test: the two are read from different files and
+    compared, so they cannot drift apart again.
+    """
     client = build_client()
     result = client.complete(system="sys", user="hello", max_tokens=10)
-    assert result.model == "claude-sonnet-5"
+    assert result.model == DEFAULT_MODEL
+
+    evidence = json.loads(
+        (Path(__file__).resolve().parent.parent / "docs/data/ai-eval/results.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    if evidence.get("status") == "run":
+        assert evidence["provenance"]["model"] == DEFAULT_MODEL, (
+            "the code default and the model the committed evidence was measured on "
+            "have drifted apart"
+        )
 
 
 def test_explicit_model_argument_wins_over_env(
@@ -165,10 +189,11 @@ def test_explicit_model_argument_wins_over_env(
 def test_env_model_overrides_the_code_default(
     fake_anthropic: _FakeAnthropicModule, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("LEDGER_AI_MODEL", "global.anthropic.claude-sonnet-4-6")
+    monkeypatch.setenv("LEDGER_AI_MODEL", "some-other-model-id")
     client = build_client()
     result = client.complete(system="sys", user="hello", max_tokens=10)
-    assert result.model == "global.anthropic.claude-sonnet-4-6"
+    assert result.model == "some-other-model-id"
+    assert result.model != DEFAULT_MODEL
 
 
 def test_request_shape_carries_prompt_caching_on_the_system_prompt(

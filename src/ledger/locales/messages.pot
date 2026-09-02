@@ -704,6 +704,12 @@ msgid ""
 "taken."
 msgstr ""
 
+msgid ""
+"The review queue could not be read. It is not empty — it is unreadable, "
+"so submissions may be waiting that this page cannot show. Look into it "
+"before deciding anything here."
+msgstr ""
+
 msgid "The takedown is confirmed at every storage location."
 msgstr ""
 

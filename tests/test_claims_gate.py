@@ -19,6 +19,7 @@ entry cannot quietly delete its regression test with it.
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -26,14 +27,21 @@ import pytest
 from tools import check_claims
 from tools.check_claims import (
     CLAIMS,
+    OWNER_BYPASS,
     UNCOVERED,
     ConfigNumber,
+    ContextsAccountedFor,
     ForbiddenString,
+    MirroredString,
     PathExists,
     ReferenceExists,
     RequiredString,
+    RulesetBypass,
     RulesetContexts,
+    RulesetCount,
+    RulesetRequires,
     StatedCount,
+    bypass_findings,
 )
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -313,7 +321,11 @@ def test_a_missing_file_fails_rather_than_vacuously_passing(
             | StatedCount
             | PathExists
             | ConfigNumber
-            | RulesetContexts,
+            | RulesetContexts
+            | RulesetRequires
+            | RulesetCount
+            | ContextsAccountedFor
+            | MirroredString,
         ):
             assert entry.check() is not None, f"{entry.name} passed against an empty tree"
 
@@ -542,6 +554,219 @@ def test_the_committed_mirror_matches_the_required_contexts_the_workflows_declar
     assert entry.check() is None
 
 
+# --- the required-check set, in the other three directions -----------------------
+#
+# `ruleset_contexts` above asks whether every required context names a real job. These
+# ask what the *documentation* says about that set, which is where #151's correction
+# actually drifted: the README said the OSV lockfile scan did not block a merge, in a
+# paragraph 164 lines above its own standards table saying all thirteen contexts did.
+
+
+_MIRROR_13 = json.dumps(
+    {
+        "name": "protect-main",
+        "rules": [
+            {
+                "type": "required_status_checks",
+                "parameters": {
+                    "required_status_checks": [{"context": f"job {n}"} for n in range(12)]
+                    + [{"context": "OSV lockfile scan (uv.lock)"}]
+                },
+            }
+        ],
+    }
+)
+
+
+def test_a_context_the_docs_call_blocking_must_be_in_the_required_set(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The README's OSV sentence, in the shape that made it false for five days."""
+    entry = claim("osv-and-semgrep-are-required-contexts")
+    assert isinstance(entry, RulesetRequires)
+    fake_repo(tmp_path, monkeypatch, {".github/rulesets/main.json": _MIRROR_13})
+    problem = entry.check()
+    assert problem is not None
+    assert "Semgrep SAST (p/ci)" in problem
+    assert "OSV lockfile scan (uv.lock)" not in problem, "the one that IS required"
+
+
+def test_a_stated_required_check_count_that_drifted_from_the_mirror_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """DEFINITION_OF_DONE.md said eleven for five days after the set grew to thirteen."""
+    entry = claim("required-check-count-in-the-definition-of-done")
+    assert isinstance(entry, RulesetCount)
+    fake_repo(
+        tmp_path,
+        monkeypatch,
+        {
+            ".github/rulesets/main.json": _MIRROR_13,
+            "DEFINITION_OF_DONE.md": "The ruleset requires eleven named CI checks.\n",
+        },
+    )
+    problem = entry.check()
+    assert problem is not None
+    assert "states eleven" in problem and "requires 13 contexts" in problem
+
+
+def test_a_required_check_count_that_stopped_being_stated_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Rewording the sentence away must go red, not quietly stop verifying it."""
+    entry = claim("required-check-count-in-the-definition-of-done")
+    assert isinstance(entry, RulesetCount)
+    fake_repo(
+        tmp_path,
+        monkeypatch,
+        {
+            ".github/rulesets/main.json": _MIRROR_13,
+            "DEFINITION_OF_DONE.md": "The ruleset requires some CI checks.\n",
+        },
+    )
+    problem = entry.check()
+    assert problem is not None
+    assert "no longer states the size of the required-check set" in problem
+
+
+def test_a_required_check_count_that_matches_the_mirror_passes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    entry = claim("required-check-count-in-the-definition-of-done")
+    assert isinstance(entry, RulesetCount)
+    fake_repo(
+        tmp_path,
+        monkeypatch,
+        {
+            ".github/rulesets/main.json": _MIRROR_13,
+            "DEFINITION_OF_DONE.md": "The ruleset requires thirteen named CI checks.\n",
+        },
+    )
+    assert entry.check() is None
+
+
+def test_a_new_required_context_the_parity_note_ignores_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The Makefile claimed byte-for-byte parity while six contexts had no local target.
+
+    Adding a fourteenth required check must not be possible while `verify`'s comment
+    keeps its old shape — silence there is what let the claim stay wrong.
+    """
+    entry = claim("verify-accounts-for-every-required-context")
+    assert isinstance(entry, ContextsAccountedFor)
+    fake_repo(
+        tmp_path,
+        monkeypatch,
+        {
+            ".github/rulesets/main.json": _MIRROR_13,
+            "Makefile": "# " + "\n# ".join(f"job {n}" for n in range(12)) + "\nverify:\n",
+        },
+    )
+    problem = entry.check()
+    assert problem is not None
+    assert "OSV lockfile scan (uv.lock)" in problem
+
+
+def test_a_parity_note_naming_every_required_context_passes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    entry = claim("verify-accounts-for-every-required-context")
+    assert isinstance(entry, ContextsAccountedFor)
+    named = [f"job {n}" for n in range(12)] + ["OSV lockfile scan (uv.lock)"]
+    fake_repo(
+        tmp_path,
+        monkeypatch,
+        {
+            ".github/rulesets/main.json": _MIRROR_13,
+            "Makefile": "# " + "\n# ".join(named) + "\nverify:\n",
+        },
+    )
+    assert entry.check() is None
+
+
+# --- mirrored_string: the version lives in one file, not two --------------------
+
+_PYPROJECT_VERSION = '[project]\nname = "ledger-archive"\nversion = "0.1.0.dev0"\n'
+
+
+def citation_claim() -> MirroredString:
+    entry = claim("citation-version-mirrors-pyproject")
+    assert isinstance(entry, MirroredString)
+    return entry
+
+
+def test_a_citation_version_that_drifted_from_pyproject_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """CITATION.cff said 0.1.0 while pyproject said 0.1.0.dev0 and no tag existed."""
+    entry = citation_claim()
+    fake_repo(
+        tmp_path,
+        monkeypatch,
+        {"pyproject.toml": _PYPROJECT_VERSION, "CITATION.cff": 'version: "0.1.0"\n'},
+    )
+    problem = entry.check()
+    assert problem is not None
+    assert "'0.1.0'" in problem and "0.1.0.dev0" in problem
+
+
+def test_a_citation_version_that_mirrors_pyproject_passes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    entry = citation_claim()
+    fake_repo(
+        tmp_path,
+        monkeypatch,
+        {"pyproject.toml": _PYPROJECT_VERSION, "CITATION.cff": 'version: "0.1.0.dev0"\n'},
+    )
+    assert entry.check() is None
+
+
+def test_a_citation_that_stopped_stating_a_version_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    entry = citation_claim()
+    fake_repo(
+        tmp_path,
+        monkeypatch,
+        {"pyproject.toml": _PYPROJECT_VERSION, "CITATION.cff": "title: ledger\n"},
+    )
+    problem = entry.check()
+    assert problem is not None
+    assert "no longer states the value" in problem
+
+
+def test_an_unreadable_pyproject_is_not_read_as_agreement(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    entry = citation_claim()
+    fake_repo(
+        tmp_path,
+        monkeypatch,
+        {"pyproject.toml": "[project]\n", "CITATION.cff": 'version: "0.1.0.dev0"\n'},
+    )
+    problem = entry.check()
+    assert problem is not None
+    assert "cannot read" in problem
+
+
+def test_the_release_date_is_absent_until_a_tag_exists() -> None:
+    """The repository as it stands: `git tag` returns nothing, so nothing may claim one.
+
+    CITATION.cff is the machine-readable file citation tooling reads, and it recorded
+    `date-released: 2026-06-16` — the day CHANGELOG.md says a 0.1.0 candidate was
+    prepared and never tagged, and which docs/RELEASE-0.1.0.md still lists as an
+    unchecked box.
+    """
+    text = (REPO_ROOT / "CITATION.cff").read_text(encoding="utf-8")
+    assert "\ndate-released:" not in text
+    assert "no `git tag` exists" in text, "the absence has to say why it is absent"
+    entry = claim("citation-claims-no-release-date")
+    assert isinstance(entry, ForbiddenString)
+    assert entry.check() is None
+
+
 # --- the boundary is published, not implied ----------------------------------
 
 
@@ -578,3 +803,128 @@ def test_the_truthfulness_gate_actually_runs_on_a_pull_request() -> None:
     """
     ci = (REPO_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
     assert "tools/check_claims.py" in ci
+
+
+# --- ruleset_bypass: an empty list is the lockout, not the tighter setting -------
+#
+# Live ruleset 18823575, read 2026-08-28 from
+# `gh api repos/ChelseaKR/ledger/rulesets/18823575`: `bypass_actors` is exactly the
+# owner's standing bypass and `current_user_can_bypass` is "always". Reproduced here
+# rather than fetched, because the gate makes no network request. The mirror declared
+# `[]` for a week and the README argued that was the tight posture; re-applying it
+# would have locked the owner out of the repository, which has already happened once
+# across eighteen of them.
+
+_LIVE_RULESET: dict[str, object] = {
+    "id": 18823575,
+    "name": "protect-main",
+    "target": "branch",
+    "enforcement": "active",
+    "bypass_actors": [dict(OWNER_BYPASS)],
+    "current_user_can_bypass": "always",
+}
+
+
+def _committed_ruleset() -> dict[str, object]:
+    """The mirror as it stands on disk, not a fixture of it."""
+    return json.loads((REPO_ROOT / ".github/rulesets/main.json").read_text(encoding="utf-8"))
+
+
+def bypass_claim() -> RulesetBypass:
+    entry = claim("ruleset-records-the-owner-bypass")
+    assert isinstance(entry, RulesetBypass)
+    return entry
+
+
+def test_the_committed_mirror_records_the_owner_bypass_and_nothing_else() -> None:
+    """Not a fixture: the actual `.github/rulesets/main.json`."""
+    assert _committed_ruleset()["bypass_actors"] == [OWNER_BYPASS]
+    assert bypass_claim().check() is None
+
+
+def test_the_real_live_configuration_reads_as_conformance() -> None:
+    """The configuration the repository is actually in must pass.
+
+    A check that fails forever against a correct repository is not a stricter check,
+    it is a broken one — which is what asserting `bypass_actors == []` was.
+    """
+    assert bypass_findings(_LIVE_RULESET, _committed_ruleset()) == []
+
+
+def test_a_second_bypass_actor_is_reported_on_either_side() -> None:
+    """The threat actually worth guarding: a team, a GitHub App or a second
+    repository role handed the ability to skip the merge gate."""
+    committed = _committed_ruleset()
+    for extra in (
+        {"actor_id": 4242, "actor_type": "Team", "bypass_mode": "pull_request"},
+        {"actor_id": 99, "actor_type": "Integration", "bypass_mode": "always"},
+        {"actor_id": 2, "actor_type": "RepositoryRole", "bypass_mode": "always"},
+    ):
+        live = dict(_LIVE_RULESET, bypass_actors=[dict(OWNER_BYPASS), extra])
+        found = bypass_findings(live, committed)
+        assert len(found) == 1, found
+        assert "unreviewed bypass actor" in found[0]
+
+        planted = dict(committed, bypass_actors=[dict(OWNER_BYPASS), extra])
+        found = bypass_findings(_LIVE_RULESET, planted)
+        assert len(found) == 1, found
+        assert "committed and not enforced" in found[0]
+
+
+def test_the_owner_losing_their_live_bypass_is_reported() -> None:
+    """The incident the rule exists for. An empty list coming back from the API is
+    the owner locked out of their own repository."""
+    found = bypass_findings(dict(_LIVE_RULESET, bypass_actors=[]), _committed_ruleset())
+    assert len(found) == 1, found
+    assert "the live protect-main ruleset" in found[0]
+    assert "lockout" in found[0]
+
+
+def test_both_sides_emptied_together_is_two_findings_not_zero() -> None:
+    """The case a parity check would pass with a green tick on it.
+
+    A tidy revert of the mirror on a day the owner had also been locked out makes the
+    two sides agree, which is exactly why the owner's bypass is held against each side
+    separately rather than compared between them.
+    """
+    live = dict(_LIVE_RULESET, bypass_actors=[])
+    committed = dict(_committed_ruleset(), bypass_actors=[])
+    found = bypass_findings(live, committed)
+    assert len(found) == 2, found
+    assert any("the live protect-main ruleset" in line for line in found), found
+    assert any(".github/rulesets/main.json" in line for line in found), found
+
+
+def test_the_gate_fails_when_the_mirror_goes_back_to_an_empty_list(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The offline half, proved against a broken tree rather than a repaired one."""
+    entry = bypass_claim()
+    fake_repo(tmp_path, monkeypatch, {".github/rulesets/main.json": '{"bypass_actors": []}'})
+    problem = entry.check()
+    assert problem is not None
+    assert "lockout" in problem
+
+
+def test_the_gate_fails_when_a_second_actor_is_planted_in_the_mirror(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    entry = bypass_claim()
+    mirror = (
+        '{"bypass_actors": ['
+        '{"actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always"},'
+        '{"actor_id": 4242, "actor_type": "Team", "bypass_mode": "always"}]}'
+    )
+    fake_repo(tmp_path, monkeypatch, {".github/rulesets/main.json": mirror})
+    problem = entry.check()
+    assert problem is not None
+    assert "4242" in problem
+
+
+def test_the_gate_fails_when_the_mirror_has_no_bypass_field_at_all(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A missing key must not read as a vacuous pass."""
+    entry = bypass_claim()
+    fake_repo(tmp_path, monkeypatch, {".github/rulesets/main.json": '{"name": "protect-main"}'})
+    assert entry.check() is not None

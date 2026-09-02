@@ -84,3 +84,19 @@ def test_safe_filename_neutralises_traversal_and_dot_names() -> None:
     # A legitimate name (including a leading-dot hidden file) is preserved.
     assert _safe_filename("photo.png") == "photo.png"
     assert _safe_filename(".hidden") == ".hidden"
+
+
+def test_a_signature_outside_the_public_allowlist_is_never_sniffed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`ALLOWED_TYPES` is derived from `_SIGNATURES`, so today the guard inside
+    `sniff_media_type` cannot fire. It exists so that the two cannot drift: if a
+    future edit adds a recognizer without adding it to the type shown to
+    contributors, the recognizer stays inert rather than silently accepting a
+    format the UI never promised. Exercised here by making the two disagree (#83).
+    """
+    monkeypatch.setattr(
+        upload, "_SIGNATURES", {**upload._SIGNATURES, "application/zip": (b"PK\x03\x04",)}
+    )
+    assert "application/zip" not in upload.ALLOWED_TYPES
+    assert upload.sniff_media_type(b"PK\x03\x04" + b"\x00" * 16) is None

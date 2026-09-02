@@ -141,3 +141,36 @@ def test_handoff_cli_writes_manifest(tmp_path: Path, capsys: pytest.CaptureFixtu
     assert data["total_records"] == 2
     assert data["successor"] == "New Stewards"
     assert _SENTINEL not in out.read_text(encoding="utf-8")
+
+
+def test_handoff_with_an_attesting_steward_files_the_dissolution_proposal(
+    tmp_path: Path,
+) -> None:
+    """A folding group is exactly the ``group-dissolved`` event the
+    ``SEALED_CONDITIONAL`` tier waits on (FIX-07). Passing ``attest_steward``
+    *initiates* that attestation — and, because dual control still applies, files a
+    proposal that a second, distinct steward must approve rather than opening any
+    seal on its own (#83)."""
+    archive, _ = _seed_archive(tmp_path)
+    manifest = build_handoff(archive, now=_NOW, attest_steward="steward-a")
+    assert manifest.total_records == 2
+
+    from ledger.attest import AttestStore
+
+    proposals = AttestStore(archive.logs_dir).open_proposals()
+    dissolutions = [p for p in proposals if p.target == "group-dissolved"]
+    assert len(dissolutions) == 1
+    assert dissolutions[0].proposer == "steward-a"
+    assert dissolutions[0].action == "attest"
+    # Initiated, not granted: one proposer is not two stewards.
+    assert "group-dissolved" not in AttestStore(archive.logs_dir).attested()
+
+
+def test_handoff_without_an_attesting_steward_has_no_side_effects(tmp_path: Path) -> None:
+    """The positive control: omitted, the hand-off stays a pure inventory."""
+    archive, _ = _seed_archive(tmp_path)
+    build_handoff(archive, now=_NOW)
+
+    from ledger.attest import AttestStore
+
+    assert AttestStore(archive.logs_dir).open_proposals() == []

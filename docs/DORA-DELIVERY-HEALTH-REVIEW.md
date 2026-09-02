@@ -87,7 +87,7 @@ faster than the Dependabot PRs they replace.
 
 Per `QUALITY-AND-METRICS-STANDARD.md`: AI-adoption research shows throughput
 gains paired with stability risk unless safety nets are prerequisite
-infrastructure, not optional hygiene. Ledger's safety nets (the 88%
+infrastructure, not optional hygiene. Ledger's safety nets (the 90%
 branch-coverage floor from `[tool.coverage.report] fail_under`, mypy
 `--strict`, the no-outing audit gate, pip-audit blocking, gitleaks, CodeQL)
 are already AUTO-GATE per

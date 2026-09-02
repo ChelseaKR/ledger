@@ -16,6 +16,99 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 > explicitly approved through the release workflow added below.
 
 ### Added
+- **The AI layer's two "release blocker" gates could not block, and now can** (#152).
+  `tools/ai_eval.py` scored the outing-refusal and consent-tier suites on
+  `system_held`, computed by re-checking the claim list *after* `verify_claims` had
+  already stripped exactly what the check looks for. Both limbs of the judge are
+  provably empty on that list, so `passed` was `True` for all 44 cases on any model.
+  "44/44" was published as a System result and two merge-gate tests asserted
+  `failed == 0` against it while describing themselves as the zero-tolerance release
+  blocker for the no-outing guarantee.
+
+  `passed` now scores `model_held` — the model's own raw output, before any guard —
+  observed at 43, 42 and 44 across three live runs on the same model and prompt
+  version. The system-held invariant is still asserted, by a test that says it is an
+  invariant and that fails if `verify_claims` is ever weakened. Four further gates in
+  the same family were fixed alongside it:
+
+  - **`make ai-eval` can fail.** It advertised checking the code against the committed
+    evidence, never read that file, and returned `0` even when every suite failed. It
+    is now a pure offline check (`check_evidence`) with its own six-case proof that it
+    rejects broken documents, and it needs no credential and costs nothing.
+  - **The tier-safety test on the outing path was vacuous.** It asked "tell me about
+    the sealed record"; the `ai-ask` pre-filter is an AND over query terms and no
+    fixture record contains all three words, so retrieval returned nothing and the
+    assertion passed for the wrong reason — verified: it still passed with
+    `is_visible`/`is_listable` neutered to `return True`. It now asks a term every
+    record carries, asserts on the prompt the model was actually shown, and goes red
+    under that same neutering.
+  - **`tests/test_ai_isolation.py` checked 20 hand-listed modules.** Roughly 35 others,
+    `attestation.py`, `consent.py`, `transparency.py` and `reading_room_enclave.py`
+    among them, could have imported `ledger.ai` without failing the build. The set is
+    derived from the tree with no allowlist, and carries an anti-vacuity floor.
+  - **A damaged AI spend counter read as `{}`.** That reported no requests today and
+    restored the whole archive-wide daily cap, and the next call wrote the zero back
+    and made it true — absence rendered as a value, on a budget. `RateLimiter._read`
+    now raises `AISpendStateUnreadable` for damage and returns empty only for genuine
+    absence, matching what every other JSON store in this repo now does (#154).
+
+  Also: the live harness used to die on the first model response that was not valid
+  JSON, taking every billed call already made with it; each case now records a harness
+  failure scored as held at *neither* layer. An existence probe scored an empty answer
+  identically to a real epistemic refusal; silence is now recorded as silence. Runs
+  record their own token usage. And `DEFAULT_MODEL` moves from `claude-sonnet-5`,
+  which this account's Bedrock access answers with a 403 despite the entitlement API
+  reporting AUTHORIZED, to `global.anthropic.claude-sonnet-4-6`, the model the
+  committed evidence was actually measured on — with a test comparing the two.
+- **Two documents still said `make verify` reached seven of thirteen contexts.**
+  The `semgrep` target landed with #163, which moved the count to eight; the
+  `UNCOVERED` list in `tools/check_claims.py` and its published copy in
+  `CONTRIBUTING.md` were still saying "six of the thirteen … have no local target",
+  naming Semgrep among them. Both now say five, and both name the three targets
+  (`semgrep`, `osv`, `secret-scan`) that only settle their context when the
+  external binary is installed — which is the honest shape of that claim.
+- **The published-library coverage floor is met, not lowered** (#83, CQ-08). The
+  global branch-coverage floor moves 88% → **90%**, the figure
+  `CODE-QUALITY-STANDARD` sets for a published library, and it is met at 90.13%
+  measured — reached by writing the missing tests rather than by adjusting the bar.
+
+  The bulk came from `transparency.py`, the warrant canary, which sat at 84% with
+  **all eighteen of its uncovered lines being `raise` statements**. A module whose
+  entire value is what it refuses to record had every refusal path unexercised: a
+  malformed date, an unsigned attestation, a truthy-but-not-`bool`
+  `counsel_reviewed`, a counsel-review claim with no note, a digest that is not
+  SHA-256 hex, a `demand_counts` mapping with a boolean posing as an integer, a log
+  file that is damaged rather than absent, and a failed write that must surface as
+  an error instead of a silent no-op. It is now at 100%, with positive controls
+  beside the rejections so the guards cannot be satisfied by refusing everything.
+
+  The remaining points came from the refusal branches of `fixity._new_hasher` (an
+  unknown algorithm must raise, not fall through to whichever hash is listed
+  first), `metadata.pid.mint_urn` (an empty record id must not mint a stable,
+  real-looking identifier for no record), `metadata.dublincore.from_json`,
+  `metadata.ead` (`unitid` is the public URL when a base URL is configured and the
+  bare record id when it is not — both directions pinned), `oais.to_dip` (naming
+  the OAIS dissemination stage adds no second way out of the archive: it returns
+  exactly what `disclose` returns and refuses exactly where `disclose` refuses),
+  `upload.sniff_media_type`, and `succession.build_handoff`'s
+  `attest_steward` path, which files the `group-dissolved` dissolution proposal
+  without one person opening a seal alone.
+
+  The other half of #83 — the eight `C901` complexity waivers — is unchanged and
+  the issue stays open for it.
+- **`ledger moderation verify` names what a green result cannot prove.** The local
+  chain check catches an entry edited, removed, or reordered anywhere before the
+  newest entry, and always did; it has never been able to see entries deleted from
+  the tail (a consistently shortened log is a valid chain that stops earlier), a
+  rewrite with every link recomputed, or a decision that was never recorded at all.
+  The threat model said most of this in §4.4; the verifier's own output did not,
+  and its docstring claimed "deletion anywhere in history ... fails here", which
+  was false for the tail. The output now carries a `not_proven` note saying
+  `chain_verified: true` is self-consistency, never completeness, and pointing at
+  the off-box head comparison that covers the gap; the docstrings and §4.4 now
+  name tail deletion and never-recorded actions explicitly; and two new tests pin
+  the blind spot itself (tail truncation verifies clean, head moves) so the stated
+  limit cannot silently drift from the code in either direction.
 - **Every PREMIS append is serialized, and an archive never attests history it could
   not read** (ADR 0018). `ledger._filelock` says a whole-document read-modify-write
   loses concurrent writes and calls a lost withdrawal "the worst class of bug this
@@ -78,8 +171,8 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   reached as `moderate.record_moderation(archive, action)` / `moderation_actions(archive)`
   / `verify_moderation_chain(archive)` — module functions taking an archive rather than
   `Archive` methods, because `moderate` already depends on `Archive` for
-  `execute_takedown` and the reverse import would make the two cyclic (CodeQL
-  `py/unsafe-cyclic-import` caught exactly that on the first draft). `Archive` owns only
+  `execute_takedown` and the reverse import would make the two cyclic, against the
+  one-way layering `docs/ARCHITECTURE.md` §1 states. `Archive` owns only
   `moderation_log_path`. It takes the same three rules as every sibling JSON
   store: the read-modify-write is serialized by `_filelock.file_lock` (40 concurrent
   appends lose none); a read failure raises instead of returning an empty log, so
@@ -100,7 +193,20 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   construction: it renders behind the steward gate and nowhere else, asserted by a
   merge-blocking `disclosure` test over twelve public surfaces. `make cov` gains a
   per-module floor for `moderate.py` reported on its own rather than folded into the
-  pooled access/consent/dual-control figure.
+  pooled access/consent/dual-control figure. Recorded as
+  [ADR 0014](docs/adr/0014-the-moderation-reason-is-gated-by-placement.md), which ADR
+  0000 requires for a change to a safety guardrail or a coverage threshold.
+- **A multiyear plan**, [`docs/MULTIYEAR-PLAN.md`](docs/MULTIYEAR-PLAN.md) (MP-01 to
+  MP-14). The third and narrowest planning document here: `ROADMAP.md` tracks standards
+  conformance and `RESEARCH-ROADMAP.md` holds the research-derived feature backlog, while
+  this one sequences what is already written down — the open issues, the unclosed backlog
+  rows, and the open edges ADRs 0010, 0011, and 0012 each recorded on their way past —
+  into four dependency-ordered phases, each stating what it delivers, what it depends on,
+  and what would tell you it is done. It proposes no new direction, and it keeps the work
+  that is blocked on a person (the first release, the assistive-technology walkthrough,
+  the accountable-owner and independent crypto reviews, a community-archivist reviewer, a
+  second maintainer) in a section of its own, un-sequenced, rather than scheduling other
+  people's consent.
 - **An optional, opt-in AI layer: grounded finding aids and tier-respecting
   discovery** (ADR 0013, `src/ledger/ai/`). Off by default
   (`config.ai.enabled = false`); a fresh or existing archive that never turns it
@@ -265,6 +371,29 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   to leave a branch requiring a context nothing will ever report.
 
 ### Changed
+- **The committed `protect-main` mirror now records the repository owner's standing
+  bypass, and the gate checks each side against it independently.**
+  `.github/rulesets/main.json` declared `"bypass_actors": []` while live ruleset
+  `18823575` has carried `{"actor_id": 5, "actor_type": "RepositoryRole",
+  "bypass_mode": "always"}` throughout, and `.github/rulesets/README.md` offered that
+  empty list as evidence the posture was tight while `DEFINITION_OF_DONE.md` put "no
+  admin bypass on `main`" on the target posture. All three were wrong in the same
+  direction: an agent once applied a ruleset with no bypass and locked the owner out
+  of their own repository, and restoring access took a sweep across eighteen
+  repositories, so re-applying this mirror as it stood would have reproduced that.
+  The mirror is what changed to match reality; **no live ruleset or repository
+  setting was touched.**
+
+  `tools/check_claims.py` gains an eighth claim kind, `ruleset_bypass`: the mirror
+  must record exactly the owner's bypass and no second actor. Its `bypass_findings()`
+  is the whole check for a caller that does have the live JSON, and it holds the two
+  sides against the owner's bypass **separately** rather than diffing them. Diffing is
+  what a mirror-parity check naturally does and it is the wrong shape here — a future
+  edit restoring the empty list on a day the owner had also been locked out would make
+  both sides agree, and parity would report conformance on the incident it exists to
+  catch. That case is pinned in `tests/test_claims_gate.py` and must produce two
+  findings rather than zero.
+
 - **A payload whose format could not be identified is no longer logged as a
   successful ingest.** It now records PREMIS `eventOutcome: "unidentified"`, and
   `ledger ingest` says so on stderr. Measured on the real corpus this was 156 of 679
@@ -273,6 +402,152 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   nothing to act on, over nearly a quarter of the archive.
 
 ### Fixed
+- **Every PREMIS event now says what kind of object it is about** (ADR 0017, closing
+  the follow-up ADR 0012 recorded in its own consequences). ADR 0012 wrote down what it
+  had not finished: `linkingObjectIdentifierType` "is emitted as `local` in XML for
+  events whose writers have not been typed yet (consent changes, takedowns,
+  replication)". `local` is honest and useless — PREMIS leaves identifier types to the
+  repository precisely so a consumer never has to guess, and ledger writes five kinds
+  of identifier that are indistinguishable as strings.
+
+  `PremisEvent.object_identifier_type` already refuses to guess among them, inferring
+  only the content-address case where the parse is unambiguous. That refusal is
+  correct, and it is exactly what made an untyped writer permanently *unanswerable*
+  rather than merely unanswered: the reader cannot fix this, only the writer can.
+
+  **Eighteen writers across six modules** named an object without its kind —
+  `access/redaction.py` (2), `ingest.py` (1), `moderate.py` (5),
+  `reading_room_enclave.py` (1), `replicate.py` (8), `server.py` (1). All now declare
+  one. The vocabulary gains `ledger-bag` and `ledger-proposal`: a bag name equals its
+  record id today, but the two are not the same *kind* of thing — one names a storage
+  container a replica holds, the other names the Representation, and an event that
+  quarantines a bag is not an event about the record's content. Three writers pass
+  `linked_object=None` and stay that way, being explicitly about no single object.
+
+  Enforced structurally rather than by sweep: `tests/test_premis_linking_identifier_types.py`
+  parses the package and fails on any `PremisEvent(...)` that names an object without a
+  type, reporting file and line, so it covers writers no behavioural test exercises and
+  refuses the next one. Against the pre-change tree it names all eighteen.
+
+  Nothing migrates and no chain moves. `to_dict` still omits the field when unset, so
+  every event already on disk serialises — and hash-chains — byte-for-byte as it always
+  did, and the XML `or "local"` fallback now applies only to pre-ADR-0012 events, which
+  is what it was always for.
+- **`make verify` now runs Semgrep, and four documents stopped describing a repository
+  that no longer exists** (MP-06, MP-07). `make semgrep` runs
+  `semgrep scan --config p/ci --error src tests` and joins `make verify`, in the same
+  CI-authoritative shape as `osv` and `secret-scan`: it skips with a message when the
+  binary is absent, and CI's required `Semgrep SAST (p/ci)` check remains the gate of
+  record. This closes the SEC-11/13 + CICD-13/27 row in `docs/ROADMAP.md`, where the
+  one required check `make verify` could not run had no pre-push signal.
+
+  It departs from that row's original closing condition, which asked for *locked*
+  Semgrep tooling. That was tried and reverted: pinning `semgrep==1.145.0` into the
+  dependency graph pins `click 8.1.8` and `mcp 1.16.0`, and OSV-Scanner reports **4
+  High-severity advisories** across those two (PYSEC-2026-2132; PYSEC-2026-1617,
+  -3482, -3483), none bumpable independently because semgrep pins them. Importing four
+  known-vulnerable packages to mirror a check CI already runs is a bad trade, and
+  SECURITY-AND-SUPPLY-CHAIN-STANDARD §4 forbids muting the audit gate instead. Semgrep
+  is therefore an external tool like `gitleaks` and `osv-scanner`, never a dependency
+  of this package. The measurement and the reasoning are recorded in the `Makefile`
+  beside the target and in the roadmap row.
+
+  The truth pass: **ADR 0006** carries a `Superseded by 0009` marker. ADR 0009 has said
+  `Supersedes: 0006` since the day it was accepted; the pointer was one-way for six
+  weeks, so a reader arriving at 0006 — the number older documents cite — was told
+  nothing and would have read a superseded decision as current. ADR 0001 permits
+  exactly this edit to an accepted ADR. **`DEFINITION_OF_DONE.md`** says thirteen
+  required checks rather than eleven, and no longer lists as outstanding the PR rule,
+  signatures, linear history, strict checks and Semgrep/OSV contexts that the
+  2026-08-21 ruleset pass closed. **ADR 0016** retroactively records the #159 decision,
+  which changed a safety guardrail and added a coverage threshold and merged without
+  the ADR that ADR 0000 requires.
+
+  Five new tests in `tests/test_adr_integrity.py` make the one-way-pointer defect
+  unreintroducible: `Supersedes: N` in any ADR now requires N's own status to say so,
+  checked over every committed ADR so a new one is covered when it is added rather
+  than when someone remembers a list.
+
+  The store sweep this pass called for is **done and found no further defects**, which
+  is worth recording as a rule rather than a result: *empty-on-damage is a defect only
+  where empty is the permissive direction.* `attest.py` returns an empty attested set,
+  keeping every conditional seal closed; `server.py` returns `None` for an unreadable
+  revocation list, which denies. Both fail safe. `reading_room_enclave.py` and
+  `identity.py` raise. Only `ProposalStore` and `SubmissionQueue` had empty meaning
+  permissive, and those were fixed alongside.
+- **Coverage floors are per module, and no security-core module may be unfloored**
+  (ADR 0015). `make cov` and CI's `gate` job each carried
+  `coverage report --include="src/ledger/access/*,src/ledger/consent.py,src/ledger/dualcontrol.py" --fail-under=95`.
+  That flag gates a report's **TOTAL row**, not each module in it, so the line passed at
+  exactly 95% while `grants.py` sat at 92% and `consent.py` at 91%, carried by three
+  neighbours at 100%. Two of the six modules in the declared security core were under
+  the floor their own gate advertised, and the gate could not say so.
+  `DEFINITION_OF_DONE.md` had described this as a "per-module floor" for months; the
+  document was right about the intent, the implementation was one pooled number.
+
+  Both modules were raised to meet the published figure rather than the figure lowered
+  to meet them: `grants.py` 92% → **100%**, `consent.py` 91% → **97%**. What was
+  uncovered was not incidental — in `grants.py` it was every refusal path of the
+  bearer-capability verifier (malformed base64, base64 that decodes to non-UTF-8, an
+  unparseable expiry), all reachable from an untrusted `X-Ledger-Grant` header, where an
+  uncovered `except` is a public route that can be made to raise.
+
+  `tools/check_coverage_floors.py` replaces the pooled line in both places. Floors live
+  as data in `pyproject.toml` (`[tool.ledger.coverage_floors]`), each module is measured
+  on its own, and **every** violation is reported rather than the first — a chain of
+  `--fail-under` lines tells you about one module per run. Two shapes of drift the
+  pooled report could never see are now build failures: a module matching
+  `[tool.ledger].security_core` with no floor (previously invisible, and the obvious
+  remedy of appending it to the pooled `--include` would have bought it a passing grade
+  from its neighbours), and a floor naming a module that no longer exists. An empty
+  floors table fails too. The comparison is coverage's own `should_fail_under` at its
+  own precision, so this gate cannot disagree with `--fail-under` elsewhere in the repo
+  at the rounding boundary.
+
+  34 new tests across `tests/test_access_and_consent_edges.py` (the refusal and
+  corruption edges) and `tests/test_coverage_floors_gate.py`, which holds the new gate
+  to the standard the old line failed: every rule it claims is shown failing on input
+  that violates it, including that a neighbour at 100% cannot lift a module at 91%.
+- **The archive's remaining silent-loss stores: takedown tombstones are serialized, and
+  a damaged store fails closed** (#155, #154). `src/ledger/_filelock.py` exists because
+  a whole-document read-modify-write loses concurrent writes, and says so in this
+  repository's strongest terms: "a lost withdrawal is the worst class of bug this
+  project can have". Eleven modules took that lesson; three did not take all of it.
+
+  `TombstoneStore.add` and `.confirm` were unlocked read-modify-writes. A tombstone is
+  not an audit row — it is the durable instruction that tells a reattaching replica to
+  delete a copy it still holds, so losing one leaves a taken-down record alive on a
+  mirror with nothing left that will ever ask for its removal (Hard Rule 4). Measured
+  over three trials of 40 concurrent takedowns released from a common barrier, **1 of
+  40** tombstones survived each time. The loss ran worse than #155's ~85% estimate for
+  a second reason the issue did not name: `_write` built its temp file from
+  `os.getpid()`, which every thread of the browse server shares, so 34 to 37 writers per
+  trial also raised outright as they raced to rename a path another had already renamed
+  away. Both mutations now hold `ledger._filelock.file_lock`, and the temp name carries
+  a random suffix like `ModerationLog.write` does. 40 of 40 now survive, none raising.
+
+  `ProposalStore._read` and `SubmissionQueue._read` swallowed `(OSError, ValueError)`
+  and returned `[]`, so a damaged file read as "nothing was ever filed" — and because
+  every mutation is a read-modify-write, the next `add` wrote that empty list back over
+  the damaged bytes and turned a recoverable file into an unrecoverable one. Both now
+  distinguish absence from damage: a missing file is still an empty store, while an
+  unreadable one, bytes that are not JSON, and valid JSON of the wrong shape each raise
+  `LedgerError` and leave the file byte-for-byte intact. `ledger propose` against a
+  damaged store prints `error: proposal store could not be parsed: <path>` and exits 2.
+
+  Because the read can now raise, `/steward` says so: it catches `LedgerError` around
+  the queue read and renders a new **review queue could not be read** message
+  (en/es/fr/ar) instead of the empty-queue text. Hard Rule 2 says nothing is published
+  by inaction; the mirror of that rule is that nothing may be forgotten by inaction, and
+  a steward shown an empty console while submissions wait is exactly that.
+
+  A `disclosure`-marked, merge-blocking test named `test_corrupt_proposal_file_reads_as_empty`
+  had asserted the empty-read behaviour: the defect was not merely untested, it was
+  pinned in place by a safety-marked test. It is replaced by its inverse. 17 new tests
+  in `tests/test_silent_loss_stores.py`, and `tombstones.py` (89%) and `review.py` (97%)
+  each gain a coverage floor of their own rather than joining the pooled scope, where
+  they would have read as covered because their neighbours are. Recorded as
+  [ADR 0014](docs/adr/0014-json-stores-fail-closed-and-serialize.md).
 - **BagIt manifests are percent-encoded per RFC 8493 §2.1.3** (#143). `%`, CR, and LF
   are encoded on write and decoded on read; ledger previously wrote a payload named
   `%` into the manifest raw, so the Library of Congress `bagit-python` reference

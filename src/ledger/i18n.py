@@ -254,6 +254,9 @@ def _messages(translation: gettext.NullTranslations) -> dict[str, str]:
         "modlog_unreadable": _(
             "The moderation log could not be read. It is not empty — it is unreadable, and that needs looking into before any further moderation decision is taken."
         ),
+        "sw_queue_unreadable": _(
+            "The review queue could not be read. It is not empty — it is unreadable, so submissions may be waiting that this page cannot show. Look into it before deciding anything here."
+        ),
         "cs_heading": _("Check a request"),
         "cs_intro": _(
             "Enter the reference code you were given when you filed a consent or takedown request to see whether a steward has acted on it."

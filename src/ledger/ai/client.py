@@ -26,12 +26,19 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 
 from ledger.errors import LedgerError
 
+# `anthropic` is checked by mypy in whichever configuration the checker runs in:
+# with the `ai` extra installed it resolves to the real package, without it the
+# import fails and the `Any` fallback keeps the module checkable either way.
+# `Any` rather than `None` because the two configurations otherwise disagree
+# about this name's type, and CI only ever sees one of them -- `make install`
+# does not install the extra, so a real-SDK type error would never be caught.
+anthropic: Any
 try:  # pragma: no cover - exercised in whichever branch the `ai` extra provides
-    import anthropic  # type: ignore[import-not-found]  # optional extra, see module docstring
+    import anthropic
 
     _HAVE_ANTHROPIC = True
 except ImportError:  # pragma: no cover - exercised when the optional extra is absent
@@ -48,9 +55,22 @@ __all__ = [
     "have_anthropic",
 ]
 
-#: Code default (mission requirement: keep the code default at Sonnet 5
-#: regardless of which model a given deployment's Bedrock access authorizes).
-DEFAULT_MODEL = "claude-sonnet-5"
+#: The model the committed evidence was ACTUALLY produced by, pinned here so the
+#: code default and the recorded run cannot drift apart.
+#:
+#: This was `"claude-sonnet-5"`, described as a deliberate choice to keep the
+#: code default at Sonnet 5 "regardless of which model a given deployment's
+#: Bedrock access authorizes". On this account that identifier does not answer:
+#: the entitlement API reports the agreement as AUTHORIZED and `InvokeModel`
+#: still returns 403. So the default named a model no run here has ever used,
+#: while every committed number came from a different one -- a default that is
+#: aspirational rather than true. Verified the only honest way, by invoking:
+#: `global.anthropic.claude-sonnet-4-6` answers, and it is what
+#: `docs/data/ai-eval/results.json` records in its provenance.
+#:
+#: `LEDGER_AI_MODEL` still overrides, so a deployment with different Bedrock
+#: entitlements sets it there rather than editing this line.
+DEFAULT_MODEL = "global.anthropic.claude-sonnet-4-6"
 
 # Env vars, read here and ONLY here — never written to a file, never logged,
 # never accepted as a `Config`/CLI value (credentials-from-env-only).
@@ -91,6 +111,12 @@ class CompletionResult:
     backend: str
     model: str
     stop_reason: str | None = None
+    #: Token counts as the provider reported them, or ``None`` when the backend
+    #: did not report any. ``None`` is deliberate and is never coerced to ``0``:
+    #: a call whose cost is unknown must not be summed as a free one.
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    cache_read_input_tokens: int | None = None
 
 
 def have_anthropic() -> bool:
@@ -135,11 +161,15 @@ class _AnthropicModelClient:
         text = "".join(
             block.text for block in response.content if getattr(block, "type", None) == "text"
         )
+        usage = getattr(response, "usage", None)
         return CompletionResult(
             text=text,
             backend=self._backend,
             model=self._model,
             stop_reason=getattr(response, "stop_reason", None),
+            input_tokens=getattr(usage, "input_tokens", None),
+            output_tokens=getattr(usage, "output_tokens", None),
+            cache_read_input_tokens=getattr(usage, "cache_read_input_tokens", None),
         )
 
 
@@ -169,12 +199,18 @@ def build_client(*, model: str | None = None) -> ModelClient:
             raise AIUnavailable(
                 f"{_ENV_BACKEND}=anthropic but {_ENV_ANTHROPIC_KEY} is not set in the environment"
             )
-        raw_client = anthropic.Anthropic(api_key=api_key)
-        return _AnthropicModelClient(backend=backend, model=resolved_model, raw_client=raw_client)
+        return _AnthropicModelClient(
+            backend=backend,
+            model=resolved_model,
+            raw_client=anthropic.Anthropic(api_key=api_key),
+        )
 
     if backend == AIBackend.BEDROCK:
         region = os.environ.get(_ENV_AWS_REGION) or _DEFAULT_AWS_REGION
-        raw_client = anthropic.AnthropicBedrock(aws_region=region)
-        return _AnthropicModelClient(backend=backend, model=resolved_model, raw_client=raw_client)
+        return _AnthropicModelClient(
+            backend=backend,
+            model=resolved_model,
+            raw_client=anthropic.AnthropicBedrock(aws_region=region),
+        )
 
     raise AIUnavailable(f"unknown {_ENV_BACKEND}={backend!r}; expected 'anthropic' or 'bedrock'")

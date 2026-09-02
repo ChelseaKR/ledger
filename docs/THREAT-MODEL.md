@@ -248,8 +248,8 @@ probing the archive's public surfaces, combining fields, or cross-referencing.*
   became durable only when the store was wired into the CLI and the browse server
   (#156); before that it was validated and discarded, and the PREMIS event beside it
   records only what was done. `ledger moderation verify` chain-verifies the log, and
-  `/steward/audit` reports a broken chain on the page. Preservation actions are PREMIS events with
-  agent and outcome (`src/ledger/metadata/premis.py`), so a steward's actions are
+  `/steward/audit` reports a broken chain on the page. Preservation actions are PREMIS
+  events with agent and outcome (`src/ledger/metadata/premis.py`), so a steward's actions are
   attributable after the fact.
 - **Residual risk.** **A steward who *also* holds the vault key and an `identity_unseal`
   grant can out the contributors whose refs that grant names.** This is exactly the
@@ -262,9 +262,13 @@ probing the archive's public surfaces, combining fields, or cross-referencing.*
   the log file on disk can tamper with it, which is why fixity and off-box replicas of
   the log matter. Each entry's chain link narrows this rather than closing it: an edit
   that does not also recompute every following link is detected by `ledger moderation
-  verify` and shown on `/steward/audit`, but an attacker who rewrites the whole chain
-  produces a locally self-consistent history, and only comparing the head against an
-  off-box replica catches that. Governance (`docs/GOVERNANCE.md`) is the control for a malicious
+  verify` and shown on `/steward/audit`, but an attacker who rewrites the whole chain --
+  or who simply deletes the newest entries, which needs no recomputation at all -- produces
+  a locally self-consistent history, and only comparing the head against an
+  off-box replica catches that. `ledger moderation verify` states this beside its own
+  result: `chain_verified: true` is a statement about self-consistency, never about
+  completeness, and an action that was never recorded left nothing for any chain to
+  protect. Governance (`docs/GOVERNANCE.md`) is the control for a malicious
   steward: removal, multi-steward review of high-stakes actions, and not concentrating
   the vault key and unseal grants in one person.
 

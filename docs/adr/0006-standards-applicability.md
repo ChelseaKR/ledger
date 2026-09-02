@@ -2,7 +2,13 @@
 
 ## Status
 
-Accepted
+Superseded by [0009](0009-expand-standards-applicability.md) (2026-07-11).
+
+The decision below stands as the record of what was decided on the day; ADR 0001
+makes an accepted ADR immutable except for its status, which is why this note
+replaces the bare "Accepted" rather than the text being edited. ADR 0009 named this
+one as superseded from the day it was accepted, but the pointer was only ever
+one-way, so a reader arriving here was told nothing.
 
 ## Context
 

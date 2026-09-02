@@ -32,6 +32,7 @@ from ledger.errors import LedgerError
 __all__ = [
     "AIDailyCapExceeded",
     "AIRateLimitError",
+    "AISpendStateUnreadable",
     "RateLimitConfig",
     "RateLimiter",
 ]
@@ -49,6 +50,20 @@ class AIDailyCapExceeded(LedgerError):
     """The archive-wide daily AI request cap was reached.
 
     Same fallback contract as :class:`AIRateLimitError`.
+    """
+
+
+class AISpendStateUnreadable(LedgerError):
+    """The persisted daily-spend counter exists but could not be read.
+
+    Distinct from "the file is absent", which genuinely means no spend has
+    been recorded today. A damaged counter read as ``{}`` would report zero
+    requests so far and silently reset the archive-wide daily cap — the whole
+    budget, restored by a corrupt file — and the very next call would write
+    that zero back and make it true. Every other JSON store in this repo
+    stopped doing that (#154); a *budget* is the last place it would be
+    acceptable, so this raises and the caller refuses the AI request exactly
+    as it would for a provider outage (fail closed).
     """
 
 
@@ -105,7 +120,12 @@ class RateLimiter:
             self._windows.setdefault(subject, []).append(instant)
 
     def usage_today(self, *, now: float | None = None) -> int:
-        """Best-effort read of today's recorded count, for a status view."""
+        """Today's recorded count, for a status view.
+
+        Raises :class:`AISpendStateUnreadable` rather than returning ``0`` for a
+        damaged counter: a status view that says "0 requests today" when the
+        truth is unknown is worse than one that says it cannot tell.
+        """
         instant = time.time() if now is None else now
         return self._read().get(self._today(instant), 0)
 
@@ -129,15 +149,44 @@ class RateLimiter:
             self._write(trimmed)
 
     def _read(self) -> dict[str, int]:
-        if not self._state_path.exists():
-            return {}
+        """Today's counts, or ``{}`` for a counter that has genuinely never been written.
+
+        Absence and damage are different facts and are kept apart here. Every
+        failure mode below leaves by the same door,
+        :class:`AISpendStateUnreadable`, so a caller catches one type and can
+        never mistake a corrupt budget file for an unspent budget.
+        """
         try:
-            data = json.loads(self._state_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
+            text = self._state_path.read_text(encoding="utf-8")
+        except FileNotFoundError:
             return {}
+        except OSError as exc:
+            raise AISpendStateUnreadable(
+                f"AI daily-spend counter could not be read: {self._state_path}"
+            ) from exc
+        try:
+            data = json.loads(text)
+        except ValueError as exc:  # JSONDecodeError is a ValueError
+            raise AISpendStateUnreadable(
+                f"AI daily-spend counter is not valid JSON: {self._state_path}"
+            ) from exc
         if not isinstance(data, dict):
-            return {}
-        return {str(key): int(value) for key, value in data.items() if isinstance(value, int)}
+            raise AISpendStateUnreadable(
+                f"AI daily-spend counter {self._state_path} must contain a JSON object"
+            )
+        counts: dict[str, int] = {}
+        for key, value in data.items():
+            # `type(value) is int` rather than `isinstance`: `True` is an `int`,
+            # and a boolean posing as a count would be silently read as 1.
+            # Dropping an entry that fails this check would be the same defect
+            # in quieter clothing -- today's count would read as 0 -- so it raises.
+            if type(value) is not int or value < 0:
+                raise AISpendStateUnreadable(
+                    f"AI daily-spend counter {self._state_path} has a non-integer or "
+                    f"negative count for {key!r}; refusing rather than reading it as no spend"
+                )
+            counts[str(key)] = value
+        return counts
 
     def _write(self, counts: dict[str, int]) -> None:
         self._state_path.parent.mkdir(parents=True, exist_ok=True)

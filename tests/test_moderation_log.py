@@ -752,6 +752,10 @@ def test_cli_moderation_verify_exits_zero_intact_and_two_when_tampered(
     assert cli.main(["moderation", "verify", "--root", str(root)]) == 0
     report = json.loads(capsys.readouterr().out)
     assert report["entries"] == 2 and report["chain_verified"] is True
+    # A green result names its own limits, so it cannot be read as completeness.
+    assert "self-consistency only" in report["not_proven"]
+    assert "deleted from the tail" in report["not_proven"]
+    assert "never recorded" in report["not_proven"]
 
     archive = Archive(Config.load(root / "store" / "config.json"))
     path = archive.moderation_log_path

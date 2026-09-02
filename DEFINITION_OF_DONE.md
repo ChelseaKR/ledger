@@ -24,7 +24,7 @@ tracked below under "Branch protection."
 2. **Type-check** — `mypy` strict config, zero errors (`ci.yml`; `make type`).
 3. **Tests + coverage** — full suite green on Python 3.12 (the floor per
    CQ-01 and, for now, the ceiling — the CI matrix is a single interpreter);
-   the 88% branch-coverage floor (`[tool.coverage.report] fail_under` and
+   the 90% branch-coverage floor (`[tool.coverage.report] fail_under` and
    `[tool.coverage.run] branch = true` in `pyproject.toml`) plus a ≥ 95%
    per-module floor on `access/`/consent/dual-control; cyclomatic complexity
    ≤ 10 (`ruff` `C901`, `max-complexity = 10`) — pre-existing functions over
@@ -108,10 +108,12 @@ so "green locally" is not read as more than it is:
 - **`perf` and `container` are excluded entirely** — see each target's comment.
 
 Stages not yet CI-gated (most of 9) are not silently skipped — each has a
-`docs/ROADMAP.md` row naming the gap and the item that closes it. Two stages
-*are* CI-gated but not merge-blocking: Semgrep (stage 4) and the OSV lockfile
-scan run on every pull request yet are absent from the required-check set in
-`.github/rulesets/main.json`.
+`docs/ROADMAP.md` row naming the gap and the item that closes it. Semgrep
+(stage 4) and the OSV lockfile scan are no longer among them: the 2026-08-21
+ruleset pass added both to the required-check set in
+`.github/rulesets/main.json`, so a red run on either blocks a merge. Neither
+has a local target in `make verify`, which is a separate gap — see the
+parity note on `verify` in the `Makefile`.
 
 ## REVIEW-GATE (human sign-off, committed as PR attestation + artifact)
 
@@ -149,19 +151,35 @@ exists and enforces this section on every `v*` tag:
 ## Branch protection
 
 An active `protect-main` GitHub ruleset blocks deletion and force-push and
-requires eleven named CI checks. It is mirrored in-tree at
-`.github/rulesets/main.json` so the posture is reviewable in a diff; the gaps
-are itemized in `.github/rulesets/README.md`. It is not yet the complete
-portfolio posture: strict/up-to-date checks, PR approval, stale-review
-dismissal, CODEOWNER review, signed commits, and linear history remain issue
-#79, and the Semgrep and OSV contexts are missing from the required set. The
-target posture is:
-PR required (≥1 approval, ≥2 for
-changes to `src/ledger/access/` or `identity.py`), last-pusher cannot
-self-approve, stale reviews dismissed on new pushes, CODEOWNERS review
-required on the routed paths above, required status checks in strict mode
-covering every AUTO-GATE job that exists today, signed commits, linear
-history, no force-push, no admin bypass on `main`.
+requires thirteen named CI checks. It is mirrored in-tree at
+`.github/rulesets/main.json` so the posture is reviewable in a diff, and the
+reasoning is in `.github/rulesets/README.md`. The 2026-08-21 pass (#79) closed
+most of what was open here: a `pull_request` rule, `required_signatures`,
+`required_linear_history`, `dismiss_stale_reviews_on_push`, and
+`strict_required_status_checks_policy: true` are all enforced live, and the
+required-check set grew from eleven contexts to thirteen with `OSV lockfile
+scan (uv.lock)` and `Semgrep SAST (p/ci)`.
+
+Two items of the target posture are deliberately not held, and one is still
+open. `required_approving_review_count` is 0 and `require_code_owner_review`
+is `false`, because the sole code owner cannot approve their own pull request
+and requiring an approval nobody can give would make the repository
+unmergeable by its only contributor — `CI-CD-STANDARD` §5.1 permits exactly
+this for a solo-maintainer repo, and the choice is dated and reasoned in
+`.github/rulesets/README.md` rather than silently absent. Still open: >=2
+approvals for changes to `src/ledger/access/` or `identity.py`, which needs a
+second maintainer to be meaningful.
+
+The one thing that is **not** on that target list, and used to be, is "no admin
+bypass on `main`". `bypass_actors` holds exactly the repository owner's standing
+bypass (`RepositoryRole` 5, `bypass_mode: always`), deliberately and permanently:
+an agent once applied a ruleset with no bypass and locked the owner out of their
+own repository, and restoring access took a sweep across eighteen repositories.
+An empty list there is not a stricter gate, it is the lockout. Done for a
+branch-protection change therefore means the owner's bypass is present and no
+*other* actor has one — checked on each side independently by
+`tools/check_claims.py`, never by diffing the live list against the committed one.
+See `.github/rulesets/README.md`, "Why the owner can bypass".
 
 ## Delivery-health signal
 

@@ -17,6 +17,7 @@ from __future__ import annotations
 from dataclasses import replace
 
 from ledger.models import (
+    OBJECT_TYPE_RECORD,
     PremisEvent,
     PremisEventType,
     Record,
@@ -49,6 +50,7 @@ def redact_field(
         outcome="success",
         detail=f"redacted field: {field_name}",
         linked_object=record.record_id,
+        linked_object_type=OBJECT_TYPE_RECORD,
         event_datetime=now,
     )
     return redacted, event
@@ -76,6 +78,7 @@ def redact_payload(
         outcome="success",
         detail=f"redacted payload: {filename}",
         linked_object=record.record_id,
+        linked_object_type=OBJECT_TYPE_RECORD,
         event_datetime=now,
     )
     return redacted, event

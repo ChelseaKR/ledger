@@ -60,7 +60,13 @@ from ledger.ai.client import AIUnavailable
 from ledger.ai.client import build_client as build_ai_client
 from ledger.ai.context import build_context as build_ai_context
 from ledger.ai.describe import generate_finding_aid
-from ledger.ai.limits import AIDailyCapExceeded, AIRateLimitError, RateLimitConfig, RateLimiter
+from ledger.ai.limits import (
+    AIDailyCapExceeded,
+    AIRateLimitError,
+    AISpendStateUnreadable,
+    RateLimitConfig,
+    RateLimiter,
+)
 from ledger.ai.provenance import resolve_commit as resolve_ai_commit
 from ledger.attestation import build_attestation, publish_attestation, sign_attestation
 from ledger.backup import create_backup, prune_backups, restore_backup, verify_backup
@@ -944,9 +950,17 @@ def _cmd_moderation_verify(args: argparse.Namespace) -> int:
 
     The log is append-only *as enforced by the application*; someone with raw write
     access to the file can still edit it (``docs/THREAT-MODEL.md`` §4.4). Every entry
-    carries a link to the one before it, so an edit or deletion anywhere in history
-    moves the head and fails here. Exit code 2 on a broken chain, so a scheduled
-    check can page on it (operability).
+    carries a link to the one before it, so an entry edited, removed, or reordered
+    anywhere *before the newest entry* breaks the recomputed chain and fails here,
+    exit code 2, so a scheduled check can page on it (operability).
+
+    What a passing check does not prove, stated in the output itself so a green
+    result cannot be read as more than it is: entries deleted from the *tail* leave
+    a shorter chain that is still self-consistent, a rewrite that recomputes every
+    link is self-consistent by construction, and a decision that was never recorded
+    left nothing to verify. All three move or diverge the ``head``, which is why
+    the head is printed: comparing it against an off-box replica or the published
+    ``/proof`` page is the check that catches them (threat model §4.4, FIX-06).
     """
     archive = _open_archive(Path(args.root))
     log = moderation_log(archive).load()
@@ -958,6 +972,13 @@ def _cmd_moderation_verify(args: argparse.Namespace) -> int:
                 "chain_verified": result.ok,
                 "head": result.head,
                 "broken_at": result.broken_at,
+                "not_proven": (
+                    "self-consistency only: entries deleted from the tail, a"
+                    " rewrite with every link recomputed, and a decision never"
+                    " recorded all verify clean locally. Compare 'head' against"
+                    " an off-box replica or the published proof page to catch"
+                    " them (docs/THREAT-MODEL.md §4.4)."
+                ),
             },
             indent=2,
             sort_keys=True,
@@ -1722,7 +1743,7 @@ def _cmd_ai_describe(args: argparse.Namespace) -> int:
     limiter = _ai_rate_limiter(Path(args.root), archive.config)
     try:
         limiter.check_and_record(args.as_subject or "anonymous")
-    except (AIRateLimitError, AIDailyCapExceeded) as exc:
+    except (AIRateLimitError, AIDailyCapExceeded, AISpendStateUnreadable) as exc:
         print(f"AI request refused: {exc}", file=sys.stderr)
         return 1
     try:
@@ -1758,7 +1779,7 @@ def _cmd_ai_ask(args: argparse.Namespace) -> int:
     limiter = _ai_rate_limiter(Path(args.root), archive.config)
     try:
         limiter.check_and_record(args.as_subject or "anonymous")
-    except (AIRateLimitError, AIDailyCapExceeded) as exc:
+    except (AIRateLimitError, AIDailyCapExceeded, AISpendStateUnreadable) as exc:
         print(f"AI request refused: {exc}", file=sys.stderr)
         return 1
     try:

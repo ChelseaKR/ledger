@@ -9,6 +9,7 @@ import pytest
 from ledger.ai.limits import (
     AIDailyCapExceeded,
     AIRateLimitError,
+    AISpendStateUnreadable,
     RateLimitConfig,
     RateLimiter,
 )
@@ -102,3 +103,63 @@ def test_usage_today_reports_zero_before_any_call(tmp_path: Path) -> None:
 def test_invalid_config_is_rejected(tmp_path: Path, config: RateLimitConfig) -> None:
     with pytest.raises(LedgerError):
         RateLimiter(config, tmp_path / "u.json")
+
+
+# --- the counter fails closed on damage, not open (#152 re-triage) -----------
+#
+# A damaged spend counter read as `{}` reports "no requests today" and restores
+# the entire archive-wide daily budget, and the next `check_and_record` writes
+# that zero back and makes it true. Absence and damage are different facts.
+
+
+@pytest.mark.parametrize(
+    "contents",
+    [
+        "not json at all",
+        '["a", "list"]',
+        '{"2026-09-01": "12"}',
+        '{"2026-09-01": true}',
+        '{"2026-09-01": -3}',
+    ],
+    ids=["unparseable", "not-an-object", "string-count", "boolean-count", "negative-count"],
+)
+def test_a_damaged_spend_counter_refuses_rather_than_restoring_the_budget(
+    tmp_path: Path, contents: str
+) -> None:
+    state = tmp_path / "ai-usage.json"
+    state.write_text(contents, encoding="utf-8")
+    limiter = RateLimiter(RateLimitConfig(per_client_per_minute=5, daily_cap=200), state)
+    with pytest.raises(AISpendStateUnreadable):
+        limiter.check_and_record("someone")
+    with pytest.raises(AISpendStateUnreadable):
+        limiter.usage_today()
+
+
+def test_a_damaged_counter_is_not_overwritten_by_the_refused_call(tmp_path: Path) -> None:
+    """The second half of the bug: reading damage as empty is only fatal because
+    the next write turns it into the truth. Refusing must also leave the damaged
+    file intact, so a steward can still recover what it held."""
+    state = tmp_path / "ai-usage.json"
+    state.write_text('{"2026-09-01": "12"}', encoding="utf-8")
+    limiter = RateLimiter(RateLimitConfig(per_client_per_minute=5, daily_cap=200), state)
+    with pytest.raises(AISpendStateUnreadable):
+        limiter.check_and_record("someone")
+    assert state.read_text(encoding="utf-8") == '{"2026-09-01": "12"}'
+
+
+def test_an_absent_counter_is_still_an_unspent_budget(tmp_path: Path) -> None:
+    """The positive control: absence is not damage, and must not be refused."""
+    state = tmp_path / "never-written.json"
+    limiter = RateLimiter(RateLimitConfig(per_client_per_minute=5, daily_cap=200), state)
+    assert limiter.usage_today() == 0
+    limiter.check_and_record("someone")
+    assert limiter.usage_today() == 1
+
+
+def test_an_unreadable_counter_refuses(tmp_path: Path) -> None:
+    """A directory where the counter should be: `read_text` raises `OSError`."""
+    state = tmp_path / "ai-usage.json"
+    state.mkdir()
+    limiter = RateLimiter(RateLimitConfig(per_client_per_minute=5, daily_cap=200), state)
+    with pytest.raises(AISpendStateUnreadable):
+        limiter.usage_today()

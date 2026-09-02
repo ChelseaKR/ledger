@@ -30,6 +30,7 @@ from ledger.chain import GENESIS_HASH, ChainVerification, build_chain, chain_hea
 from ledger.chain import verify_chain as _verify_chain
 from ledger.errors import LedgerError, ModerationError
 from ledger.models import (
+    OBJECT_TYPE_RECORD,
     AccessPolicy,
     PremisEvent,
     PremisEventType,
@@ -328,7 +329,7 @@ class ModerationLogStore:
 
         The whole read-append-write cycle is held under the advisory lock, so a
         concurrent append cannot be lost. Returning ``action`` lets a caller write
-        ``archive.record_moderation(action)`` inline without re-binding.
+        ``record_moderation(archive, action)`` inline without re-binding.
         """
         try:
             with file_lock(self._path):
@@ -354,8 +355,13 @@ class ModerationLogStore:
     def verify_chain(self) -> ChainVerification:
         """Recompute the persisted log's chain and compare it to its stored links.
 
-        An entry edited or removed on disk by someone with raw filesystem access --
-        the residual `docs/THREAT-MODEL.md` §4.4 names -- fails here.
+        An entry edited or removed *mid-chain* on disk by someone with raw
+        filesystem access -- the residual `docs/THREAT-MODEL.md` §4.4 names --
+        fails here. Entries removed from the tail do not: a consistently
+        truncated log is a shorter valid chain, indistinguishable locally from
+        one that simply stopped there. That case, like a wholesale rewrite,
+        is caught only by comparing :attr:`~ledger.chain.ChainVerification.head`
+        against an off-box replica (FIX-06).
         """
         return self.load().verify_chain()
 
@@ -431,6 +437,7 @@ def add_content_warning(
         outcome="success",
         detail=f"content warning added: {warning}",
         linked_object=record.record_id,
+        linked_object_type=OBJECT_TYPE_RECORD,
         event_datetime=now,
     )
     action = ModerationAction(
@@ -466,6 +473,7 @@ def change_consent(
         outcome="success",
         detail=f"default policy changed to {new_default_policy.value}",
         linked_object=record.record_id,
+        linked_object_type=OBJECT_TYPE_RECORD,
         event_datetime=now,
     )
     action = ModerationAction(
@@ -534,6 +542,7 @@ def set_field_policy(
         outcome="success",
         detail=f"field {field_name!r} policy changed to {new_policy.value}{when}",
         linked_object=record.record_id,
+        linked_object_type=OBJECT_TYPE_RECORD,
         event_datetime=now,
     )
     action = ModerationAction(
@@ -580,6 +589,7 @@ def set_payload_policy(
         outcome="success",
         detail=f"payload {filename!r} policy changed to {new_policy.value}",
         linked_object=record.record_id,
+        linked_object_type=OBJECT_TYPE_RECORD,
         event_datetime=now,
     )
     action = ModerationAction(
@@ -614,6 +624,7 @@ def takedown(
         outcome="success",
         detail="record taken down",
         linked_object=record_id,
+        linked_object_type=OBJECT_TYPE_RECORD,
         event_datetime=now,
     )
     action = ModerationAction(

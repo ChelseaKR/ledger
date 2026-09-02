@@ -773,6 +773,9 @@ msgstr "La langue du matériel, p. ex. anglais ou espagnol."
 msgid "The moderation log could not be read. It is not empty — it is unreadable, and that needs looking into before any further moderation decision is taken."
 msgstr "Le journal de modération n’a pas pu être lu. Il n’est pas vide — il est illisible, et cela doit être examiné avant toute nouvelle décision de modération."
 
+msgid "The review queue could not be read. It is not empty — it is unreadable, so submissions may be waiting that this page cannot show. Look into it before deciding anything here."
+msgstr "La file d’attente de révision n’a pas pu être lue. Elle n’est pas vide — elle est illisible, donc des soumissions attendent peut-être sans que cette page puisse les afficher. Examinez cela avant de décider quoi que ce soit ici."
+
 msgid "The takedown is confirmed at every storage location."
 msgstr "Le retrait est confirmé sur chaque emplacement de stockage."
 
