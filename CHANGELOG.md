@@ -16,6 +16,19 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 > explicitly approved through the release workflow added below.
 
 ### Added
+- **`ledger moderation verify` names what a green result cannot prove.** The local
+  chain check catches an entry edited, removed, or reordered anywhere before the
+  newest entry, and always did; it has never been able to see entries deleted from
+  the tail (a consistently shortened log is a valid chain that stops earlier), a
+  rewrite with every link recomputed, or a decision that was never recorded at all.
+  The threat model said most of this in §4.4; the verifier's own output did not,
+  and its docstring claimed "deletion anywhere in history ... fails here", which
+  was false for the tail. The output now carries a `not_proven` note saying
+  `chain_verified: true` is self-consistency, never completeness, and pointing at
+  the off-box head comparison that covers the gap; the docstrings and §4.4 now
+  name tail deletion and never-recorded actions explicitly; and two new tests pin
+  the blind spot itself (tail truncation verifies clean, head moves) so the stated
+  limit cannot silently drift from the code in either direction.
 - **Every PREMIS append is serialized, and an archive never attests history it could
   not read** (ADR 0018). `ledger._filelock` says a whole-document read-modify-write
   loses concurrent writes and calls a lost withdrawal "the worst class of bug this
