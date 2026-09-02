@@ -67,10 +67,10 @@ their committed evidence; a roadmap sentence alone is not treated as a waiver.
 
 | Metric | Value | Measured by | Date |
 |---|---|---|---|
-| Test suite | 1324 passed | `make test` | 2026-08-27 |
-| Branch coverage | 89.25% (floor: 88%, `fail_under` in `pyproject.toml`); 8 security-core modules each gated on their own measured value by `tools/check_coverage_floors.py`, no pooled figure remaining: `grants.py` 100%, `policy.py` 100%, `redaction.py` 100%, `consent.py` 97%, `dualcontrol.py` 100%, `review.py` 97%, `moderate.py` 90%, `tombstones.py` 89% | `make cov` | 2026-08-27 |
+| Test suite | 1375 passed | `make test` | 2026-09-01 |
+| Branch coverage | 89.74% (floor: 88%, `fail_under` in `pyproject.toml`); 8 security-core modules each gated on their own measured value by `tools/check_coverage_floors.py`, no pooled figure remaining: `grants.py` 100%, `policy.py` 100%, `redaction.py` 100%, `consent.py` 97%, `dualcontrol.py` 100%, `review.py` 97%, `moderate.py` 90%, `tombstones.py` 89% | `make cov` | 2026-09-01 |
 | Tier-1 mechanical score | 31/31 after remediation | `portfolio-standards/automation/conformance_check.py --repo . --strict` | 2026-07-11 |
-| `make verify` portable gate | Green: lint, strict types, 1324 tests, i18n, structural accessibility, dependency/secret scans, Semgrep SAST, truthfulness, suppression hygiene, zizmor | `make verify` | 2026-08-27 |
+| `make verify` portable gate | Green: lint, strict types, 1375 tests, i18n, structural accessibility, ACR check, dependency/secret scans, Semgrep SAST (when the binary is present), truthfulness, suppression hygiene, zizmor | `make verify` | 2026-09-01 |
 | Real-corpus invariants (network; not a merge gate) | 679/679 payloads with exactly one identification event about them; 0 contradictions; 0 success-while-unidentified; 0 record/log divergence; run matches the committed evidence | `make real-corpus` against [`docs/data/real-corpus/`](data/real-corpus/) | 2026-08-21 |
 | Mutation score, safety core (advisory, not a gate) | 76.5% (406/531 killed) across `access/`, `identity.py`, `fixity.py` | `make mutation` (mutmut); see `docs/MUTATION-TESTING.md` | 2026-07-07 |
 

@@ -23,11 +23,8 @@ tracked below under "Branch protection."
 3. **Tests + coverage** — full suite green on Python 3.12 (the floor per
    CQ-01 and, for now, the ceiling — the CI matrix is a single interpreter);
    the 88% branch-coverage floor (`[tool.coverage.report] fail_under` and
-   `[tool.coverage.run] branch = true` in `pyproject.toml`) plus a genuine
-   per-module floor for every security-core module, each measured on its own by
-   `tools/check_coverage_floors.py` against `[tool.ledger.coverage_floors]` in
-   `pyproject.toml` (this line described a per-module floor for months while the
-   implementation was a single pooled `--fail-under`); cyclomatic complexity
+   `[tool.coverage.run] branch = true` in `pyproject.toml`) plus a ≥ 95%
+   per-module floor on `access/`/consent/dual-control; cyclomatic complexity
    ≤ 10 (`ruff` `C901`, `max-complexity = 10`) — pre-existing functions over
    the limit are waived with `# noqa: C901` comments that link issue #83
    pending a deliberate split (CQ-05). CQ-08's 90% published-library floor
@@ -97,17 +94,19 @@ so "green locally" is not read as more than it is:
 
 - **Coverage floors are CI-only.** `verify` calls `test` (plain `pytest`), not
   `cov`, because the coverage run roughly doubles the suite's wall time; CI's
-  `gate` job runs `pytest --cov` plus `tools/check_coverage_floors.py`.
+  `gate` job runs `pytest --cov` plus the scoped `--fail-under=95` re-report.
   Run `make cov` before relying on either floor locally.
 - **`osv` and `secret-scan` no-op when the binary is absent** and say so; CI
   installs pinned copies and is the gate of record for both.
 - **`perf` and `container` are excluded entirely** — see each target's comment.
 
 Stages not yet CI-gated (most of 9) are not silently skipped — each has a
-`docs/ROADMAP.md` row naming the gap and the item that closes it. Two stages
-*are* CI-gated but not merge-blocking: Semgrep (stage 4) and the OSV lockfile
-scan run on every pull request yet are absent from the required-check set in
-`.github/rulesets/main.json`.
+`docs/ROADMAP.md` row naming the gap and the item that closes it. Semgrep
+(stage 4) and the OSV lockfile scan are no longer among them: the 2026-08-21
+ruleset pass added both to the required-check set in
+`.github/rulesets/main.json`, so a red run on either blocks a merge. Neither
+has a local target in `make verify`, which is a separate gap — see the
+parity note on `verify` in the `Makefile`.
 
 ## REVIEW-GATE (human sign-off, committed as PR attestation + artifact)
 
@@ -146,23 +145,23 @@ exists and enforces this section on every `v*` tag:
 
 An active `protect-main` GitHub ruleset blocks deletion and force-push and
 requires thirteen named CI checks. It is mirrored in-tree at
-`.github/rulesets/main.json` so the posture is reviewable in a diff; the gaps
-are itemized in `.github/rulesets/README.md`.
+`.github/rulesets/main.json` so the posture is reviewable in a diff, and the
+reasoning is in `.github/rulesets/README.md`. The 2026-08-21 pass (#79) closed
+most of what was open here: a `pull_request` rule, `required_signatures`,
+`required_linear_history`, `dismiss_stale_reviews_on_push`, and
+`strict_required_status_checks_policy: true` are all enforced live, and the
+required-check set grew from eleven contexts to thirteen with `OSV lockfile
+scan (uv.lock)` and `Semgrep SAST (p/ci)`.
 
-The 2026-08-21 ruleset pass (#79) closed what this section used to list as
-outstanding. The ruleset now holds the CI-CD-STANDARD §5.1 solo-maintainer
-profile: a `pull_request` rule (0 required approvals — the sole code owner
-cannot self-approve, and §5.1 permits `require_code_owner_review: false` for
-exactly that reason), `required_signatures`, `required_linear_history`, and
-`strict_required_status_checks_policy: true`. `OSV lockfile scan (uv.lock)` and
-`Semgrep SAST (p/ci)` are in the required set and block a merge. The full
-portfolio posture, for reference, is:
-PR required (≥1 approval, ≥2 for
-changes to `src/ledger/access/` or `identity.py`), last-pusher cannot
-self-approve, stale reviews dismissed on new pushes, CODEOWNERS review
-required on the routed paths above, required status checks in strict mode
-covering every AUTO-GATE job that exists today, signed commits, linear
-history, no force-push, no admin bypass on `main`.
+Two items of the target posture are deliberately not held, and one is still
+open. `required_approving_review_count` is 0 and `require_code_owner_review`
+is `false`, because the sole code owner cannot approve their own pull request
+and requiring an approval nobody can give would make the repository
+unmergeable by its only contributor — `CI-CD-STANDARD` §5.1 permits exactly
+this for a solo-maintainer repo, and the choice is dated and reasoned in
+`.github/rulesets/README.md` rather than silently absent. Still open: ≥2
+approvals for changes to `src/ledger/access/` or `identity.py`, and no admin
+bypass on `main`, both of which need a second maintainer to be meaningful.
 
 ## Delivery-health signal
 

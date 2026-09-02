@@ -230,9 +230,10 @@ deniable. **Autonomy** — a contributor controls their own disclosure and can r
 enforces their decision, not a steward's preference. **Vulnerability** management — pip-audit,
 gitleaks, CodeQL in CI, blocking with no muted gates; dependencies install from the committed,
 hash-pinned `uv.lock` (`uv sync --locked` fails rather than silently re-resolving), and an OSV
-scan runs over that lockfile in CI — fail-closed as a job, but not yet one of the required status
-checks in [`.github/rulesets/main.json`](.github/rulesets/main.json), so a red OSV run does not
-block a merge today. **Accountability** and
+scan runs over that lockfile in CI — fail-closed as a job and, since the 2026-08-21 ruleset pass,
+one of the required status checks in
+[`.github/rulesets/main.json`](.github/rulesets/main.json), so a red OSV run blocks a merge.
+**Accountability** and
 **auditability** — every preservation and access event is a PREMIS record with agent and outcome;
 audit-as-artifact documents committed today are [`docs/THREAT-MODEL.md`](docs/THREAT-MODEL.md), the
 [Accessibility Conformance Report](docs/accessibility/ACR.md), the
@@ -381,7 +382,11 @@ DPIA status) live in [`docs/ROADMAP.md`](docs/ROADMAP.md) and
 [`docs/RESPONSIBLE-TECH-AUDITS.md`](docs/RESPONSIBLE-TECH-AUDITS.md), not here. The applicability
 reasoning and the N/A decisions below are recorded in
 [`docs/adr/0009-expand-standards-applicability.md`](docs/adr/0009-expand-standards-applicability.md),
-which supersedes ADR 0006.
+which supersedes ADR 0006. That ADR is dated 2026-07-11 and says "all thirteen current
+standards", which was the count on the day it was accepted; the portfolio has defined
+more since, and the table below is the current declaration. An ADR is immutable once
+accepted except in its status (ADR 0001), so the count stays as written there and this
+table, not that sentence, is what to read for what applies today.
 
 Last verified: 2026-07-11 · Recheck cadence: per standards release and before
 each ledger release.

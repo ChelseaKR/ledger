@@ -1236,13 +1236,16 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         # steward needs to be told the review queue is unreadable, not handed a 500
         # that says nothing, and above all not shown an empty console that reads as
         # "nothing is waiting" while contributors wait (#154, failure transparency).
+        # ``None`` is "the queue could not be read", which is a different fact from
+        # ``[]`` ("nothing is waiting"). Keeping them apart in the binding itself,
+        # rather than in a second flag beside an empty list nothing ever reads, is
+        # what stops an unreadable queue from being rendered as an empty one.
+        pending: list[review.PendingSubmission] | None
         try:
             pending = self._submission_queue().pending()
-            unreadable = False
         except LedgerError:
-            pending = []
-            unreadable = True
-        if unreadable:
+            pending = None
+        if pending is None:
             submissions_html = f"    <p>{_esc(i18n.t(lang, 'sw_queue_unreadable'))}</p>"
         elif pending:
             sub_rows = []
