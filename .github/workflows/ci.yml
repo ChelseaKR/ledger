@@ -32,7 +32,7 @@ jobs:
       # derived from the endpoints this job was OBSERVED calling in completed
       # audit-mode runs, not from a guess. Needs:
       # checkout, uv, and the locked PyPI graph.
-      - uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c  # v2.21.0
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1  # v2.21.1
         with:
           egress-policy: block
           allowed-endpoints: >
@@ -100,7 +100,7 @@ jobs:
       # audit-mode runs, not from a guess. Needs:
       # as `gate`, plus the Ubuntu/Microsoft/Google apt sources `apt-get update` touches to
       # install gettext.
-      - uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c  # v2.21.0
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1  # v2.21.1
         with:
           egress-policy: block
           allowed-endpoints: >
@@ -147,7 +147,7 @@ jobs:
       # derived from the endpoints this job was OBSERVED calling in completed
       # audit-mode runs, not from a guess. Needs:
       # checkout, uv, and the locked PyPI graph.
-      - uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c  # v2.21.0
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1  # v2.21.1
         with:
           egress-policy: block
           allowed-endpoints: >
@@ -183,7 +183,7 @@ jobs:
       # derived from the endpoints this job was OBSERVED calling in completed
       # audit-mode runs, not from a guess. Needs:
       # checkout, uv, and the locked PyPI graph.
-      - uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c  # v2.21.0
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1  # v2.21.1
         with:
           egress-policy: block
           allowed-endpoints: >
@@ -230,7 +230,7 @@ jobs:
       # the widest job in the repo: pip, npm, the apt sources pulled in by `playwright
       # install --with-deps`, and the Chromium build itself (cdn.playwright.dev + the
       # Microsoft/Google CDNs it redirects to).
-      - uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c  # v2.21.0
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1  # v2.21.1
         with:
           egress-policy: block
           allowed-endpoints: >
@@ -297,7 +297,7 @@ jobs:
       # derived from the endpoints this job was OBSERVED calling in completed
       # audit-mode runs, not from a guess. Needs:
       # checkout, uv, and the locked PyPI graph.
-      - uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c  # v2.21.0
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1  # v2.21.1
         with:
           egress-policy: block
           allowed-endpoints: >
@@ -337,7 +337,7 @@ jobs:
       # audit-mode runs, not from a guess. Needs:
       # checkout, uv, the locked PyPI graph, and the pinned gitleaks release tarball (a
       # github.com release download, already in the base set).
-      - uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c  # v2.21.0
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1  # v2.21.1
         with:
           egress-policy: block
           allowed-endpoints: >
@@ -384,7 +384,7 @@ jobs:
       # derived from the endpoints this job was OBSERVED calling in completed
       # audit-mode runs, not from a guess. Needs:
       # checkout plus the OSV advisory API the scanner queries.
-      - uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c  # v2.21.0
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1  # v2.21.1
         with:
           egress-policy: block
           allowed-endpoints: >
@@ -420,7 +420,7 @@ jobs:
       # derived from the endpoints this job was OBSERVED calling in completed
       # audit-mode runs, not from a guess. Needs:
       # checkout, uv, and the locked PyPI graph.
-      - uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c  # v2.21.0
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1  # v2.21.1
         with:
           egress-policy: block
           allowed-endpoints: >
@@ -471,7 +471,7 @@ jobs:
       # are Trivy's DEFAULT DB registry — observed runs used mirror.gcr.io, but the mirror
       # is a runner-image convenience that can miss, and a blocked fallback would fail the
       # gate for a network reason.
-      - uses: step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c  # v2.21.0
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1  # v2.21.1
         with:
           egress-policy: block
           allowed-endpoints: >
