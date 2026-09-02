@@ -60,6 +60,26 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   which this account's Bedrock access answers with a 403 despite the entitlement API
   reporting AUTHORIZED, to `global.anthropic.claude-sonnet-4-6`, the model the
   committed evidence was actually measured on — with a test comparing the two.
+- **The repository half of the release path is now gated** (#80, REL-03/08/13).
+  `release.yml` has never run — there are no tags and no releases on this repo — so
+  everything it depends on was unexercised, and the first time any of it would be
+  tested for real was the moment a version tag became public. That is the worst
+  possible moment: a PyPI version number cannot be reused, so a wrong value there is
+  a burnt release rather than a retry.
+
+  `tests/test_release_readiness.py` now checks, on every build, the parts that can be
+  checked from the tree: that `.github/allowed_signers` holds exactly the owner's
+  Ed25519 key and no second signer (with eight deliberately-broken fixtures proving
+  each rule can fail); that `release.yml` really points `git verify-tag` at that file,
+  with `gpg.format ssh` and an annotated-tag-object check; that the publish job is
+  genuinely tokenless and carries its `pypi` environment scoping, without which PyPI
+  accepts a token minted by *any* workflow in the repository; and that the five values
+  a human has to type into pypi.org are the ones the workflow actually declares.
+
+  `docs/RELEASE-0.1.0.md` now writes those owner-only steps out in full, in order,
+  with the exact field values — so the remaining work is a form to fill in rather
+  than a thing to rediscover. Nothing here creates, signs or pushes a tag, and
+  nothing publishes.
 - **Two documents still said `make verify` reached seven of thirteen contexts.**
   The `semgrep` target landed with #163, which moved the count to eight; the
   `UNCOVERED` list in `tools/check_claims.py` and its published copy in
