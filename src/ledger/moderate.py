@@ -354,8 +354,13 @@ class ModerationLogStore:
     def verify_chain(self) -> ChainVerification:
         """Recompute the persisted log's chain and compare it to its stored links.
 
-        An entry edited or removed on disk by someone with raw filesystem access --
-        the residual `docs/THREAT-MODEL.md` §4.4 names -- fails here.
+        An entry edited or removed *mid-chain* on disk by someone with raw
+        filesystem access -- the residual `docs/THREAT-MODEL.md` §4.4 names --
+        fails here. Entries removed from the tail do not: a consistently
+        truncated log is a shorter valid chain, indistinguishable locally from
+        one that simply stopped there. That case, like a wholesale rewrite,
+        is caught only by comparing :attr:`~ledger.chain.ChainVerification.head`
+        against an off-box replica (FIX-06).
         """
         return self.load().verify_chain()
 

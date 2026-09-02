@@ -19,6 +19,7 @@ entry cannot quietly delete its regression test with it.
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -28,11 +29,15 @@ from tools.check_claims import (
     CLAIMS,
     UNCOVERED,
     ConfigNumber,
+    ContextsAccountedFor,
     ForbiddenString,
+    MirroredString,
     PathExists,
     ReferenceExists,
     RequiredString,
     RulesetContexts,
+    RulesetCount,
+    RulesetRequires,
     StatedCount,
 )
 
@@ -313,7 +318,11 @@ def test_a_missing_file_fails_rather_than_vacuously_passing(
             | StatedCount
             | PathExists
             | ConfigNumber
-            | RulesetContexts,
+            | RulesetContexts
+            | RulesetRequires
+            | RulesetCount
+            | ContextsAccountedFor
+            | MirroredString,
         ):
             assert entry.check() is not None, f"{entry.name} passed against an empty tree"
 
@@ -539,6 +548,219 @@ def test_the_committed_mirror_matches_the_required_contexts_the_workflows_declar
     contexts = entry.contexts()
     assert isinstance(contexts, list), contexts
     assert len(contexts) == 13
+    assert entry.check() is None
+
+
+# --- the required-check set, in the other three directions -----------------------
+#
+# `ruleset_contexts` above asks whether every required context names a real job. These
+# ask what the *documentation* says about that set, which is where #151's correction
+# actually drifted: the README said the OSV lockfile scan did not block a merge, in a
+# paragraph 164 lines above its own standards table saying all thirteen contexts did.
+
+
+_MIRROR_13 = json.dumps(
+    {
+        "name": "protect-main",
+        "rules": [
+            {
+                "type": "required_status_checks",
+                "parameters": {
+                    "required_status_checks": [{"context": f"job {n}"} for n in range(12)]
+                    + [{"context": "OSV lockfile scan (uv.lock)"}]
+                },
+            }
+        ],
+    }
+)
+
+
+def test_a_context_the_docs_call_blocking_must_be_in_the_required_set(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The README's OSV sentence, in the shape that made it false for five days."""
+    entry = claim("osv-and-semgrep-are-required-contexts")
+    assert isinstance(entry, RulesetRequires)
+    fake_repo(tmp_path, monkeypatch, {".github/rulesets/main.json": _MIRROR_13})
+    problem = entry.check()
+    assert problem is not None
+    assert "Semgrep SAST (p/ci)" in problem
+    assert "OSV lockfile scan (uv.lock)" not in problem, "the one that IS required"
+
+
+def test_a_stated_required_check_count_that_drifted_from_the_mirror_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """DEFINITION_OF_DONE.md said eleven for five days after the set grew to thirteen."""
+    entry = claim("required-check-count-in-the-definition-of-done")
+    assert isinstance(entry, RulesetCount)
+    fake_repo(
+        tmp_path,
+        monkeypatch,
+        {
+            ".github/rulesets/main.json": _MIRROR_13,
+            "DEFINITION_OF_DONE.md": "The ruleset requires eleven named CI checks.\n",
+        },
+    )
+    problem = entry.check()
+    assert problem is not None
+    assert "states eleven" in problem and "requires 13 contexts" in problem
+
+
+def test_a_required_check_count_that_stopped_being_stated_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Rewording the sentence away must go red, not quietly stop verifying it."""
+    entry = claim("required-check-count-in-the-definition-of-done")
+    assert isinstance(entry, RulesetCount)
+    fake_repo(
+        tmp_path,
+        monkeypatch,
+        {
+            ".github/rulesets/main.json": _MIRROR_13,
+            "DEFINITION_OF_DONE.md": "The ruleset requires some CI checks.\n",
+        },
+    )
+    problem = entry.check()
+    assert problem is not None
+    assert "no longer states the size of the required-check set" in problem
+
+
+def test_a_required_check_count_that_matches_the_mirror_passes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    entry = claim("required-check-count-in-the-definition-of-done")
+    assert isinstance(entry, RulesetCount)
+    fake_repo(
+        tmp_path,
+        monkeypatch,
+        {
+            ".github/rulesets/main.json": _MIRROR_13,
+            "DEFINITION_OF_DONE.md": "The ruleset requires thirteen named CI checks.\n",
+        },
+    )
+    assert entry.check() is None
+
+
+def test_a_new_required_context_the_parity_note_ignores_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The Makefile claimed byte-for-byte parity while six contexts had no local target.
+
+    Adding a fourteenth required check must not be possible while `verify`'s comment
+    keeps its old shape — silence there is what let the claim stay wrong.
+    """
+    entry = claim("verify-accounts-for-every-required-context")
+    assert isinstance(entry, ContextsAccountedFor)
+    fake_repo(
+        tmp_path,
+        monkeypatch,
+        {
+            ".github/rulesets/main.json": _MIRROR_13,
+            "Makefile": "# " + "\n# ".join(f"job {n}" for n in range(12)) + "\nverify:\n",
+        },
+    )
+    problem = entry.check()
+    assert problem is not None
+    assert "OSV lockfile scan (uv.lock)" in problem
+
+
+def test_a_parity_note_naming_every_required_context_passes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    entry = claim("verify-accounts-for-every-required-context")
+    assert isinstance(entry, ContextsAccountedFor)
+    named = [f"job {n}" for n in range(12)] + ["OSV lockfile scan (uv.lock)"]
+    fake_repo(
+        tmp_path,
+        monkeypatch,
+        {
+            ".github/rulesets/main.json": _MIRROR_13,
+            "Makefile": "# " + "\n# ".join(named) + "\nverify:\n",
+        },
+    )
+    assert entry.check() is None
+
+
+# --- mirrored_string: the version lives in one file, not two --------------------
+
+_PYPROJECT_VERSION = '[project]\nname = "ledger-archive"\nversion = "0.1.0.dev0"\n'
+
+
+def citation_claim() -> MirroredString:
+    entry = claim("citation-version-mirrors-pyproject")
+    assert isinstance(entry, MirroredString)
+    return entry
+
+
+def test_a_citation_version_that_drifted_from_pyproject_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """CITATION.cff said 0.1.0 while pyproject said 0.1.0.dev0 and no tag existed."""
+    entry = citation_claim()
+    fake_repo(
+        tmp_path,
+        monkeypatch,
+        {"pyproject.toml": _PYPROJECT_VERSION, "CITATION.cff": 'version: "0.1.0"\n'},
+    )
+    problem = entry.check()
+    assert problem is not None
+    assert "'0.1.0'" in problem and "0.1.0.dev0" in problem
+
+
+def test_a_citation_version_that_mirrors_pyproject_passes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    entry = citation_claim()
+    fake_repo(
+        tmp_path,
+        monkeypatch,
+        {"pyproject.toml": _PYPROJECT_VERSION, "CITATION.cff": 'version: "0.1.0.dev0"\n'},
+    )
+    assert entry.check() is None
+
+
+def test_a_citation_that_stopped_stating_a_version_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    entry = citation_claim()
+    fake_repo(
+        tmp_path,
+        monkeypatch,
+        {"pyproject.toml": _PYPROJECT_VERSION, "CITATION.cff": "title: ledger\n"},
+    )
+    problem = entry.check()
+    assert problem is not None
+    assert "no longer states the value" in problem
+
+
+def test_an_unreadable_pyproject_is_not_read_as_agreement(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    entry = citation_claim()
+    fake_repo(
+        tmp_path,
+        monkeypatch,
+        {"pyproject.toml": "[project]\n", "CITATION.cff": 'version: "0.1.0.dev0"\n'},
+    )
+    problem = entry.check()
+    assert problem is not None
+    assert "cannot read" in problem
+
+
+def test_the_release_date_is_absent_until_a_tag_exists() -> None:
+    """The repository as it stands: `git tag` returns nothing, so nothing may claim one.
+
+    CITATION.cff is the machine-readable file citation tooling reads, and it recorded
+    `date-released: 2026-06-16` — the day CHANGELOG.md says a 0.1.0 candidate was
+    prepared and never tagged, and which docs/RELEASE-0.1.0.md still lists as an
+    unchecked box.
+    """
+    text = (REPO_ROOT / "CITATION.cff").read_text(encoding="utf-8")
+    assert "\ndate-released:" not in text
+    assert "no `git tag` exists" in text, "the absence has to say why it is absent"
+    entry = claim("citation-claims-no-release-date")
+    assert isinstance(entry, ForbiddenString)
     assert entry.check() is None
 
 

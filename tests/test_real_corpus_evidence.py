@@ -204,7 +204,38 @@ def test_the_reports_evidence_table_matches_the_evidence(evidence: dict[str, Any
         assert int(stated) == _resolve(evidence, key), f"`{key}` states {stated}"
 
 
-def test_the_reports_prose_matches_the_evidence(evidence: dict[str, Any]) -> None:
+_BASIS_ROW = re.compile(r"^\| \**`([a-z\-]+)`\** \| (.+?) \| (.+?) \| (.+?) \|$", re.M)
+_CELL = re.compile(r"\**([\d]+) \(([\d.]+)%\)\**")
+
+
+def _basis_columns(report: str, files: int) -> list[dict[str, int]]:
+    """The three columns of the identification-basis table, as ``{basis: count}`` each.
+
+    A cell is ``N (P.P%)``, or an em dash where the basis did not exist in that run.
+    Anything else fails rather than being skipped: a cell the parser quietly cannot read
+    is a cell this test quietly stops checking, which is the whole failure this module
+    exists to prevent. The percentage is re-derived here, against ``files`` from the
+    evidence, so it cannot be a plausible number typed beside the count.
+    """
+    rows = _BASIS_ROW.findall(report)
+    assert rows, "the report no longer states the identification-basis table"
+    columns: list[dict[str, int]] = [{}, {}, {}]
+    for basis, *cells in rows:
+        for index, raw in enumerate(cells):
+            cell = raw.strip()
+            if cell.strip("*") == "—":
+                continue
+            parsed = _CELL.fullmatch(cell)
+            assert parsed is not None, f"`{basis}` column {index}: unreadable cell {raw!r}"
+            count, pct = int(parsed.group(1)), float(parsed.group(2))
+            assert pct == round(count / files * 100, 1), f"`{basis}` column {index}: {pct}%"
+            columns[index][basis] = count
+    return columns
+
+
+def test_the_reports_prose_matches_the_evidence(
+    evidence: dict[str, Any], before: dict[str, Any]
+) -> None:
     agg, premis = evidence["aggregates"], evidence["premis"]
     files = agg["files"]
     unknown = agg["by_basis"]["unknown"]
@@ -218,21 +249,33 @@ def test_the_reports_prose_matches_the_evidence(evidence: dict[str, Any]) -> Non
         evidence["bags"]["payloads_proven"],
         files,
     ]
-    # The "now" column of the basis table, with the percentages it states.
-    for basis, cell in re.findall(
-        r"^\| \**`([a-z\-]+)`\** \| [^|]+ \| [^|]+ \| \**([\d.]+ \([\d.]+%\))\** \|$",
-        report,
-        flags=re.M,
-    ):
-        parsed = re.fullmatch(r"([\d.]+) \(([\d.]+)%\)", cell)
-        assert parsed is not None, cell
-        count, pct = parsed.groups()
-        assert int(count) == agg["by_basis"][basis], basis
-        assert float(pct) == round(agg["by_basis"][basis] / files * 100, 1), basis
-    at_risk = re.search(r"\| flagged `at_risk` \| [^|]+ \| \*\*(\d+) \(([\d.]+)%\)\*\* \|", report)
-    assert at_risk is not None, "the report no longer states the at-risk count"
-    assert int(at_risk.group(1)) == agg["at_risk"]
-    assert float(at_risk.group(2)) == round(agg["at_risk"] / files * 100, 1)
+    # The basis table, all three columns. The "now" column is the evidence's own
+    # by_basis; the two before-columns are earlier runs with no committed evidence file
+    # of their own, and used to be matched as `[^|]+` wildcards — a claim that no figure
+    # is typed by hand, standing on a gate that would accept any text at all. They are
+    # now derived from the evidence the only two ways they can be: every column counts
+    # the same 679 files, and every percentage is that column's count over that total.
+    columns = _basis_columns(report, files)
+    assert set(columns[2]) == set(agg["by_basis"]), "the now-column is the measured basis set"
+    for index, column in enumerate(columns):
+        assert sum(column.values()) == files, (
+            f"basis column {index} sums to {sum(column.values())}, not the {files} files "
+            "the evidence counts — every file has exactly one basis in every run"
+        )
+    for basis, count in columns[2].items():
+        assert count == agg["by_basis"][basis], basis
+    # `unknown` after fixes 1-6 is the one before-cell a committed measurement covers:
+    # ...before-adr-0012.json was measured on ledger dc70b05, the commit before #148,
+    # which is exactly that column.
+    assert columns[1]["unknown"] == before["premis"]["outcomes"]["unidentified"]
+    at_risk = re.search(
+        r"\| flagged `at_risk` \| (\d+) \(([\d.]+)%\) \| \*\*(\d+) \(([\d.]+)%\)\*\* \|", report
+    )
+    assert at_risk is not None, "the report no longer states the at-risk counts"
+    before_count, before_pct, now_count, now_pct = at_risk.groups()
+    assert int(now_count) == agg["at_risk"]
+    assert float(now_pct) == round(agg["at_risk"] / files * 100, 1)
+    assert float(before_pct) == round(int(before_count) / files * 100, 1), "before-column %"
     assert _stated(REPORT, r"\| reported `unassessable` \| — \| (\d+) \(4\.9%\) \|") == [
         agg["unassessable"]
     ]
@@ -245,6 +288,19 @@ def test_the_reports_prose_matches_the_evidence(evidence: dict[str, Any]) -> Non
         agg["obsolete"],
         round(agg["obsolete_flagged"] / agg["obsolete"] * 100),
     ]
+    # The corpus-run count of files nothing could name is stated in four places (§1's
+    # prose, both effect tables, and the README). It has no evidence file of its own —
+    # it predates the convention — so the four are bound to each other and to the
+    # arithmetic above, rather than each being a literal a reader has to trust.
+    corpus_run_unknown = columns[0]["unknown"]
+    assert _stated(REPORT, r"Of (\d+) real files, \*\*(\d+) \([\d.]+%\) could not be") == [
+        files,
+        corpus_run_unknown,
+    ]
+    assert _stated(
+        REPORT,
+        r"\| identification events logged `success` over an unidentified file \| (\d+) \| \*\*(\d+)\*\* \|",
+    ) == [corpus_run_unknown, premis["success_while_unidentified"]]
     assert _stated(
         REPORT,
         r"payloads whose identification event is about \*that payload\* \(ADR 0012\) \| 0 / 679 \| \*\*(\d+) / (\d+)\*\*",
@@ -291,10 +347,15 @@ def test_readme_and_changelog_state_the_evidence_numbers(evidence: dict[str, Any
     files = evidence["aggregates"]["files"]
     premis = evidence["premis"]
     assert _stated(README, r"ingest path over (\d+) real files") == [files]
+    # This used to pin `156` as a literal inside the regex, so the gate re-derived only
+    # the 679 beside it and the headline figure of the whole write-up was hand-typed in
+    # the one place a reader is most likely to quote it. It is now read out of the
+    # report's own basis table, whose columns are checked to count `files` and to carry
+    # percentages consistent with them.
     assert _stated(
         README,
-        r"confident success over material the pipeline had entirely\nfailed to understand — 156 of (\d+) files",
-    ) == [files]
+        r"confident success over material the pipeline had entirely\nfailed to understand — (\d+) of (\d+) files",
+    ) == [_basis_columns(_read(REPORT), files)[0]["unknown"], files]
     assert _stated(CHANGELOG, r"After: \*\*(\d+) of (\d+)\*\*, 0,\n  and 0\.") == [
         premis["payloads_checked"] - premis["event_record_disagreements"],
         premis["payloads_checked"],
