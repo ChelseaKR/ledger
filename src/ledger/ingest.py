@@ -1019,6 +1019,7 @@ class Archive:
                             detail="bag resealed after lawful manifest update: "
                             + "; ".join(transitions),
                             linked_object=record.record_id,
+                            linked_object_type=OBJECT_TYPE_RECORD,
                             event_datetime=event.event_datetime,
                         )
                     )

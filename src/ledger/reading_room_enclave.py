@@ -64,7 +64,13 @@ from ledger.dualcontrol import ActionProposal, ProposalStore
 from ledger.errors import AggregationRefused, LedgerError
 from ledger.ingest import Archive
 from ledger.metadata.premis import append_event
-from ledger.models import PremisEvent, PremisEventType, Record, now_iso
+from ledger.models import (
+    OBJECT_TYPE_PROPOSAL,
+    PremisEvent,
+    PremisEventType,
+    Record,
+    now_iso,
+)
 
 __all__ = [
     "AGGREGATE_QUERY_ACTION",
@@ -457,6 +463,7 @@ class ReadingRoomEnclave:
                 outcome=outcome,
                 detail=detail,
                 linked_object=proposal_id,
+                linked_object_type=OBJECT_TYPE_PROPOSAL,
                 event_datetime=now,
             ),
         )

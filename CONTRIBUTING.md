@@ -92,11 +92,13 @@ A change merges when the full gate is green. Reproduce it locally with:
 make verify
 ```
 
-`make verify` runs **lint + type + test + i18n + accessibility + audit + osv + secret-scan +
-claims + hygiene + workflow-lint** — the *portable subset* of CI's required checks, on the same
-pinned toolchain. It reproduces seven of the thirteen contexts the live ruleset requires; CodeQL
-(twice), Semgrep, Trivy, the performance budgets and the browser axe run have no local target, so
-green here is a necessary condition for green in CI and not a sufficient one. The `verify` target's
+`make verify` runs **lint + type + test + i18n + accessibility + acr-check + audit + osv +
+semgrep + secret-scan + claims + hygiene + workflow-lint** — the *portable subset* of CI's
+required checks, on the same pinned toolchain. It reproduces eight of the thirteen contexts the
+live ruleset requires; CodeQL (twice), Trivy, the performance budgets and the browser axe run
+have no local target, so green here is a necessary condition for green in CI and not a
+sufficient one. `semgrep` is a local mirror only when the binary is present — semgrep is
+deliberately outside the locked graph, so CI's `Semgrep SAST (p/ci)` stays the gate of record. The `verify` target's
 comment in the `Makefile` lists all thirteen and says which is which, and `make claims` fails the
 build if a context in `.github/rulesets/main.json` is not named there (CI-CD-STANDARD CICD-27:
 local `make verify` and the CI required-check set are kept in parity by hand; if you add a CI job,
@@ -167,16 +169,16 @@ Useful extras that are run individually above but are also handy standalone:
 
 ```sh
 make cov            # tests with a coverage report: the 88% branch-coverage floor
-                     # ([tool.coverage.report] fail_under in pyproject.toml), the scoped
-                     # 95% floor on access/consent/dual-control, and a separate 90% floor
-                     # on moderate.py. verify's `test` target runs pytest without coverage
-                     # for speed, so run this before relying on any floor locally.
-                     # Each scoped floor gates the TOTAL row of its own report, not each
-                     # module in it: the 95% line passes while grants.py (92%) and
-                     # consent.py (91%) sit under it. A module added to a scoped list
-                     # therefore inherits its neighbours' average, which is why
-                     # moderate.py is reported on its own rather than appended to the
-                     # existing one. Give a newly-floored module its own line.
+                     # ([tool.coverage.report] fail_under in pyproject.toml) plus a
+                     # per-module floor for every security-core module, checked by
+                     # tools/check_coverage_floors.py against the table in
+                     # pyproject.toml ([tool.ledger.coverage_floors]). verify's `test`
+                     # target runs pytest without coverage for speed, so run this
+                     # before relying on any floor locally.
+                     # Adding a module under [tool.ledger].security_core without a
+                     # floor fails the gate, as does a floor naming a module that no
+                     # longer exists. Each floor is a ratchet: raise it when the number
+                     # rises, never lower it to make a run pass.
 make acr            # regenerate the Accessibility Conformance Report
 ```
 

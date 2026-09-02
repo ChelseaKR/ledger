@@ -78,11 +78,13 @@ jobs:
         run: uv run mypy
       - name: Test with coverage
         run: uv run pytest --cov --cov-report=term-missing --cov-report=xml
-      # Per-module floor (CODE-QUALITY-STANDARD, security/crypto-critical paths):
-      # the access-policy, consent, and dual-control modules must hold >=95%
-      # branch coverage, above the 85% baseline. Mirrors `make cov`.
-      - name: Per-module coverage floor (access/consent/dual-control >=95%)
-        run: uv run coverage report --include="src/ledger/access/*,src/ledger/consent.py,src/ledger/dualcontrol.py" --fail-under=95
+      # Per-module floors (CODE-QUALITY-STANDARD CQ-08). Replaced a pooled
+      # `coverage report --include=<four modules> --fail-under=95`: that flag gates a
+      # report's TOTAL row, not each module in it, so the line passed at 95% while
+      # `grants.py` sat at 92% and `consent.py` at 91%. The gate below measures each
+      # module on its own and reports every violation. Mirrors `make cov`.
+      - name: Per-module coverage floors
+        run: uv run python tools/check_coverage_floors.py
       - name: Upload coverage
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:

@@ -191,3 +191,40 @@ only_mutate = [
 # markers keeps the kill-oracle selection self-maintaining as tests are added or
 # moved, instead of a hand-enumerated file list that silently drifts.
 pytest_add_cli_args_test_selection = ["-m", "disclosure or preservation"]
+
+# --- per-module coverage floors (MP-04) -------------------------------------
+#
+# `coverage report --fail-under` gates the TOTAL row of a report, not each module
+# in it. A pooled scope therefore lets one module pass on its neighbours' score:
+# the Makefile gated `access/*` + `consent.py` + `dualcontrol.py` at 95% for weeks
+# while `grants.py` sat at 92% and `consent.py` at 91%, held up by three modules at
+# 100%. `tools/check_coverage_floors.py` replaces that pooled line: it measures
+# each module on its own, reports every violation rather than stopping at the
+# first, and refuses two shapes of drift the pooled report could not see.
+#
+# A floor is a ratchet, set where the suite ALREADY measures (see
+# [tool.coverage.report] above). Raise one when the number rises; never lower one
+# to make a run pass.
+[tool.ledger.coverage_floors]
+"src/ledger/access/grants.py" = 95
+"src/ledger/access/policy.py" = 100
+"src/ledger/access/redaction.py" = 100
+"src/ledger/consent.py" = 95
+"src/ledger/dualcontrol.py" = 100
+"src/ledger/moderate.py" = 90
+"src/ledger/review.py" = 97
+"src/ledger/tombstones.py" = 89
+
+# Every module matching one of these globs MUST appear above. This is the half of
+# the gate the pooled `--include` never had: adding a safety-critical module and
+# forgetting to floor it is now a build failure rather than a silent omission, and
+# a floor naming a module that no longer exists is a dead config key, also caught.
+[tool.ledger]
+security_core = [
+    "src/ledger/access/*.py",
+    "src/ledger/consent.py",
+    "src/ledger/dualcontrol.py",
+    "src/ledger/moderate.py",
+    "src/ledger/review.py",
+    "src/ledger/tombstones.py",
+]

@@ -168,9 +168,32 @@ class PremisEventType(StrEnum):
 #   event carries the address as a *second* link (what was examined), never as the
 #   object's identity — that conflation is what let one address carry two
 #   contradictory verdicts (#149).
+# * ``ledger-bag`` — a bag directory name: the on-disk container a replication or
+#   quarantine event is about. A bag name equals its record id today, but the two
+#   are not the same *kind* of thing: one names a storage container a replica holds,
+#   the other names the Representation. An event that quarantines a bag is not an
+#   event about the record's content, and a consumer must be able to tell.
+# * ``ledger-proposal`` — a dual-control proposal id: the authorization decision a
+#   reading-room query event is about, not the records the query touched.
 OBJECT_TYPE_PAYLOAD = "ledger-payload"
 OBJECT_TYPE_RECORD = "ledger-record"
 OBJECT_TYPE_CONTENT_ADDRESS = "content-address"
+OBJECT_TYPE_BAG = "ledger-bag"
+OBJECT_TYPE_PROPOSAL = "ledger-proposal"
+
+#: Every identifier type ledger writes. A writer must pick one of these or leave the
+#: type unset; nothing infers a type from an identifier's shape except the
+#: content-address case in :attr:`PremisEvent.object_identifier_type`, where the
+#: parse is unambiguous.
+OBJECT_TYPES = frozenset(
+    {
+        OBJECT_TYPE_PAYLOAD,
+        OBJECT_TYPE_RECORD,
+        OBJECT_TYPE_CONTENT_ADDRESS,
+        OBJECT_TYPE_BAG,
+        OBJECT_TYPE_PROPOSAL,
+    }
+)
 
 
 def payload_object_id(record_id: str, filename: str) -> str:
