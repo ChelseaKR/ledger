@@ -15,6 +15,26 @@ worktree branches, `fix/stale-claims-and-gate-blind-spot` and
 triaged here. The ordering advice below therefore has a shelf life measured in hours,
 not days.
 
+## What has happened since this pass (added 2026-09-01, on merge)
+
+This document is a dated snapshot, not a live view, and it is landing after most of
+the queue it describes has moved. Recorded here so a reader does not mistake it for
+current state:
+
+- **Merged to `main`:** #157, #158 and #164 (the last one *with*
+  `docs/plans/improvement-plan.md`, which this pass recommended dropping — see the
+  entry for #164 below), plus #167, #168, #169 and #170, which were opened after
+  the pass ended. #168 in particular put the owner's `bypass_actors` into the
+  committed mirror, which is the JSON half of what #165 proposed.
+- **Still open, and re-checked on 2026-09-01:** #152, #160, #161, #162, #163, #165.
+- **What held up.** The stack containment (#160/#161/#162 are ancestors of #163),
+  the #163/#164 cross-conflict (resolved by #163's own rebase before this landed),
+  the starved-checks finding, and the #160 CodeQL alert at `server.py:1242` were all
+  confirmed. The alert is cleared on #163's branch rather than carried into `main`.
+- **What the merges changed.** The `Makefile` `verify` note was rewritten on `main`
+  (#169) to state the reproduced / not-reproduced split explicitly, which supersedes
+  the "byte-for-byte" wording this pass quotes.
+
 ## Summary
 
 | PR | Title (short) | Base | Real merge state | CI reality | Recommendation |
