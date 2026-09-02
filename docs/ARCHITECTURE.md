@@ -385,7 +385,7 @@ The site binds to `127.0.0.1` by default.
 
 ### 1.11 CLI: `cli.py` and `config.py`
 
-`cli.py` is the one discoverable steward surface: 39 subcommands, which `ledger --help`
+`cli.py` is the one discoverable steward surface: 41 subcommands, which `ledger --help`
 lists in full — `init`, `ingest`, `browse`, `show`, `serve`, `audit`, `policy`,
 `takedown`, `replicas`, `heal`, `add-location`, `demo`, `acr`, and the `grant`, `vault`,
 `mutual-aid`, `transparency`, `moderation`, and `session` groups among them. A capability with no
@@ -394,7 +394,11 @@ against the parser itself in `tests/test_cli.py`. Exit codes are meaningful (`au
 returns non-zero on any failing bag so cron/CI can branch). It is held to the no-outing rule: a contributor name/contact is accepted only
 as ingest *input*, sealed into the vault, and the CLI then prints *only* the opaque
 `identity_ref` — never echoing the name. Every time-stamping command accepts `--now`
-for reproducibility.
+for reproducibility. `ai-describe` and `ai-ask` (ADR 0013) are the two opt-in AI
+subcommands: both refuse outright — with no model call — unless the archive's
+`config.ai.enabled` is `true`, and both route every record through
+`ledger.ai.context.build_context` (which calls `Archive.disclose` first) before any
+model ever sees it. See [1.12](#112-the-optional-ai-layer-aipy-adr-0013) below.
 
 `config.py` is configuration-as-data: one versioned, declarative `Config` (archive
 name, store root, vault path, replica `locations`, default policy, content-warning
@@ -403,6 +407,56 @@ older files in memory and *refuses* a file from a newer ledger rather than misre
 it. `Config.default` produces secure single-box defaults — store and vault under one
 root, `default_policy = SEALED_UNTIL`, one `local` location — and `save` writes
 atomically. A config describes *where* the vault lives, never *what* is in it.
+
+### 1.12 The optional AI layer: `ai/` (ADR 0013)
+
+`ai/` sits outside the trust boundary the rest of this document describes,
+never inside it. It is off by default (`Config.ai.enabled = False`) and, when
+enabled, sees only what a viewer's own `Grant` already permits — never more.
+One rule places it: **access control runs before the model, not around it.**
+
+```
+ai/
+├── context.py      # build_context(archive, record_id, grant, now): calls
+│                    # Archive.disclose() FIRST, then builds GroundedContext —
+│                    # the ONLY function in this package that touches Archive
+├── grounding.py     # verify_claims: citation-existence, verbatim-quote, and
+│                    # identity-inference checks BEFORE any claim is returned
+├── fixity_honesty.py # the 3-state honest fixity vocabulary, from real PREMIS events
+├── describe.py      # generate_finding_aid: one record -> cited, verified claims
+├── ask.py           # ask/contexts_for: tier-respecting natural-language discovery
+├── client.py        # anthropic SDK wrapper (Anthropic direct API or Bedrock);
+│                     # optional extra, guarded import, credentials from env only
+├── limits.py         # RateLimiter: per-client rate + daily cap, before any call
+├── prompts.py        # versioned system prompts (PROMPT_VERSION)
+└── provenance.py      # AIProvenance: provider/model/prompt-version/commit/date
+```
+
+`context.py` is the one required gate: `build_context` calls
+`Archive.disclose(record_id, grant, now)` — the same chokepoint `browse`,
+`search`, the JSON API, and export already use — and raises `AccessDenied`
+under precisely the condition every other read path does. The
+`GroundedContext` it returns is built exclusively from the resulting
+`DisclosedRecord` and that record's PREMIS events (filtered to visible
+payloads as defense-in-depth); there is no field on it that could carry a
+withheld value or a contributor identity, mirroring why `DisclosedRecord`
+itself cannot. `describe.py` and `ask.py` accept only a `GroundedContext` (or
+a mapping of them) — never an `Archive`, a `Grant`, or a raw `Record` — so a
+prompt cannot leak what the type does not hold.
+
+`grounding.py` is the verifier that sits before display: every model claim
+must cite a real, disclosed evidence item, and an unverifiable one is
+withheld and counted, never shown. It doubles as a structural backstop
+against outing — a hallucinated identity claim can only ever be *ungrounded*,
+since no identity ever reaches a `GroundedContext` — reinforced by a narrow,
+deterministic pattern check (`looks_like_identity_inference`) proven by the
+adversarial suite in `tests/test_ai_outing_refusal.py`, not merely asserted.
+
+`cli.py`'s `ai-describe`/`ai-ask` subcommands are the only core-adjacent code
+that imports `ai/` (`tests/test_ai_isolation.py` asserts every preservation/
+access/browse module does not). Both refuse outright, with no model call,
+unless `config.ai.enabled` is `true`; both construct the rate limiter and the
+model client only *after* the access-control gate has already passed.
 
 ---
 

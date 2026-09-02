@@ -48,9 +48,16 @@ Applicability decisions and the N/A for AI-Evaluation live in
 
 - **Segments:** contributors, subjects of records, viewers at different grant
   levels (anonymous / community / steward), and stewards themselves. Bias risk here
-  is less "model bias" (there is no model, see AI-Evaluation N/A) and more
-  **whose histories get preserved and whose get sealed by default** — a moderation
-  or steward decision, not an algorithm.
+  is mostly **whose histories get preserved and whose get sealed by default** — a
+  moderation or steward decision, not an algorithm. Since ADR 0013 (2026-08-22)
+  added an optional, opt-in AI layer, "model bias" is now a live, additional
+  question for the two AI-generated surfaces (`ledger ai-describe`/`ledger
+  ai-ask`) — e.g. whether a finding aid describes some collections' items more
+  richly than others, or whose questions get a fuller grounded answer versus a
+  "found nothing" refusal. This has NOT been assessed as a bias question yet
+  (the eval harness in `docs/AI-EVALUATION.md` scores safety/grounding, not
+  representational parity across collections); tracked here as an open gap
+  rather than left silently unstated.
 - **Risks:** a moderation workflow that is inconsistently applied across
   submissions could systematically under-preserve some communities' material or
   over-seal it relative to others; a content-warning taxonomy that reflects one

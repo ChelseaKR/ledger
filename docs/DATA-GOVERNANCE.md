@@ -1,6 +1,6 @@
 # Data governance — ledger
 
-Last verified: 2026-07-11 · Recheck cadence: on a new data field/source, a
+Last verified: 2026-08-22 · Recheck cadence: on a new data field/source, a
 license or retention change, an exposure incident, or quarterly.
 
 Ledger processes **L3 identity-sensitive data**. Its purpose is long-term
@@ -51,6 +51,49 @@ and quarterly restore drills. Tests exercise encrypted backup, restore, and
 fixity verification. The reference local-first objective is **RPO 24 hours** and
 **RTO 48 hours**; adopters record stricter or looser values in their deployment
 runbook and must not claim the reference values without operating the schedule.
+
+## Third-party processors (AI layer, opt-in, ADR 0013)
+
+Ledger has one optional third-party data processor: the model provider a
+`ledger ai-describe`/`ledger ai-ask` call sends disclosed evidence to
+(Anthropic's API or AWS Bedrock, per `LEDGER_AI_BACKEND`), when a steward has
+set `config.ai.enabled = true`. This is a fundamentally different kind of
+entry in this table than the rest of the file, and it is written up
+separately rather than folded into the classification table above for a
+reason: **whether it is acceptable at all is a DECISION NEEDED, not a closed
+question this document can answer on the project's behalf.**
+
+What travels: exactly what the requesting viewer's own `Grant` already
+permits for the record(s) in scope — title, Dublin Core, visible field
+values, visible payload metadata/transcripts, identity-free PREMIS event
+summaries. Never a contributor identity, never anything above the requester's
+tier (`docs/THREAT-MODEL.md` §4.8 and trust boundary 7). Never logged or
+persisted by ledger itself beyond the in-process rate-limit counter
+(`ledger.ai.limits`), which stores only a request count per day, not content.
+
+What ledger does not and cannot control: the provider's own data handling and
+retention policy for a request while it is processed. `docs/THREAT-MODEL.md`
+states this as a genuine residual risk, not a closed guarantee.
+
+**The open question a community must answer before enabling this feature:**
+does the consent language a contributor agreed to when they gave their
+account to this archive cover "an opt-in AI feature may send the disclosed
+portions of your record to a third-party model provider for one request, at
+a steward's discretion"? For most tools in this portfolio, sending data to a
+reviewed vendor is an ordinary, already-covered operational decision. For
+ledger it is not automatically that: `docs/GOVERNANCE.md`'s consent model
+predates any third-party processor existing in this system at all, and the
+people this archive serves are named throughout `docs/THREAT-MODEL.md` as
+people for whom "a third party learned this" can itself be a safety event —
+not merely a privacy inconvenience.
+
+This is why the feature ships **off by default** and the ADR does not resolve
+this question — it is deliberately left to each community's own governance,
+informed by this section, `docs/THREAT-MODEL.md` §4.8, and ADR 0013. A
+community wishing to enable it should update its consent language and
+`docs/GOVERNANCE.md` first, and record that decision the same way any other
+policy change is recorded (a PREMIS `access-policy change` event class exists
+for exactly this kind of accountable decision).
 
 ## Breach review
 
