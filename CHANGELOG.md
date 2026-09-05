@@ -30,6 +30,24 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   catches it.
 
 ### Fixed
+- **A single-token nickname cleared the AI layer's cross-record name-span backstop**
+  (#153). `ledger.ai.grounding`'s name heuristic requires a capitalized span of two or
+  more words, so "Jordan Ellis ran the free clinic" was withheld while "Cricket ran the
+  free clinic" — a nickname public in a *different* record's photo caption, attached to
+  a role this record never mentions — was shown. Linking a person across records from a
+  non-name signal is exactly what the mission forbids, even when every word involved is
+  legitimately public. `verify_claims` now also withholds, with a new
+  `CROSS_RECORD_LINKAGE` reason, a claim on the multi-record `ask` path whose
+  capitalized token is absent from the record it cites, present as a proper noun in
+  another disclosed record, *and* framed as a person taking part in something. All
+  three conditions are required precisely so the fix does not become the blunt version
+  that was rejected in #152: widening the heuristic to any capitalized token would
+  withhold every sentence-initial word. Over-withholding is measured, not asserted —
+  all 105 evidence strings the eval fixture discloses, and the test corpus at every
+  tier, still quote back cleanly (0 withheld). `tools/ai_eval.py` gains a
+  `backstop_linkage` suite that scores the deterministic guard *directly*, since the
+  blind spot that hid this defect was a suite which only ever graded a live model: it
+  scored green because the model refused, while the guard behind it did not.
 - **`docs/ACCESSIBILITY.md` had gone stale against its own generated ACR.** It
   described contrast (1.4.3, 1.4.11) and status messages (4.1.3) as
   `Partially Supports` after `acr_gen.py` had raised all three to `Supports`.
