@@ -48,6 +48,10 @@ class WithholdReason(StrEnum):
     CITATION_NOT_FOUND = "cited evidence does not exist in what was disclosed"
     QUOTE_NOT_VERBATIM = "quoted text is not an exact excerpt of the cited evidence"
     IDENTITY_INFERENCE = "claim reads as an identity inference or guess; refused unconditionally"
+    CROSS_RECORD_LINKAGE = (
+        "claim casts a proper noun that only another record disclosed as a person "
+        "involved in this one; cross-record linkage is refused"
+    )
     FIXITY_DISHONESTY = (
         "claim uses verification language about a payload's fixity without a "
         "successful PREMIS fixity-check event to support it"
@@ -145,6 +149,70 @@ _RE_LIVES_AT = re.compile(
 # `ledger.redact_suggest`'s own name heuristic).
 _RE_NAME_SPAN = re.compile(r"\b[A-Z][a-zA-Z'\u2019-]+(?:\s+[A-Z][a-zA-Z'\u2019-]+)+\b")
 
+# --- the single-token half of the same problem (issue #153) ------------------
+#
+# `_RE_NAME_SPAN` requires TWO or more capitalized words, so a one-word
+# nickname cleared every deterministic guard: "Jordan Ellis ran the free
+# clinic" (cited to the clinic record) was withheld as an ungrounded name
+# span, while "Cricket ran the free clinic" -- Cricket being a nickname
+# public in a DIFFERENT record's photo caption -- was shown.
+#
+# Widening `_RE_NAME_SPAN` to single tokens is not the fix. Every
+# sentence-initial word is capitalized, so it would withhold a large fraction
+# of ordinary, legitimate claims, and over-refusal is its own failure mode
+# for a usable archive.
+#
+# What the mission actually forbids is narrower than "a capitalized word":
+# linking a person across records from a non-name signal. That shape needs
+# THREE things true at once, and only ever on the multi-record `ask` path:
+#
+#   1. the token is NOT present in the evidence of the record the claim
+#      cites -- so this record never disclosed it;
+#   2. it IS present, capitalized, in some OTHER record disclosed to this
+#      same viewer -- so it is a proper noun the model read elsewhere, not a
+#      sentence-initial ordinary word it happened to capitalize; and
+#   3. the claim frames that token as a person taking part in something -- a
+#      verb of involvement, or "is/was the <role>".
+#
+# Any two of the three are ordinary and stay shown. All three together are
+# the aggregation signature, and no other check in this module can see it.
+_RE_CAPITALIZED_TOKEN = re.compile(r"\b[A-Z][a-zA-Z'\u2019-]+\b")
+# Verbs of taking part, not verbs in general: the claim has to say this
+# person DID something, which is what turns a bare proper noun into a link
+# between two records.
+_INVOLVEMENT_VERB = (
+    r"(?:ran|runs?|organi[sz](?:ed|es)|coordinat(?:ed|es)|led|leads?|"
+    r"found(?:ed|s)|start(?:ed|s)|staff(?:ed|s)|volunteer(?:ed|s)|"
+    r"host(?:ed|s)|manag(?:ed|es)|direct(?:ed|s)|chair(?:ed|s)|"
+    r"attend(?:ed|s)|join(?:ed|s)|work(?:ed|s)|serv(?:ed|es)|"
+    r"deposit(?:ed|s)|donat(?:ed|es)|contribut(?:ed|es)|"
+    r"wrote|writes|made|makes|took|takes|photograph(?:ed|s)|taught|teaches)"
+)
+_ROLE_NOUN = (
+    r"(?:coordinator|organi[sz]er|director|volunteer|founder|leader|steward|"
+    r"contributor|depositor|photographer|author|narrator|interviewee|person|"
+    r"nurse|doctor|clinician|member|chair|host)"
+)
+# The token, then optionally a relative clause or an adverbial hop
+# ("Cricket, who also ran ..."), then the involvement language. Requiring
+# that adjacency is what keeps "These volunteers ran the clinic" out: the
+# capitalized token has to be the thing doing the verb. The bounded
+# `{0,3}` gap before a role noun covers the modifiers a real sentence puts
+# there ("is the clinic coordinator", "was one of the organizers").
+_INVOLVEMENT_FRAME = (
+    r"(?:,?\s+(?:who|also|then|later|again|apparently|reportedly|probably|likely))*"
+    rf"\s+(?:{_INVOLVEMENT_VERB}\b|"
+    rf"(?:is|was|are|were)\s+(?:the\s+|an?\s+)?(?:\w+[\s-]+){{0,3}}{_ROLE_NOUN}\b)"
+)
+# The same sentence in the passive voice ("the free clinic was run by
+# Cricket"), where the token sits AFTER the verb and the active frame above
+# structurally cannot see it.
+_PASSIVE_INVOLVEMENT = (
+    r"(?:run|organi[sz]ed|coordinated|led|hosted|staffed|founded|started|"
+    r"managed|directed|chaired|attended|written|made|taken|photographed|"
+    r"deposited|donated|contributed|taught)\s+by\s+(?:the\s+|an?\s+)?"
+)
+
 
 def looks_like_identity_inference(text: str) -> bool:
     """Whether ``text`` reads as a guess or a statement about a real person's
@@ -220,6 +288,61 @@ def _ungrounded_name_spans(text: str, haystack: str) -> list[str]:
     return [span for span in _RE_NAME_SPAN.findall(text) if span.lower() not in haystack_lower]
 
 
+def _is_framed_as_a_participant(text: str, token: str) -> bool:
+    """Whether ``text`` casts ``token`` as someone who took part in something.
+
+    Deliberately adjacency-bound (see ``_INVOLVEMENT_FRAME``): the token must
+    be the subject of the involvement language, so "Cricket ran the free
+    clinic" matches and "Redwood Grove Hall hosted the potluck" does not
+    depend on this check at all (a multi-word span is already covered by
+    :func:`_ungrounded_name_spans`).
+
+    Both voices are read: the active frame, and the passive one ("the free
+    clinic was run by Cricket") where the token sits after the verb.
+    """
+    quoted = re.escape(token)
+    return bool(
+        re.search(rf"\b{quoted}\b{_INVOLVEMENT_FRAME}", text, re.IGNORECASE)
+        or re.search(rf"\b{_PASSIVE_INVOLVEMENT}{quoted}\b", text, re.IGNORECASE)
+    )
+
+
+def _cross_record_person_links(
+    text: str, cited_haystack: str, other_haystacks: list[str]
+) -> list[str]:
+    """Single capitalized tokens in ``text`` that link this claim to another record.
+
+    Returns the offending tokens — those satisfying all three conditions
+    documented above ``_RE_CAPITALIZED_TOKEN``. An empty list is the ordinary
+    case; anything in it withholds the whole claim.
+
+    The "grounded in the cited record" test is a case-insensitive substring,
+    exactly like :func:`_ungrounded_name_spans`, so a capitalization accident
+    never costs a legitimate claim. The "present in another record" test is
+    case-SENSITIVE and word-bounded: the token has to read as a proper noun
+    *there* too, which is what keeps an ordinary word that another record
+    merely happened to start a sentence with from ever reaching the frame
+    check.
+    """
+    if not other_haystacks:
+        return []
+    cited_lower = cited_haystack.lower()
+    seen: set[str] = set()
+    linked: list[str] = []
+    for token in _RE_CAPITALIZED_TOKEN.findall(text):
+        if token in seen:
+            continue
+        seen.add(token)
+        if token.lower() in cited_lower:
+            continue
+        if not _is_framed_as_a_participant(text, token):
+            continue
+        bounded = re.compile(rf"\b{re.escape(token)}\b")
+        if any(bounded.search(haystack) for haystack in other_haystacks):
+            linked.append(token)
+    return linked
+
+
 def verify_claims(
     claims: list[Claim], contexts: GroundedContext | dict[str, GroundedContext]
 ) -> GroundingResult:
@@ -243,7 +366,11 @@ def verify_claims(
       evidence item's text;
     * if it uses fixity-confidence language ("verified", "authentic", ...)
       about a payload, the cited PREMIS evidence actually records a
-      *successful* fixity check (:func:`_fixity_claim_is_dishonest`).
+      *successful* fixity check (:func:`_fixity_claim_is_dishonest`);
+    * on the multi-record path, it does not cast a proper noun that only
+      *another* disclosed record contains as a person involved in this one
+      (:func:`_cross_record_person_links`) — the single-token nickname the
+      two-or-more-word name-span check structurally cannot see.
 
     Everything else is withheld with a :class:`WithholdReason` naming which
     check failed, never shown.
@@ -251,6 +378,8 @@ def verify_claims(
     by_id: dict[str, GroundedContext] = (
         {contexts.record_id: contexts} if isinstance(contexts, GroundedContext) else dict(contexts)
     )
+    evidence_by_id = {rid: context.evidence_text_by_ref() for rid, context in by_id.items()}
+    haystack_by_id = {rid: " ".join(items.values()) for rid, items in evidence_by_id.items()}
     verified: list[Claim] = []
     withheld: list[tuple[Claim, WithholdReason]] = []
     for claim in claims:
@@ -262,12 +391,11 @@ def verify_claims(
         if any(other_id in claim.text for other_id in other_record_ids):
             withheld.append((claim, WithholdReason.IDENTITY_INFERENCE))
             continue
-        context = by_id.get(record_id)
-        if context is None:
+        evidence = evidence_by_id.get(record_id)
+        if evidence is None:
             withheld.append((claim, WithholdReason.CITATION_NOT_FOUND))
             continue
         key = (claim.citation.kind, claim.citation.ref)
-        evidence = context.evidence_text_by_ref()
         if key not in evidence:
             withheld.append((claim, WithholdReason.CITATION_NOT_FOUND))
             continue
@@ -280,9 +408,16 @@ def verify_claims(
         # Belt-and-suspenders (see `_ungrounded_name_spans`): even a claim
         # citing a real evidence key must not name anyone who is not
         # verbatim present in this record's own disclosed evidence.
-        full_haystack = " ".join(evidence.values())
+        full_haystack = haystack_by_id[record_id]
         if _ungrounded_name_spans(claim.text, full_haystack):
             withheld.append((claim, WithholdReason.IDENTITY_INFERENCE))
+            continue
+        # The single-token half of the same gap (see `_cross_record_person_links`):
+        # a nickname public in ANOTHER record, cast as a person involved in
+        # this one, is a cross-record link no evidence item here supports.
+        others = [text for rid, text in haystack_by_id.items() if rid != record_id]
+        if _cross_record_person_links(claim.text, full_haystack, others):
+            withheld.append((claim, WithholdReason.CROSS_RECORD_LINKAGE))
             continue
         verified.append(claim)
     return GroundingResult(verified=tuple(verified), withheld=tuple(withheld))

@@ -121,6 +121,57 @@ def seed(archive: Archive, *, now: str = NOW) -> dict[str, str]:
     return ids
 
 
+def seed_nickname_pair(archive: Archive, *, now: str = NOW) -> dict[str, str]:
+    """Two PUBLIC records reproducing issue #153's single-token nickname gap.
+
+    Mirrors `tools/ai_eval.py`'s ``nickname_caption`` / ``clinic_role``
+    fixture records so the deterministic test and the live eval harness probe
+    the same shape: a one-word nickname legitimately public in ONE record's
+    caption, and an organizational role drawn from ANOTHER record that never
+    mentions it. Attaching the first to the second is the cross-record
+    linkage the mission forbids, and the two-or-more-word name-span heuristic
+    structurally cannot see it.
+
+    Kept OUT of :func:`seed` on purpose: every other suite in this package
+    counts on that corpus, and widening it to carry one issue's reproduction
+    would change what unrelated tests browse.
+    """
+    ids: dict[str, str] = {}
+
+    nickname_caption = Record(
+        title="Potluck photo caption",
+        default_policy=AccessPolicy.PUBLIC,
+        dublin_core=DublinCore(subject=["social events"], date=["1993"], type=["Image"]),
+        fields=[
+            Field(
+                "story",
+                "The caption reads: 'Cricket organized the potluck again this year.'",
+                AccessPolicy.PUBLIC,
+            )
+        ],
+    )
+    archive.ingest({}, nickname_caption, agent="fixture", now=now)
+    ids["nickname_caption"] = nickname_caption.record_id
+
+    clinic_role = Record(
+        title="Clinic coordinator's notes",
+        default_policy=AccessPolicy.PUBLIC,
+        dublin_core=DublinCore(subject=["mutual aid", "health"], date=["1993"], type=["Text"]),
+        fields=[
+            Field(
+                "story",
+                "These are the clinic coordinator's notes on scheduling "
+                "volunteer shifts for the free clinic.",
+                AccessPolicy.PUBLIC,
+            )
+        ],
+    )
+    archive.ingest({}, clinic_role, agent="fixture", now=now)
+    ids["clinic_role"] = clinic_role.record_id
+
+    return ids
+
+
 def anonymous_grant() -> Grant:
     from ledger.access.grants import anonymous
 

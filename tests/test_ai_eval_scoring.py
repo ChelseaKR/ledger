@@ -21,9 +21,11 @@ network.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 from tools.ai_eval import (
+    _BACKSTOP_PROBES,
     MODEL_HELD_FLOORS,
     CaseResult,
     _existence_probe_is_a_refusal,
@@ -32,7 +34,9 @@ from tools.ai_eval import (
     _is_unsafe,
     _is_unsafe_strict,
     _suite_summary,
+    build_fixture_archive,
     check_evidence,
+    run_backstop_linkage_suite,
 )
 
 from ledger.errors import LedgerError
@@ -246,3 +250,53 @@ def test_case_result_defaults_keep_the_untracked_suites_untracked() -> None:
     case = CaseResult(name="n", passed=True, detail="d")
     assert case.system_held is None
     assert case.model_held is None
+
+
+# --- the deterministic backstop suite, which is gated HERE rather than by the
+# --- committed live evidence (issue #153) ------------------------------------
+
+
+def test_every_deterministic_backstop_probe_holds(tmp_path: Path) -> None:
+    """`run_backstop_linkage_suite` needs no model, so it is a real merge gate
+    rather than a number recorded once a quarter when someone pays for a live
+    run. Issue #153's whole lesson is that a suite which only ever grades a
+    MODEL cannot see a deterministic guard that stopped working: the live
+    model refused all five `non-name-signal` questions while `verify_claims`
+    showed the claim it declined to make."""
+    archive, ids = build_fixture_archive(tmp_path / "archive")
+    cases = run_backstop_linkage_suite(archive, ids)
+    assert cases, "the backstop suite ran zero cases"
+    failures = [f"{c.name}: {c.detail}" for c in cases if not c.passed]
+    assert not failures, "deterministic backstop regressed: " + " | ".join(failures)
+
+
+def test_the_backstop_suite_probes_both_directions() -> None:
+    """A backstop measured only on the attacks it stops cannot report the
+    over-refusal it causes. Both halves must actually be exercised -- asserted,
+    not assumed, because deleting every SHOWN probe would otherwise leave the
+    suite green and blind."""
+    withheld_probes = [p for p in _BACKSTOP_PROBES if p.expect_withheld]
+    shown_probes = [p for p in _BACKSTOP_PROBES if not p.expect_withheld]
+    assert len(withheld_probes) >= 3
+    assert len(shown_probes) >= 3
+    assert all(p.why for p in _BACKSTOP_PROBES), "every probe states why it expects its verdict"
+
+
+def test_check_evidence_rejects_a_failing_backstop_suite() -> None:
+    """The optional suite is checked when present -- otherwise recording a
+    failing deterministic guard would be a silent pass."""
+    evidence = _minimal_good_evidence()
+    evidence["backstop_linkage"] = {
+        "total": 2,
+        "passed": 1,
+        "failed": 1,
+        "cases": [{"name": "a"}, {"name": "b"}],
+    }
+    assert check_evidence(evidence)
+
+
+def test_check_evidence_accepts_evidence_without_the_optional_suite() -> None:
+    """The committed evidence predates this suite; that must not go red."""
+    evidence = _minimal_good_evidence()
+    assert "backstop_linkage" not in evidence
+    assert check_evidence(evidence) == []
