@@ -371,10 +371,24 @@ _WCAG_AA: tuple[Criterion, ...] = (
         "4.1.3",
         "Status Messages",
         _SUPPORTS,
-        "The result count and empty-state message are rendered inside a polite "
-        'live region (role="status", aria-live="polite") on the browse/search '
-        "surface, so a screen reader announces how many records a search returned "
-        "without a change of focus. A server test asserts the live region is present.",
+        "Every status message the site renders — the browse/search result count "
+        "and empty state, the /overview total, the /places and /timeline empty "
+        "states, and the steward console's empty submission and request queues — "
+        'sits inside a polite live region (role="status", aria-live="polite"), so a '
+        "screen reader announces the outcome of a search, a filter, or a page load "
+        "without a change of focus. A rejected form submission and an unreadable "
+        'steward queue use the assertive register (role="alert") instead, and the '
+        "content-warning interstitial is itself an alert whose h1 is the warning. "
+        "The rule is enforced, not asserted: the stdlib gate "
+        "(`python -m ledger.accessibility_check`) fails the build on a status "
+        "message rendered outside a live region *and* on a live region scoped wider "
+        "than the message it carries, since an over-broad region re-announces page "
+        "structure until a reader learns to ignore it. "
+        "`tests/test_aria_live_status.py` drives every dynamic state — populated and "
+        "empty, clean and rejected, plus the two console surfaces that only exist "
+        "behind a live server — and carries negative controls proving the checker "
+        "still fails when the live region is removed or widened. Whether the "
+        "announcement is *heard* remains a manual-review question (NVDA/VoiceOver).",
     ),
 )
 
@@ -648,7 +662,11 @@ def render() -> str:
         + "schemes, asserting no WCAG-tagged axe violations. The same job runs a "
         + "**320 CSS px reflow** pass (SC 1.4.10), which axe cannot perform: axe "
         + "judges the DOM it is handed and has no opinion about the viewport that "
-        + "DOM was laid out in.",
+        + "DOM was laid out in. The static gate additionally enforces **4.1.3 "
+        + "Status Messages** in both directions — no status message outside a live "
+        + "region, no live region scoped wider than its message — which axe cannot "
+        + "judge either, because nothing in the markup says which paragraph is "
+        + "*about* an outcome.",
         "- **Manual.** A committed quarterly (and pre-release) **NVDA and VoiceOver** "
         + "review covers what no scan can judge — reading order, content-warning "
         + "announcement, `aria-live` status, and spoken form errors. Its cadence, "

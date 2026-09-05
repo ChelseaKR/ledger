@@ -116,6 +116,7 @@ from ledger.render import (
     _page,
     _places_html,
     _record_main_html,
+    _status_region,
     _timeline_html,
     transparency_main_html,
     transparency_unattested_main_html,
@@ -1246,7 +1247,13 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         except LedgerError:
             pending = None
         if pending is None:
-            submissions_html = f"    <p>{_esc(i18n.t(lang, 'sw_queue_unreadable'))}</p>"
+            # An unreadable queue is the one message on this page a steward must act
+            # on — submissions may be waiting and the console cannot see them — so it
+            # is the assertive register (role="alert"), not the polite one used for
+            # "nothing is waiting" below (WCAG 4.1.3).
+            submissions_html = (
+                f'    <p class="error" role="alert">{_esc(i18n.t(lang, "sw_queue_unreadable"))}</p>'
+            )
         elif pending:
             sub_rows = []
             for item in pending:
@@ -1319,13 +1326,20 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
                 f'    <ul class="submissions">\n{chr(10).join(sub_rows)}\n    </ul>\n{bulk_form}'
             )
         else:
-            submissions_html = f"    <p>{_esc(i18n.t(lang, 'sw_no_submissions'))}</p>"
+            # "Nothing is waiting" is the outcome a steward opened the console to
+            # learn, and it is emphatically not the same fact as the unreadable queue
+            # above; both are announced, in registers that keep them distinguishable.
+            submissions_html = _status_region(
+                f'      <p class="empty">{_esc(i18n.t(lang, "sw_no_submissions"))}</p>\n'
+            )
         open_reqs = self._consent_store().open_requests()
         if open_reqs:
             rows = "\n".join(self._render_request_row(r, lang) for r in open_reqs)
             requests_html = f'    <ul class="requests">\n{rows}\n    </ul>'
         else:
-            requests_html = f"    <p>{_esc(i18n.t(lang, 'sw_no_requests'))}</p>"
+            requests_html = _status_region(
+                f'      <p class="empty">{_esc(i18n.t(lang, "sw_no_requests"))}</p>\n'
+            )
         # The CLI command names are literal (never translated); the prose around them is.
         cli_line = (
             f"      <p>{_esc(i18n.t(lang, 'sw_cli_intro'))} <code>ledger policy</code> "
@@ -2287,6 +2301,11 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         else:
             req = self._consent_store().get(ref)
             if req is None:
+                # Polite, not assertive, on purpose: a reference that matches nothing
+                # is the *result* of the lookup the contributor just ran, not a
+                # rejected submission, and the assertive register would cut across
+                # whatever they are reading. The class styles it; the role sets the
+                # urgency, and the two are allowed to differ (WCAG 4.1.3).
                 result_html = (
                     f'    <p class="error" role="status">{_esc(i18n.t(lang, "cs_not_found"))}</p>\n'
                 )

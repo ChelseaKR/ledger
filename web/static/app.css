@@ -451,7 +451,12 @@ dl {
   border: 0;
 }
 
-.empty {
+/* `.empty` marks a status message (an empty state announced in a live region);
+   `.view-empty` marks the filler inside one of two equivalent views of the same
+   result set, which the live region above it has already announced. They look the
+   same and mean different things — see `_records_list_html` in render.py. */
+.empty,
+.view-empty {
   color: var(--muted);
   font-style: italic;
 }

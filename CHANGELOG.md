@@ -6,7 +6,36 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+- **Status messages now announce to a screen reader (WCAG 2.2 SC 4.1.3)** (#178).
+  A status message — the search result count, an empty state, a rejected submission
+  — is only heard if it sits in an ARIA live region, because nothing moves focus to
+  it. The browse/search count already did; six other messages did not, and were
+  therefore silent: the `/overview` total and empty state, the `/places` and
+  `/timeline` empty states, and the steward console's empty submission and request
+  queues. All of them are now wrapped by one `render._status_region` helper that
+  emits a polite region around the message paragraph and nothing else. A rejected
+  form submission and a steward queue that could not be read take the assertive
+  register (`role="alert"`) instead, since those are the cases a reader must act on.
+- **The accessibility gate enforces SC 4.1.3 in both directions.**
+  `python -m ledger.accessibility_check` now fails the build on a status message
+  rendered outside any live region *and* on a live region scoped wider than the
+  message it carries — placed on `<body>`/`<main>`/`<nav>`/`<header>`/`<footer>`/`<form>`,
+  or grown to swallow the site navigation or a form. The second half is not
+  decoration: an over-broad `aria-live` re-announces page structure on every change
+  until a reader learns to ignore the region, which is worse than having none.
+  `tests/test_aria_live_status.py` drives every dynamic state of every rendered
+  surface, plus the two console surfaces that only exist behind a live server, with
+  negative controls that remove and widen the region and assert the checker still
+  catches it.
+
+### Fixed
+- **`docs/ACCESSIBILITY.md` had gone stale against its own generated ACR.** It
+  described contrast (1.4.3, 1.4.11) and status messages (4.1.3) as
+  `Partially Supports` after `acr_gen.py` had raised all three to `Supports`.
+  `make acr-check` compares the generator with the committed report and had nothing
+  to say about a prose summary elsewhere in the docs; the paragraph now names the
+  rows that are actually partial and says which document is authoritative.
 
 ## [0.1.0] — 2026-09-02
 

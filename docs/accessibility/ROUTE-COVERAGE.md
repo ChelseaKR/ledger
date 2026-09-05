@@ -1,6 +1,6 @@
 # Automated accessibility coverage, by route
 
-Last verified: 2026-08-06 · Recheck cadence: whenever a route is added, removed, or
+Last verified: 2026-09-05 · Recheck cadence: whenever a route is added, removed, or
 gains coverage
 
 This page names exactly which of ledger's HTML-emitting routes the two automated
@@ -137,6 +137,16 @@ with its own review surface, and mixing it into the PR that fixes the zero-docum
 detection bug would risk rushing exactly the handler code issue #122 is about
 restoring trust in. Tracked as follow-up work; this document is what makes the
 remaining gap a stated fact rather than a silent one in the meantime.
+
+## A third source of coverage, for one criterion only (2026-09-05)
+
+The table above is about the two general-purpose engines, and it stays that way. But
+`tests/test_aria_live_status.py` (SC 4.1.3, status messages) drives a live server and
+checks **`/steward` and `/consent-status`** for that one criterion — `/consent-status`
+being one of the 8 routes with no engine coverage at all. That is a real, narrow
+addition and it is recorded here rather than folded into the table, because writing it
+into the "Covered" column would overstate it: those two routes are checked for status
+messages and for nothing else. The 13/8 split above is unchanged.
 
 ## Kept honest by a test
 
