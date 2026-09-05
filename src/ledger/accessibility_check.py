@@ -14,7 +14,9 @@ verified statically:
 * a programmatically associated ``<label>`` for every ``<input>`` (1.3.1, 4.1.2);
 * a ``<caption>`` and ``<th scope>`` on every ``<table>`` (1.3.1 Info and
   Relationships);
-* no positive ``tabindex`` (2.4.3 Focus Order).
+* no positive ``tabindex`` (2.4.3 Focus Order);
+* every status message inside a live region, and every live region scoped no
+  wider than the message it carries (4.1.3 Status Messages).
 
 It is a *tolerant* scan built on :mod:`html.parser` (standard library only — no
 third-party HTML toolkit), so a minor markup quirk degrades to a clear problem
@@ -124,6 +126,85 @@ def audit_css_contrast(css_text: str, *, label: str) -> list[str]:
 _SKIP_HINTS: tuple[str, ...] = ("skip to", "skip-link", "#main", "#content")
 
 
+# --- status messages (WCAG 2.2 4.1.3) ---------------------------------------
+# A status message tells the reader the outcome of what they just did — how many
+# records a search matched, that a filter matched nothing, that a submission was
+# rejected. A sighted reader sees it appear; a screen-reader user only hears it if
+# it is inside a live region, because nothing moved focus there. This is the class
+# axe cannot judge (it sees the markup, not whether the message is *about* an
+# outcome), so the rule is enforced here from the one thing that IS mechanical:
+# ledger renders every such message with one of a small, fixed set of classes.
+#
+# Adding a class here is how a new kind of status message opts in to the rule.
+_STATUS_CLASSES: frozenset[str] = frozenset(
+    {
+        "count",  # "Showing 1-10 of 42" — the result count
+        "empty",  # "No records match" — an empty state
+        "error",  # a rejected form submission
+        "results-status",  # the browse/search count + empty-state wrapper
+        "status",  # a request's progress on /consent-status
+        "warning",  # a stale or unreviewed attestation on /transparency
+    }
+)
+
+# ARIA roles that ARE live regions: each carries an implicit aria-live (status and
+# log are polite, alert is assertive), so a message inside one is announced.
+_LIVE_ROLES: frozenset[str] = frozenset({"alert", "log", "status"})
+_LIVE_POLITENESS: frozenset[str] = frozenset({"polite", "assertive"})
+
+# An over-broad live region is worse than none: a screen reader re-announces
+# everything inside it on every change, so a region around the page turns each
+# navigation into a wall of speech and trains the user to tune it out. These
+# elements are page structure, never a message, so a live region on one of them is
+# a defect even though it "has" aria-live.
+_OVER_BROAD_LIVE_TAGS: frozenset[str] = frozenset(
+    {"body", "footer", "form", "header", "html", "main", "nav"}
+)
+# The same defect from the inside out: a correctly-tagged region that has grown to
+# swallow the navigation or a form announces those too.
+_NEVER_INSIDE_LIVE: frozenset[str] = frozenset({"form", "nav"})
+
+# Elements with no end tag, which must not be pushed onto the nesting stack (an
+# unclosed <img> would otherwise swallow the rest of the document into whatever
+# region it sat in).
+_VOID_ELEMENTS: frozenset[str] = frozenset(
+    {
+        "area",
+        "base",
+        "br",
+        "col",
+        "embed",
+        "hr",
+        "img",
+        "input",
+        "link",
+        "meta",
+        "param",
+        "source",
+        "track",
+        "wbr",
+    }
+)
+
+
+def _is_live_region(attr: dict[str, str]) -> bool:
+    """Whether an element's attributes make it an ARIA live region."""
+    roles = attr.get("role", "").casefold().split()
+    if any(role in _LIVE_ROLES for role in roles):
+        return True
+    return attr.get("aria-live", "").strip().casefold() in _LIVE_POLITENESS
+
+
+def _describe(tag: str, attr: dict[str, str]) -> str:
+    """Name an element by its markup alone — tag plus classes, never its text.
+
+    The no-outing rule applies to this checker's own output: a problem message
+    points at ``<p class="empty">``, never at what that paragraph said.
+    """
+    classes = attr.get("class", "").split()
+    return f'<{tag} class="{" ".join(classes)}">' if classes else f"<{tag}>"
+
+
 class _Accessibility(HTMLParser):
     """A tolerant single-pass scanner accumulating structural accessibility facts.
 
@@ -156,6 +237,14 @@ class _Accessibility(HTMLParser):
         self._current_table_has_scoped_th: bool = False
         self._tables_missing_caption: int = 0
         self._tables_missing_scope: int = 0
+        # Live-region nesting (4.1.3). ``_open`` is the stack of open non-void
+        # elements as ``(tag, is_live_region)``; ``_live_depth`` counts how many of
+        # them are live regions, so "am I inside one?" is an int compare rather
+        # than a walk of the stack on every element.
+        self._open: list[tuple[str, bool]] = []
+        self._live_depth: int = 0
+        self.status_outside_live: list[str] = []
+        self.over_broad_live: list[str] = []
 
     # --- streaming callbacks ------------------------------------------------
 
@@ -211,8 +300,49 @@ class _Accessibility(HTMLParser):
         if tabindex is not None and _to_int(tabindex) > 0:
             self.bad_tabindex += 1
 
+        self._track_live_region(tag, attr)
+
+    def _track_live_region(self, tag: str, attr: dict[str, str]) -> None:
+        """Record this element's 4.1.3 facts and push it onto the nesting stack.
+
+        Two defects are recognised, and they pull in opposite directions — which is
+        why one check cannot stand without the other. A status message *outside*
+        every live region is never spoken. A live region drawn *around* page
+        structure speaks everything, every time, until the reader stops listening.
+        """
+        live = _is_live_region(attr)
+        if live and tag in _OVER_BROAD_LIVE_TAGS:
+            self.over_broad_live.append(f"{_describe(tag, attr)} is itself a live region")
+        elif tag in _NEVER_INSIDE_LIVE and self._live_depth > 0:
+            self.over_broad_live.append(f"{_describe(tag, attr)} sits inside a live region")
+
+        classes = {token.casefold() for token in attr.get("class", "").split()}
+        if classes & _STATUS_CLASSES and not live and self._live_depth == 0:
+            self.status_outside_live.append(_describe(tag, attr))
+
+        if tag not in _VOID_ELEMENTS:
+            self._open.append((tag, live))
+            if live:
+                self._live_depth += 1
+
+    def _close_element(self, tag: str) -> None:
+        """Pop the nesting stack back to ``tag``, tolerating unbalanced markup.
+
+        An end tag with no matching start (a stray ``</div>``) is ignored rather
+        than allowed to unwind the stack past elements that are still open, so one
+        markup quirk cannot make every later element look like it escaped its
+        region and produce a page of phantom problems (robustness).
+        """
+        for index in range(len(self._open) - 1, -1, -1):
+            if self._open[index][0] == tag:
+                self._live_depth -= sum(1 for _, live in self._open[index:] if live)
+                del self._open[index:]
+                return
+
     def handle_endtag(self, tag: str) -> None:
         """Close per-element scopes (title text capture, per-table accounting)."""
+        if tag not in _VOID_ELEMENTS:
+            self._close_element(tag)
         if tag == "title":
             self._in_title = False
         elif tag == "table" and self._table_depth > 0:
@@ -302,6 +432,19 @@ def check_html(markup: str, *, label: str) -> list[str]:  # noqa: C901 - a flat 
         fail(
             f"{scanner.bad_tabindex} element(s) use a positive tabindex, which "
             "breaks focus order (WCAG 2.4.3)"
+        )
+
+    if scanner.status_outside_live:
+        fail(
+            f"{len(scanner.status_outside_live)} status message(s) render outside any "
+            f"live region, so a screen reader never announces them: "
+            f"{', '.join(sorted(set(scanner.status_outside_live)))} (WCAG 4.1.3)"
+        )
+    if scanner.over_broad_live:
+        fail(
+            f"{len(scanner.over_broad_live)} live region(s) are scoped wider than the "
+            f"message they carry, so a screen reader re-announces page structure: "
+            f"{', '.join(sorted(set(scanner.over_broad_live)))} (WCAG 4.1.3)"
         )
 
     return problems

@@ -52,6 +52,36 @@ def _esc(value: object) -> str:
     return html.escape(str(value), quote=True)
 
 
+def _status_region(message_html: str) -> str:
+    """Wrap one status message in the smallest polite live region that holds it.
+
+    WCAG 2.2 **4.1.3 Status Messages**: a message reporting the outcome of what the
+    reader just did — how many records matched, that a filter matched nothing —
+    must reach a screen reader *without* moving focus to it, which means it has to
+    sit in an ARIA live region. ``role="status"`` carries an implicit
+    ``aria-live="polite"``; both are stated because some assistive technology has
+    historically honoured one and not the other.
+
+    The single argument is the whole point of the helper. An over-broad live region
+    is worse than no live region at all: everything inside one is re-announced on
+    every change, so a region drawn around a page or a results list turns each
+    navigation into a wall of speech and teaches the reader to tune it out. Every
+    caller therefore passes exactly the paragraph carrying the message and nothing
+    else, and ``ledger.accessibility_check`` fails the build on a region that has
+    grown to swallow a form or the site navigation.
+
+    ``polite`` (never ``assertive``) because none of these messages interrupt work
+    the reader must stop for; the assertive register is reserved for the
+    content-warning interstitial and rejected form submissions, which are rendered
+    with ``role="alert"`` at their own call sites.
+    """
+    return (
+        '    <div class="results-status" role="status" aria-live="polite">\n'
+        f"{message_html}"
+        "    </div>"
+    )
+
+
 def _page(title: str, *, lang: str, main_html: str, nav_html: str = "") -> str:
     """Wrap ``main_html`` in the shared, accessible page shell.
 
@@ -186,7 +216,14 @@ def _records_list_html(
             "    </li>"
         )
     if not items:
-        return f'<p class="empty">{_esc(i18n.t(lang, "no_records_available"))}</p>'
+        # ``view-empty``, not ``empty``: this is the *body* of one of two equivalent
+        # views of the same result set, not a status message about it. The browse
+        # page's one status message — "No records match your search." — is already
+        # in the polite live region above (:func:`_browse_main_html`), and the table
+        # view renders this same filler in an unannounced ``<td>``. Marking this a
+        # status message too would announce the same outcome three times (WCAG 4.1.3
+        # asks that status messages be announced, not that every empty box be).
+        return f'<p class="view-empty">{_esc(i18n.t(lang, "no_records_available"))}</p>'
     body = "\n".join(items)
     return f'<ul class="record-list">\n{body}\n</ul>'
 
@@ -316,12 +353,20 @@ def _overview_main_html(records: list[DisclosedRecord], *, lang: str = "en") -> 
         f"    <h1>{_esc(i18n.t(lang, 'overview_heading'))}</h1>",
         f"    <p>{_esc(i18n.t(lang, 'overview_intro'))}</p>",
     ]
+    # The total (or the empty state) is this page's status message — the one line
+    # that answers "what did my filters just give me?" — so it is announced (4.1.3),
+    # and only it: the facet lists and the date span below are page content a reader
+    # navigates to, not an outcome to be spoken on arrival.
     if total == 0:
-        parts.append(f'    <p class="empty">{_esc(i18n.t(lang, "overview_empty"))}</p>')
+        parts.append(
+            _status_region(f'      <p class="empty">{_esc(i18n.t(lang, "overview_empty"))}</p>\n')
+        )
         return "\n".join(parts)
 
     parts.append(
-        '    <p class="count">' + _esc(i18n.t(lang, "overview_total", count=total)) + "</p>"
+        _status_region(
+            '      <p class="count">' + _esc(i18n.t(lang, "overview_total", count=total)) + "</p>\n"
+        )
     )
     dates = sorted(d[0] for r in records if (d := r.dublin_core.get("date")) and d[0])
     if dates:
@@ -370,7 +415,11 @@ def _places_html(records: list[DisclosedRecord], *, lang: str = "en") -> str:
         f"    <p>{_esc(i18n.t(lang, 'places_intro'))}</p>",
     ]
     if not places:
-        parts.append(f'    <p class="empty">{_esc(i18n.t(lang, "places_empty"))}</p>')
+        # "No places to browse yet" is the outcome of the reader's navigation, so it
+        # is announced (4.1.3); the region wraps that paragraph alone.
+        parts.append(
+            _status_region(f'      <p class="empty">{_esc(i18n.t(lang, "places_empty"))}</p>\n')
+        )
         return "\n".join(parts)
     rows = "\n".join(
         f'        <li><a href="/?coverage={quote(f.value)}">{_esc(f.value)}</a> '
@@ -411,7 +460,11 @@ def _timeline_html(records: list[DisclosedRecord], *, lang: str = "en") -> str:
         f"    <p>{_esc(i18n.t(lang, 'timeline_intro'))}</p>",
     ]
     if not groups:
-        parts.append(f'    <p class="empty">{_esc(i18n.t(lang, "timeline_empty"))}</p>')
+        # As on /places: the empty state is the answer to what the reader just did,
+        # so it is announced (4.1.3), and it alone.
+        parts.append(
+            _status_region(f'      <p class="empty">{_esc(i18n.t(lang, "timeline_empty"))}</p>\n')
+        )
         return "\n".join(parts)
 
     list_items = "\n".join(
@@ -616,7 +669,7 @@ def _browse_main_html(
     # plain language (user research T5/P1-3) — without revealing that anything is
     # hidden (the public list simply omits non-listable records).
     if window.total == 0:
-        status_line = f'    <p class="empty">{_esc(i18n.t(lang, "empty_no_matches"))}</p>\n'
+        status_line = f'      <p class="empty">{_esc(i18n.t(lang, "empty_no_matches"))}</p>\n'
     else:
         showing = i18n.t(
             lang,
@@ -672,9 +725,7 @@ def _browse_main_html(
         f"    <h1>{_esc(heading)}</h1>\n"
         f"    {_search_form(query, lang=lang, active_facets=active)}"
         f"{date_form}"
-        '    <div class="results-status" role="status" aria-live="polite">\n'
-        f"{status_line}"
-        "    </div>\n"
+        f"{_status_region(status_line)}\n"
         f"{clear}"
         f"{export_link}"
         f"{sort_control}"

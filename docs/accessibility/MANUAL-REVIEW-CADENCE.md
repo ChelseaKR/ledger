@@ -57,7 +57,12 @@ Judge the criteria a static or even a browser-automated scan cannot:
   choice, not an obstacle. After proceeding, the warning is restated.
 - **`aria-live` / status messages** — dynamic state (e.g. a search result count,
   a validation summary) is **announced** when it changes, without moving focus
-  unexpectedly.
+  unexpectedly. The static gate now enforces that every status message *is inside*
+  a live region and that no region is scoped wider than its message (SC 4.1.3,
+  `ledger.accessibility_check`), so this pass is no longer looking for a missing
+  region — it is answering the question the gate cannot: is the announcement
+  actually **heard**, at the right moment, in the right register, and not so often
+  that a reader starts ignoring it?
 - **Form errors** — a contribute-form validation error is announced, is associated
   with the field it concerns, and is understandable when spoken in isolation.
 - **List/table equivalence** — the semantic list view and the data-table view

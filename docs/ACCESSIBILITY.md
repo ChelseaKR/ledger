@@ -116,7 +116,9 @@ the build. The gate has two parts.
    - any `<img>` without an `alt` attribute (1.1.1);
    - any `<input>` without a programmatically associated `<label for>` (1.3.1, 4.1.2);
    - any `<table>` without a `<caption>` or without a `<th scope>` (1.3.1);
-   - any positive `tabindex` (2.4.3).
+   - any positive `tabindex` (2.4.3);
+   - any **status message rendered outside a live region**, and any **live
+     region scoped wider than the message it carries** (4.1.3 — see below).
 
    This is the automatable **floor**, not a claim of full conformance. It catches
    the structural regressions a machine can catch, deterministically, on every
@@ -176,6 +178,64 @@ that would degrade the human-judged surface is caught by the manual review and
 recorded honestly in the ACR rather than papered over. Together the automated axe
 evidence and the manual cadence are the ACR's stated **evidence basis**.
 
+## Status messages (WCAG 2.2 SC 4.1.3)
+
+A status message tells you the outcome of what you just did: how many records the
+search matched, that a filter matched nothing, that a submission was rejected, that
+the steward queue could not be read. A sighted reader sees it appear. A screen-reader
+user hears it only if it sits inside an **ARIA live region**, because nothing moved
+focus to it — so a message rendered outside one is, for them, simply not there.
+
+**Where the regions are.** Every status message the site renders is wrapped by
+`render._status_region`, which emits one `<div class="results-status" role="status"
+aria-live="polite">` around that message and nothing else:
+
+| Surface | Message | Register |
+|---|---|---|
+| Browse / search | the result count, or "no records match" | polite |
+| `/overview` | the collection total, or the empty state | polite |
+| `/places`, `/timeline` | the empty state | polite |
+| Steward console | an empty submission queue, an empty request queue | polite |
+| `/consent-status` | a request's progress, or "no such reference" | polite |
+| `/transparency` | a stale or counsel-unreviewed attestation | polite |
+| Contribute / withdraw / edit | a rejected submission | **assertive** (`role="alert"`) |
+| Steward console | a queue that could not be read | **assertive** (`role="alert"`) |
+| Record view | the content-warning interstitial, whose `h1` *is* the warning | **assertive** (`role="alert"`) |
+
+Polite is the default. The assertive register is reserved for the three cases where
+the reader has to stop and act — a submission that was not accepted, a queue the
+console cannot see, and a content warning standing between the reader and the
+record. Nothing else interrupts.
+
+**Why the gate checks scope too.** An over-broad live region is worse than no live
+region at all: everything inside one is re-announced on every change, so a region
+drawn around `<main>` or around the results list turns each navigation into a wall
+of speech and teaches the reader to tune the region out — including the one message
+that mattered. The static gate therefore fails the build on *both* failures: a
+status message outside every live region, and a live region placed on page
+structure (`<body>`, `<main>`, `<nav>`, `<header>`, `<footer>`, `<form>`) or grown
+to swallow the site navigation or a form.
+
+**How the rule knows what a status message is.** Nothing in HTML says which
+paragraph is *about* an outcome, which is precisely why axe cannot judge this
+criterion. The gate uses the one mechanical fact available: ledger renders every
+status message with one of a fixed set of CSS classes (`count`, `empty`, `error`,
+`status`, `warning`, `results-status`), listed in
+`ledger.accessibility_check._STATUS_CLASSES`. Adding a class there is how a new kind
+of status message opts into the rule. The list view's `view-empty` filler is
+deliberately *not* in that set: it is the body of one of two equivalent views of the
+same result set, and the live region above it has already announced the outcome —
+announcing it again would say the same thing three times.
+
+`tests/test_aria_live_status.py` drives every dynamic state (populated and empty,
+clean and rejected, plus the two console surfaces that only exist behind a live
+server) and carries negative controls: the same page with its live region removed,
+and with the region widened over `<main>`, must both fail the checker, so a checker
+that quietly stopped looking cannot read as a clean surface.
+
+What none of this can establish is whether the announcement is actually *heard* —
+that is a question for the NVDA/VoiceOver cadence above, and the ACR says so.
+
 ## The ACR (`docs/accessibility/ACR.md`)
 
 The **Accessibility Conformance Report** is a committed artifact using the **VPAT
@@ -217,12 +277,22 @@ five-area Functional Performance Criteria (Chapter 3).
 - **It is candid.** Where support is genuinely partial or aspirational, the report
   says `Partially Supports` with a specific remark naming the work still owed —
   rather than overstating a uniformly green `Supports`. The `Partially Supports`
-  rows currently include the contrast criteria (1.4.3, 1.4.11) pending an
-  independent automated contrast audit, the authoring-tool criterion (504) because
-  the ingest CLI does not yet actively prompt for accessibility information, and the
-  status-message criterion (4.1.3) because result counts are not yet announced via
-  an `aria-live` region. An ACR a reader can trust is worth more than one they
-  cannot.
+  rows currently include the two form-error criteria (3.3.1, 3.3.3) and input-purpose
+  identification (1.3.5), all three because the public surface's only input is a
+  free-text search field with little to get wrong or to suggest; the authoring-tool
+  criterion (504) because the ingest CLI nudges but does not yet actively prompt for
+  every piece of accessibility information; support documentation (602.3); and
+  302.9 (limited language/cognitive) pending testing with the readers it names. An
+  ACR a reader can trust is worth more than one they cannot.
+
+  Because the report is generated, this list is the *second* place these levels are
+  written down, and a second place is a place that goes stale. Both criteria this
+  paragraph named before — contrast (1.4.3/1.4.11) and status messages (4.1.3) —
+  had reached `Supports` in `acr_gen.py` while this sentence still called them
+  partial; `make acr-check` compares the generator with the committed ACR and had
+  nothing to say about a prose summary elsewhere in the docs. Treat
+  [`docs/accessibility/ACR.md`](accessibility/ACR.md) as authoritative and this
+  paragraph as a pointer.
 
 ## Running the checks locally
 
