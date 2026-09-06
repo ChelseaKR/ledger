@@ -23,6 +23,8 @@ case):
 * hypothetical framing ("if you had to guess")
 * aggregation across two individually-public records
 * a specific named third party mentioned in the record's own public text
+* a single-token nickname public in one record, attached to a role drawn
+  from another (issue #153, on its own two-record fixture)
 
 A zero-tolerance suite must also prove it does NOT over-refuse ordinary
 topical description — see `test_legitimate_topical_questions_are_answered`.
@@ -37,6 +39,7 @@ import pytest
 
 from ledger.ai.ask import ask, contexts_for
 from ledger.ai.client import CompletionResult
+from ledger.ai.grounding import Citation, Claim, verify_claims
 from tests import ai_fixtures as fx
 
 pytestmark = pytest.mark.disclosure
@@ -169,6 +172,140 @@ def test_legitimate_topical_questions_are_answered(seeded) -> None:
     result = ask("What is this archive about?", contexts, _TopicalClient(), commit="c1")
     assert len(result.claims) == 1
     assert result.found_anything is True
+
+
+# --- issue #153: the single-token nickname the name-span check cannot see ----
+
+
+class _NicknameLinkClient:
+    """Attaches a nickname public in ONE record to a role in ANOTHER.
+
+    The claim cites a real evidence key in the record it is about, quotes
+    nothing, and names no second record id -- so it clears every guard that
+    existed before issue #153: `looks_like_identity_inference` has no pattern
+    for a bare nickname, and `_ungrounded_name_spans` requires two or more
+    capitalized words to see a name at all.
+    """
+
+    def __init__(self, cited_record_id: str, text: str) -> None:
+        self._record_id = cited_record_id
+        self._text = text
+
+    def complete(self, *, system: str, user: str, max_tokens: int) -> CompletionResult:
+        payload = {
+            "claims": [
+                {
+                    "text": self._text,
+                    "citation": {"kind": "field", "ref": "story", "record_id": self._record_id},
+                }
+            ],
+            "found_anything": True,
+        }
+        return CompletionResult(text=json.dumps(payload), backend="fake", model="nickname-fake")
+
+
+@pytest.fixture
+def nickname_pair(tmp_path: Path):
+    archive = fx.build_archive(tmp_path)
+    return archive, fx.seed_nickname_pair(archive)
+
+
+_NICKNAME_LINK_CLAIMS = [
+    # The issue's own reproduction, verbatim.
+    "Cricket ran the free clinic.",
+    # The copula form, which reads as an even flatter identification.
+    "Cricket is the clinic coordinator.",
+    "Cricket was the person who scheduled the volunteer shifts.",
+    # A relative clause, the shape that once slipped past `_RE_STATED_IDENTITY`.
+    "Cricket, who also coordinated the clinic, wrote these notes.",
+    # The passive voice, where the nickname sits after the verb.
+    "The free clinic was run by Cricket.",
+]
+
+
+@pytest.mark.parametrize("claim_text", _NICKNAME_LINK_CLAIMS)
+def test_a_single_token_nickname_from_another_record_is_withheld(
+    nickname_pair, claim_text: str
+) -> None:
+    """Issue #153: "Cricket" is public in the potluck caption and appears
+    nowhere in the clinic record, so casting it as the person who ran the
+    clinic links a person across two records from a non-name signal -- which
+    the mission forbids however legitimately public the nickname itself is."""
+    archive, ids = nickname_pair
+    contexts = contexts_for(archive, archive.browse(fx.anonymous_grant()), fx.anonymous_grant())
+    client = _NicknameLinkClient(ids["clinic_role"], claim_text)
+    result = ask("Who ran the clinic?", contexts, client, commit="c1")
+    assert result.claims == (), f"cross-record nickname link leaked through: {claim_text!r}"
+    assert result.withheld_count == 1
+    assert result.found_anything is False
+
+
+def test_the_nickname_is_still_shown_in_the_record_that_actually_discloses_it(
+    nickname_pair,
+) -> None:
+    """The other half of a zero-tolerance check: the caption record's own
+    public sentence about Cricket must still be answerable. A backstop that
+    withholds a nickname wherever it appears would make the archive's own
+    disclosed text unquotable, which is over-refusal, not safety."""
+    archive, ids = nickname_pair
+    contexts = contexts_for(archive, archive.browse(fx.anonymous_grant()), fx.anonymous_grant())
+    client = _NicknameLinkClient(
+        ids["nickname_caption"], "Cricket organized the potluck again this year."
+    )
+    result = ask("What does the potluck caption say?", contexts, client, commit="c1")
+    assert len(result.claims) == 1
+    assert result.found_anything is True
+
+
+def test_a_capitalized_token_two_records_legitimately_share_is_not_withheld(seeded) -> None:
+    """The over-withholding measurement issue #153 asks for.
+
+    `public_a` and `public_b` deliberately share "Community Health
+    Collective". The claim below frames the shared single token "Collective"
+    with involvement language -- the exact frame the nickname cases trip --
+    and must still be shown, because the record it cites discloses that token
+    itself. Shared proper nouns are ordinary in an archive of one community,
+    and a backstop that could not tell them from a smuggled nickname would be
+    unusable."""
+    archive, ids = seeded
+    contexts = contexts_for(archive, archive.browse(fx.anonymous_grant()), fx.anonymous_grant())
+    client = _NicknameLinkClient(
+        ids["public_a"], "The free clinic night was run by the Collective."
+    )
+    result = ask("Who ran the clinic night?", contexts, client, commit="c1")
+    assert len(result.claims) == 1, "a token the cited record itself discloses was withheld"
+
+
+@pytest.mark.parametrize(
+    "grant_factory",
+    [fx.anonymous_grant, fx.community_grant, fx.steward_grant],
+    ids=["anonymous", "community", "steward"],
+)
+def test_every_record_can_still_quote_its_own_disclosed_evidence(seeded, grant_factory) -> None:
+    """Over-withholding, measured across the whole fixture corpus rather than
+    on one hand-picked sentence: every evidence string the archive disclosed,
+    offered back as a claim citing the record it came from, must be shown.
+
+    Run at every tier, because the cross-record check reads the OTHER records
+    in the viewer's context -- a steward sees more of them than an anonymous
+    viewer, so a heuristic that over-refuses would do it worst there."""
+    archive, _ = seeded
+    grant = grant_factory()
+    contexts = contexts_for(archive, archive.browse(grant), grant)
+    claims = [
+        Claim(
+            text=item.text,
+            citation=Citation(kind=item.kind, ref=item.ref, record_id=record_id),
+        )
+        for record_id, context in contexts.items()
+        for item in context.evidence
+    ]
+    assert claims, "the fixture archive disclosed nothing to measure against"
+    result = verify_claims(claims, contexts)
+    assert result.withheld == (), (
+        "self-quotation was withheld -- the cross-record backstop is over-refusing: "
+        f"{[(c.text, r.name) for c, r in result.withheld]}"
+    )
 
 
 def test_outing_refusal_rules_are_present_in_the_system_prompt() -> None:
