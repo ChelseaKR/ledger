@@ -50,9 +50,10 @@ import re
 import tempfile
 import threading
 import time
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import BinaryIO
+from typing import BinaryIO, ClassVar
 from urllib.parse import parse_qs, quote, urlsplit
 
 from ledger import (
@@ -580,98 +581,94 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         """Handle HEAD identically to GET but without a body (handled in `_send`)."""
         self.do_GET()
 
-    # Pre-existing complexity (one dispatcher routes every read-only path); surfaced
-    # 2026-07-05 when CQ-05's complexity gate was enabled. Waived, not re-muted:
-    # this function is the disclosure/no-outing choke point, so it is deliberately
-    # *not* refactored under audit time pressure — a split is tracked as a careful,
-    # fully-retested follow-up, not a same-day edit to the most safety-sensitive
-    # function in the repo. Tracked in issue #83.
-    def do_GET(self) -> None:  # noqa: C901 - the public GET route table (#83)
+    # The route tables these dispatchers read are declared at the end of the
+    # class body, after the handlers they name (`_GET_PAGES` and below). They
+    # have to be: a class-body table can only reference methods already defined
+    # above it, and every handler here is defined below this point.
+    #
+    # Routing used to be one 35-branch `if/elif` chain per verb, carrying a C901
+    # complexity waiver tracked on #83 as a split that had to be careful rather
+    # than same-day -- this is the disclosure/no-outing choke point. The split is
+    # to *data*, not to more chains, for a second reason: the only thing that
+    # knew which routes exist was a regular expression in
+    # `tests/test_accessibility_route_coverage.py` reading this function's source
+    # text between `def do_GET` and `def do_POST`. That gate's central check is
+    # "every dispatched route is classified as in-scope or out-of-scope for the
+    # accessibility review", and a set difference against an empty set passes.
+    # Any refactor that moved a route literal out of this window would therefore
+    # have left it green while it checked nothing at all. The tables can be read
+    # as data, and are.
+
+    def do_GET(self) -> None:
         """Route a GET request to the matching read-only handler.
 
         Routing is a small, explicit dispatch (predictability). Unmatched paths
         get a 404; any :class:`~ledger.errors.LedgerError` is rendered as a safe
         error page or JSON error whose message names no protected content
         (no-outing rule).
+
+        The order is exactly the order the `if/elif` chain used before #83's
+        split: exact paths first (they are mutually exclusive, so a mapping is
+        order-free), then the prefixed families, which are not -- ``/record/x``
+        must be tried after ``/record/x/history``, or the catch-all would swallow
+        it. `tests/test_route_tables.py` pins every one of those decisions.
         """
         self._t0 = time.monotonic()
         parts = urlsplit(self.path)
         path = parts.path
         params = parse_qs(parts.query)
         try:
-            if path == "/":
-                self._handle_browse(params)
-            elif path == "/search":
-                self._handle_search(params)
-            elif path == "/healthz":
-                self._handle_healthz()
-            elif path == "/status":
-                self._handle_status()
-            elif path == "/consent-status":
-                self._handle_consent_status(params)
-            elif path == "/about":
-                self._handle_about()
-            elif path == "/overview":
-                self._handle_overview()
-            elif path == "/places":
-                self._handle_places()
-            elif path == "/timeline":
-                self._handle_timeline()
-            elif path == "/governance":
-                self._handle_governance()
-            elif path == "/how-it-works":
-                self._handle_how_it_works()
-            elif path == "/proof":
-                self._handle_proof()
-            elif path == "/proof/attestation.json":
-                self._handle_proof_attestation()
-            elif path == "/transparency":
-                self._handle_transparency()
-            elif path == "/oai":
-                self._handle_oai(params)
-            elif path == "/sitemap.xml":
-                self._handle_sitemap()
-            elif path == "/robots.txt":
-                self._handle_robots()
-            elif path == "/feed.atom":
-                self._handle_feed()
-            elif path == "/steward":
-                self._handle_steward_console()
-            elif path == "/steward/audit":
-                self._handle_steward_audit()
-            elif path == "/contribute":
-                self._handle_contribute_form()
-            elif path == "/withdraw":
-                self._handle_withdraw_form()
-            elif path == "/edit":
-                self._handle_edit_form()
-            elif path.startswith("/record/") and "/file/" in path:
-                rid, _, name = path[len("/record/") :].partition("/file/")
-                self._handle_file(rid, name)
-            elif path.startswith("/record/") and path.endswith("/consent"):
-                self._handle_consent_form(path[len("/record/") : -len("/consent")])
-            elif path.startswith("/record/") and path.endswith("/object"):
-                self._handle_object_form(path[len("/record/") : -len("/object")])
-            elif path.startswith("/record/") and path.endswith("/history"):
-                self._handle_record_history(path[len("/record/") : -len("/history")], params)
-            elif path.startswith("/record/"):
-                self._handle_record(path[len("/record/") :], params)
-            elif path == "/api/records":
-                self._handle_api_records()
-            elif path == "/api/search":
-                self._handle_api_search(params)
-            elif path == "/api/search.csv":
-                self._handle_api_search_csv(params)
-            elif path.startswith("/api/record/"):
-                self._handle_api_record(path[len("/api/record/") :])
-            elif path.startswith("/static/"):
-                self._handle_static(path[len("/static/") :])
-            else:
+            page = self._GET_PAGES.get(path)
+            if page is not None:
+                page(self)
+                return
+            query_page = self._GET_QUERY_PAGES.get(path)
+            if query_page is not None:
+                query_page(self, params)
+                return
+            if not self._route_get_prefixed(path, params):
                 self._handle_not_found()
         except BrokenPipeError:  # pragma: no cover - client disconnected
             pass
 
-    def do_POST(self) -> None:  # noqa: C901 - the public POST route table (#83)
+    def _route_get_prefixed(self, path: str, params: dict[str, list[str]]) -> bool:
+        """The GET routes that carry an identifier in the path. True if served.
+
+        Not a mapping, because these are tried in order and the order is
+        load-bearing: every ``/record/`` route below the first that matches is
+        reachable only because the ones above it did not.
+        """
+        if path.startswith("/record/"):
+            return self._route_get_record(path[len("/record/") :], params)
+        if path.startswith("/api/record/"):
+            self._handle_api_record(path[len("/api/record/") :])
+            return True
+        if path.startswith("/static/"):
+            self._handle_static(path[len("/static/") :])
+            return True
+        return False
+
+    def _route_get_record(self, rest: str, params: dict[str, list[str]]) -> bool:
+        """One record's pages, dispatched on what follows the identifier.
+
+        ``rest`` is the path with ``/record/`` already removed. The final branch
+        is a catch-all and must stay last: ``abc/history`` matches it too.
+        """
+        if "/file/" in rest:
+            rid, _, name = rest.partition("/file/")
+            self._handle_file(rid, name)
+            return True
+        for suffix, served in self._RECORD_SUBROUTES:
+            if rest.endswith(suffix):
+                served(self, rest[: -len(suffix)])
+                return True
+        if rest.endswith("/history"):
+            self._handle_record_history(rest[: -len("/history")], params)
+            return True
+        self._handle_record(rest, params)
+        return True
+
+    def do_POST(self) -> None:
         """Route a POST: the contributor consent form and steward request actions.
 
         These are the only writes the site accepts. Consent submission is open (a
@@ -681,32 +678,15 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         self._t0 = time.monotonic()
         path = urlsplit(self.path).path
         try:
-            if path == "/contribute":
-                self._post_contribute()
-            elif path == "/withdraw":
-                self._post_withdraw()
-            elif path == "/edit":
-                self._post_edit()
-            elif path.startswith("/record/") and path.endswith("/consent"):
-                self._post_consent(path[len("/record/") : -len("/consent")])
-            elif path.startswith("/record/") and path.endswith("/object"):
-                self._post_object(path[len("/record/") : -len("/object")])
-            elif path.startswith("/steward/requests/") and path.endswith("/resolve"):
-                rid = path[len("/steward/requests/") : -len("/resolve")]
-                self._post_resolve_request(rid)
-            elif path.startswith("/steward/records/") and path.endswith("/warn"):
-                rid = path[len("/steward/records/") : -len("/warn")]
-                self._post_steward_warn(rid)
-            elif path.startswith("/steward/records/") and path.endswith("/takedown"):
-                rid = path[len("/steward/records/") : -len("/takedown")]
-                self._post_steward_takedown(rid)
-            elif path == "/steward/submissions/withhold":
-                self._post_bulk_withhold()
-            elif path.startswith("/steward/submissions/") and path.endswith("/review"):
-                rid = path[len("/steward/submissions/") : -len("/review")]
-                self._post_review_submission(rid)
-            else:
-                self._handle_not_found()
+            action = self._POST_ACTIONS.get(path)
+            if action is not None:
+                action(self)
+                return
+            for prefix, suffix, served in self._POST_ID_ACTIONS:
+                if path.startswith(prefix) and path.endswith(suffix):
+                    served(self, path[len(prefix) : -len(suffix)])
+                    return
+            self._handle_not_found()
         except BrokenPipeError:  # pragma: no cover - client disconnected
             pass
 
@@ -2959,6 +2939,93 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(body)
+
+    # --- the route tables --------------------------------------------------
+    #
+    # Declared here, at the end of the class body, because a class-body table can
+    # only name methods already defined above it and every handler above is
+    # defined after `do_GET`. They are data on purpose: `do_GET` and `do_POST`
+    # were one 35- and one 12-branch chain, each carrying a C901 waiver (#83),
+    # and the only inventory of what this server serves was a regular expression
+    # in `tests/test_accessibility_route_coverage.py` reading `do_GET`'s source
+    # text. A route is a fact about the site, so it is stored as one.
+    #
+    # The methods are referenced directly rather than by name, so a typo is a
+    # NameError at import rather than an AttributeError on the first request that
+    # reaches the route, and mypy checks that every entry has the signature its
+    # table's type says it does.
+
+    #: Exact GET paths whose handler needs nothing but the request. Order-free:
+    #: the keys are distinct literals, so no entry can shadow another.
+    _GET_PAGES: ClassVar[dict[str, Callable[[ArchiveRequestHandler], None]]] = {
+        "/healthz": _handle_healthz,
+        "/status": _handle_status,
+        "/about": _handle_about,
+        "/overview": _handle_overview,
+        "/places": _handle_places,
+        "/timeline": _handle_timeline,
+        "/governance": _handle_governance,
+        "/how-it-works": _handle_how_it_works,
+        "/proof": _handle_proof,
+        "/proof/attestation.json": _handle_proof_attestation,
+        "/transparency": _handle_transparency,
+        "/sitemap.xml": _handle_sitemap,
+        "/robots.txt": _handle_robots,
+        "/feed.atom": _handle_feed,
+        "/steward": _handle_steward_console,
+        "/steward/audit": _handle_steward_audit,
+        "/contribute": _handle_contribute_form,
+        "/withdraw": _handle_withdraw_form,
+        "/edit": _handle_edit_form,
+        "/api/records": _handle_api_records,
+    }
+
+    #: Exact GET paths whose handler reads the query string.
+    _GET_QUERY_PAGES: ClassVar[
+        dict[str, Callable[[ArchiveRequestHandler, dict[str, list[str]]], None]]
+    ] = {
+        "/": _handle_browse,
+        "/search": _handle_search,
+        "/consent-status": _handle_consent_status,
+        "/oai": _handle_oai,
+        "/api/search": _handle_api_search,
+        "/api/search.csv": _handle_api_search_csv,
+    }
+
+    #: ``/record/{id}{suffix}`` GET routes taking only the identifier, tried in
+    #: this order. ``/history`` is not here because its handler also reads the
+    #: query string; `_route_get_record` runs it immediately after this table,
+    #: which is where the old chain had it.
+    _RECORD_SUBROUTES: ClassVar[
+        tuple[tuple[str, Callable[[ArchiveRequestHandler, str], None]], ...]
+    ] = (
+        ("/consent", _handle_consent_form),
+        ("/object", _handle_object_form),
+    )
+
+    #: Exact POST paths. These are the only writes the site accepts that carry no
+    #: identifier in the path.
+    _POST_ACTIONS: ClassVar[dict[str, Callable[[ArchiveRequestHandler], None]]] = {
+        "/contribute": _post_contribute,
+        "/withdraw": _post_withdraw,
+        "/edit": _post_edit,
+        "/steward/submissions/withhold": _post_bulk_withhold,
+    }
+
+    #: ``{prefix}{id}{suffix}`` POST routes, tried in order after the exact table.
+    #: ``/steward/submissions/withhold`` is an exact path above and is therefore
+    #: matched before ``/steward/submissions/{id}/review`` here, as it was in the
+    #: chain this replaced.
+    _POST_ID_ACTIONS: ClassVar[
+        tuple[tuple[str, str, Callable[[ArchiveRequestHandler, str], None]], ...]
+    ] = (
+        ("/record/", "/consent", _post_consent),
+        ("/record/", "/object", _post_object),
+        ("/steward/requests/", "/resolve", _post_resolve_request),
+        ("/steward/records/", "/warn", _post_steward_warn),
+        ("/steward/records/", "/takedown", _post_steward_takedown),
+        ("/steward/submissions/", "/review", _post_review_submission),
+    )
 
 
 # --- module-level render helpers (shared by routes) -------------------------

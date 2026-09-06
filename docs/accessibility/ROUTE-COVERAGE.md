@@ -30,6 +30,15 @@ does not automatically gain coverage — someone has to add it to one list or th
 code (see [Kept honest by a test](#kept-honest-by-a-test) below); it cannot make the
 code itself grow coverage.
 
+The *route inventory* it checks them against is no longer hand-maintained, and did not
+used to be read at all. Until the #83 route-table split it was recovered by running
+`path == "..."` as a regular expression over `server.py`'s source text between
+`def do_GET` and `def do_POST`. Every check here is a set difference against that
+inventory, and a set difference against an empty set is empty — so any change that
+moved a route literal out of that window would have left this document's gate green
+while it verified nothing. `server.py` now declares its routes as data and the test
+reads them, under a floor that fails if it recovers fewer than twenty.
+
 ## Inventory
 
 21 GET routes in `src/ledger/server.py` render HTML for a person rather than JSON, XML,
@@ -129,8 +138,10 @@ others above, is a `server.py` change this PR does not make.
 
 **Why draw the line at "no `server.py` change"?** `server.py` is this repo's largest
 and most safety-sensitive module — its own comments call `do_GET` "the
-disclosure/no-outing choke point" and describe it as deliberately *not* refactored
-under audit time pressure. This PR's actual bug is in `accessibility_check.py`; adding
+disclosure/no-outing choke point" and, when this section was written, described it as
+deliberately *not* refactored under audit time pressure. (It has since been split into
+route tables under #83, with `tests/test_route_tables.py` driving every route over a
+live server; the reasoning below is why *this* PR did not do it.) This PR's actual bug is in `accessibility_check.py`; adding
 the three free routes stayed inside that same file. Extracting pure render functions
 out of `server.py` handlers is real, worthwhile work — but it is a separable change
 with its own review surface, and mixing it into the PR that fixes the zero-documents
@@ -155,5 +166,6 @@ above — the static gate's actual coverage (called live via `_render_sample_pag
 not hand-copied), the browser gate's hand-maintained list, and the route inventory —
 and fails if the resulting "uncovered" set stops matching the 8 routes named here, or
 if any of the route strings this document depends on disappear from
-`src/ledger/server.py`'s dispatch table. If coverage changes, this file must change
-with it, in the same PR, or that test fails.
+`src/ledger/server.py`'s route tables — which it reads as data from the handler class,
+not as text from a source file. If coverage changes, this file must change with it, in
+the same PR, or that test fails.
