@@ -174,9 +174,16 @@ skip_covered = false
 # single test — it would just make `main` red until someone lowered it again, and a
 # floor that gets lowered is not a floor.
 #
-# Measured 88.06% branch coverage over 1005 tests (2026-08-01). Floor raised 85 -> 88.
-# CQ-08's published-library target is 90%; the remaining ~2 points are real tests that
-# still have to be written, and the largest gaps are named in #83.
+# History, because a ratchet is only legible if you can see it move: 85 -> 88 in #109
+# (measured 88.06% over 1005 tests, 2026-08-01), then 88 -> 90 in #174, which wrote the
+# 0.39 points of real tests the gap actually was rather than adjusting the number, and
+# measured 90.13%. The floor is now CQ-08's published-library level, not a target above it.
+#
+# The three lines this replaced said "Floor raised 85 -> 88" and "CQ-08's published-library
+# target is 90%; the remaining ~2 points are real tests that still have to be written",
+# sitting directly above `fail_under = 90`. They were true until #174 and were not updated
+# with it, so for a reader the gate's own explanation stated a floor two points below the
+# one being enforced, and described finished work as outstanding.
 fail_under = 90
 
 # Mutation testing (CODE-QUALITY-STANDARD CQ-47) — advisory only, never a merge
