@@ -174,6 +174,42 @@ A wrong passphrase or a tampered archive fails the drill with a clear,
 no-outing-safe error (`backup decryption failed (wrong passphrase or tampered
 archive)`) rather than yielding garbage — Fernet authenticates the ciphertext.
 
+### 4a. `ledger drill` — the failures a restore drill does not cover
+
+A restore drill answers one question: would the backup come back? It does not
+answer the others the threat model is written for. A replica silently corrupted, a
+mirror that disappears, a history quietly truncated: none of those is a lost box,
+and none is exercised by restoring one.
+
+```sh
+ledger drill --root /srv/ledger --workdir /tmp/drill
+echo "exit: $?"   # 0 = every applicable scenario recovered; non-zero = alarm
+```
+
+Each named scenario gets **its own copy** of the archive in `--workdir`, has one
+fault injected into that copy, and is then handed to the archive's real recovery
+commands. The live archive is never written, and the report carries its tree digest
+from before and after so that claim is checkable rather than asserted.
+
+Read the outcome words carefully, because they are three and not two:
+
+| Outcome | What it means |
+|---|---|
+| `recovered` | The fault was confirmed present on disk, the archive's own check reported it, and the recovery command put things back. |
+| `failed` | Something in that chain broke. The report names the step: `inject` (the fault did not land, so nothing was rehearsed), `detect` (the damage was real and the archive did not notice), `recover`, or `verify`. |
+| `not-applicable` | This archive's shape cannot exercise the scenario — `lost-location` needs a second location. Reported, never counted as a pass. |
+
+`detect` is the failure worth understanding. A recovery path that only works when
+someone already knows what broke is not a recovery path, so a fault the archive
+could not see stops the scenario **before** recovery is attempted rather than
+crediting a repair nothing would ever have called.
+
+`ledger checkup` reads the last recorded drill back and reports it as a readiness
+control. With no drill recorded it says `could-not-verify`, not `pass`: an archive
+nobody has rehearsed is not one whose recovery paths are known to work.
+
+**Cadence.** Quarterly, and after any change to the replica topology.
+
 ---
 
 ## 5. Retention / prune
@@ -200,6 +236,9 @@ ledger restore-backup --archive <file>.tar.fernet --target <empty-dir>
 
 # verify an already-restored tree (e.g. one restored by hand):
 ledger verify-backup --backup <restored-archive-root>
+
+# rehearse the other failures: corruption, a lost mirror, a truncated history
+ledger drill --root <archive-root> --workdir <scratch-dir>
 ```
 
 Related: `docs/ADOPTING.md` (durability checklist), `docs/CONTINUITY.md` (dormancy

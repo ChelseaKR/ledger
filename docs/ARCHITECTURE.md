@@ -385,7 +385,7 @@ The site binds to `127.0.0.1` by default.
 
 ### 1.11 CLI: `cli.py` and `config.py`
 
-`cli.py` is the one discoverable steward surface: 41 subcommands, which `ledger --help`
+`cli.py` is the one discoverable steward surface: 42 subcommands, which `ledger --help`
 lists in full — `init`, `ingest`, `browse`, `show`, `serve`, `audit`, `policy`,
 `takedown`, `replicas`, `heal`, `add-location`, `demo`, `acr`, and the `grant`, `vault`,
 `mutual-aid`, `transparency`, `moderation`, and `session` groups among them. A capability with no
@@ -407,6 +407,34 @@ older files in memory and *refuses* a file from a newer ledger rather than misre
 it. `Config.default` produces secure single-box defaults — store and vault under one
 root, `default_policy = SEALED_UNTIL`, one `local` location — and `save` writes
 atomically. A config describes *where* the vault lives, never *what* is in it.
+
+### 1.11a Disaster rehearsal: `drill.py`
+
+`drill.py` answers a question no other module does: not "is the archive healthy" but
+"would the recovery work". Each scenario in a closed registry gets its **own** copy
+of the archive under a scratch directory, has one named fault injected into that
+copy, and is then handed to the archive's real recovery commands — the same
+`verify_replicas` and `heal` a steward would run, never a private reimplementation
+of them. `bit-rot`, `lost-location` and `truncated-log` are implemented today.
+
+The module's shape is a fixed pipeline (`applicability -> inject -> detect ->
+recover -> verify`) precisely so the runner can enforce two rules rather than
+trusting each scenario to remember them. **A fault that did not land stops at
+`inject`**: a sabotage that silently no-ops would otherwise let the recovery
+trivially "succeed" over an undamaged archive. **A fault the archive's own check did
+not report stops at `detect`**, before recovery is attempted, because a repair
+nothing would ever call is not a recovery path.
+
+`DrillOutcome` has three members, matching `checkup.CheckStatus`: an archive whose
+shape cannot exercise a scenario reports `not-applicable` with the reason, never
+`recovered`, and does not fail the run. The live archive is never written and the
+report carries its tree digest from before and after, so that claim is checkable
+rather than asserted. Reports carry scenario names, counts, digests and command
+names only — no payload byte, record title or identity.
+
+`checkup` reads the last drill back from the JSON copy under `audits/` and reports
+`could-not-verify` when none exists: an archive nobody has rehearsed is not one
+whose recovery paths are known to work.
 
 ### 1.12 The optional AI layer: `ai/` (ADR 0013)
 
