@@ -24,7 +24,16 @@ permissions:
   contents: read
 
 concurrency:
-  group: standards-${{ github.ref }}
+  # Key each push on its own commit. This workflow has no `pull_request` trigger
+  # (see above), so every run is a push to `main` or a manual dispatch, and a
+  # group keyed only on `github.ref` put all of them in one group: a third run
+  # joining cancels the pending one with zero jobs dispatched, and
+  # `cancel-in-progress: true` cancels the running one part-way through.
+  #
+  # Measured 2026-09-05 over the 100 most recent runs on `main`: 8 ended
+  # `cancelled`, and those 8 commits have no successful freshness verdict. A gate
+  # that runs only on push to `main` has no second chance to run.
+  group: standards-${{ github.ref }}-${{ github.sha }}
   cancel-in-progress: true
 
 jobs:

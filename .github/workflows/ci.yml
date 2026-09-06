@@ -14,7 +14,27 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  # Key pull requests on the ref and pushes on the commit.
+  #
+  # A concurrency group holds one running run and one pending run. A third run
+  # joining the group cancels the pending one before it dispatches a single job,
+  # so that commit ends `cancelled` with zero jobs and no verdict; with
+  # `cancel-in-progress: true` the running run is cancelled part-way through
+  # instead — also no verdict. A group keyed only on `github.ref` therefore makes
+  # every push to `main` contend with the merge before it, and a burst of merges
+  # loses the middle ones.
+  #
+  # Measured 2026-09-05 over the 100 most recent `ci` runs on `main`: 21 ended
+  # `cancelled` (5 of them with zero jobs dispatched), and those same 21 commits
+  # are every commit in the window with no successful `ci` run — not one of them
+  # was a real failure. This workflow produces ten of the thirteen required status
+  # checks on `main`, so those commits are on `main` unjudged by the gate that is
+  # supposed to be the condition of their being there.
+  #
+  # Keying pushes on the SHA gives every merge its own group, so pushes never
+  # contend. Pull requests keep the shared `-pr` key, so pushing again to a PR
+  # still cancels the previous, now-irrelevant run.
+  group: ci-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.sha }}
   cancel-in-progress: true
 
 jobs:
