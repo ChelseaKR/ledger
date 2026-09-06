@@ -7,6 +7,54 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **`ledger drill`: a reversible disaster rehearsal that proves the recovery
+  paths** (#187, partial — see below). `ledger checkup` inspects a deployment and
+  `docs/BACKUP-RUNBOOK.md` §4 describes a restore drill a steward runs by hand.
+  Neither exercises the failures the threat model is written for: a replica
+  silently corrupted, a mirror that disappears, a history quietly truncated. An
+  untested recovery path is a hope, as the runbook says.
+
+  `ledger drill --root <archive> --workdir <scratch>` gives each named scenario its
+  own copy of the archive, injects one fault into that copy, and hands it to the
+  archive's real recovery commands. Three scenarios so far: `bit-rot` (bytes
+  flipped in one replica's payload), `lost-location` (a mirror's copy removed) and
+  `truncated-log` (the PREMIS chain cut short). A dated Markdown report and a JSON
+  copy are written into `audits/`.
+
+  Two rules make it a rehearsal rather than a ritual, and both exist because a
+  drill that cannot fail is worse than no drill:
+
+  - **The fault must be confirmed present before recovery is attempted.** A
+    sabotage that silently no-ops reads as a pass: the recovery "succeeds" because
+    there was nothing to recover from. Each scenario re-reads the copy after
+    injecting and the runner refuses to continue if the mutation is not there.
+  - **The archive's own detector must report the damage before recovery is
+    credited.** A fault that landed but went unnoticed stops the scenario at the
+    `detect` step, before recovery runs, because a repair nothing would ever call
+    is not a recovery path. That is the most interesting failure this command can
+    produce.
+
+  The outcome has three states, not two. A scenario this archive's shape cannot
+  exercise — `lost-location` with one location — is `not-applicable` with the
+  reason, and never `recovered`. It does not fail the run either: reddening an
+  archive for a rehearsal it cannot perform would train a steward to ignore the
+  command. The same three-state honesty `ledger.checkup.CheckStatus` already uses.
+
+  The live archive is never written, and the report carries its tree digest from
+  before and after so the claim is checkable rather than asserted; a drill whose
+  own damage escaped invalidates its findings and exits non-zero however well the
+  scenarios went.
+
+  `ledger checkup` gains a `recovery-drill` control that reads the last recorded
+  drill back from the JSON copy (not by scraping the prose, so a wording change
+  cannot alter what the readiness check believes). With no drill recorded it
+  reports `could-not-verify` — never `pass`: an archive nobody has rehearsed is not
+  one whose recovery paths are known to work, and not one whose paths are known to
+  be broken either.
+
+  Still open on #187: the `stale-replica` and `seized-primary` scenarios, which
+  need the tombstone and lockdown paths rather than the replica/heal path the three
+  above share.
 - **Status messages now announce to a screen reader (WCAG 2.2 SC 4.1.3)** (#178).
   A status message — the search result count, an empty state, a rejected submission
   — is only heard if it sits in an ARIA live region, because nothing moves focus to

@@ -37,6 +37,7 @@ from ledger import (
     captions,
     checkup,
     demo,
+    drill,
     dualcontrol,
     preservation,
     redact_suggest,
@@ -1586,6 +1587,53 @@ def _cmd_session_ingest(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_drill(args: argparse.Namespace) -> int:
+    """``drill`` — rehearse a named recovery path against a scratch copy of the archive.
+
+    The live archive is never written: every scenario gets its own copy under
+    ``--workdir``, and the report carries the live tree's digest from before and
+    after so the claim is checkable rather than asserted. Exit code is ``1`` when
+    any scenario failed, or if the live archive moved. A scenario this archive's
+    shape cannot exercise reports ``not-applicable`` and does not fail the run —
+    it is reported, never rendered as a pass. Only scenario names, counts, digests
+    and command names are printed (no-outing rule).
+    """
+    root = Path(args.root)
+    try:
+        report = drill.run_drill(root, Path(args.workdir), scenarios=args.scenarios, now=args.now)
+    except drill.DrillError as error:
+        print(f"drill: {error}", file=sys.stderr)
+        return 2
+
+    if not args.no_report:
+        # Beside `checkup`'s readiness reports, under the store, which is where
+        # `checkup` reads the last drill back from.
+        drill.write_report(report, Path(_load_config(root).store_root) / "audits")
+
+    if args.json:
+        print(json.dumps(report.to_dict(), indent=2, sort_keys=True))
+        return report.exit_code
+
+    print(f"ledger recovery drill — {report.generated_date} — {report.archive_name}")
+    print()
+    for result in report.results:
+        print(f"  [{result.outcome.value.upper():<15}] {result.scenario}")
+        print(
+            f"      fault landed: {'yes' if result.fault_landed else 'no'}   "
+            f"detected by the archive: {'yes' if result.fault_detected else 'no'}   "
+            f"bags touched: {result.bags_touched}"
+        )
+        print(f"      {result.detail}")
+    print()
+    if report.live_archive_untouched:
+        print("the live archive was not written (tree digest unchanged)")
+    else:
+        print("WARNING: the live archive changed during this drill", file=sys.stderr)
+    if report.report_path is not None:
+        print(f"report: {report.report_path}")
+    return report.exit_code
+
+
 def _cmd_checkup(args: argparse.Namespace) -> int:
     """``checkup`` — advisory adoption-readiness report against ``docs/ADOPTING.md`` (EX6/EXP-03).
 
@@ -2360,6 +2408,31 @@ def _build_parser() -> argparse.ArgumentParser:
     p_session_ingest.add_argument("--actor", default="ledger", help="ingest agent id")
     p_session_ingest.add_argument("--now", help="ISO-8601 timestamp for reproducible ingest")
     p_session_ingest.set_defaults(func=_cmd_session_ingest)
+
+    p_drill = sub.add_parser(
+        "drill",
+        help="reversible disaster rehearsal: inject a fault into a scratch copy and recover it",
+    )
+    p_drill.add_argument("--root", required=True)
+    p_drill.add_argument(
+        "--workdir",
+        required=True,
+        help="scratch directory the copies are made in; the live archive is never written",
+    )
+    p_drill.add_argument(
+        "--scenario",
+        action="append",
+        dest="scenarios",
+        help=f"rehearse only this scenario (repeatable); one of: {', '.join(sorted(drill.SCENARIOS))}",
+    )
+    p_drill.add_argument(
+        "--json", action="store_true", help="emit the machine-readable report instead of a table"
+    )
+    p_drill.add_argument(
+        "--no-report", action="store_true", help="do not write a dated copy into audits/"
+    )
+    p_drill.add_argument("--now", help="ISO-8601 timestamp for a reproducible report date")
+    p_drill.set_defaults(func=_cmd_drill)
 
     p_checkup = sub.add_parser(
         "checkup", help="interactive adoption readiness checkup against ADOPTING.md"

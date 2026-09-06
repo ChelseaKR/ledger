@@ -38,6 +38,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 
+from ledger import drill
 from ledger.ingest import Archive
 from ledger.models import now_iso
 from ledger.replicate import verify_replicas
@@ -487,6 +488,71 @@ def _check_tls_exposure(env: Mapping[str, str]) -> CheckResult:
 # --- orchestration ----------------------------------------------------------
 
 
+def _check_recovery_drill(store_root: Path) -> CheckResult:
+    """Has a recovery drill actually been run against this archive? (EXP: `ledger drill`)
+
+    The three states matter as much here as anywhere in this file. A recorded drill
+    where everything recovered is a pass. A recorded drill with a failed scenario is
+    a fail. **No recorded drill at all is `could-not-verify`, never a pass**: an
+    archive nobody has rehearsed is not an archive whose recovery paths are known to
+    work, and it is not one whose paths are known to be broken either.
+    """
+
+    summary = drill.latest_drill(store_root / "audits")
+    if summary is None:
+        return CheckResult(
+            check_id="recovery-drill",
+            title="A recovery drill has been run and recorded",
+            status=CheckStatus.UNVERIFIED,
+            explanation=(
+                "No recovery drill is recorded under audits/. Nothing here says the "
+                "recovery paths are broken; nothing says they work either. Run "
+                "`ledger drill --root <archive> --workdir <scratch>` to find out. It "
+                "never writes to the archive."
+            ),
+        )
+    if not summary.live_archive_untouched:
+        return CheckResult(
+            check_id="recovery-drill",
+            title="A recovery drill has been run and recorded",
+            status=CheckStatus.FAIL,
+            explanation=(
+                f"The drill recorded on {summary.generated_date} changed the live "
+                "archive while it ran, so its own findings cannot be trusted. Treat "
+                "the recovery paths as untested and report the drill itself as a bug."
+            ),
+        )
+    if summary.failed:
+        return CheckResult(
+            check_id="recovery-drill",
+            title="A recovery drill has been run and recorded",
+            status=CheckStatus.FAIL,
+            explanation=(
+                f"The drill on {summary.generated_date} could not recover from: "
+                f"{', '.join(summary.failed)}. Read "
+                f"audits/{drill.REPORT_PREFIX}{summary.generated_date[:10]}.md for the "
+                "step each one stopped at."
+            ),
+        )
+    skipped = (
+        f" {len(summary.not_applicable)} scenario(s) this archive's shape cannot "
+        f"exercise were reported as not-applicable, not as passes: "
+        f"{', '.join(summary.not_applicable)}."
+        if summary.not_applicable
+        else ""
+    )
+    return CheckResult(
+        check_id="recovery-drill",
+        title="A recovery drill has been run and recorded",
+        status=CheckStatus.PASS,
+        explanation=(
+            f"The drill on {summary.generated_date} recovered from "
+            f"{len(summary.recovered)} injected fault(s): "
+            f"{', '.join(summary.recovered) or 'none'}.{skipped}"
+        ),
+    )
+
+
 def run_checkup(
     archive: Archive,
     *,
@@ -517,6 +583,7 @@ def run_checkup(
         _check_full_disk_encryption(store_root, plat),
         _check_off_box_replicas(archive, env),
         _check_tls_exposure(env),
+        _check_recovery_drill(store_root),
     )
     report = CheckupReport(
         generated_date=generated_date,
