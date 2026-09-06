@@ -70,6 +70,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
+          # tests/test_version_reality.py refuses to read an empty tag list off a
+          # shallow clone as "never released" -- that is an absence rendered as a
+          # value, and it is the reason tools/check_claims.py had to publish "no
+          # release has shipped yet" as a claim it could not check. fetch-depth: 0
+          # fetches refs/tags/* explicitly.
+          fetch-depth: 0
       # SEC-13/CQ-09/CQ-27: install from the committed, hash-locked `uv.lock`
       # (`--locked` fails the build rather than silently re-resolving) instead of
       # an unpinned `pip install -e ".[dev]"` against version ranges — the same

@@ -148,7 +148,7 @@ load-bearing statements were false (#124), because a claim it does not hold cann
 So it now prints its own boundary on every run, and this is the same list — if you are
 relying on a claim below, verify it yourself rather than reading a green build as evidence:
 
-- no release has shipped yet — the answer lives in the remote's tags, which a CI checkout does not fetch
+- no release has shipped yet — this script makes no network request and does not shell out to git, so it cannot enumerate tags; `tests/test_version_reality.py` reads them directly, now that `ci.yml`'s gate job checks out with `fetch-depth: 0`
 - the audit artifacts under docs/audits/ have not been signed off by a human — a fact about people, not about the tree ([#82](https://github.com/ChelseaKR/ledger/issues/82))
 - no dated assistive-technology walkthrough exists — no scan can produce or confirm a screen-reader session ([#81](https://github.com/ChelseaKR/ledger/issues/81))
 - the test, coverage, and mutation figures in docs/ROADMAP.md — dated measurements; `make test`, `make cov`, and `make mutation` re-measure them
