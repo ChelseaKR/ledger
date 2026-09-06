@@ -30,6 +30,43 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   catches it.
 
 ### Fixed
+- **The public GET and POST route tables are route tables, and the gate that
+  read them could not fail** (#83). `do_GET` was a 35-branch `if/elif` chain and
+  `do_POST` a 12-branch one, each carrying a `C901` waiver that #83 tracked as a
+  split to make carefully rather than same-day: this is the disclosure/no-outing
+  choke point, and every public read passes through it. They are now declared
+  tables on `ArchiveRequestHandler` — exact GET paths, exact GET paths that read
+  the query string, the ordered `/record/{id}...` suffixes, exact POST paths, and
+  the ordered `{prefix}{id}{suffix}` POST rules — read by two short dispatchers.
+  The handlers are referenced directly rather than by name, so a typo is an
+  import-time `NameError` rather than an `AttributeError` on the first request
+  that reaches the route, and mypy checks each entry against its table's type.
+
+  The split was made *to data* for a second reason. The only inventory of what
+  this server serves was a regular expression in
+  `tests/test_accessibility_route_coverage.py`, run over `do_GET`'s source text
+  between `def do_GET` and `def do_POST`. That file's central check is a set
+  difference — every dispatched route must be classified as in scope or out of
+  scope for the accessibility review — and a set difference against an empty set
+  is empty. Any refactor that moved a route literal out of that window would have
+  left it green having checked nothing, which was measured rather than supposed:
+  mid-split the regex recovered 0 routes and
+  `test_a_new_html_route_cannot_be_added_without_an_accessibility_decision` still
+  passed. It reads the tables as data now, under a floor that fails when it
+  recovers fewer than twenty routes.
+
+  `tests/test_route_tables.py` is the safety evidence. It pins every path to the
+  handler the chain called, and then drives the real routes over a live server
+  with the tables replaced by recorders, asserting where each request actually
+  lands and with which arguments — including the ordering a mapping cannot
+  express, since `/record/{id}` is a catch-all that would otherwise swallow
+  `/record/{id}/history`, and the slicing that hands `abc123` and `photo.jpg` to
+  `_handle_file`. Removing the `/history` branch makes it fail; the full suite is
+  1,755 tests, all green. Six `C901` waivers remain (`ingest_sip`,
+  `validate_bag`, the WCAG element and rule checks, CLI ingest options, and
+  untrusted-form validation) and `docs/ROADMAP.md` and `docs/MULTIYEAR-PLAN.md`
+  now say six rather than eight.
+
 - **A single-token nickname cleared the AI layer's cross-record name-span backstop**
   (#153). `ledger.ai.grounding`'s name heuristic requires a capitalized span of two or
   more words, so "Jordan Ellis ran the free clinic" was withheld while "Cricket ran the

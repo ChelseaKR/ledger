@@ -28,13 +28,12 @@ ROUTE-COVERAGE.md ("these 13 routes are covered, these 8 are not") stays true:
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 from ledger.accessibility_check import _render_sample_pages
+from ledger.server import ArchiveRequestHandler
 
 _ROOT = Path(__file__).resolve().parent.parent
-_SERVER_PY = _ROOT / "src" / "ledger" / "server.py"
 _ROUTE_COVERAGE_DOC = _ROOT / "docs" / "accessibility" / "ROUTE-COVERAGE.md"
 
 # Every HTML-emitting GET route in server.py's do_GET dispatch table, enumerated by
@@ -95,23 +94,52 @@ _DOCUMENTED_UNCOVERED_ROUTES: tuple[str, ...] = (
     "/record/{id}/history",
 )
 
-# The record sub-routes are dispatched by startswith("/record/")/endswith(...) pairs
-# rather than a literal path match; the plain path == "..." needle used for every
-# other route does not apply to them.
-_RECORD_SUBROUTE_SUFFIXES: dict[str, str] = {
-    "/record/{id}": "",
-    "/record/{id}/consent": "/consent",
-    "/record/{id}/object": "/object",
-    "/record/{id}/history": "/history",
-}
+# The ``/record/{id}...`` shapes are not exact paths: they carry an identifier and
+# are matched by prefix and suffix in ``_route_get_record``. ``tests/test_route_tables.py``
+# drives each of them over a live server and asserts which handler it reaches, so
+# this file can treat them as a fixed inventory of shapes rather than re-deriving
+# them.
+_RECORD_ROUTE_SHAPES: frozenset[str] = frozenset(
+    {
+        "/record/{id}",
+        "/record/{id}/consent",
+        "/record/{id}/object",
+        "/record/{id}/history",
+    }
+)
+
+# The smallest number of exact GET routes this server can plausibly serve. It is a
+# floor, not a count: what it stops is this file reporting success having read
+# nothing.
+#
+# It is here because that is exactly what happened. Until #83's route-table split,
+# the routes below were recovered by running `re.compile(r'path == "([^"]+)"')` over
+# the source text between `def do_GET` and `def do_POST`. The central check in this
+# file is a set difference -- "every dispatched route is classified as in-scope or
+# out-of-scope for the accessibility review" -- and a set difference against an
+# empty set is empty. Any change that moved a route literal out of that window
+# would have left this file green while it checked nothing. Measured on the day of
+# the split: the regex found 0 routes and
+# `test_a_new_html_route_cannot_be_added_without_an_accessibility_decision` still
+# passed. Routes are read as data now, and the floor is the thing that would have
+# caught the old failure.
+_MINIMUM_EXACT_ROUTES: int = 20
 
 
-def _do_get_dispatch_source() -> str:
-    """The source text of ``ServerHandler.do_GET``, for a route-presence check."""
-    text = _SERVER_PY.read_text(encoding="utf-8")
-    start = text.index("def do_GET(self)")
-    end = text.index("def do_POST(self)", start)
-    return text[start:end]
+def _dispatched_exact_routes() -> set[str]:
+    """Every exact GET path the server dispatches, read from its own route tables.
+
+    ``ledger.server.ArchiveRequestHandler`` declares them as data (#83), so this is
+    the routing the server performs rather than a description of it.
+    """
+    routes = set(ArchiveRequestHandler._GET_PAGES) | set(ArchiveRequestHandler._GET_QUERY_PAGES)
+    assert len(routes) >= _MINIMUM_EXACT_ROUTES, (
+        f"read {len(routes)} exact GET routes from server.py's route tables, fewer "
+        f"than the {_MINIMUM_EXACT_ROUTES} floor. Every check in this file is a set "
+        "difference against this set; against an empty one they all pass having "
+        "checked nothing."
+    )
+    return routes
 
 
 def _static_gate_covered_routes() -> set[str]:
@@ -143,8 +171,6 @@ _NON_HTML_ROUTES: frozenset[str] = frozenset(
     }
 )
 
-_LITERAL_ROUTE_RE = re.compile(r'path == "([^"]+)"')
-
 
 def test_a_new_html_route_cannot_be_added_without_an_accessibility_decision() -> None:
     """The direction the other checks do not cover.
@@ -160,7 +186,7 @@ def test_a_new_html_route_cannot_be_added_without_an_accessibility_decision() ->
     in this file's HTML inventory (and so accounted for as covered or as a documented
     gap) or in ``_NON_HTML_ROUTES``. Adding a page is then a decision, not an omission.
     """
-    dispatched = set(_LITERAL_ROUTE_RE.findall(_do_get_dispatch_source()))
+    dispatched = _dispatched_exact_routes()
     unclassified = dispatched - set(_ALL_HTML_ROUTES) - _NON_HTML_ROUTES
     assert not unclassified, (
         f"server.py dispatches {sorted(unclassified)}, which is in neither the HTML "
@@ -172,7 +198,7 @@ def test_a_new_html_route_cannot_be_added_without_an_accessibility_decision() ->
 
 def test_the_non_html_exclusion_list_does_not_name_routes_that_are_gone() -> None:
     """An exclusion for a route that no longer exists quietly widens the next one."""
-    dispatched = set(_LITERAL_ROUTE_RE.findall(_do_get_dispatch_source()))
+    dispatched = _dispatched_exact_routes()
     stale = _NON_HTML_ROUTES - dispatched
     assert not stale, f"_NON_HTML_ROUTES excludes {sorted(stale)}, which do_GET no longer serves"
 
@@ -181,14 +207,9 @@ def test_all_html_routes_are_still_present_in_dispatch() -> None:
     """Every route this file's inventory names must still be dispatched in
     ``server.py``, so a rename or removal is caught here rather than leaving the
     coverage accounting silently describing routes that no longer exist."""
-    do_get = _do_get_dispatch_source()
-    for route in _ALL_HTML_ROUTES:
-        if route in _RECORD_SUBROUTE_SUFFIXES:
-            suffix = _RECORD_SUBROUTE_SUFFIXES[route]
-            needle = f'path.endswith("{suffix}")' if suffix else 'path.startswith("/record/")'
-        else:
-            needle = f'path == "{route}"'
-        assert needle in do_get, f"{route} no longer appears in do_GET's dispatch table"
+    dispatched = _dispatched_exact_routes() | _RECORD_ROUTE_SHAPES
+    missing = [route for route in _ALL_HTML_ROUTES if route not in dispatched]
+    assert not missing, f"{missing} no longer appear in server.py's GET route tables"
 
 
 def test_static_gate_and_playwright_union_covers_exactly_thirteen_routes() -> None:
