@@ -1167,8 +1167,11 @@ CLAIMS: tuple[Claim, ...] = (
 UNCOVERED: tuple[Uncovered, ...] = (
     Uncovered(
         "no release has shipped yet",
-        "depends on the tags on the remote, which a CI checkout does not fetch; a local "
-        "`git tag` would answer a different question than the one the README asks",
+        "this stdlib script makes no network request and does not shell out to git, so it "
+        "cannot enumerate tags at all",
+        "tests/test_version_reality.py, which reads the tags directly now that ci.yml's "
+        "gate job checks out with fetch-depth: 0 -- and fails rather than reading an "
+        "empty tag list off a shallow clone as 'never released'",
     ),
     Uncovered(
         "the audit artifacts under docs/audits/ have not been signed off by a human",
