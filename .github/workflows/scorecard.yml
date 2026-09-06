@@ -13,7 +13,17 @@ permissions:
   contents: read
 
 concurrency:
-  group: scorecard-${{ github.ref }}
+  # Key pull requests on the ref and everything else on the commit, for the
+  # reason set out at length in ci.yml: `github.ref` is `refs/heads/main` for
+  # every push to main, so a group keyed on the ref alone put all of them in one
+  # group, where `cancel-in-progress: true` lets the next merge cancel the
+  # previous one's run and a third run in flight evicts the pending one with zero
+  # jobs dispatched. The commit then carries a `cancelled` scorecard check, which
+  # is not `failure` and so does not read as a problem.
+  #
+  # ci.yml and standards.yml were fixed this way in #183 and #192; scorecard.yml
+  # runs on push to main too and was missed.
+  group: scorecard-${{ github.ref }}-${{ github.event_name == 'pull_request' && 'pr' || github.sha }}
   cancel-in-progress: true
 
 jobs:
