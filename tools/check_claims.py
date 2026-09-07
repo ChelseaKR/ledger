@@ -1061,6 +1061,28 @@ CLAIMS: tuple[Claim, ...] = (
         ("tool", "coverage", "report", "fail_under"),
         "restate the floor pyproject.toml actually enforces, or change the floor.",
     ),
+    # The two the 85 -> 88 -> 90 ratchet left behind, found on 2026-09-07. Three
+    # documents were tied to `fail_under` when the drift was first fixed; the
+    # Makefile comment *beside the gate itself* and the docstring of the test file
+    # that exists to hold the per-module floor were not, and both still said 85 while
+    # pyproject enforced 90. The claim is worth more here than in a document, because
+    # this is the sentence a contributor reads while looking at the command.
+    ConfigNumber(
+        "coverage-floor-in-makefile",
+        "Makefile",
+        r"(\d+)% branch-coverage floor",
+        "pyproject.toml",
+        ("tool", "coverage", "report", "fail_under"),
+        "restate the floor pyproject.toml actually enforces, or change the floor.",
+    ),
+    ConfigNumber(
+        "coverage-floor-in-security-critical-tests",
+        "tests/test_security_critical_paths.py",
+        r"(\d+)% branch-coverage floor",
+        "pyproject.toml",
+        ("tool", "coverage", "report", "fail_under"),
+        "restate the floor pyproject.toml actually enforces, or change the floor.",
+    ),
     # The 2026-08-21 ruleset pass (#79, merged as #151) put `OSV lockfile scan (uv.lock)`
     # and `Semgrep SAST (p/ci)` into the live required-check set and the committed mirror
     # with it, and enforced strict checks, a pull-request rule, stale-review dismissal,
