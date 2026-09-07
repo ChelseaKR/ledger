@@ -1,0 +1,45 @@
+{
+  "_comment": "Reasoned exemptions from the identity-translation check in tools/check_catalog_parity.py: msgids whose translation is legitimately byte-identical to the English source. Two classes need no entry here because the checker recognises them mechanically -- a msgid with no alphabetic content once its {placeholders} are removed, and a single all-caps code token or bare URL (OK, CSV, PDF, https://...). Everything else that is genuinely the same in the target language -- a cognate, a product name, a borrowed word -- takes an entry with a written reason, because the judgement is not one a pattern can make. The checker deletes nothing for you: an entry whose msgid the template no longer declares, or whose msgstr has since been translated, fails the gate until it is removed. Every entry below records a choice the committed catalog ALREADY made; none of them is a new translation decision. Like the catalogs themselves, none has been read by a qualified speaker -- see docs/I18N.md, 'Translation review: drafted, not reviewed'.",
+  "identical_by_design": [
+    {
+      "locale": "es",
+      "msgid": "No",
+      "reason": "The Spanish for the negative answer 'No' is 'No'. Paired with 'Yes' -> 'Sí', which is translated, so this is not a row somebody skipped."
+    },
+    {
+      "locale": "es",
+      "msgid": "{when}, ref {ref}",
+      "reason": "Steward-console metadata, and 'ref' is the same abbreviation in Spanish (short for 'referencia' as it is for 'reference'). Both words of substance are placeholders. Flagged as the least certain entry in this file: if a Spanish speaker would write 'ref.' with a full stop, translate the msgstr and delete this entry -- the checker will then fail until it is gone."
+    },
+    {
+      "locale": "fr",
+      "msgid": "Agent",
+      "reason": "'Agent' is the French word, same spelling. A PREMIS agent column heading in the audit log."
+    },
+    {
+      "locale": "fr",
+      "msgid": "Date",
+      "reason": "'Date' is the French word, same spelling. Not exempt mechanically, and correctly so: the code-token rule requires upper case precisely so a four-letter word is not waved through as an acronym."
+    },
+    {
+      "locale": "fr",
+      "msgid": "Description",
+      "reason": "'Description' is the French word, same spelling. A Dublin Core field label."
+    },
+    {
+      "locale": "fr",
+      "msgid": "Pagination",
+      "reason": "'Pagination' is the French word, same spelling. The accessible label on the results pager."
+    },
+    {
+      "locale": "fr",
+      "msgid": "Type",
+      "reason": "'Type' is the French word, same spelling. A Dublin Core field label."
+    },
+    {
+      "locale": "fr",
+      "msgid": "Types",
+      "reason": "'Types' is the French plural, same spelling. The facet heading beside 'Subjects' -> 'Sujets' and 'Languages' -> 'Langues', both of which are translated."
+    }
+  ]
+}
