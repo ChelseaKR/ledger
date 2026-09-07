@@ -536,8 +536,7 @@ def bypass_findings(live: dict[str, Any], committed: dict[str, Any]) -> list[str
     findings += _bypass_side_findings(
         committed_actors,
         ".github/rulesets/main.json",
-        "Restore it in the file; re-applying the file as it stands is how the lockout "
-        "happens.",
+        "Restore it in the file; re-applying the file as it stands is how the lockout happens.",
     )
 
     other_live = [actor for actor in live_actors if actor != OWNER_BYPASS]
@@ -585,8 +584,7 @@ class RulesetBypass:
         problems = _bypass_side_findings(
             actors,
             self.ruleset,
-            "Restore it in the file; re-applying the file as it stands is how the "
-            "lockout happens.",
+            "Restore it in the file; re-applying the file as it stands is how the lockout happens.",
         )
         problems += [
             f"{self.ruleset} records a bypass actor that is not the owner's: {actor}. "
@@ -793,6 +791,65 @@ class Uncovered:
     checked_elsewhere: str = ""
 
 
+@dataclass(frozen=True)
+class EgressPolicyRatio:
+    """An "N of M jobs enforce ``egress-policy: block``" sentence, re-derived.
+
+    SEC-04 is a rollout in progress, so the two documents that describe it state a
+    ratio rather than a state. A ratio is the most perishable shape of claim in this
+    repository: **adding one workflow job makes both numbers wrong at once**, and
+    neither the workflow linter nor any test looks at the prose. Measured 2026-09-07,
+    that had already happened — the README and `docs/ROADMAP.md` both said "16 of 24"
+    while the workflows held 17 blocking and 8 auditing jobs.
+
+    Both numbers come from the workflow files themselves: the denominator is every
+    ``egress-policy:`` line (Harden-Runner runs on every job, which is itself part of
+    the claim), the numerator is the ``block`` subset. ``pattern`` must capture the
+    two stated numbers in that order; a sentence that stops stating them fails, for
+    the same reason :class:`StatedCount` fails on a regex that matches nothing.
+    """
+
+    name: str
+    file: str
+    pattern: str
+    hint: str
+    workflows: str = ".github/workflows/*.yml"
+
+    def actual(self) -> tuple[int, int]:
+        blocking = auditing = 0
+        for path in sorted(ROOT.glob(self.workflows)):
+            text = path.read_text(encoding="utf-8")
+            blocking += len(re.findall(r"egress-policy:\s*block\b", text))
+            auditing += len(re.findall(r"egress-policy:\s*(?!block\b)\S+", text))
+        return blocking, blocking + auditing
+
+    def check(self) -> str | None:
+        target = ROOT / self.file
+        if not target.is_file():
+            return f"{self.name}: {self.file!r} is missing — cannot check the stated ratio"
+        found = re.findall(self.pattern, target.read_text(encoding="utf-8"))
+        if not found:
+            return (
+                f"{self.name}: {self.file} no longer states how many jobs enforce "
+                f"egress-policy: block (expected to match {self.pattern!r}) — {self.hint}"
+            )
+        blocking, total = self.actual()
+        if not total:
+            return (
+                f"{self.name}: no egress-policy line found under {self.workflows!r}, so the "
+                "ratio was checked against nothing. Harden-Runner on every job is part of "
+                "the claim; if it is gone, remove this claim with it"
+            )
+        for stated_blocking, stated_total in found:
+            if (int(stated_blocking), int(stated_total)) != (blocking, total):
+                return (
+                    f"{self.name}: {self.file} says {stated_blocking} of {stated_total} "
+                    f"Harden-Runner jobs enforce egress-policy: block, but the workflows "
+                    f"hold {blocking} of {total} — {self.hint}"
+                )
+        return None
+
+
 Claim = (
     PathExists
     | ForbiddenString
@@ -804,6 +861,7 @@ Claim = (
     | RulesetBypass
     | RulesetRequires
     | RulesetCount
+    | EgressPolicyRatio
     | ContextsAccountedFor
     | MirroredString
 )
@@ -928,6 +986,20 @@ CLAIMS: tuple[Claim, ...] = (
         "the architecture doc must say the /healthz counts are steward-gated, not merely "
         "stop saying the opposite (the live behaviour is asserted in "
         "tests/test_server_remediation.py).",
+    ),
+    # SEC-04's rollout ratio, in both documents that state it. See EgressPolicyRatio:
+    # a ratio goes stale when a *job* is added, which nothing else here would notice.
+    EgressPolicyRatio(
+        "egress-policy-ratio-in-readme",
+        "README.md",
+        r"(\d+) of (\d+) in `egress-policy: block`",
+        "count the egress-policy lines in .github/workflows/ and restate both numbers (#78).",
+    ),
+    EgressPolicyRatio(
+        "egress-policy-ratio-in-roadmap",
+        "docs/ROADMAP.md",
+        r"(\d+) of (\d+) Harden-Runner jobs now enforce",
+        "count the egress-policy lines in .github/workflows/ and restate both numbers (#78).",
     ),
     StatedCount(
         "audits-count",
@@ -1230,11 +1302,22 @@ UNCOVERED: tuple[Uncovered, ...] = (
     ),
 )
 
+#: The one claim kind deliberately absent from :data:`_KIND_LABEL`: a
+#: ``ReferenceExists`` sweep is reported by how many pointers it resolved, not by how
+#: many sweeps there are, so the summary handles it on its own line below. Named here
+#: so the "every kind is labelled" guard has an exception it can see rather than a
+#: hole it cannot.
+_REPORTED_SEPARATELY = frozenset({"ReferenceExists"})
+
 _KIND_LABEL: dict[str, tuple[str, str]] = {
     "PathExists": ("path present", "paths present"),
     "ForbiddenString": ("dead claim absent", "dead claims absent"),
     "RequiredString": ("supporting fact present", "supporting facts present"),
     "StatedCount": ("stated count re-derived", "stated counts re-derived"),
+    "EgressPolicyRatio": (
+        "egress-policy ratio re-derived from the workflows",
+        "egress-policy ratios re-derived from the workflows",
+    ),
     "ConfigNumber": (
         "threshold re-derived from config",
         "thresholds re-derived from config",
@@ -1277,6 +1360,16 @@ class _Tally:
         self.counts[kind] = self.counts.get(kind, 0) + 1
 
     def summary(self) -> str:
+        # Every kind that is being enforced must appear here. A claim type added
+        # without a label is still checked, but the gate's own passing line stops
+        # naming it -- the output would understate what it verified, which is the
+        # reporting version of the defect this whole file exists to catch.
+        unlabelled = sorted(set(self.counts) - set(_KIND_LABEL) - _REPORTED_SEPARATELY)
+        if unlabelled:
+            raise AssertionError(
+                f"_KIND_LABEL has no entry for {', '.join(unlabelled)}; the summary would "
+                "silently omit claims it verified"
+            )
         parts = []
         for kind, (singular, plural) in _KIND_LABEL.items():
             n = self.counts.get(kind, 0)
