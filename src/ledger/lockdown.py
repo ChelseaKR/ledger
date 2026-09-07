@@ -116,12 +116,18 @@ class BagFixity:
     ``ok`` is the narrow "this bag demonstrated integrity", true only for
     :data:`~ledger.fixity.FixityStatus.VERIFIED`. A bag that declared no files to
     check is ``UNVERIFIED`` with ``checked == 0`` — not a pass.
+
+    ``status`` has **no default** on purpose. A default of ``VERIFIED`` would let a
+    caller that forgot the field claim a verification it never performed, which is
+    the exact defect this class was changed to close; a default of ``UNVERIFIED``
+    would instead contradict a ``True`` ``ok`` passed beside it. Making it required
+    means the two fields cannot silently disagree.
     """
 
     name: str
     ok: bool
     checked: int
-    status: FixityStatus = FixityStatus.VERIFIED
+    status: FixityStatus
 
 
 @dataclass(frozen=True)
