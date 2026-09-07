@@ -1008,7 +1008,17 @@ def latest_drill(audits_dir: Path) -> DrillSummary | None:
     if not isinstance(data, dict):
         return None
     scenarios = data.get("scenarios")
-    rows = scenarios if isinstance(scenarios, list) else []
+    if not isinstance(scenarios, list):
+        # A JSON document carrying no `scenarios` list is not a drill report,
+        # whatever its filename. Treating it as one produced a summary with no
+        # recovered, no failed and no not-applicable scenario and
+        # `live_archive_untouched` defaulted to False, which `checkup` renders
+        # as "the drill changed the live archive while it ran" -- a specific
+        # accusation about a run that was never read. Same rule as the
+        # unparseable case above: this returns None, and the caller renders it
+        # as no drill, which is could-not-verify.
+        return None
+    rows = scenarios
 
     def named(outcome: str) -> tuple[str, ...]:
         return tuple(
