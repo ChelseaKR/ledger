@@ -24,6 +24,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -103,20 +104,66 @@ def verify_file(path: Path, algo: HashAlgo, expected: str) -> FixityResult:
     return FixityResult(path=str(path), algo=algo, expected=expected, actual=actual)
 
 
+class FixityStatus(StrEnum):
+    """What a fixity audit ended in. Three states, and the third is load-bearing.
+
+    ``all(result.ok for result in results)`` is :data:`True` over an empty list, so
+    for as long as this report had only ``ok``, a set with **nothing in it** was
+    indistinguishable from a set that was checked and passed. That is the whole
+    defect: "every file matched" and "no file was looked at" are different facts and
+    the second one must not be renderable as the first.
+
+    Flipping the empty case to a *failure* would be the same defect wearing the other
+    mask -- it would report damage where there is only absence, and an archive that
+    genuinely holds nothing yet is not corrupt. So there are three outcomes, in the
+    same shape :class:`ledger.checkup.CheckStatus` and
+    :class:`ledger.drill.DrillOutcome` already use.
+    """
+
+    #: Files were checked and every one matched its expected digest.
+    VERIFIED = "verified"
+    #: Files were checked and at least one did not match.
+    FAILED = "failed"
+    #: Nothing was checked. Not a pass, not a failure, and never rendered as either.
+    UNVERIFIED = "could-not-verify"
+
+
 @dataclass(frozen=True)
 class AuditReport:
     """The aggregate outcome of verifying a set of files against a manifest.
 
     Carries every individual :class:`~ledger.models.FixityResult` so a steward
     can see exactly which objects drifted (inspectability), not merely a count.
+
+    :attr:`status` is the honest verdict and :attr:`ok` is the narrow question "did
+    this demonstrate integrity" -- true only for :data:`FixityStatus.VERIFIED`. A
+    caller that needs to tell "nothing was checked" apart from "something broke"
+    reads ``status`` (or :attr:`checked`); a caller that only needs "may I rely on
+    this" reads ``ok`` and gets the safe answer for an empty report without having to
+    know the trap exists.
     """
 
     results: list[FixityResult]
 
     @property
+    def status(self) -> FixityStatus:
+        """Verified, failed, or -- over an empty result set -- could-not-verify."""
+        if not self.results:
+            return FixityStatus.UNVERIFIED
+        if all(result.ok for result in self.results):
+            return FixityStatus.VERIFIED
+        return FixityStatus.FAILED
+
+    @property
     def ok(self) -> bool:
-        """True only if every checked file matched its expected digest."""
-        return all(result.ok for result in self.results)
+        """True only if files were checked *and* every one matched its digest.
+
+        An empty report is deliberately **not** ``ok``: nothing was demonstrated, and
+        every caller in this codebase reads ``ok`` as "this copy is good". Use
+        :attr:`status` to tell an empty audit apart from a failing one -- ``not ok``
+        alone does not mean damage.
+        """
+        return self.status is FixityStatus.VERIFIED
 
     @property
     def failed(self) -> list[FixityResult]:
@@ -136,6 +183,10 @@ def audit_files(base_dir: Path, manifest: Mapping[str, str], algo: HashAlgo) -> 
     verified and an :class:`AuditReport` returned; results are ordered by relative
     path so two runs over the same tree produce identical reports (reproducibility,
     inspectability).
+
+    An empty ``manifest`` yields a report whose :attr:`AuditReport.status` is
+    :data:`FixityStatus.UNVERIFIED`, never a passing one -- a manifest that declares
+    nothing proves nothing about ``base_dir``.
     """
     results = [
         verify_file(base_dir / relpath, algo, expected)

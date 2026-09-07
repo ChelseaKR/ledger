@@ -302,19 +302,32 @@ make acr             # regenerate docs/accessibility/ACR.md from src/ledger/acr_
 make acr-check       # fail if the committed ACR has drifted from acr_gen (in `verify`)
 ```
 
-The browser-real axe pass (the same one CI's `accessibility-browser` job runs) is
+The browser-real pass (the same one CI's `accessibility-browser` job runs) is
 opt-in locally, since it needs Node and a browser:
 
 ```
 cd tools/a11y_browser
 npm ci
 npx playwright install chromium
-npx playwright test          # seeds + serves the demo, then runs axe + keyboard specs
+npx playwright test                       # seeds + serves the demo, then runs
+                                          # axe, 320px reflow and keyboard, ltr and rtl
+npx playwright test --project=chromium-rtl   # only the right-to-left pass
 ```
+
+The axe and reflow specs each run twice: once in the `chromium` project, and once in
+`chromium-rtl`, which negotiates Arabic so the server renders
+`<html lang="ar" dir="rtl">` and the browser mirrors the layout. Before that project
+existed, both specs used Playwright's stock device, which sends
+`Accept-Language: en-US`, so every run of this job had rendered left-to-right and the
+direction machinery ledger ships (`i18n._RTL_LANGS`, `i18n.text_direction`, `<html
+dir>`) had never once been drawn by a renderer. `tools/a11y_browser/direction.ts`
+asserts the loaded document really declares the direction the running project claims
+to audit, because a locale that failed to arrive would otherwise leave the whole
+right-to-left pass green having audited a second English run.
 
 `make accessibility` is the same command CI runs, so green locally means green in
 CI. The full picture is: the static gate proves the structural floor on every
-commit; the browser axe job adds rendered-contrast and focus-order depth in both
-colour schemes; the committed NVDA/VoiceOver cadence covers what no machine can
-judge; and the ACR records the candid, end-to-end conformance result for anyone who
-needs it.
+commit; the browser job adds rendered-contrast and focus-order depth in both
+colour schemes, a 320px reflow check, and both text directions; the committed
+NVDA/VoiceOver cadence covers what no machine can judge; and the ACR records the
+candid, end-to-end conformance result for anyone who needs it.
