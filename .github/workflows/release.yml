@@ -106,6 +106,7 @@ jobs:
       # no matching `## [X.Y.Z]` section in CHANGELOG.md is a cut-from-the-wrong-
       # state mistake — fail before building, not after publishing.
       - name: CHANGELOG has a section for this version (REL-10)
+        shell: bash
         env:
           TAG: ${{ steps.tag.outputs.tag }}
         run: |
@@ -116,6 +117,40 @@ jobs:
             exit 1
           fi
           echo "CHANGELOG.md has a section for ${VERSION}"
+      # The one value docs/RELEASE-<version>.md used to say "a machine will not
+      # catch for you". The step above greps only for the heading, so a section
+      # dated the day the release was *prepared* ships unchanged however long the
+      # tag waits — and the date on a changelog heading is read by everyone as the
+      # day the version was released. `date-released` in CITATION.cff, the GitHub
+      # Release, and this heading are then three answers to one question.
+      #
+      # Compared against the annotated tag's own tagger date, not against "today":
+      # the workflow is dispatched by hand and may run days after the tag was
+      # signed, and it is the tag that dates the release. Three outcomes, because
+      # an undated heading is not the same mistake as a wrongly dated one.
+      - name: CHANGELOG's date for this version is the day it was tagged
+        shell: bash
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          VERSION="${TAG#v}"
+          TAG_DATE="$(git for-each-ref --format='%(taggerdate:short)' "refs/tags/${TAG}")"
+          if [ -z "${TAG_DATE}" ]; then
+            echo "::error::${TAG} carries no tagger date; it is not an annotated tag"
+            exit 1
+          fi
+          HEADING="$(grep -m1 -E "^## \[${VERSION}\]" CHANGELOG.md)"
+          CHANGELOG_DATE="$(printf '%s' "${HEADING}" | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}' || true)"
+          if [ -z "${CHANGELOG_DATE}" ]; then
+            echo "::error::CHANGELOG.md's '## [${VERSION}]' heading carries no date. Write it as '## [${VERSION}] — ${TAG_DATE}'."
+            exit 1
+          fi
+          if [ "${CHANGELOG_DATE}" != "${TAG_DATE}" ]; then
+            echo "::error::CHANGELOG.md dates ${VERSION} to ${CHANGELOG_DATE}, but ${TAG} was signed on ${TAG_DATE}. Nothing has been published yet: fix the heading, delete and re-cut the tag, and dispatch again."
+            exit 1
+          fi
+          echo "CHANGELOG.md dates ${VERSION} to ${CHANGELOG_DATE}, the day ${TAG} was signed"
       # No dependency caching anywhere in this workflow: it ends in a real
       # publish (PyPI + GitHub Release), and Actions' caches are fillable by any
       # workflow run in the repo — restoring one into the pipeline that ships
