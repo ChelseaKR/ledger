@@ -29,7 +29,7 @@ import pytest
 from ledger import i18n
 from ledger.config import Config
 from ledger.ingest import Archive
-from ledger.render import _nav_html, _page
+from ledger.render import _esc, _nav_html, _page
 from ledger.server import make_server
 
 _VAULT_KEY = "0123456789abcdef0123456789abcdef0123456789a="
@@ -162,3 +162,60 @@ def test_pseudolocale_render_is_not_wired_into_production(base: str) -> None:
     _status, body, _headers = _request(f"{base}/?lang=en")
     assert i18n.PSEUDO_PREFIX not in body
     assert "Browse" in body
+
+
+# --- translation review: the gate cannot see it, so the page says it ---------
+#
+# `make i18n` enforces key parity, non-empty msgstr and placeholder parity. A
+# Spanish msgstr that is verbatim English satisfies all three, so a green i18n run
+# says nothing about whether a translation is right or whether anyone who speaks
+# the language has read it. The status is therefore declared in
+# `ledger.i18n.REVIEWED_LOCALES`, restated in each catalog's PO header, checked to
+# agree by `tools/check_catalog_parity.py`, and disclosed on every page served
+# from an unreviewed catalog. These tests pin the last of those.
+
+
+@pytest.mark.parametrize("lang", ["es", "fr", "ar"])
+def test_a_page_in_an_unreviewed_language_says_so_in_that_language(base: str, lang: str) -> None:
+    """Not in English: a reader who cannot read the source text is the one being told."""
+    _status, body, _headers = _request(f"{base}/?lang={lang}")
+    notice = i18n.t(lang, "translation_notice")
+    # Escaped, because the shell escapes it: the French string carries an
+    # apostrophe, and comparing the raw text would pass for es/ar and fail for fr.
+    assert _esc(notice) in body
+    # The notice really is translated, not the English fallback leaking through.
+    assert notice != i18n.t("en", "translation_notice")
+
+
+def test_the_english_pages_carry_no_translation_notice(base: str) -> None:
+    """English is the source text, so there is no translation to disclose."""
+    _status, body, _headers = _request(f"{base}/?lang=en")
+    assert _esc(i18n.t("en", "translation_notice")) not in body
+
+
+def test_every_shipped_non_source_locale_is_covered(base: str) -> None:
+    """Derived from SUPPORTED, so a locale added without a review status fails here.
+
+    A list of language codes written down in this test would go stale the moment a
+    fifth catalog shipped, and would still pass.
+    """
+    unreviewed = [
+        lang
+        for lang in i18n.SUPPORTED
+        if i18n.translation_review(lang) is i18n.TranslationReview.DRAFTED
+    ]
+    assert unreviewed, "no unreviewed locale to exercise — has REVIEWED_LOCALES changed?"
+    for lang in unreviewed:
+        _status, body, _headers = _request(f"{base}/?lang={lang}")
+        assert _esc(i18n.t(lang, "translation_notice")) in body, lang
+
+
+def test_review_status_is_three_states_and_an_unknown_tag_is_source() -> None:
+    """An unknown tag is served the English msgids, so it is SOURCE, not DRAFTED.
+
+    Calling it "unreviewed" would be the mirror of the defect this disclosure
+    exists for: reporting a translation nobody made as one nobody checked.
+    """
+    assert i18n.translation_review("en") is i18n.TranslationReview.SOURCE
+    assert i18n.translation_review("zz") is i18n.TranslationReview.SOURCE
+    assert i18n.translation_review("es") is i18n.TranslationReview.DRAFTED
