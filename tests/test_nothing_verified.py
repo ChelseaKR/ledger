@@ -329,6 +329,27 @@ def test_verify_backup_reports_could_not_verify_for_a_content_free_backup(
     assert report.verified_bags == 0
 
 
+def test_verify_backup_does_not_pass_a_backup_where_one_bag_proved_nothing(
+    tmp_path: Path,
+) -> None:
+    """``verify_backup`` carries the same roll-up and needs the same rule: a
+    backup is not good because *some* of it verified."""
+    root = tmp_path / "arc"
+    archive, _rid = _archive_with_one_record(root)
+    second = _ingest(archive, "Second record")
+    backup = tmp_path / "backup"
+    shutil.copytree(root, backup)
+    _empty_a_bags_manifests_at(backup / "store" / "bags" / second)
+
+    report = verify_backup(backup)
+
+    assert len(report.bag_results) == 2
+    assert report.verified_bags == 1
+    assert report.failures == 1, "an unproven bag is still not ok, so it counts here"
+    assert report.ok is False
+    assert report.status is FixityStatus.UNVERIFIED
+
+
 def test_verify_backup_cli_exits_non_zero_on_a_backup_that_proved_nothing(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
