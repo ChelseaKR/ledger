@@ -270,3 +270,43 @@ def test_the_changelog_has_a_section_for_the_declared_version() -> None:
         "release.yml (REL-10) would fail this check *after* the tag is public, which "
         "burns the version number instead of retrying it"
     )
+
+
+def test_the_workflow_holds_the_changelog_date_to_the_tag_date() -> None:
+    """The one value the runbook used to say a machine would not catch.
+
+    ``release.yml``'s REL-10 step greps for the ``## [X.Y.Z]`` heading and nothing
+    else, so a section dated the day the release was *prepared* ships unchanged
+    however long the tag waits. On this repository that gap is already open: the
+    heading was dated 2026-09-02 and no tag exists, so any tag cut after that day
+    would publish a release notes date that is simply wrong — and the changelog
+    date, ``CITATION.cff``'s ``date-released``, and the GitHub Release would be
+    three different answers to one question.
+
+    This asserts the comparison is *in* the workflow. It cannot assert the outcome:
+    there is no tag to compare against, and inventing one here would be a fixture
+    computed from the thing under test. The negative control for the comparison
+    itself belongs to the first real dispatch.
+    """
+    workflow = _RELEASE_WORKFLOW.read_text(encoding="utf-8")
+    assert "taggerdate:short" in workflow, (
+        "release.yml no longer reads the tag's own date; a changelog heading dated to "
+        "the day the release was prepared would ship as the release date"
+    )
+    assert 'CHANGELOG_DATE}" != "${TAG_DATE}' in workflow, (
+        "release.yml no longer compares the changelog's date against the tag's date"
+    )
+
+
+def test_the_runbook_no_longer_calls_the_changelog_date_uncheckable() -> None:
+    """A runbook that tells a human to check something a gate now checks is drift.
+
+    Left as a test rather than a one-off edit because the sentence is the kind that
+    gets copied forward into the next version's runbook, and it would be wrong there
+    too.
+    """
+    runbook = _RUNBOOK.read_text(encoding="utf-8")
+    assert "the one value here a machine will not catch for you" not in runbook, (
+        "docs/RELEASE-0.1.0.md still says the changelog date is unchecked; release.yml "
+        "now compares it against the tag's own tagger date"
+    )
