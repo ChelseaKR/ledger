@@ -81,13 +81,26 @@ body {
 }
 
 /* --- skip link: first focusable element, visible on focus --------------- */
-/* It is moved off-screen until focused, then anchored top-left so a keyboard
- * user lands on a clearly visible control (WCAG 2.4.1 Bypass Blocks). */
+/* It is hidden until focused, then anchored to the start edge so a keyboard user
+ * lands on a clearly visible control (WCAG 2.4.1 Bypass Blocks).
+ *
+ * It used to be parked at `left: -9999px`. That is the old off-screen idiom and it
+ * breaks WCAG 2.2 SC 1.4.10 Reflow in a right-to-left document: under `dir="rtl"` the
+ * inline start edge is the right one, so content at a large negative `left` sits
+ * outside the scrollable origin and the whole page gains 9,999 pixels of horizontal
+ * scroll. The browser reflow gate now renders Arabic and caught it. Clipping to a
+ * single pixel in the flow's own corner hides it just as completely, costs no layout
+ * in either direction, and needs no mirroring. */
 .skip-link {
   position: absolute;
-  left: -9999px;
+  inset-inline-start: 0;
   top: 0;
   z-index: 100;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
   padding: 0.75rem 1rem;
   background: var(--accent);
   color: var(--bg);
@@ -97,7 +110,10 @@ body {
 }
 
 .skip-link:focus {
-  left: 0;
+  width: auto;
+  height: auto;
+  overflow: visible;
+  clip-path: none;
 }
 
 /* --- landmarks & layout ------------------------------------------------- */

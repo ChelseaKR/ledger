@@ -1,5 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
+import { RTL_LOCALE } from "./direction";
+
 /**
  * Browser-real accessibility harness for ledger's served demo surface.
  *
@@ -33,6 +35,23 @@ export default defineConfig({
     {
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
+    },
+    // The same pages, negotiated into Arabic so the server renders
+    // `<html lang="ar" dir="rtl">` and the browser mirrors the layout. Until this
+    // project existed, the stock `Desktop Chrome` device sent `Accept-Language: en-US`
+    // and every run of these two specs had rendered left-to-right, so the direction
+    // machinery ledger ships (`i18n._RTL_LANGS`, `text_direction`, `<html dir>`) had
+    // never been drawn by a renderer. `direction.ts` asserts the document really did
+    // come back `rtl`, because a locale that failed to arrive would otherwise leave
+    // every test here passing on a second left-to-right run.
+    //
+    // axe and reflow only: both are layout-sensitive and neither can see a direction it
+    // was not rendered in. `keyboard.spec.ts` traverses in DOM order, which mirroring
+    // does not change, so a second pass of it would add runtime and no coverage.
+    {
+      name: "chromium-rtl",
+      testMatch: /(axe|reflow)\.spec\.ts$/,
+      use: { ...devices["Desktop Chrome"], locale: RTL_LOCALE },
     },
   ],
   // Reuse an externally-started server when LEDGER_BASE_URL is set; otherwise
