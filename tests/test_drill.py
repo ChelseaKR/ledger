@@ -18,7 +18,7 @@ import pytest
 
 from ledger import drill
 from ledger.cli import main as cli_main
-from ledger.config import Config, StorageLocation
+from ledger.config import Config, LockdownConfig, StorageLocation
 from ledger.drill import DrillOutcome
 from ledger.ingest import Archive
 from ledger.models import AccessPolicy, Record
@@ -48,8 +48,47 @@ def _build(root: Path, payload_dir: Path, *, mirrors: int = 1) -> tuple[Archive,
     return archive, record.record_id
 
 
+def _arm_lockdown(root: Path, replica: Path) -> None:
+    """Copy the archive root to ``replica`` and configure it as the off-box replica.
+
+    An off-box replica in ``lockdown.required_replica_locations`` is a whole archive
+    root -- ``store/config.json``, ``store/bags/``, ``identity.vault`` -- not a bag
+    mirror, because :func:`ledger.lockdown.verify_backup_location` loads the
+    replica's own config and audits its bags. The mirrors ``_build`` makes are bag
+    mirrors, so an archive can have three of them and still have nothing a lockdown
+    would accept, which is exactly the state ``seized-primary`` reports rather than
+    rehearses.
+    """
+    shutil.copytree(root, replica)
+    config = Config.load(root / "store" / "config.json")
+    config.lockdown = LockdownConfig(
+        stop_disclosure=True,
+        shred_vault=True,
+        required_replica_locations=[str(replica)],
+        min_verified_replicas=1,
+    )
+    config.save(root / "store" / "config.json")
+
+
+#: A syntactically valid vault key. `Archive.init` seeds `identity.vault` only when
+#: one is available, and `seized-primary` needs the vault *file* to exist -- it
+#: shreds it and restores it, and never reads a byte of it, so the key's value is
+#: irrelevant beyond being accepted.
+_VAULT_KEY = "0123456789abcdef0123456789abcdef0123456789a="
+
+
 @pytest.fixture
-def archive_with_mirror(tmp_path: Path) -> Path:
+def archive_with_mirror(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    monkeypatch.setenv("LEDGER_VAULT_KEY", _VAULT_KEY)
+    _build(tmp_path / "arc", tmp_path / "data")
+    _arm_lockdown(tmp_path / "arc", tmp_path / "offbox")
+    return tmp_path / "arc"
+
+
+@pytest.fixture
+def archive_without_lockdown_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """The same archive with no duress posture: `shred_vault` is off by default."""
+    monkeypatch.setenv("LEDGER_VAULT_KEY", _VAULT_KEY)
     _build(tmp_path / "arc", tmp_path / "data")
     return tmp_path / "arc"
 
@@ -114,7 +153,12 @@ def test_a_single_location_archive_reports_not_applicable_never_recovered(
         assert result.outcome is DrillOutcome.NOT_APPLICABLE
         assert result.outcome is not DrillOutcome.RECOVERED
         assert not result.fault_landed
-        assert "no mirror location" in result.detail
+        assert result.detail, f"{result.scenario} was skipped without saying why"
+    # Each scenario names the reason *it* cannot run, rather than one generic
+    # sentence: this archive has no mirror, and it also has no duress posture, and
+    # a steward reading the report has a different next step for each.
+    assert "no mirror location" in _result(report, "bit-rot").detail
+    assert "not configured to shred" in _result(report, "seized-primary").detail
     # Not-applicable is reported, not failed: an archive with one box genuinely
     # cannot rehearse losing a mirror, and reddening for it would train a steward
     # to ignore the command.
@@ -132,7 +176,10 @@ def test_an_archive_with_no_bags_reports_not_applicable(tmp_path: Path) -> None:
     report = drill.run_drill(root, tmp_path / "work", now=DRILL_NOW)
     for result in report.results:
         assert result.outcome is DrillOutcome.NOT_APPLICABLE
-        assert "no bags" in result.detail
+        assert result.detail, f"{result.scenario} was skipped without saying why"
+    assert "no bags" in _result(report, "bit-rot").detail
+    # This archive has no duress posture either, and that reason is reached first.
+    assert "not configured to shred" in _result(report, "seized-primary").detail
 
 
 # --- a drill that cannot fail is worse than no drill --------------------------------
@@ -877,3 +924,268 @@ def test_a_full_drill_claims_no_unrehearsed_scenario(tmp_path: Path) -> None:
 
     assert result.status is CheckStatus.PASS
     assert "were not rehearsed at all" not in result.explanation
+
+
+# --- the staged copy must not be able to reach the live archive ----------------------
+
+
+def _strings(value: object) -> list[str]:
+    """Every string anywhere in a nested config document."""
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, dict):
+        return [s for v in value.values() for s in _strings(v)]
+    if isinstance(value, list):
+        return [s for v in value for s in _strings(v)]
+    return []
+
+
+def test_no_path_in_a_staged_config_points_outside_the_workdir(
+    archive_with_mirror: Path, tmp_path: Path
+) -> None:
+    """`stage`'s promise, held over the whole config rather than three known fields.
+
+    It rewrote `store_root`, `vault_path` and `locations`, and its docstring said
+    "nothing in the staged archive can reach back to the real one" on the strength
+    of those. `lockdown.required_replica_locations` was not among them, and it is
+    the set `execute_lockdown` verifies before shredding a vault and
+    `execute_stand_up` copies a vault back *from* — so a `seized-primary` rehearsal
+    would have read the community's real off-box replica and copied real vault bytes
+    into a scratch directory.
+
+    Derived from the config document rather than a list of field names, so a path
+    field added later is covered with nothing here to update. Every absolute path is
+    checked, because a config value that starts with `/` on this fixture is a path.
+    """
+    workdir = tmp_path / "work"
+    staged = drill.stage(archive_with_mirror, workdir)
+    outside = [
+        value
+        for value in _strings(staged.config.to_dict())
+        if value.startswith("/") and not Path(value).resolve().is_relative_to(workdir.resolve())
+    ]
+    assert outside == [], (
+        f"the staged config still points outside {workdir}: {outside}. A scenario acting on "
+        "one of these would act on the live archive's own storage."
+    )
+
+
+def test_the_staged_replica_is_the_same_copy_the_locations_use(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A replica configured both as a mirror and as the duress replica is one copy.
+
+    Two copies would let a scenario heal one and verify the other, and credit a
+    recovery that happened somewhere nobody reads.
+    """
+    monkeypatch.setenv("LEDGER_VAULT_KEY", _VAULT_KEY)
+    root = tmp_path / "arc"
+    _build(root, tmp_path / "data")
+    shared = tmp_path / "shared"
+    shutil.copytree(root, shared)
+    config = Config.load(root / "store" / "config.json")
+    config.locations.append(StorageLocation(name="dual", path=str(shared), kind="mirror"))
+    config.lockdown = LockdownConfig(
+        stop_disclosure=True,
+        shred_vault=True,
+        required_replica_locations=[str(shared)],
+        min_verified_replicas=1,
+    )
+    config.save(root / "store" / "config.json")
+
+    staged = drill.stage(root, tmp_path / "work")
+    replica = staged.config.lockdown.required_replica_locations[0]
+    dual = next(loc.path for loc in staged.locations if loc.name == "dual")
+    assert Path(replica).resolve() == Path(dual).resolve()
+
+
+def test_a_stewards_signing_key_is_never_carried_into_the_workdir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Cleared rather than copied: a rehearsal has no business holding a private key."""
+    monkeypatch.setenv("LEDGER_VAULT_KEY", _VAULT_KEY)
+    root = tmp_path / "arc"
+    _build(root, tmp_path / "data")
+    key = tmp_path / "signing-key"
+    key.write_text("not a real key", encoding="utf-8")
+    config = Config.load(root / "store" / "config.json")
+    config.attestation_signing_key = str(key)
+    config.save(root / "store" / "config.json")
+
+    staged = drill.stage(root, tmp_path / "work")
+    assert staged.config.attestation_signing_key == ""
+    assert not (tmp_path / "work" / "signing-key").exists()
+
+
+# --- seized-primary ------------------------------------------------------------------
+
+
+def test_seized_primary_shreds_the_vault_and_stands_it_back_up(
+    archive_with_mirror: Path, tmp_path: Path
+) -> None:
+    """The whole transition, asserted at both ends rather than only at the end.
+
+    A stand-up that ran over an un-shredded vault would end with the vault present
+    and pass, having rehearsed nothing. So the injection's landing check is read
+    here too: the flag written *and* the vault file gone before recovery ran.
+    """
+    workdir = tmp_path / "work"
+    report = drill.run_drill(
+        archive_with_mirror, workdir, scenarios=["seized-primary"], now=DRILL_NOW
+    )
+    result = _result(report, "seized-primary")
+    assert result.outcome is DrillOutcome.RECOVERED
+    assert result.fault_landed and result.fault_detected
+    assert result.recovering_command == "ledger stand-up"
+    assert "shredded" in result.detail
+
+    staged_config = Config.load(workdir / "seized-primary" / "archive" / "store" / "config.json")
+    vault = Path(staged_config.vault_path)
+    assert vault.is_file(), "the stand-up did not restore the vault"
+    replica_vault = Path(staged_config.lockdown.required_replica_locations[0]) / "identity.vault"
+    assert vault.read_bytes() == replica_vault.read_bytes()
+    assert not (Path(staged_config.store_root) / "logs" / "lockdown.flag").exists()
+
+
+def test_the_live_archive_and_its_off_box_replica_are_untouched(
+    archive_with_mirror: Path, tmp_path: Path
+) -> None:
+    """The scenario destroys a vault. It must destroy a copy of one.
+
+    **Measured, and stated because the name overpromises otherwise:** this test
+    passes with the staging leak reinstated. `execute_lockdown` only *reads* the
+    off-box replica (verification) and `execute_stand_up` only reads it (a copy
+    *from* it), so the leak's damage was that the drill read the community's real
+    replica and pulled real vault bytes into a scratch directory — not that it
+    wrote to it. The path-containment test above is what catches the leak; this one
+    guards the day some scenario writes to a replica, which is a real possibility
+    (`heal` already writes to locations) and would be silent without it.
+    """
+    live_before = drill.tree_digest(archive_with_mirror)
+    replica = tmp_path / "offbox"
+    replica_before = drill.tree_digest(replica)
+
+    report = drill.run_drill(
+        archive_with_mirror, tmp_path / "work", scenarios=["seized-primary"], now=DRILL_NOW
+    )
+
+    assert report.live_archive_untouched
+    assert drill.tree_digest(archive_with_mirror) == live_before
+    assert drill.tree_digest(replica) == replica_before, (
+        "the drill wrote to the live off-box replica"
+    )
+
+
+def test_seized_primary_is_not_applicable_when_the_replica_would_not_verify(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A duress posture whose replica is empty: reported, never rehearsed, never failed.
+
+    This is the finding a steward most needs from this scenario and it is the state
+    the `all([])` defect used to render as a pass. It is not-applicable rather than
+    failed because nothing about the *recovery path* was demonstrated broken — what
+    is broken is the replica, and the reason says so with the code
+    `verify_backup_location` returned.
+    """
+    monkeypatch.setenv("LEDGER_VAULT_KEY", _VAULT_KEY)
+    root = tmp_path / "arc"
+    _build(root, tmp_path / "data")
+    # Genuinely empty, not missing-bags: `audit_fixity` reconciles `records/`
+    # against `bags/` (#121), so a replica that kept its records and lost its bags
+    # is `fixity-failed` — real damage. The state this test is about is the one the
+    # `all([])` defect used to call a pass: readable, and nothing in it to check.
+    empty = tmp_path / "offbox"
+    empty.mkdir()
+    shutil.copytree(root / "store", empty / "store")
+    for name in ("bags", "records"):
+        shutil.rmtree(empty / "store" / name)
+        (empty / "store" / name).mkdir()
+    shutil.copyfile(root / "identity.vault", empty / "identity.vault")
+    config = Config.load(root / "store" / "config.json")
+    config.lockdown = LockdownConfig(
+        stop_disclosure=True,
+        shred_vault=True,
+        required_replica_locations=[str(empty)],
+        min_verified_replicas=1,
+    )
+    config.save(root / "store" / "config.json")
+
+    report = drill.run_drill(root, tmp_path / "work", scenarios=["seized-primary"], now=DRILL_NOW)
+    result = _result(report, "seized-primary")
+    assert result.outcome is DrillOutcome.NOT_APPLICABLE
+    assert result.outcome is not DrillOutcome.RECOVERED
+    assert "would refuse to shred" in result.detail
+    assert "nothing-verified" in result.detail, (
+        "the reason must name the replica's own verdict code, not just a count"
+    )
+    assert report.exit_code == 0
+
+
+def test_an_archive_with_no_duress_posture_says_so_rather_than_failing(
+    archive_without_lockdown_root: Path, tmp_path: Path
+) -> None:
+    """`lockdown.shred_vault` is off by default, so this is the common deployment."""
+    report = drill.run_drill(
+        archive_without_lockdown_root,
+        tmp_path / "work",
+        scenarios=["seized-primary"],
+        now=DRILL_NOW,
+    )
+    result = _result(report, "seized-primary")
+    assert result.outcome is DrillOutcome.NOT_APPLICABLE
+    assert "not configured to shred its vault under duress" in result.detail
+
+
+def test_a_stand_up_that_restored_the_wrong_bytes_is_not_a_recovery(
+    archive_with_mirror: Path, tmp_path: Path
+) -> None:
+    """The verify compares digests, so an empty or truncated vault fails.
+
+    Asserting the file merely exists would credit a stand-up that touched an empty
+    file into place, which is the shape of every other defect in this module.
+    """
+    workdir = tmp_path / "work"
+    staged = drill.stage(archive_with_mirror, workdir)
+
+    def _restore_nothing(_staged: drill.StagedArchive) -> None:
+        Path(_staged.config.vault_path).write_bytes(b"")
+        (Path(_staged.config.store_root) / "logs" / "lockdown.flag").unlink()
+
+    scenario = drill.SCENARIOS["seized-primary"]
+    broken = drill.Scenario(
+        name=scenario.name,
+        fault=scenario.fault,
+        recovering_command=scenario.recovering_command,
+        applicability=scenario.applicability,
+        inject=scenario.inject,
+        detect=scenario.detect,
+        recover=_restore_nothing,
+        verify=scenario.verify,
+    )
+    result = drill.run_scenario(broken, staged)
+    assert result.outcome is DrillOutcome.FAILED
+    assert result.failing_step == "verify"
+
+
+def test_a_lockdown_over_an_archive_with_no_vault_is_not_a_landed_injection(
+    archive_with_mirror: Path, tmp_path: Path
+) -> None:
+    """The state a two-part landing check would have called a rehearsed seizure.
+
+    `execute_lockdown` over an archive with no vault succeeds down the branch
+    "local vault already absent; nothing to shred": the flag is written and the
+    vault is absent, so "flag present and vault gone" holds — satisfied by an
+    archive that had nothing to destroy. The stand-up afterwards restores nothing
+    and the scenario would report `recovered`.
+
+    Driven by removing the vault from the *staged* copy and calling the injection
+    directly, because applicability refuses this state upstream. That is the point:
+    the check must hold on its own rather than inherit correctness from a caller.
+    """
+    staged = drill.stage(archive_with_mirror, tmp_path / "work")
+    Path(staged.config.vault_path).unlink()
+
+    injection = drill._inject_seized_primary(staged)
+
+    assert not injection.landed
+    assert "no vault for a lockdown to shred" in injection.reason
