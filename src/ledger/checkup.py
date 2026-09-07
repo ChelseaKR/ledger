@@ -541,6 +541,42 @@ def _check_recovery_drill(store_root: Path) -> CheckResult:
         if summary.not_applicable
         else ""
     )
+    # A set difference against the live registry, not a count and not a list
+    # written down here. `ledger drill --scenario <name>` runs a partial drill,
+    # and a partial drill said nothing about the scenarios it left out: one
+    # recovered fault read exactly like a full rehearsal. Deriving the gap from
+    # `drill.SCENARIOS` at call time means a scenario added to the registry
+    # widens this sentence with no number here to update, and a scenario
+    # removed narrows it, which a count could not do either way.
+    covered = set(summary.recovered) | set(summary.failed) | set(summary.not_applicable)
+    unrehearsed = tuple(sorted(name for name in drill.SCENARIOS if name not in covered))
+    not_run = (
+        f" {len(unrehearsed)} scenario(s) in the registry were not rehearsed at "
+        f"all: {', '.join(unrehearsed)}."
+        if unrehearsed
+        else ""
+    )
+    if not summary.recovered:
+        # The same fact as no drill at all, reached by a different route. A run
+        # in which every scenario was not-applicable, or in which no scenario
+        # ran, rehearsed no recovery path: nothing here says they work and
+        # nothing says they are broken. Reporting it as a pass made running a
+        # drill that exercised nothing score better than not running one --
+        # green against the yellow the `summary is None` branch above returns.
+        # `drill.run_scenario` already keeps not-applicable as a third outcome
+        # that is never a pass; this is that rule at the line that reads it.
+        return CheckResult(
+            check_id="recovery-drill",
+            title="A recovery drill has been run and recorded",
+            status=CheckStatus.UNVERIFIED,
+            explanation=(
+                f"The drill on {summary.generated_date} recovered from no injected "
+                f"fault, so no recovery path was rehearsed.{skipped}{not_run} Nothing "
+                "here says the recovery paths are broken; nothing says they work "
+                "either. Run `ledger drill --root <archive> --workdir <scratch>` over "
+                "the scenarios this archive can exercise."
+            ),
+        )
     return CheckResult(
         check_id="recovery-drill",
         title="A recovery drill has been run and recorded",
@@ -548,7 +584,7 @@ def _check_recovery_drill(store_root: Path) -> CheckResult:
         explanation=(
             f"The drill on {summary.generated_date} recovered from "
             f"{len(summary.recovered)} injected fault(s): "
-            f"{', '.join(summary.recovered) or 'none'}.{skipped}"
+            f"{', '.join(summary.recovered)}.{skipped}{not_run}"
         ),
     )
 

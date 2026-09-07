@@ -523,10 +523,19 @@ def test_checkup_does_not_read_not_applicable_as_a_recovery(
 ) -> None:
     """A drill in which nothing was exercised must not read as a clean bill.
 
-    The pass line names the not-applicable scenarios rather than folding them into
-    the recovered count, so "3 recovered" can never mean "0 recovered, 3 skipped".
+    This test used to assert `CheckStatus.PASS` here, which contradicted its own
+    first sentence. The explanation named the not-applicable scenarios, so
+    "3 recovered" could never mean "0 recovered, 3 skipped"; but the *status*
+    was a pass, and `CheckupReport.readiness` rolls a pass up to green.
+
+    Measured on origin/main, 2026-09-06:
+
+        every scenario not-applicable  ->  pass,             green,  exit 0
+        no drill recorded at all       ->  could-not-verify, yellow, exit 0
+
+    Running a drill that rehearsed nothing scored better than not running one.
     """
-    from ledger.checkup import CheckStatus, run_checkup
+    from ledger.checkup import CheckStatus, Readiness, run_checkup
 
     skipped = drill.ScenarioResult(
         scenario="lost-location",
@@ -551,9 +560,10 @@ def test_checkup_does_not_read_not_applicable_as_a_recovery(
     archive = Archive(Config.load(archive_with_mirror / "store" / "config.json"))
     readiness = run_checkup(archive, env={}, platform="linux", now=NOW, write_report=False)
     result = next(r for r in readiness.results if r.check_id == "recovery-drill")
-    assert result.status is CheckStatus.PASS
-    assert "recovered from 0 injected fault(s)" in result.explanation
+    assert result.status is CheckStatus.UNVERIFIED
+    assert "recovered from no injected fault" in result.explanation
     assert "not-applicable, not as passes" in result.explanation
+    assert readiness.readiness is not Readiness.GREEN
 
 
 def test_checkup_fails_when_the_last_drill_touched_the_live_archive(
@@ -774,3 +784,96 @@ def test_deleting_the_copies_without_a_receipt_is_not_a_recovery(
     assert drill._every_stale_copy_is_gone_and_recorded(staged) is False, (
         "every copy is gone, but no location has confirmed the removal"
     )
+
+
+# --- a drill that rehearsed nothing must not read as ready ---------------------------
+
+
+def test_checkup_cannot_verify_a_drill_that_ran_no_scenario(
+    archive_with_mirror: Path,
+) -> None:
+    """A recorded drill holding no scenario at all is the same fact as no drill."""
+    from ledger.checkup import CheckStatus, Readiness, run_checkup
+
+    report = drill.DrillReport(
+        generated_date=DRILL_NOW,
+        archive_name="a",
+        results=(),
+        live_digest_before="x",
+        live_digest_after="x",
+    )
+    drill.write_report(report, archive_with_mirror / "store" / "audits")
+
+    archive = Archive(Config.load(archive_with_mirror / "store" / "config.json"))
+    readiness = run_checkup(archive, env={}, platform="linux", now=NOW, write_report=False)
+    result = next(r for r in readiness.results if r.check_id == "recovery-drill")
+    assert result.status is CheckStatus.UNVERIFIED
+    assert readiness.readiness is not Readiness.GREEN
+
+
+def test_latest_drill_of_a_document_with_no_scenarios_list_is_none(tmp_path: Path) -> None:
+    """Some other JSON in audits/ is not a drill report with nothing in it.
+
+    Reading it as one produced `live_archive_untouched=False` by default, and
+    checkup rendered that as "the drill changed the live archive while it ran",
+    a specific accusation about a run that was never read.
+    """
+    audits = tmp_path / "audits"
+    audits.mkdir()
+    (audits / f"{drill.REPORT_PREFIX}2026-01-02.json").write_text(
+        json.dumps({"note": "some other json someone dropped in audits/"}), encoding="utf-8"
+    )
+    assert drill.latest_drill(audits) is None
+
+
+def _write_summary(audits: Path, scenarios: list[dict[str, str]]) -> None:
+    audits.mkdir(parents=True, exist_ok=True)
+    (audits / f"{drill.REPORT_PREFIX}2026-01-02.json").write_text(
+        json.dumps(
+            {
+                "generated_date": "2026-01-02T00:00:00Z",
+                "live_archive_untouched": True,
+                "scenarios": scenarios,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_a_partial_drill_names_every_scenario_it_did_not_rehearse(tmp_path: Path) -> None:
+    """`ledger drill --scenario <name>` runs a partial drill, and it said so nowhere.
+
+    One recovered fault read exactly like a full rehearsal. The gap is a set
+    difference against `drill.SCENARIOS` taken at call time, so a scenario added
+    to the registry widens this sentence with nothing here to update. Asserted as
+    a set rather than a count for the same reason: a count in this test would go
+    stale the moment the registry grows, and would still pass.
+    """
+    from ledger.checkup import CheckStatus, _check_recovery_drill
+
+    rehearsed = "bit-rot"
+    assert rehearsed in drill.SCENARIOS
+    expected_gap = set(drill.SCENARIOS) - {rehearsed}
+    assert expected_gap, "a one-scenario registry cannot demonstrate a partial drill"
+
+    _write_summary(tmp_path / "audits", [{"scenario": rehearsed, "outcome": "recovered"}])
+    result = _check_recovery_drill(tmp_path)
+
+    assert result.status is CheckStatus.PASS, "one real recovery is a real, partial result"
+    for name in expected_gap:
+        assert name in result.explanation, name
+    assert "were not rehearsed at all" in result.explanation
+
+
+def test_a_full_drill_claims_no_unrehearsed_scenario(tmp_path: Path) -> None:
+    """The disclosure appears only when the set difference is non-empty."""
+    from ledger.checkup import CheckStatus, _check_recovery_drill
+
+    _write_summary(
+        tmp_path / "audits",
+        [{"scenario": name, "outcome": "recovered"} for name in drill.SCENARIOS],
+    )
+    result = _check_recovery_drill(tmp_path)
+
+    assert result.status is CheckStatus.PASS
+    assert "were not rehearsed at all" not in result.explanation
