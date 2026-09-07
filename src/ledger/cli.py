@@ -706,8 +706,11 @@ def _cmd_verify_backup(args: argparse.Namespace) -> int:
     config at the backup location (the stored paths are the original box's), confirms
     the store and — when ``LEDGER_VAULT_KEY`` is set — the vault are readable without
     unsealing anything, then runs full RFC 8493 fixity over every bag. Exit ``0`` when
-    every bag passes, non-zero otherwise, so a cron job can alarm on a bad backup.
-    Only bag names and counts are printed (no-outing rule).
+    at least one bag was checked and every checked bag passed; non-zero otherwise, so
+    a cron job can alarm on a bad backup. A backup holding **no bags to check** is
+    reported as ``COULD NOT VERIFY`` and exits non-zero too: it proved nothing, and
+    proving something is the whole question this command is asked. Only bag names and
+    counts are printed (no-outing rule).
     """
     backup = Path(args.backup)
     report = verify_backup(backup)
@@ -804,9 +807,10 @@ def _cmd_restore_backup(args: argparse.Namespace) -> int:
     salt in the sidecar manifest, decrypts (a wrong passphrase or tampering fails
     with a clear error), untars into ``--target``, and then runs the same
     readability + RFC 8493 fixity checks as ``verify-backup`` so the restore is
-    *proven* intact. Exit ``0`` when every restored bag passes, non-zero otherwise —
-    the exit code a restore-drill cron job alarms on. Prints only bag names and
-    counts (no-outing rule)."""
+    *proven* intact. Exit ``0`` when at least one bag was checked and every checked
+    bag passed, non-zero otherwise — the exit code a restore-drill cron job alarms on,
+    and a restore that came back with nothing in it alarms too. Prints only bag names
+    and counts (no-outing rule)."""
     target = Path(args.target)
     report = restore_backup(Path(args.archive), _backup_passphrase(), target)
     return _print_verify_report(report, target)
