@@ -171,7 +171,7 @@ def test_a_replica_holding_no_content_does_not_verify(tmp_path: Path) -> None:
 
 
 def test_an_empty_replica_is_reported_apart_from_a_corrupt_one(tmp_path: Path) -> None:
-    """"Your replica is empty" and "your replica is corrupt" call for opposite
+    """ "Your replica is empty" and "your replica is corrupt" call for opposite
     responses — re-run the copy job, or restore from somewhere else. Collapsing
     the new state into ``fixity-failed`` would send a steward under duress to
     repair bytes that are perfectly fine."""
