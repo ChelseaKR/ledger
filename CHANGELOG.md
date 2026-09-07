@@ -7,6 +7,48 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Fixed
+- **An archive with nothing in it verified as a good backup, and that verdict was
+  what authorised shredding the vault.** `lockdown.verify_backup_location` ended in
+  `all_ok = all(bag.ok for bag in bags)`, and `all([])` is `True`. An off-box replica
+  holding `store/config.json` and an `identity.vault` but **none of the archive's
+  content** — a partial rsync, a copy that stopped after the metadata, an emptied
+  replica disk — passed `check_readiness`, audited zero bags, and came back
+  `ok=True` with an empty `reason`. That is the gate `execute_lockdown` consults
+  before it *irreversibly shreds the local identity vault*, so under duress an empty
+  replica read as "your archive survived" and authorised destroying the only real
+  copy. A test now drives the full path and shows the pre-fix code shredding it.
+
+  The same vacuous truth sat on three more surfaces: `ledger verify-backup` printed
+  `PASS: 0 bag(s) verified, 0 failed` and exited **0** on a content-free backup, so a
+  cron job whose entire purpose is to alarm on a bad backup stayed quiet; `ledger
+  audit` printed `PASS` over an archive holding nothing; and
+  `attestation.build_attestation` folded a bag that declared *no files to check* into
+  its `all(...)` as a pass, so an archive whose manifests had been emptied could still
+  be signed and published at `/proof` as `fixity_ok: true`. Issue #121 closed the
+  variant where a bag is deleted (`audit_fixity` reconciles `bags/` against
+  `records/`); a bag that is present and declares nothing was the hole it left.
+
+  **The fix is three states, not a flipped boolean.** Reporting a *failure* for an
+  absence would be the same defect wearing the other mask — an archive that genuinely
+  holds nothing yet is not corrupt, and a steward told "your replica is corrupt" when
+  it is merely empty goes off to repair bytes that are fine. `ledger.fixity` gains
+  `FixityStatus` — `verified` / `failed` / `could-not-verify` — in the same shape
+  `checkup.CheckStatus` and `drill.DrillOutcome` already use, `AuditReport.ok` now
+  means "checked something, and it passed", and `nothing-verified` is its own reason
+  code end to end. `verify-backup` reports `COULD NOT VERIFY` and exits non-zero,
+  because nothing about the backup was proven and that is exactly what it was asked;
+  `ledger audit` says `NOTHING AUDITED` and stays exit 0, because a new box is a
+  legitimate state, just not a demonstration of health. The lockdown and stand-up
+  refusals now name the reason codes they counted, so `0 of 1 verified` tells a
+  steward under duress which of the two problems they have.
+
+  One thing is deliberately **not** changed and is left for the owner: an archive with
+  no bags at all still publishes `fixity_ok: true`. Saying the honest third thing there
+  needs a new attestation field, therefore `ATTESTATION_SCHEMA_VERSION` 2 and a break
+  for every third-party verifier, and it would publish the absolute fact that the
+  archive is empty — the anti-enumeration line `ledger.attestation`'s docstring exists
+  to hold. Recorded at #205; `tests/test_audit_missing_bags.py` pins today's behaviour
+  on purpose.
 - **The skip link parked itself 9,999 pixels off the page, which is nine and a half
   thousand pixels of horizontal scroll in Arabic.** `.skip-link` used the old
   off-screen idiom, `position: absolute; left: -9999px`, revealed on focus by

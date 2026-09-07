@@ -52,6 +52,7 @@ from cryptography.fernet import Fernet, InvalidToken
 
 from ledger.config import Config
 from ledger.errors import LedgerError
+from ledger.fixity import FixityStatus
 from ledger.identity import IdentityVault
 from ledger.ingest import Archive
 from ledger.models import canonical_json, now_iso
@@ -102,12 +103,25 @@ class VerifyReport:
 
     ``bag_results`` is one ``(bag_name, ok, files_checked)`` triple per bag — bag
     names and counts only, never a payload byte or an identity.
+
+    ``status`` is the three-state verdict (:class:`ledger.fixity.FixityStatus`) and
+    ``ok`` is true only for :data:`~ledger.fixity.FixityStatus.VERIFIED`. A backup
+    that was readable but held nothing to check is ``UNVERIFIED``: it demonstrated
+    nothing, so it cannot be reported as a good backup, and it is not corruption
+    either. ``failures == 0`` is *not* the test for a usable backup, and was exactly
+    how a content-free copy used to pass.
     """
 
     ok: bool
     reason: str
     bag_results: list[tuple[str, bool, int]]
     failures: int
+    status: FixityStatus = FixityStatus.FAILED
+
+    @property
+    def verified_bags(self) -> int:
+        """How many bags actually proved intact — what was proven, not what was found."""
+        return sum(1 for _name, ok, _checked in self.bag_results if ok)
 
 
 # --- create -----------------------------------------------------------------
@@ -236,6 +250,16 @@ def create_backup(config: Config, dest_dir: Path, passphrase: str) -> BackupRepo
 
 # --- verify -----------------------------------------------------------------
 
+#: The ``reason`` code reported for each non-passing verdict. ``nothing-verified`` is
+#: deliberately its own code rather than folded into ``fixity-failed``: telling a
+#: steward "your backup is corrupt" when it is merely empty sends them to repair
+#: bytes that are fine instead of to the copy job that never finished.
+_VERIFY_REASON: dict[FixityStatus, str] = {
+    FixityStatus.VERIFIED: "",
+    FixityStatus.FAILED: "fixity-failed",
+    FixityStatus.UNVERIFIED: "nothing-verified",
+}
+
 
 def verify_backup(backup_root: Path) -> VerifyReport:
     """Re-validate a restored archive root *in place* (shared by CLI + restore).
@@ -247,6 +271,10 @@ def verify_backup(backup_root: Path) -> VerifyReport:
     bag. Returns a :class:`VerifyReport` naming only bags and counts (no-outing
     rule). This is the exact logic behind ``ledger verify-backup``, factored here so
     a restore verifies through the same path.
+
+    A backup that is readable but holds **no bags to check** comes back
+    :data:`~ledger.fixity.FixityStatus.UNVERIFIED`, not ``ok`` — "an untested backup
+    is a hope", and so is a backup whose test had nothing to run against.
     """
     backup_root = Path(backup_root)
     config = Config.load(backup_root / "store" / _CONFIG_FILENAME)
@@ -258,16 +286,38 @@ def verify_backup(backup_root: Path) -> VerifyReport:
 
     ready, reason = archive.check_readiness()
     if not ready:
-        return VerifyReport(ok=False, reason=reason, bag_results=[], failures=0)
+        return VerifyReport(
+            ok=False, reason=reason, bag_results=[], failures=0, status=FixityStatus.FAILED
+        )
 
     results: list[tuple[str, bool, int]] = []
     failures = 0
+    statuses: list[FixityStatus] = []
     for name, report in archive.audit_fixity():
         ok = report.ok
         if not ok:
             failures += 1
+        statuses.append(report.status)
         results.append((name, ok, report.checked))
-    return VerifyReport(ok=failures == 0, reason="", bag_results=results, failures=failures)
+    # `failures == 0` is vacuously true over a backup that contained nothing, which is
+    # how a copy holding no bags at all used to report PASS. The verdict is the
+    # three-state roll-up: one bad bag fails the backup, and a backup where any bag
+    # went unproven — including the case where there are no bags at all — is
+    # UNVERIFIED, not a pass and not corruption. `statuses and` is load-bearing:
+    # `all(...)` over an empty list is the very truth this is here to stop telling.
+    if any(status is FixityStatus.FAILED for status in statuses):
+        status = FixityStatus.FAILED
+    elif statuses and all(status is FixityStatus.VERIFIED for status in statuses):
+        status = FixityStatus.VERIFIED
+    else:
+        status = FixityStatus.UNVERIFIED
+    return VerifyReport(
+        ok=status is FixityStatus.VERIFIED,
+        reason="" if status is FixityStatus.VERIFIED else _VERIFY_REASON[status],
+        bag_results=results,
+        failures=failures,
+        status=status,
+    )
 
 
 # --- restore ----------------------------------------------------------------

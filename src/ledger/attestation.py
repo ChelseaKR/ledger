@@ -45,6 +45,7 @@ from pathlib import Path
 
 from ledger import __version__ as _LEDGER_VERSION
 from ledger.errors import LedgerError
+from ledger.fixity import FixityStatus
 from ledger.ingest import Archive
 from ledger.metadata.premis import PremisLog
 from ledger.models import PremisEvent, canonical_json
@@ -284,9 +285,31 @@ def build_attestation(archive: Archive, *, now: str) -> HealthAttestation:
     Runs a full fixity audit (:meth:`Archive.audit_fixity`), so — like
     ``ledger audit`` — this re-hashes every stored payload and is meant to be run
     on a schedule, not per HTTP request (see the module docstring).
+
+    ``fixity_ok`` is now computed from :class:`ledger.fixity.FixityStatus` rather than
+    ``all(report.ok for ...)``. The change that matters is at the *bag* level: a bag
+    that survived structural validation while declaring **no files to check** used to
+    fold into the `all(...)` as a pass, so an archive whose manifests had been emptied
+    could still be signed and published as ``fixity_ok: true``. Such a bag is now
+    ``UNVERIFIED`` and this refuses to call it healthy.
+
+    **The genuinely-empty archive is deliberately left alone here, and it is an open
+    question.** An archive that holds no bags at all still publishes
+    ``fixity_ok: true``, which is vacuously true and reads on ``/proof`` as "this
+    archive passed every integrity check". Saying the honest third thing ("there was
+    nothing to check") would mean a new field, and therefore
+    :data:`ATTESTATION_SCHEMA_VERSION` 2 and a break for every third-party verifier —
+    and it would publish, to anyone, the absolute fact that the archive is empty,
+    which is the anti-enumeration line this module's docstring exists to hold. That
+    trade is the owner's to make, not this function's; it is recorded at issue #205
+    and ``tests/test_audit_missing_bags.py`` pins the current behaviour on purpose.
     """
-    reports = archive.audit_fixity()
-    fixity_ok = all(report.ok for _name, report in reports)
+    statuses = [report.status for _name, report in archive.audit_fixity()]
+    # `all(...)` is True over an empty list. That vacuity is now confined to exactly
+    # one case — an archive with no bags whatsoever — because every OTHER way of
+    # reaching a report that checked nothing (an emptied manifest, a bag deleted from
+    # under `records/`) is a non-VERIFIED status that this rejects.
+    fixity_ok = all(status is FixityStatus.VERIFIED for status in statuses)
     return HealthAttestation(
         schema_version=ATTESTATION_SCHEMA_VERSION,
         archive_name=archive.config.archive_name,
