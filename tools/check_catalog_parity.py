@@ -8,13 +8,32 @@ Enforces, over every shipped locale in ``src/ledger/locales``
   and covers every msgid in ``messages.pot``. A key present in one catalog but not
   another fails the build.
 * **G5 completeness** — every msgstr (each plural form, including Arabic's six) is
-  non-empty. ledger's translations are real, human-authored (Spanish migrated from
-  the retired bespoke ``_CATALOG``/``_CW_GLOSSES`` dicts; French and Arabic authored
-  for RM7), so completeness is enforced as a hard gate here rather than deferred:
-  there is no untranslated backlog to wave through.
+  non-empty. Every shipped catalog is filled in, so completeness is enforced as a
+  hard gate here rather than deferred: there is no untranslated backlog to wave
+  through.
 * **G5 placeholder parity** — the set of ``{...}`` fields is identical between each
   msgid and its translation, in every plural form (so a rename or dropped ``{name}``
   cannot ship).
+* **Review status is declared** — every non-source catalog's PO header carries an
+  ``X-Translation-Review`` field equal to :func:`ledger.i18n.translation_review`
+  for that locale, and this script prints the status of every locale it passes.
+
+**What these checks cannot see, stated because the gate's output would otherwise
+imply otherwise.** Key parity, completeness and placeholder parity are all
+satisfied by a Spanish ``msgstr`` that is verbatim English: it is non-empty, its
+key matches, and its placeholder set is trivially identical. So a green run here
+says the catalogs are *structurally* sound and says nothing whatever about whether
+the translations are good, or whether anyone who speaks the language has read them.
+
+A blanket "a non-English msgstr must differ from its msgid" rule would not fix
+that and is deliberately **not** implemented: plenty of strings are legitimately
+identical across these languages — ``No`` in Spanish, ``Agent``, ``Date``,
+``Description``, ``Type`` in French, proper nouns, URLs, bare numbers. Measured on
+this repository: 2 of 273 Spanish and 6 of 273 French msgstrs are identical to
+their msgid, and every one of them is correct. A rule with a false-positive rate
+like that gets suppressed or disabled, which is worse than no rule. An allowlist
+would be needed, and building the allowlist is the design work; until someone does
+it, the honest substitute is disclosure, which is what the review field gates.
 
 Pure standard library + Babel's PO reader; no network, deterministic.
 """
@@ -28,7 +47,7 @@ from pathlib import Path
 from babel.messages.catalog import Catalog, Message
 from babel.messages.pofile import read_po
 
-from ledger.i18n import SUPPORTED
+from ledger.i18n import PO_REVIEW_HEADER, SOURCE_LANG, SUPPORTED, translation_review
 
 LOCALES = Path(__file__).resolve().parent.parent / "src" / "ledger" / "locales"
 POT = LOCALES / "messages.pot"
@@ -52,6 +71,32 @@ def _ids(catalog: Catalog) -> set[str]:
 
 def _fields(text: str) -> set[str]:
     return set(_FIELD.findall(text))
+
+
+def _po_header_field(path: Path, field: str) -> str | None:
+    """Read one PO header field from the file's own bytes.
+
+    Deliberately not via Babel. ``read_po`` reconstructs the header from the fields
+    it recognizes and **silently drops** an unknown ``X-`` field, so a check that
+    asked the parsed catalog would report every catalog as undeclared no matter
+    what the committed file says. What ships is the file, so the file is what is
+    read. Stops at the blank line ending the header entry, so a later message
+    cannot be mistaken for a header field.
+    """
+    prefix = f"{field.lower()}:"
+    lines = path.read_text(encoding="utf-8").splitlines()
+    try:
+        start = lines.index('msgid ""')
+    except ValueError:
+        return None
+    for raw in lines[start + 2 :]:  # skip the `msgid ""` / `msgstr ""` pair
+        line = raw.strip()
+        if not line.startswith('"'):
+            break  # the header entry ended
+        text = line[1:].removesuffix('"')
+        if text.lower().startswith(prefix):
+            return text[len(prefix) :].removesuffix("\\n").strip()
+    return None
 
 
 def main() -> int:
@@ -106,14 +151,43 @@ def main() -> int:
                         f"{_fields(target)} != {src_fields}"
                     )
 
+    # Review status: declared in the code, restated in the catalog, checked to
+    # agree. A catalog whose header says "reviewed" while the code says nobody has
+    # read it -- or a new locale added to SUPPORTED with no declaration at all --
+    # fails here rather than shipping a silent claim.
+    for name in catalogs:
+        if name == SOURCE_LANG:
+            continue
+        found = _po_header_field(
+            LOCALES / name / "LC_MESSAGES" / "messages.po", PO_REVIEW_HEADER
+        )
+        expected = translation_review(name).value
+        if found is None:
+            errors.append(
+                f"review: {name}'s PO header has no {PO_REVIEW_HEADER} field; it must "
+                f"declare {expected!r} (see ledger.i18n.translation_review)"
+            )
+        elif found.strip() != expected:
+            errors.append(
+                f"review: {name}'s PO header says {PO_REVIEW_HEADER}: {found.strip()!r} "
+                f"but ledger.i18n.translation_review says {expected!r}"
+            )
+
     if errors:
         print("catalog parity FAILED:", file=sys.stderr)
         for err in errors:
             print(f"  - {err}", file=sys.stderr)
         return 1
+    statuses = ", ".join(f"{loc}={translation_review(loc).value}" for loc in SUPPORTED)
     print(
         f"catalog parity OK: {len(pot_ids)} msgids across {', '.join(SUPPORTED)}; "
         "key-parity + completeness + placeholder parity hold."
+    )
+    print(f"translation review status: {statuses}")
+    print(
+        "  These checks cannot see whether a translation is correct, only whether it "
+        "is present and structurally consistent; a verbatim-English msgstr passes all "
+        "three. Review status is declared, not measured."
     )
     return 0
 

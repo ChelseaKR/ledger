@@ -711,6 +711,15 @@ msgstr "This record has access restrictions."
 msgid "This record links to"
 msgstr "This record links to"
 
+msgid ""
+"This translation was drafted by the project and has not been reviewed by "
+"a qualified speaker of this language. The English pages are the source "
+"text."
+msgstr ""
+"This translation was drafted by the project and has not been reviewed by "
+"a qualified speaker of this language. The English pages are the source "
+"text."
+
 msgid "Those contact details are too long."
 msgstr "Those contact details are too long."
 

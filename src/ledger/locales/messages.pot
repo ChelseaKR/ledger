@@ -733,6 +733,12 @@ msgstr ""
 msgid "This record links to"
 msgstr ""
 
+msgid ""
+"This translation was drafted by the project and has not been reviewed by "
+"a qualified speaker of this language. The English pages are the source "
+"text."
+msgstr ""
+
 msgid "Those contact details are too long."
 msgstr ""
 
