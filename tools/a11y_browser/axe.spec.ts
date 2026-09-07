@@ -2,7 +2,15 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import {
+  expect,
+  test,
+  type APIRequestContext,
+  type Page,
+  type TestInfo,
+} from "@playwright/test";
+
+import { assertRenderedDirection } from "./direction";
 
 /**
  * Browser-real axe pass over ledger's canonical served pages.
@@ -15,6 +23,11 @@ import { expect, test, type APIRequestContext, type Page } from "@playwright/tes
  * The record routes are resolved at runtime from `/api/records` because a
  * record id is minted per seed, not fixed. One of the two seeded records carries
  * a content warning, which drives the CW-interstitial state.
+ *
+ * Every page is audited twice more than it looks: `playwright.config.ts` runs this file
+ * under a left-to-right project and a right-to-left one, and `direction.ts` asserts the
+ * document really did render in the direction the project claims to be auditing before
+ * axe is allowed to look at it.
  */
 
 const SCHEMES = ["light", "dark"] as const;
@@ -41,10 +54,16 @@ async function recordIds(
  * Navigate to `path`, then run axe under each colour scheme and assert no
  * WCAG-tagged violations. `label` names the page in failure output.
  */
-async function auditPage(page: Page, path: string, label: string): Promise<void> {
+async function auditPage(
+  page: Page,
+  testInfo: TestInfo,
+  path: string,
+  label: string,
+): Promise<void> {
   const response = await page.goto(path, { waitUntil: "networkidle" });
   expect(response, `no response for ${label} (${path})`).not.toBeNull();
   expect(response!.status(), `${label} (${path}) -> ${response!.status()}`).toBeLessThan(400);
+  await assertRenderedDirection(page, testInfo, label, path);
 
   for (const scheme of SCHEMES) {
     await page.emulateMedia({ colorScheme: scheme });
@@ -70,19 +89,25 @@ const STATIC_PAGES: Array<{ path: string; label: string }> = [
 ];
 
 for (const { path, label } of STATIC_PAGES) {
-  test(`axe: ${label}`, async ({ page }) => {
-    await auditPage(page, path, label);
+  test(`axe: ${label}`, async ({ page }, testInfo) => {
+    await auditPage(page, testInfo, path, label);
   });
 }
 
-test("axe: record view — content-warning interstitial", async ({ page, request, baseURL }) => {
+test("axe: record view — content-warning interstitial", async (
+  { page, request, baseURL },
+  testInfo,
+) => {
   const { warned } = await recordIds(request, baseURL!);
-  await auditPage(page, `/record/${warned}`, "record (CW interstitial)");
+  await auditPage(page, testInfo, `/record/${warned}`, "record (CW interstitial)");
 });
 
-test("axe: record view — after proceeding past the warning", async ({ page, request, baseURL }) => {
+test("axe: record view — after proceeding past the warning", async (
+  { page, request, baseURL },
+  testInfo,
+) => {
   const { warned } = await recordIds(request, baseURL!);
-  await auditPage(page, `/record/${warned}?proceed=1`, "record (proceeded)");
+  await auditPage(page, testInfo, `/record/${warned}?proceed=1`, "record (proceeded)");
 });
 
 // The steward console is deny-by-default and grant headers are HMAC-authenticated
@@ -99,7 +124,7 @@ const stewardToken = readFileSync(
 test.describe("steward console (provisioned grant)", () => {
   test.use({ extraHTTPHeaders: { "X-Ledger-Grant": stewardToken } });
 
-  test("axe: steward console", async ({ page }) => {
-    await auditPage(page, "/steward", "steward console");
+  test("axe: steward console", async ({ page }, testInfo) => {
+    await auditPage(page, testInfo, "/steward", "steward console");
   });
 });

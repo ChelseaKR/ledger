@@ -301,11 +301,21 @@ jobs:
       - name: Install Chromium for Playwright
         working-directory: tools/a11y_browser
         run: npx playwright install --with-deps chromium
-      - name: axe + keyboard traversal over the served demo
+      - name: axe, 320px reflow and keyboard traversal over the served demo, ltr and rtl
         working-directory: tools/a11y_browser
         # playwright.config.ts starts the seed-and-serve helper (serve_demo.py) and
-        # waits for it, then runs axe under light AND dark schemes across the ~8
-        # canonical pages plus a keyboard-only contribute-form traversal.
+        # waits for it, then runs three specs over the ~8 canonical pages: axe under
+        # light AND dark schemes, the WCAG 2.2 SC 1.4.10 reflow check at 320px, and a
+        # keyboard-only contribute-form traversal.
+        #
+        # The axe and reflow specs run twice, in a `chromium` project and a
+        # `chromium-rtl` one that negotiates Arabic so the server renders
+        # `<html lang="ar" dir="rtl">`. Until that second project existed, the stock
+        # device sent `Accept-Language: en-US` and neither gate had ever drawn the
+        # direction ledger ships `_RTL_LANGS` and `text_direction` for. `direction.ts`
+        # asserts the document really came back in the direction the project claims to
+        # audit, so a locale that failed to arrive fails the run instead of passing it
+        # as a second English pass.
         run: npx playwright test
       - name: Upload Playwright report on failure
         if: failure()

@@ -6,7 +6,55 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- **The skip link parked itself 9,999 pixels off the page, which is nine and a half
+  thousand pixels of horizontal scroll in Arabic.** `.skip-link` used the old
+  off-screen idiom, `position: absolute; left: -9999px`, revealed on focus by
+  resetting `left` to `0`. Under `dir="ltr"` that is harmless: a browser does not
+  scroll to reach content at a negative `left`. Under `dir="rtl"` the inline start
+  edge is the right one, so the same declaration puts the link outside the scrollable
+  origin and the document really does gain 9,999 pixels of horizontal scroll — a WCAG
+  2.2 SC 1.4.10 Reflow failure on **every** page of the Arabic archive, for as long as
+  `ar` has shipped. It is now clipped to a single pixel in the flow's own corner with
+  `inset-inline-start`, `clip-path` and `overflow: hidden`, which hides it just as
+  completely, mirrors by itself, and costs no layout in either direction. Nothing about
+  the focused appearance changes.
+
+  Nothing had caught it because nothing had ever looked. See below.
+
 ### Added
+- **The browser accessibility gates now render right-to-left, and can say so.**
+  `tools/a11y_browser/axe.spec.ts` and `reflow.spec.ts` set no language anywhere, so
+  Playwright's stock `Desktop Chrome` device sent `Accept-Language: en-US`,
+  `server._lang()` negotiated `en` on every request, and both gates had only ever
+  rendered `<html lang="en" dir="ltr">`. ledger ships en/es/fr/ar and threads
+  `i18n.text_direction` into the page shell, and `tests/test_i18n_rtl.py` asserts that
+  — but only against the string `_page()` returns, which cannot tell anyone whether a
+  320px column still reflows once the layout mirrors. The gate whose whole purpose is
+  to render was not rendering the case the direction machinery exists for.
+
+  `playwright.config.ts` gains a `chromium-rtl` project driving the same canonical
+  pages under `locale: "ar"`. It found the skip-link defect above on its first run.
+
+  Three things keep it from being a second English pass wearing an Arabic label:
+
+  - **The rendered direction is asserted, not assumed.** `direction.ts` reads
+    `<html dir>` off the loaded document before any check runs and refuses a page that
+    did not come back in the direction the running project claims to audit. A locale
+    that failed to arrive — a changed device default, a remembered `lang` cookie, a
+    negotiation that fell back — would otherwise leave every test green having audited
+    nothing new.
+  - **The expectation comes from the project's identity, not its configuration.** The
+    first draft derived it from `project.use.locale`, which made the assertion
+    circular: delete the locale and the check quietly expected `ltr`, got `ltr`, and
+    passed. A negative control caught that, and the expectation is now the project's
+    name.
+  - **The reflow scan reads the inline END edge**, which is the left one under `rtl`.
+    A scan that watched only `box.right` sees nothing in a mirrored layout, which is a
+    gate that cannot fail on the one case it was extended to cover. Content past the
+    inline *start* edge is deliberately still not reported: that is the
+    off-screen-until-focused idiom and creates no scroll in either direction. A test
+    plants a fault on each side and requires exactly one of them back.
 - **`ledger drill`: a reversible disaster rehearsal that proves the recovery
   paths** (#187, partial — see below). `ledger checkup` inspects a deployment and
   `docs/BACKUP-RUNBOOK.md` §4 describes a restore drill a steward runs by hand.
