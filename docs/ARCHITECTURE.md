@@ -415,7 +415,19 @@ atomically. A config describes *where* the vault lives, never *what* is in it.
 of the archive under a scratch directory, has one named fault injected into that
 copy, and is then handed to the archive's real recovery commands — the same
 `verify_replicas` and `heal` a steward would run, never a private reimplementation
-of them. `bit-rot`, `lost-location` and `truncated-log` are implemented today.
+of them. `bit-rot`, `lost-location`, `truncated-log` and `stale-replica` are implemented
+today; `seized-primary` is not (see #187).
+
+`stale-replica` is the one whose shape differs, and deliberately: a record is taken
+down while one mirror is offline, the mirror reattaches still holding its copy, and
+the recovery's job is to **refuse** to bring the record back. So its `verify` looks
+for absence where the others look for presence, and `Scenario.source_check` — what
+the authoritative store must look like when the scenario ends — is inverted, since
+running the usual "the source bag still validates" check would have marked a correct
+refusal as a failure and would have been satisfied by a heal that quietly resurrected
+the record. The refusal itself is not the drill's own logic: `heal` is handed the
+archive's `TombstoneStore`, exactly as `ledger heal` hands it, and applies pending
+takedowns before it copies anything.
 
 The module's shape is a fixed pipeline (`applicability -> inject -> detect ->
 recover -> verify`) precisely so the runner can enforce two rules rather than

@@ -52,9 +52,38 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   one whose recovery paths are known to work, and not one whose paths are known to
   be broken either.
 
-  Still open on #187: the `stale-replica` and `seized-primary` scenarios, which
-  need the tombstone and lockdown paths rather than the replica/heal path the three
-  above share.
+  Still open on #187: the `seized-primary` scenario, which needs the lockdown and
+  backup paths rather than the replica/heal path the others share.
+- **`ledger drill` gains `stale-replica`, the scenario whose recovery is a
+  refusal** (#187, still partial). A record is taken down while one mirror is
+  offline; the mirror reattaches still holding its copy. Every other scenario asks
+  whether the archive came back — this one asks whether the archive *refused* to
+  bring something back, which is the one recovery path where the obvious action is
+  the wrong one.
+
+  Three consequences, each of which is the point rather than an implementation
+  detail:
+
+  - `Scenario` gains `source_check`, the state the authoritative store must be in
+    when a scenario ends. For every damage scenario that is "the source bag still
+    validates"; here it is inverted, because the taken-down record must be *gone*.
+    Running the generic check would have marked a correct refusal as a failure —
+    and, worse, would have been satisfied by a heal that quietly resurrected the
+    record from the stale mirror.
+  - `recovered` is credited only when no reachable location still holds the record
+    **and** every reachable location has recorded a receipt for the removal.
+    Deleting the copies without recording it leaves the archive unable to say a
+    takedown was applied, and `/consent-status` reporting it pending forever.
+  - Neither of those checks can pass over an archive with no takedown on record:
+    `all()` over an empty list is `True`, so both refuse an empty tombstone store
+    rather than reading absence as a clean result.
+
+  The refusal is not the drill's own logic. `heal` is handed the archive's
+  `TombstoneStore`, exactly as `ledger heal` hands it, so the drill runs the command
+  its report names; a test pins that the same heal *without* the store copies the
+  stale mirror back over the authoritative store. A takedown that was already on
+  record before the drill ran stops at `inject`, because a drill must not credit
+  itself with recovering from a fault it did not cause.
 - **Status messages now announce to a screen reader (WCAG 2.2 SC 4.1.3)** (#178).
   A status message — the search result count, an empty state, a rejected submission
   — is only heard if it sits in an ARIA live region, because nothing moves focus to
