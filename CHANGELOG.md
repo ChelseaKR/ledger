@@ -145,6 +145,59 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Nothing had caught it because nothing had ever looked. See below.
 
 ### Added
+- **The i18n gate can now see a catalog nobody translated.** `make i18n` printed
+  `catalog parity OK` and exited 0 over a committed `es` catalog with one `msgstr`
+  replaced by its own English `msgid` — measured, not argued, against
+  `origin/main`'s copy of the checker. Ported from `fare-policy-assistant`, which
+  found the same hole in the shared `tools/check_catalog_parity.py` first.
+
+  `en` is the source language, so its `msgstr` must **equal** its `msgid`; every
+  other catalog's must **differ**. Three ways out, and only the third is a
+  judgement: nothing alphabetic left once `{placeholders}` are removed; a single
+  **all-caps** code token or bare URL (upper case is load-bearing, so `CSV` is
+  exempt and `Date` is not); or a written reason in
+  `src/ledger/locales/identical_by_design.json`. ledger needs **eight** entries —
+  `No` in Spanish, and `Agent`, `Date`, `Description`, `Pagination`, `Type`,
+  `Types`, plus `{when}, ref {ref}` — every one of them a cognate the committed
+  catalogs already chose rather than a new translation decision. The list is
+  self-limiting: an entry with no reason is refused, and one whose msgid the
+  template dropped, or whose msgstr has since been translated, fails the gate until
+  it is deleted.
+
+  The positive control is the half that matters, because a gate with false
+  positives is a gate somebody disables: ten msgids that are correctly identical in
+  every language are asserted exempt, and six ordinary short words — `Help`,
+  `Date`, `Type`, `Senior`, `Browse` — are asserted **not** exempt.
+
+- **The i18n gates cannot see an untranslated string, so the catalogs now say who
+  has read them.** `make i18n` enforces key parity, completeness (every `msgstr`
+  non-empty) and placeholder parity — and a Spanish `msgstr` that is *verbatim
+  English* satisfies all three: non-empty, matching key, trivially identical
+  placeholders. The gate would print `catalog parity OK` over a catalog nobody
+  translated. Three documents said the translations were "human-authored";
+  nothing in this repository establishes that, and the phrase has been removed
+  from `tools/check_catalog_parity.py`, `docs/I18N.md` and `src/ledger/i18n.py`.
+
+  `ledger.i18n.translation_review` now answers "who has read this catalog" in
+  three states — `source` (English: the msgids themselves, nothing to review),
+  `reviewed`, and `drafted` — with `REVIEWED_LOCALES` **empty**, which is the
+  honest value rather than a placeholder. An unknown tag is `source`, not
+  `drafted`, because `get_translation` serves it the English msgids and there is
+  no translation to have gone unreviewed. Every page rendered from a `drafted`
+  catalog now carries a `role="note"` banner **in that language** saying so; each
+  non-source `.po` carries a `TRANSLATION REVIEW` comment and an
+  `X-Translation-Review` header field; and `tools/check_catalog_parity.py`
+  requires that field to equal what the code declares, so the disclosure and the
+  registry cannot drift apart. The gate also now prints every locale's review
+  status and states, in its own passing output, what it did not check.
+
+  A blanket "a non-English `msgstr` must differ from its msgid" rule was
+  considered and **deliberately not written**: 2 of 273 Spanish and 6 of 273
+  French msgstrs are legitimately identical to their msgid (`No`; `Agent`,
+  `Date`, `Description`, `Pagination`, `Type`, `Types`), and a rule with that
+  false-positive rate is one that gets switched off. Such a check needs an
+  allowlist and the allowlist is the design work; until it exists, disclosure is
+  the honest substitute rather than a weaker version of the same thing.
 - **The browser accessibility gates now render right-to-left, and can say so.**
   `tools/a11y_browser/axe.spec.ts` and `reflow.spec.ts` set no language anywhere, so
   Playwright's stock `Desktop Chrome` device sent `Accept-Language: en-US`,
