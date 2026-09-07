@@ -301,11 +301,13 @@ def verify_backup(backup_root: Path) -> VerifyReport:
         results.append((name, ok, report.checked))
     # `failures == 0` is vacuously true over a backup that contained nothing, which is
     # how a copy holding no bags at all used to report PASS. The verdict is the
-    # three-state roll-up: one bad bag fails the backup, and a backup that proved no
-    # bag at all is UNVERIFIED — not a pass, not corruption.
+    # three-state roll-up: one bad bag fails the backup, and a backup where any bag
+    # went unproven — including the case where there are no bags at all — is
+    # UNVERIFIED, not a pass and not corruption. `statuses and` is load-bearing:
+    # `all(...)` over an empty list is the very truth this is here to stop telling.
     if any(status is FixityStatus.FAILED for status in statuses):
         status = FixityStatus.FAILED
-    elif any(status is FixityStatus.VERIFIED for status in statuses):
+    elif statuses and all(status is FixityStatus.VERIFIED for status in statuses):
         status = FixityStatus.VERIFIED
     else:
         status = FixityStatus.UNVERIFIED

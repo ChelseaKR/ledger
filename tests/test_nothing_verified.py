@@ -104,6 +104,24 @@ def _hollow_out(replica: Path) -> None:
     shutil.rmtree(replica / "store" / "index", ignore_errors=True)
 
 
+def _empty_a_bags_manifests_at(bag: Path) -> None:
+    """Leave a structurally valid bag at ``bag`` that declares nothing to check.
+
+    Truncating the payload manifest and removing the tag manifests is enough:
+    ``validate_bag`` then finds no entries to verify and no tag files declared,
+    and returns a report with zero results. Nothing is *missing* and nothing
+    *mismatches*, so neither the structural check nor the ``records/``
+    reconciliation from issue #121 sees it — this is the hole those left open.
+    """
+    for payload in sorted((bag / "data").rglob("*")):
+        if payload.is_file():
+            payload.unlink()
+    for manifest in sorted(bag.glob("manifest-*.txt")):
+        manifest.write_text("", encoding="utf-8")
+    for tagmanifest in sorted(bag.glob("tagmanifest-*.txt")):
+        tagmanifest.unlink()
+
+
 def _corrupt_a_payload(replica: Path) -> None:
     """Flip one byte of one payload so the replica FAILS fixity (not merely absent)."""
     payloads = sorted((replica / "store" / "bags").glob("*/data/*"))
@@ -199,6 +217,33 @@ def test_an_empty_replica_is_reported_apart_from_a_corrupt_one(tmp_path: Path) -
     )
     assert corrupt_result.failures == 1
     assert empty_result.failures == 0, "an absence is not a failed file"
+
+
+def test_one_good_bag_does_not_carry_a_replica_whose_other_bag_proved_nothing(
+    tmp_path: Path,
+) -> None:
+    """The roll-up's own version of the same trap, caught while writing this fix.
+
+    "Failure dominates, and otherwise at least one bag verified" reads as a
+    reasonable rule and is not one: a replica with one intact bag and one that
+    declares nothing to check has *not* been verified, though nothing in it
+    failed. `verified_bags` would say 1 while a whole record sat unproven, and
+    the shred gate would take that as a clean replica.
+    """
+    root = tmp_path / "arc"
+    archive, _rid = _archive_with_one_record(root)
+    second = _ingest(archive, "Second record")
+    replica = tmp_path / "replica"
+    shutil.copytree(root, replica)
+    _empty_a_bags_manifests_at(replica / "store" / "bags" / second)
+
+    result = verify_backup_location(replica)
+
+    assert len(result.bags) == 2, "both bags must still be present to reach the roll-up"
+    assert result.verified_bags == 1
+    assert result.ok is False
+    assert result.status is FixityStatus.UNVERIFIED
+    assert result.reason == "nothing-verified"
 
 
 def test_a_faithful_replica_still_verifies(tmp_path: Path) -> None:
@@ -344,30 +389,11 @@ def test_audit_does_not_print_pass_over_an_archive_holding_nothing(
     assert "PASS:" not in captured.out
 
 
-def _empty_a_bags_manifests(archive: Archive, record_id: str) -> None:
-    """Leave a structurally valid bag that declares nothing to check.
-
-    Truncating the payload manifest and removing the tag manifests is enough:
-    ``validate_bag`` then finds no entries to verify and no tag files declared,
-    and returns a report with zero results. Nothing is *missing* and nothing
-    *mismatches*, so neither the structural check nor the records/ reconciliation
-    from issue #121 sees it — this is the hole those left open.
-    """
-    bag = archive.bags_dir / record_id
-    for payload in sorted((bag / "data").rglob("*")):
-        if payload.is_file():
-            payload.unlink()
-    for manifest in sorted(bag.glob("manifest-*.txt")):
-        manifest.write_text("", encoding="utf-8")
-    for tagmanifest in sorted(bag.glob("tagmanifest-*.txt")):
-        tagmanifest.unlink()
-
-
 def test_a_bag_that_declares_nothing_to_check_is_not_a_passing_bag(tmp_path: Path) -> None:
     """The per-bag half of the same vacuity, reached without deleting anything
     the existing reconciliation would catch."""
     archive, rid = _archive_with_one_record(tmp_path / "arc")
-    _empty_a_bags_manifests(archive, rid)
+    _empty_a_bags_manifests_at(archive.bags_dir / rid)
 
     reports = dict(archive.audit_fixity())
 
@@ -384,6 +410,6 @@ def test_a_signed_attestation_will_not_call_an_unverifiable_bag_healthy(tmp_path
 
     assert build_attestation(archive, now=_NOW).fixity_ok is True  # positive control
 
-    _empty_a_bags_manifests(archive, rid)
+    _empty_a_bags_manifests_at(archive.bags_dir / rid)
 
     assert build_attestation(archive, now=_NOW).fixity_ok is False

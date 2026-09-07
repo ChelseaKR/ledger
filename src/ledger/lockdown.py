@@ -185,14 +185,19 @@ def _replica_status(bags: tuple[BagFixity, ...]) -> FixityStatus:
     """Roll one replica's per-bag verdicts up into the location's own verdict.
 
     Failure dominates: one corrupt bag makes the replica ``FAILED`` however many
-    others passed. Absence is next: a replica with no bags at all, or one whose every
-    bag declared nothing to check, is ``UNVERIFIED`` — it proved nothing, which is a
-    different statement from "it is broken". Only a replica that proved at least one
-    bag and failed none is ``VERIFIED``.
+    others passed. ``VERIFIED`` then requires **every** bag to have proved intact and
+    there to have been at least one — a replica holding two good bags and one that
+    declared nothing to check has not been verified, even though nothing in it
+    failed, and "some of your archive is provably here" is not the question this
+    function is asked.
+
+    The explicit ``not bags`` is the whole defect in miniature: ``all(...)`` is
+    :data:`True` over an empty sequence, so without it the emptiest possible replica
+    would take the ``VERIFIED`` branch again.
     """
     if any(bag.status is FixityStatus.FAILED for bag in bags):
         return FixityStatus.FAILED
-    if not any(bag.status is FixityStatus.VERIFIED for bag in bags):
+    if not bags or not all(bag.status is FixityStatus.VERIFIED for bag in bags):
         return FixityStatus.UNVERIFIED
     return FixityStatus.VERIFIED
 
