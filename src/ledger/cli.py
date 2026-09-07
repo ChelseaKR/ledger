@@ -74,6 +74,7 @@ from ledger.backup import create_backup, prune_backups, restore_backup, verify_b
 from ledger.config import Config, StorageLocation
 from ledger.errors import LedgerError
 from ledger.export_drive import build_export_drive
+from ledger.fixity import FixityStatus
 from ledger.identity import ContributorIdentity
 from ledger.ingest import Archive
 from ledger.lockdown import (
@@ -519,7 +520,19 @@ def _cmd_audit(args: argparse.Namespace) -> int:
         if not ok:
             failures += 1
         print(f"{'PASS' if ok else 'FAIL'}\t{name}\t(hash chain)")
-    summary = "PASS" if failures == 0 else "FAIL"
+    if failures:
+        summary = "FAIL"
+    elif reports:
+        summary = "PASS"
+    else:
+        # `PASS: 0 bag(s) audited, 0 failed` was the sweep's own vacuous truth: an
+        # archive holding nothing reported the same verdict as one whose every bag
+        # had just been re-hashed. A missing bag is already a FAIL (the records/
+        # reconciliation in `audit_fixity`), so reaching here with no reports means
+        # the archive genuinely holds nothing — a legitimate state for a new box, and
+        # not something to alarm a cron job over, but not a demonstration of health
+        # either. It gets its own word and the same exit 0.
+        summary = "NOTHING AUDITED"
     print(f"{summary}: {len(reports)} bag(s) audited, {failures} failed")
     return 0 if failures == 0 else 1
 
@@ -706,9 +719,24 @@ def _print_verify_report(report: backup_mod.VerifyReport, location: Path) -> int
 
     Shared by ``verify-backup`` and ``restore-backup`` so a restore is reported
     through the identical surface. Prints only bag names and counts (no-outing
-    rule) and returns ``0`` when every bag passes, ``1`` otherwise.
+    rule) and returns ``0`` only when at least one bag was checked and every checked
+    bag passed, ``1`` otherwise.
+
+    The ``COULD NOT VERIFY`` verdict exists because ``PASS: 0 bag(s) verified, 0
+    failed`` is what this used to print for a backup that held none of the archive's
+    content — a cron job whose whole purpose is to alarm on a bad backup exiting 0 on
+    an empty one. An empty backup is not corruption, so it is not labelled ``FAIL``;
+    it is ``COULD NOT VERIFY``, and it is still a non-zero exit, because nothing about
+    the archive was proven and that is precisely what this command is asked.
     """
     if not report.ok and not report.bag_results:
+        if report.status is FixityStatus.UNVERIFIED:
+            print(
+                f"COULD NOT VERIFY: backup at {location} — 0 bag(s) to check "
+                f"({report.reason}). Nothing about this backup was proven.",
+                file=sys.stderr,
+            )
+            return 1
         print(f"FAIL: backup is not readable ({report.reason})", file=sys.stderr)
         return 1
     for name, ok, checked in report.bag_results:
@@ -716,7 +744,8 @@ def _print_verify_report(report: backup_mod.VerifyReport, location: Path) -> int
     summary = "PASS" if report.ok else "FAIL"
     print(
         f"{summary}: backup at {location} — "
-        f"{len(report.bag_results)} bag(s) verified, {report.failures} failed"
+        f"{report.verified_bags} of {len(report.bag_results)} bag(s) verified, "
+        f"{report.failures} failed"
     )
     return 0 if report.ok else 1
 

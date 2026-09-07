@@ -16,7 +16,9 @@ response. It does two separable things, narrowest-first:
   :func:`verify_backup_location` confirms at least ``min_verified_replicas`` of the
   configured off-box replica locations restore clean (full RFC 8493 fixity + a
   present vault). If the replicas cannot be verified, disclosure is still stopped but
-  the local vault is kept — the archive never destroys its only copy (safety).
+  the local vault is kept — the archive never destroys its only copy (safety). A
+  replica that is readable but holds *nothing to check* counts as unverified, not as
+  clean: an empty copy is not evidence that the archive survived.
 
 :func:`execute_stand_up` is the exact inverse: it verifies a replica, restores the
 vault from it if the local one was shredded, removes the flag, and records the event
@@ -40,6 +42,7 @@ from typing import Protocol
 from ledger._filelock import file_lock
 from ledger.config import Config, LockdownConfig
 from ledger.errors import LedgerError
+from ledger.fixity import FixityStatus
 from ledger.ingest import Archive
 from ledger.metadata.premis import PremisLog
 from ledger.models import PremisEvent, PremisEventType
@@ -98,24 +101,46 @@ class ArchiveLike(Protocol):
         raise NotImplementedError
 
 
+#: The ``reason`` code for a replica that was perfectly readable and held nothing to
+#: check. Distinct from ``fixity-failed`` on purpose: a steward reading it must be
+#: able to tell "your replica is corrupt" from "your replica is empty", because the
+#: two call for opposite responses (restore from elsewhere vs. re-run the copy).
+_NOTHING_VERIFIED = "nothing-verified"
+
+
 @dataclass(frozen=True)
 class BagFixity:
-    """One replica bag's fixity outcome (name + pass/fail + files checked)."""
+    """One replica bag's fixity outcome (name + verdict + files checked).
+
+    ``status`` is the three-state verdict from :class:`ledger.fixity.FixityStatus`;
+    ``ok`` is the narrow "this bag demonstrated integrity", true only for
+    :data:`~ledger.fixity.FixityStatus.VERIFIED`. A bag that declared no files to
+    check is ``UNVERIFIED`` with ``checked == 0`` — not a pass.
+    """
 
     name: str
     ok: bool
     checked: int
+    status: FixityStatus = FixityStatus.VERIFIED
 
 
 @dataclass(frozen=True)
 class BackupVerification:
     """The result of verifying one off-box replica location in place.
 
-    ``ok`` is true only when the replica is *readable* and every bag passes full
-    fixity; ``reason`` is a non-identity-bearing code when it is not. ``has_vault``
-    reports whether an encrypted vault is present to restore from (never its
-    contents). Only bag names, counts, and the location path appear here — never a
-    payload byte or an identity (no-outing rule).
+    ``ok`` is true only when the replica is *readable*, held at least one bag, and
+    every bag passed full fixity; ``reason`` is a non-identity-bearing code when it is
+    not. ``has_vault`` reports whether an encrypted vault is present to restore from
+    (never its contents). Only bag names, counts, and the location path appear here —
+    never a payload byte or an identity (no-outing rule).
+
+    ``status`` carries the three-state verdict, because ``ok`` alone cannot say *why*
+    a replica is unusable. The distinction is the point of this class:
+    :data:`~ledger.fixity.FixityStatus.UNVERIFIED` means the replica was readable and
+    there was **nothing in it to check** — a copy that stopped after the metadata, a
+    location whose contents were wiped, a brand-new box. It is not corruption, and it
+    is emphatically not proof that the archive survived. See
+    :func:`verify_backup_location`.
     """
 
     location: str
@@ -123,11 +148,53 @@ class BackupVerification:
     reason: str
     bags: tuple[BagFixity, ...] = ()
     has_vault: bool = False
+    status: FixityStatus = FixityStatus.FAILED
 
     @property
     def failures(self) -> int:
         """How many bags failed fixity."""
         return sum(1 for bag in self.bags if not bag.ok)
+
+    @property
+    def verified_bags(self) -> int:
+        """How many bags actually demonstrated integrity (the load-bearing count).
+
+        ``len(bags)`` counts what was *found*; this counts what was *proven*. A
+        caller deciding whether a replica may stand in for the local copy must
+        consult this (or :attr:`status`), never the length.
+        """
+        return sum(1 for bag in self.bags if bag.ok)
+
+    @property
+    def files_checked(self) -> int:
+        """How many individual files were re-hashed across every bag."""
+        return sum(bag.checked for bag in self.bags)
+
+
+#: The ``reason`` code each replica verdict is reported with. ``VERIFIED`` carries no
+#: reason (there is nothing to explain); the other two carry distinguishable codes so
+#: a steward is never told "corrupt" about a replica that is merely empty.
+_REPLICA_REASON: dict[FixityStatus, str] = {
+    FixityStatus.VERIFIED: "",
+    FixityStatus.FAILED: "fixity-failed",
+    FixityStatus.UNVERIFIED: _NOTHING_VERIFIED,
+}
+
+
+def _replica_status(bags: tuple[BagFixity, ...]) -> FixityStatus:
+    """Roll one replica's per-bag verdicts up into the location's own verdict.
+
+    Failure dominates: one corrupt bag makes the replica ``FAILED`` however many
+    others passed. Absence is next: a replica with no bags at all, or one whose every
+    bag declared nothing to check, is ``UNVERIFIED`` — it proved nothing, which is a
+    different statement from "it is broken". Only a replica that proved at least one
+    bag and failed none is ``VERIFIED``.
+    """
+    if any(bag.status is FixityStatus.FAILED for bag in bags):
+        return FixityStatus.FAILED
+    if not any(bag.status is FixityStatus.VERIFIED for bag in bags):
+        return FixityStatus.UNVERIFIED
+    return FixityStatus.VERIFIED
 
 
 def verify_backup_location(backup: Path) -> BackupVerification:
@@ -139,6 +206,25 @@ def verify_backup_location(backup: Path) -> BackupVerification:
     readable, then runs full fixity over every bag. Pure of side effects and of
     identity — it reports only readability, per-bag fixity, and whether a vault file
     exists (no-outing rule).
+
+    **A replica with nothing in it is not a verified replica.** This function used to
+    end in ``all_ok = all(bag.ok for bag in bags)``, and ``all([])`` is :data:`True`,
+    so a location holding ``config.json`` and an ``identity.vault`` but **none of the
+    archive's content** came back ``ok=True`` with an empty ``reason``. That is the
+    worst possible place for a vacuous truth: this is the gate
+    :func:`execute_lockdown` consults before it *irreversibly shreds the local
+    identity vault*, so a partial rsync, an emptied replica disk, or a copy that
+    stopped after the metadata read as "your archive survived" and authorised the
+    destruction of the only real copy. It is also what ``ledger verify-backup``
+    reports to a steward whose entire question is whether the backup is good.
+
+    So the outcome is three-state (:class:`ledger.fixity.FixityStatus`), not two.
+    ``UNVERIFIED``/``nothing-verified`` — readable, zero bags proven — is *not* ``ok``
+    and therefore never counts toward ``min_verified_replicas``, but it is reported
+    with its own reason code rather than as ``fixity-failed``, because an empty
+    replica is an absence to investigate, not damage to repair. An archive that
+    genuinely holds no records yet is a legitimate state; what it cannot be is
+    *evidence*.
     """
     backup = Path(backup)
     config_path = backup / "store" / _CONFIG_FILENAME
@@ -160,14 +246,17 @@ def verify_backup_location(backup: Path) -> BackupVerification:
         return BackupVerification(str(backup), ok=False, reason=reason, has_vault=has_vault)
 
     reports = archive.audit_fixity()
-    bags = tuple(BagFixity(name, report.ok, report.checked) for name, report in reports)
-    all_ok = all(bag.ok for bag in bags)
+    bags = tuple(
+        BagFixity(name, report.ok, report.checked, report.status) for name, report in reports
+    )
+    status = _replica_status(bags)
     return BackupVerification(
         str(backup),
-        ok=all_ok,
-        reason="" if all_ok else "fixity-failed",
+        ok=status is FixityStatus.VERIFIED,
+        reason=_REPLICA_REASON[status],
         bags=bags,
         has_vault=has_vault,
+        status=status,
     )
 
 
@@ -280,8 +369,28 @@ def _verify_replicas(config: LockdownConfig) -> list[BackupVerification]:
 def _clean_replicas(
     results: list[BackupVerification], *, need_vault: bool
 ) -> list[BackupVerification]:
-    """The replicas that verified clean (and, when required, carry a vault to restore)."""
+    """The replicas that verified clean (and, when required, carry a vault to restore).
+
+    ``r.ok`` is now false for a replica that was readable but proved nothing (see
+    :func:`verify_backup_location`), so an empty location can no longer be counted
+    toward ``min_verified_replicas`` and can no longer authorise a shred.
+    """
     return [r for r in results if r.ok and (r.has_vault or not need_vault)]
+
+
+def _replica_diagnosis(results: list[BackupVerification]) -> str:
+    """A no-outing-safe tally of why the replicas did not qualify, by reason code.
+
+    A bare count ("0 of 1 verified") tells a steward under duress nothing about what
+    to do next; ``nothing-verified`` and ``fixity-failed`` call for opposite
+    responses. Emits only reason codes and counts — never a location path, a bag
+    name, or an identity.
+    """
+    tally: dict[str, int] = {}
+    for result in results:
+        code = result.reason or "verified"
+        tally[code] = tally.get(code, 0) + 1
+    return ", ".join(f"{code}={count}" for code, count in sorted(tally.items()))
 
 
 def _shred_file(path: Path) -> None:
@@ -416,9 +525,10 @@ def _execute_lockdown_locked(archive: ArchiveLike, *, actor: str, now: str) -> L
             else:
                 steps.append("local vault already absent; nothing to shred")
         else:
+            diagnosis = _replica_diagnosis(results)
             steps.append(
                 f"REFUSED to shred: only {verified} of {config.min_verified_replicas} "
-                "required replicas verified clean — local vault KEPT"
+                f"required replicas verified clean ({diagnosis}) — local vault KEPT"
             )
             _record_event(
                 archive,
@@ -426,15 +536,15 @@ def _execute_lockdown_locked(archive: ArchiveLike, *, actor: str, now: str) -> L
                 actor=actor,
                 outcome="failure",
                 detail=(
-                    f"shred refused; {verified}/{config.min_verified_replicas} replicas verified; "
-                    "disclosure stopped; vault kept"
+                    f"shred refused; {verified}/{config.min_verified_replicas} replicas verified "
+                    f"({diagnosis}); disclosure stopped; vault kept"
                 ),
                 now=now,
             )
             raise LedgerError(
                 f"lockdown stopped disclosure but REFUSED to shred: only {verified} of "
                 f"{config.min_verified_replicas} required off-box replicas verified clean "
-                "(the vault was kept — never destroy the only copy)"
+                f"({diagnosis}) — the vault was kept; never destroy the only copy"
             )
 
     _record_event(
@@ -484,6 +594,7 @@ def _execute_stand_up_locked(archive: ArchiveLike, *, actor: str, now: str) -> L
         results = _verify_replicas(config)
         clean = _clean_replicas(results, need_vault=True)
         if len(clean) < config.min_verified_replicas:
+            diagnosis = _replica_diagnosis(results)
             _record_event(
                 archive,
                 event_type=PremisEventType.STANDUP,
@@ -491,13 +602,14 @@ def _execute_stand_up_locked(archive: ArchiveLike, *, actor: str, now: str) -> L
                 outcome="failure",
                 detail=(
                     f"restore refused; {len(clean)}/{config.min_verified_replicas} replicas "
-                    "verified with a vault present"
+                    f"verified with a vault present ({diagnosis})"
                 ),
                 now=now,
             )
             raise LedgerError(
                 f"stand-up cannot restore the vault: only {len(clean)} of "
-                f"{config.min_verified_replicas} off-box replicas verified with a vault present"
+                f"{config.min_verified_replicas} off-box replicas verified with a vault present "
+                f"({diagnosis})"
             )
         source = Path(clean[0].location) / "identity.vault"
         archive.vault_path.parent.mkdir(parents=True, exist_ok=True)
