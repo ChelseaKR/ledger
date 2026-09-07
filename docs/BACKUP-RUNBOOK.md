@@ -178,8 +178,9 @@ archive)`) rather than yielding garbage — Fernet authenticates the ciphertext.
 
 A restore drill answers one question: would the backup come back? It does not
 answer the others the threat model is written for. A replica silently corrupted, a
-mirror that disappears, a history quietly truncated: none of those is a lost box,
-and none is exercised by restoring one.
+mirror that disappears, a history quietly truncated, a copy of a taken-down record
+reattaching from a box that was offline: none of those is a lost box, and none is
+exercised by restoring one.
 
 ```sh
 ledger drill --root /srv/ledger --workdir /tmp/drill
@@ -198,6 +199,15 @@ Read the outcome words carefully, because they are three and not two:
 | `recovered` | The fault was confirmed present on disk, the archive's own check reported it, and the recovery command put things back. |
 | `failed` | Something in that chain broke. The report names the step: `inject` (the fault did not land, so nothing was rehearsed), `detect` (the damage was real and the archive did not notice), `recover`, or `verify`. |
 | `not-applicable` | This archive's shape cannot exercise the scenario — `lost-location` needs a second location. Reported, never counted as a pass. |
+
+One scenario reads backwards from the rest, and it is worth knowing which.
+`stale-replica` takes a record down while one mirror is "offline", then reattaches
+that mirror still holding its copy. `recovered` there means the archive **refused**
+to restore the record: no location holds it any more, and every reachable location
+has a receipt saying it applied the removal. A run that quietly copied the record
+back from the stale mirror is a `failed`, not a success — which is what makes this
+the rehearsal for the one recovery path where doing nothing is safer than doing the
+obvious thing.
 
 `detect` is the failure worth understanding. A recovery path that only works when
 someone already knows what broke is not a recovery path, so a fault the archive

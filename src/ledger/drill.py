@@ -49,6 +49,7 @@ from ledger.bag import validate_bag
 from ledger.config import Config, StorageLocation
 from ledger.models import now_iso
 from ledger.replicate import heal, verify_replicas
+from ledger.tombstones import TombstoneStore
 
 #: The agent recorded on any PREMIS event a drill's recovery writes into the
 #: *scratch copy*. It never reaches the live archive, but it is spelled out so a
@@ -324,9 +325,20 @@ def _safe(name: str) -> str:
 # --- the scenario registry -----------------------------------------------------------
 
 
+def _default_source_check(staged: StagedArchive) -> bool:
+    """The final state almost every scenario means: the source bag still validates.
+
+    Named (rather than inlined as a lambda default) so the exception is legible:
+    :func:`_stale_replica_scenario` is the one scenario that overrides it, and it
+    overrides it with the opposite claim.
+    """
+
+    return _source_bag_still_validates(staged)
+
+
 @dataclass(frozen=True)
 class Scenario:
-    """One rehearsal, as four functions the runner calls in a fixed order.
+    """One rehearsal, as five functions the runner calls in a fixed order.
 
     Splitting it this way is what lets the runner enforce the discipline in the
     module docstring rather than trusting each scenario to remember it: the runner
@@ -346,6 +358,14 @@ class Scenario:
     recover: Callable[[StagedArchive], None]
     #: Is the archive whole again?
     verify: Callable[[StagedArchive], bool]
+    #: What the authoritative store under ``bags/`` must look like when the
+    #: scenario ends. For every damage scenario that is "the source bag still
+    #: validates" — a heal that repaired the mirrors by damaging the source is not
+    #: a recovery. ``stale-replica`` is the inverse: there the recovery's job is to
+    #: **refuse** to bring a bag back, so the source must be *gone*. Making it a
+    #: field rather than a fixed call in the runner is what lets a scenario say
+    #: which of those two it means, instead of the runner assuming.
+    source_check: Callable[[StagedArchive], bool] = field(default=_default_source_check)
 
 
 def _mirrors(staged: StagedArchive) -> list[StorageLocation]:
@@ -384,11 +404,37 @@ def _replicas_report_a_problem(staged: StagedArchive) -> bool:
     return any(not status.ok for status in statuses)
 
 
+def _tombstone_store(staged: StagedArchive) -> TombstoneStore:
+    """The staged archive's own takedown store, at the path ``ledger heal`` reads.
+
+    ``Archive.logs_dir`` is ``store_root / "logs"``; the drill does not open an
+    :class:`~ledger.ingest.Archive` (that would decrypt a vault it has no business
+    touching), so the one path is spelled here.
+    """
+
+    return TombstoneStore(staged.store_root / "logs")
+
+
 def _heal_the_first_bag(staged: StagedArchive) -> None:
+    """Run ``ledger heal`` against the staged copy — tombstones and all.
+
+    The store is passed for the same reason :func:`ledger.cli._cmd_heal` passes it:
+    without it this is not the command the report names. ``heal`` applies pending
+    takedowns before copying anything, and refuses to resurrect a tombstoned bag.
+    On an archive with no takedowns that sweep is a no-op, so the three damage
+    scenarios behave exactly as before; on ``stale-replica`` it is the whole point.
+    """
+
     bag = _first_bag(staged)
     if bag is None:  # pragma: no cover - applicability already refused this
         return
-    heal(bag, list(staged.locations), agent=DRILL_AGENT, now=now_iso())
+    heal(
+        bag,
+        list(staged.locations),
+        agent=DRILL_AGENT,
+        now=now_iso(),
+        tombstones=_tombstone_store(staged),
+    )
 
 
 def _every_replica_is_whole(staged: StagedArchive) -> bool:
@@ -472,6 +518,176 @@ def _inject_truncated_log(staged: StagedArchive) -> Injection:
     )
 
 
+def _inject_stale_replica(staged: StagedArchive) -> Injection:
+    """Take a record down while one mirror is "offline", so its copy survives there.
+
+    This is the shape the threat model worries about and the other three scenarios
+    do not reach: the removal was lawful and it was applied everywhere the archive
+    could reach, and then the box that was unplugged comes back carrying the
+    record anyway.
+
+    The injection is therefore not damage to a bag. It is a *state*: a tombstone
+    in the archive's own store, no copy at any location that was reachable, and a
+    surviving copy at the mirror that was not. All three are read back off disk
+    before this claims to have landed.
+    """
+
+    bag = _first_bag(staged)
+    mirror = _mirrors(staged)[0]
+    replica = _replica_dir(mirror, bag or "")
+    if not replica.exists():
+        return Injection(
+            description=f"mirror {mirror.name!r} holds no copy of the bag",
+            landed=False,
+            bags_touched=0,
+            reason="there is no copy for a takedown to leave behind, so nothing was rehearsed",
+        )
+
+    store = _tombstone_store(staged)
+    if store.is_tombstoned(bag or ""):
+        # The drill would otherwise credit itself with a takedown this archive had
+        # already recorded, and rehearse a fault it did not cause.
+        return Injection(
+            description=f"record {bag!r} was already tombstoned in this archive",
+            landed=False,
+            bags_touched=0,
+            reason=(
+                "the takedown this scenario rehearses was already on record before the "
+                "drill ran, so the drill did not cause the fault it would credit"
+            ),
+        )
+
+    store.add(bag or "", now_iso())
+    # What a takedown does at every location that *was* reachable. The mirror is
+    # the one that was not, so its copy is deliberately left in place.
+    for location in staged.locations:
+        if location.name == mirror.name:
+            continue
+        copy = _replica_dir(location, bag or "")
+        if copy.exists():
+            shutil.rmtree(copy)
+
+    still_elsewhere = [
+        location.name
+        for location in staged.locations
+        if location.name != mirror.name and _replica_dir(location, bag or "").exists()
+    ]
+    landed = store.is_tombstoned(bag or "") and replica.exists() and not still_elsewhere
+    if not landed:
+        if not store.is_tombstoned(bag or ""):
+            reason = "the tombstone read back absent from the archive's own store"
+        elif not replica.exists():
+            reason = f"mirror {mirror.name!r} no longer holds the stale copy the scenario needs"
+        else:
+            reason = (
+                "the takedown left a copy at "
+                + ", ".join(repr(name) for name in still_elsewhere)
+                + ", so the surviving copy is not the offline mirror's"
+            )
+        return Injection(
+            description="the stale-replica state was not reached",
+            landed=False,
+            bags_touched=0,
+            reason=reason,
+        )
+    return Injection(
+        description=(
+            f"the record was taken down and removed everywhere reachable, while mirror "
+            f"{mirror.name!r} kept its copy as an offline box would"
+        ),
+        landed=True,
+        bags_touched=1,
+        reason="",
+    )
+
+
+def _a_location_still_holds_a_taken_down_bag(staged: StagedArchive) -> bool:
+    """The archive's own takedown bookkeeping sees a stale copy still on disk.
+
+    Routed through :meth:`~ledger.tombstones.TombstoneStore.pending_for`, which is
+    what the archive uses to answer "which locations have not applied this
+    removal" — the same honesty ``/consent-status`` reports from. It reads the
+    store and the tree, never the injection's own account of itself.
+    """
+
+    store = _tombstone_store(staged)
+    for location in staged.locations:
+        root = Path(location.path)
+        if not root.exists():
+            continue
+        for record_id in store.pending_for(location.name):
+            if (root / record_id).exists():
+                return True
+    return False
+
+
+def _every_stale_copy_is_gone_and_recorded(staged: StagedArchive) -> bool:
+    """The inverse of :func:`_every_replica_is_whole`, and deliberately so.
+
+    For the damage scenarios a recovery is credited when every replica is back.
+    Here it is credited only when no reachable location holds a taken-down record
+    *and* every reachable location has a receipt saying so. A sweep that deleted
+    the copies without recording confirmations would leave the archive unable to
+    say a removal had been applied, and `/consent-status` would keep reporting it
+    as pending forever.
+    """
+
+    store = _tombstone_store(staged)
+    tombstones = store.all()
+    if not tombstones:
+        # Nothing was taken down, so there is nothing this could be evidence of.
+        return False
+    for location in staged.locations:
+        root = Path(location.path)
+        if not root.exists():
+            continue
+        if store.pending_for(location.name):
+            return False
+        for tombstone in tombstones:
+            if (root / tombstone.record_id).exists():
+                return False
+    return True
+
+
+def _heal_the_taken_down_bag(staged: StagedArchive) -> None:
+    """``ledger heal --id <the taken-down record>``, for each tombstoned record.
+
+    Not :func:`_heal_the_first_bag`: by the time recovery runs, the takedown has
+    already emptied the authoritative store, so "the first bag" is a different bag
+    or no bag at all. The id comes from the archive's own tombstone store rather
+    than from a variable this module carried across steps, which is also what a
+    steward reading ``ledger replicas`` would type.
+    """
+
+    store = _tombstone_store(staged)
+    for record_id in sorted(tombstone.record_id for tombstone in store.all()):
+        heal(
+            record_id,
+            list(staged.locations),
+            agent=DRILL_AGENT,
+            now=now_iso(),
+            tombstones=store,
+        )
+
+
+def _no_tombstoned_bag_survives_in_the_store(staged: StagedArchive) -> bool:
+    """``stale-replica``'s source check: the taken-down bag is gone and stays gone.
+
+    Every other scenario ends by asserting the authoritative bag still validates.
+    This one asserts it is *absent*, because the recovery's job here was to refuse
+    to bring it back. Running the generic check would have marked a correct
+    refusal as a failure — and, worse, a heal that quietly resurrected the record
+    from the stale mirror would have satisfied it.
+    """
+
+    store = _tombstone_store(staged)
+    tombstones = store.all()
+    if not tombstones:
+        return False
+    bags = staged.store_root / "bags"
+    return all(not (bags / tombstone.record_id).exists() for tombstone in tombstones)
+
+
 def _bit_rot_scenario() -> Scenario:
     return Scenario(
         name="bit-rot",
@@ -522,11 +738,47 @@ def _truncated_log_scenario() -> Scenario:
     )
 
 
+def _stale_replica_scenario() -> Scenario:
+    """An older copy reattaching after a takedown, and a recovery that says no.
+
+    Structurally the odd one out, and it has to be. The other three ask "did the
+    archive come back"; this one asks "did the archive *refuse* to bring something
+    back". So ``verify`` looks for absence rather than presence, and
+    ``source_check`` is inverted: the taken-down bag must not be in the store when
+    this ends. Passing the tombstone store to ``heal`` is what makes the refusal
+    happen at all, and it is exactly what ``ledger heal`` does.
+    """
+
+    def applicability(staged: StagedArchive) -> str | None:
+        if _first_bag(staged) is None:
+            return "the archive holds no bags, so there is nothing to take down"
+        if not _mirrors(staged):
+            return (
+                "the archive has no mirror location, so no copy can outlive a takedown "
+                "the way an offline replica's does"
+            )
+        return None
+
+    return Scenario(
+        name="stale-replica",
+        fault="an offline mirror keeps its copy of a taken-down record",
+        recovering_command="ledger heal",
+        applicability=applicability,
+        inject=_inject_stale_replica,
+        detect=_a_location_still_holds_a_taken_down_bag,
+        recover=_heal_the_taken_down_bag,
+        verify=_every_stale_copy_is_gone_and_recorded,
+        source_check=_no_tombstoned_bag_survives_in_the_store,
+    )
+
+
 def _source_bag_still_validates(staged: StagedArchive) -> bool:
     """The authoritative copy under ``bags/`` is intact.
 
-    Checked as the last step of every scenario alongside the replica sweep: a
-    heal that repaired the mirrors by damaging the source would otherwise pass.
+    The default :attr:`Scenario.source_check`, run as the last step alongside the
+    replica sweep: a heal that repaired the mirrors by damaging the source would
+    otherwise pass. ``stale-replica`` replaces it, because there the source is
+    meant to be gone.
     """
 
     bag = _first_bag(staged)
@@ -546,6 +798,7 @@ SCENARIOS: dict[str, Scenario] = {
         _bit_rot_scenario(),
         _lost_location_scenario(),
         _truncated_log_scenario(),
+        _stale_replica_scenario(),
     )
 }
 
@@ -626,7 +879,7 @@ def run_scenario(scenario: Scenario, staged: StagedArchive) -> ScenarioResult:
             failing_step="recover",
         )
 
-    whole = scenario.verify(staged) and _source_bag_still_validates(staged)
+    whole = scenario.verify(staged) and scenario.source_check(staged)
     return ScenarioResult(
         scenario=scenario.name,
         outcome=DrillOutcome.RECOVERED if whole else DrillOutcome.FAILED,

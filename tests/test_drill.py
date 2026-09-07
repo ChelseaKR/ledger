@@ -10,6 +10,7 @@ Each of those has to end in a different word from "recovered".
 from __future__ import annotations
 
 import json
+import shutil
 from collections.abc import Callable
 from pathlib import Path
 
@@ -21,7 +22,8 @@ from ledger.config import Config, StorageLocation
 from ledger.drill import DrillOutcome
 from ledger.ingest import Archive
 from ledger.models import AccessPolicy, Record
-from ledger.replicate import replicate_bag
+from ledger.replicate import heal, replicate_bag
+from ledger.tombstones import TombstoneStore
 
 NOW = "2026-01-01T00:00:00Z"
 DRILL_NOW = "2026-01-02T00:00:00Z"
@@ -476,7 +478,12 @@ def test_checkup_reads_the_last_drill_back_and_passes(
     readiness = run_checkup(archive, env={}, platform="linux", now=NOW, write_report=False)
     result = next(r for r in readiness.results if r.check_id == "recovery-drill")
     assert result.status is CheckStatus.PASS
-    assert "recovered from 3 injected fault(s)" in result.explanation
+    # Derived, not written down: a literal here would have to be edited every time
+    # the registry grows, and until somebody did the assertion would be checking a
+    # stale number rather than the sentence checkup actually renders.
+    assert f"recovered from {len(drill.SCENARIOS)} injected fault(s)" in result.explanation
+    for name in drill.SCENARIOS:
+        assert name in result.explanation
 
 
 def test_checkup_fails_when_the_last_drill_recorded_a_failure(
@@ -582,3 +589,188 @@ def test_latest_drill_of_an_unreadable_report_is_none_not_an_empty_success(
     (audits / f"{drill.REPORT_PREFIX}2026-01-02.json").write_text("{not json", encoding="utf-8")
     assert drill.latest_drill(audits) is None
     assert drill.latest_drill(tmp_path / "nowhere") is None
+
+
+# --- stale-replica: the scenario whose recovery is a refusal --------------------------
+#
+# Every other scenario asks "did the archive come back". This one asks "did the
+# archive refuse to bring something back", so the tests below are the inverse
+# shape: they assert absence, and they assert that the machinery which produces
+# the absence is load-bearing rather than incidental.
+
+
+def _tombstoned_id(staged: drill.StagedArchive) -> str:
+    tombstones = TombstoneStore(staged.store_root / "logs").all()
+    assert len(tombstones) == 1, "the scenario takes exactly one record down"
+    return tombstones[0].record_id
+
+
+def test_stale_replica_ends_with_the_record_gone_from_every_location(
+    archive_with_mirror: Path, tmp_path: Path
+) -> None:
+    """The acceptance criterion: the reattaching copy is deleted, and recorded as deleted."""
+    report = drill.run_drill(
+        archive_with_mirror, tmp_path / "work", scenarios=["stale-replica"], now=DRILL_NOW
+    )
+    result = _result(report, "stale-replica")
+    assert result.outcome is DrillOutcome.RECOVERED
+    assert result.fault_landed and result.fault_detected
+    assert result.recovering_command == "ledger heal"
+
+    staged_root = tmp_path / "work" / "stale-replica" / "archive"
+    config = Config.load(staged_root / "store" / "config.json")
+    store = TombstoneStore(Path(config.store_root) / "logs")
+    tombstone = store.all()[0]
+    for location in config.locations:
+        assert not (Path(location.path) / tombstone.record_id).exists(), (
+            f"location {location.name!r} still holds the taken-down record"
+        )
+        assert tombstone.is_confirmed_at(location.name), (
+            f"location {location.name!r} deleted the copy but recorded no receipt, so the "
+            "archive cannot say the removal was applied there"
+        )
+    # And the drill did not touch the archive it was rehearsing.
+    assert report.live_archive_untouched
+    assert report.exit_code == 0
+
+
+def test_a_heal_without_the_tombstone_store_resurrects_the_taken_down_record(
+    archive_with_mirror: Path, tmp_path: Path
+) -> None:
+    """Why the refusal is real: the same heal, minus the store, brings the record back.
+
+    This is the control for the whole scenario. If `heal` removed a taken-down bag
+    for some other reason, `stale-replica` would be crediting a refusal that owed
+    nothing to the tombstone machinery, and passing the store to `_heal_the_first_bag`
+    would be decoration. It is not: without it the stale mirror wins.
+    """
+    staged = drill.stage(archive_with_mirror, tmp_path / "stage")
+    injection = drill._inject_stale_replica(staged)
+    assert injection.landed, injection.reason
+    record_id = _tombstoned_id(staged)
+    bags = staged.store_root / "bags"
+    assert not (bags / record_id).exists(), "the takedown removed the authoritative copy"
+
+    heal(record_id, list(staged.locations), agent="test", now=NOW)  # no tombstones passed
+
+    assert (bags / record_id).exists(), (
+        "a tombstone-blind heal is expected to copy the stale mirror back over the "
+        "authoritative store; if it no longer does, this scenario's premise has moved"
+    )
+    # ...and the scenario's own source check is what catches exactly that.
+    assert not drill._no_tombstoned_bag_survives_in_the_store(staged)
+
+
+def test_the_drills_heal_applies_pending_takedowns_like_the_cli_does(
+    archive_with_mirror: Path, tmp_path: Path
+) -> None:
+    """`_heal_the_first_bag` is `ledger heal`, tombstones included, or it is a different command."""
+    staged = drill.stage(archive_with_mirror, tmp_path / "stage")
+    record_id = staged.bag_names()[0]
+    TombstoneStore(staged.store_root / "logs").add(record_id, NOW)
+    assert (staged.store_root / "bags" / record_id).exists()
+
+    drill._heal_the_first_bag(staged)
+
+    for location in staged.locations:
+        assert not (Path(location.path) / record_id).exists(), (
+            f"the drill's heal left a taken-down copy at {location.name!r}; the report "
+            "names `ledger heal`, which would not have"
+        )
+
+
+def test_the_default_source_check_would_have_failed_a_correct_refusal(
+    archive_with_mirror: Path, tmp_path: Path
+) -> None:
+    """Why `source_check` is a field on the scenario and not a fixed call in the runner."""
+    staged = drill.stage(archive_with_mirror, tmp_path / "stage")
+    result = drill.run_scenario(drill.SCENARIOS["stale-replica"], staged)
+    assert result.outcome is DrillOutcome.RECOVERED
+
+    assert drill.SCENARIOS["stale-replica"].source_check(staged) is True
+    assert drill._default_source_check(staged) is False, (
+        "the generic check reads 'the first bag still validates'; after a correct "
+        "takedown there is no first bag, so running it here would call the refusal a failure"
+    )
+
+
+def test_a_takedown_already_on_record_is_not_credited_as_an_injection(
+    archive_with_mirror: Path, tmp_path: Path
+) -> None:
+    """A drill must not report recovering from a fault that was there before it ran."""
+    config = Config.load(archive_with_mirror / "store" / "config.json")
+    store_root = Path(config.store_root)
+    record_id = sorted(p.name for p in (store_root / "bags").iterdir())[0]
+    TombstoneStore(store_root / "logs").add(record_id, NOW)
+
+    report = drill.run_drill(
+        archive_with_mirror, tmp_path / "work", scenarios=["stale-replica"], now=DRILL_NOW
+    )
+    result = _result(report, "stale-replica")
+    assert result.outcome is DrillOutcome.FAILED
+    assert result.failing_step == "inject"
+    assert not result.fault_landed
+    assert "already" in result.detail
+    assert report.exit_code == 1
+
+
+def test_stale_replica_needs_a_mirror_to_leave_a_copy_behind(tmp_path: Path) -> None:
+    """One box cannot rehearse a copy outliving a takedown; that is not-applicable."""
+    root = tmp_path / "arc"
+    archive = Archive.init(Config.default("Single Box", root))
+    payload = tmp_path / "note.txt"
+    payload.write_text("x", encoding="utf-8")
+    archive.ingest(
+        {"note.txt": payload},
+        Record(title="t", default_policy=AccessPolicy.PUBLIC),
+        now=NOW,
+    )
+    report = drill.run_drill(root, tmp_path / "work", scenarios=["stale-replica"], now=DRILL_NOW)
+    result = _result(report, "stale-replica")
+    assert result.outcome is DrillOutcome.NOT_APPLICABLE
+    assert "no mirror location" in result.detail
+    assert not result.fault_landed
+    assert report.exit_code == 0
+    # The record is untouched: a not-applicable scenario rehearses nothing.
+    assert (Path(archive.config.store_root) / "bags").iterdir()
+
+
+def test_the_refusal_checks_refuse_to_pass_over_an_empty_store(
+    archive_with_mirror: Path, tmp_path: Path
+) -> None:
+    """Neither half of the verdict may be satisfied by there being nothing to check.
+
+    `all()` over an empty tombstone list is `True`, and both checks below are
+    written as `all(...)`. Without their guards, an archive in which no takedown
+    was ever recorded would satisfy "no location holds a taken-down record" and
+    "no taken-down bag survives" — absence read as a clean result.
+    """
+    staged = drill.stage(archive_with_mirror, tmp_path / "stage")
+    assert TombstoneStore(staged.store_root / "logs").all() == []
+    assert drill._every_stale_copy_is_gone_and_recorded(staged) is False
+    assert drill._no_tombstoned_bag_survives_in_the_store(staged) is False
+
+
+def test_deleting_the_copies_without_a_receipt_is_not_a_recovery(
+    archive_with_mirror: Path, tmp_path: Path
+) -> None:
+    """The removal has to be *recorded* at each location, not merely performed.
+
+    A sweep that deleted the stale copies but wrote no confirmation leaves the
+    archive unable to say the takedown was applied, so `/consent-status` reports it
+    pending forever and the next reattach has nothing to compare against.
+    """
+    staged = drill.stage(archive_with_mirror, tmp_path / "stage")
+    injection = drill._inject_stale_replica(staged)
+    assert injection.landed, injection.reason
+    record_id = _tombstoned_id(staged)
+
+    for location in staged.locations:
+        copy = Path(location.path) / record_id
+        if copy.exists():
+            shutil.rmtree(copy)
+
+    assert drill._a_location_still_holds_a_taken_down_bag(staged) is False
+    assert drill._every_stale_copy_is_gone_and_recorded(staged) is False, (
+        "every copy is gone, but no location has confirmed the removal"
+    )
