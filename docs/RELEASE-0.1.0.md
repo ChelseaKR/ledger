@@ -85,10 +85,15 @@ Release.
   a `.dev` version: `pip install ledger-archive` skips PEP 440 developmental
   releases, so a `.dev` string cannot be what ships. Nothing bumps this
   automatically — `release.yml`'s build job *asserts* the dispatched tag matches it.
-- [x] `CHANGELOG.md` has a dated `## [0.1.0]` section. **Check the date matches the
-  day you actually tag** — it is written as the day the release was prepared, and
-  `release.yml` only greps for the `## [0.1.0]` heading, so a stale date will not
-  fail the build. It is the one value here a machine will not catch for you.
+- [x] `CHANGELOG.md` has a dated `## [0.1.0]` section. **The date must be the day
+  you sign the tag**, and that is now checked: `release.yml` reads the annotated
+  tag's own tagger date and refuses to build if the heading disagrees with it. It
+  compares against the *tag's* date rather than the day of the run, so dispatching
+  days after tagging is fine; signing the tag on a day the heading does not name is
+  not. The section is currently dated **2026-09-02**, the day it was prepared, so
+  unless you tag on that date it needs one edit in the same commit you tag. The
+  check runs before anything is built or published, so getting it wrong costs a
+  retag, not a version number.
 - [x] `CITATION.cff`'s `version` matches `pyproject.toml` (gated by the
   `citation-version-mirrors-pyproject` claim).
 - [ ] `CITATION.cff` gets a `date-released` matching the tag date. Deliberately still

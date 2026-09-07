@@ -32,6 +32,29 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   box.
 
 ### Fixed
+- **The release notes' own date was the one value nothing checked, and it is
+  already wrong.** `release.yml`'s REL-10 step greps for the `## [0.1.0]` heading
+  and nothing else, so the date beside it — written the day the release was
+  *prepared*, 2026-09-02 — would ship as the release date whenever the tag is
+  eventually cut. `docs/RELEASE-0.1.0.md` said so in terms: *"a stale date will not
+  fail the build. It is the one value here a machine will not catch for you."*
+  Everyone reads that date as the day the version was released, and it would
+  disagree with `CITATION.cff`'s `date-released` and with the GitHub Release, which
+  is three answers to one question.
+
+  The `verify` job now reads the annotated tag's own `taggerdate` and refuses to
+  build when the heading disagrees. It compares against the **tag's** date, not the
+  day of the run, because the workflow is dispatched by hand and may run days after
+  the tag was signed. Three outcomes, not two: an undated heading gets its own
+  message, because it is a different mistake from a wrongly dated one. The check
+  runs before anything is built or published, so failing it costs a retag rather
+  than a version number — which cannot be reused.
+
+  Measured against real signed annotated tags in a throwaway repository, running
+  the workflow's shipped script rather than a retyping of it: matching date exits
+  0; a heading one day earlier exits 1 naming both dates; an undated heading exits
+  1 telling the reader what to write; a lightweight tag exits 1 saying it carries
+  no tagger date.
 - **A staged drill archive still pointed at the live off-box replica.** `stage`'s
   docstring says "nothing in the staged archive can reach back to the real one,
   which is what makes it safe to break". That was true of `store_root`,
