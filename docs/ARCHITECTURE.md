@@ -415,8 +415,23 @@ atomically. A config describes *where* the vault lives, never *what* is in it.
 of the archive under a scratch directory, has one named fault injected into that
 copy, and is then handed to the archive's real recovery commands — the same
 `verify_replicas` and `heal` a steward would run, never a private reimplementation
-of them. `bit-rot`, `lost-location`, `truncated-log` and `stale-replica` are implemented
-today; `seized-primary` is not (see #187).
+of them. All five scenarios are implemented: `bit-rot`, `lost-location`,
+`truncated-log`, `stale-replica` and `seized-primary`.
+
+`seized-primary` is the only one whose fault is deliberate and irreversible. It runs
+`lockdown.execute_lockdown` — which freezes disclosure and destroys the only local
+copy of the identity vault — and then `execute_stand_up`, which rebuilds it from an
+off-box replica. Two consequences follow from that and are worth stating. First, the
+staged copy's configuration has to be genuinely self-contained: `stage` rewrites
+`lockdown.required_replica_locations` into the workdir (a replica that is also a
+configured `StorageLocation` reuses that location's staged copy rather than getting a
+second one) and **clears** `attestation_signing_key`, because a rehearsal has no
+business holding a steward's private key. Second, applicability does real work here.
+An archive with `shred_vault` off, or whose configured off-box replica would not
+verify with a vault present, reports `not-applicable` **with the replica's own reason
+code** — because "your duress posture would refuse to shred" is the finding a steward
+most needs from this scenario, and it is not the same claim as "the recovery path is
+broken".
 
 `stale-replica` is the one whose shape differs, and deliberately: a record is taken
 down while one mirror is offline, the mirror reattaches still holding its copy, and

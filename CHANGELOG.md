@@ -6,7 +6,51 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **`ledger drill --scenario seized-primary`: the duress transition, rehearsed end
+  to end.** #187 named five scenarios and four shipped. This one runs the two
+  commands a steward runs when the primary host is taken — `lockdown --execute`,
+  which freezes disclosure and destroys the only local copy of the identity vault,
+  then `stand-up --execute`, which rebuilds it from a configured off-box replica —
+  against a scratch copy, and asks whether the archive comes back. The first time a
+  steward learns whether their replica can actually restore the vault must not be
+  the day they need it to.
+
+  Applicability does real work here rather than gating on shape. An archive with
+  `shred_vault` off reports `not-applicable` and says so; an archive whose off-box
+  replica would not verify with a vault present reports `not-applicable` **naming
+  the replica's own reason code**, because `nothing-verified` (the copy is empty)
+  and `fixity-failed` (the copy is damaged) call for opposite responses, and
+  "your duress posture would refuse to shred" is a finding, not a broken recovery
+  path.
+
+  The injection requires a vault to have been **present** before the lockdown, not
+  only absent after it. Without that, `execute_lockdown` over an archive with no
+  vault takes its "already absent; nothing to shred" branch and returns success —
+  flag written, vault absent — satisfying a two-part check with nothing destroyed,
+  and the scenario would report `recovered` having rehearsed a seizure of an empty
+  box.
+
 ### Fixed
+- **A staged drill archive still pointed at the live off-box replica.** `stage`'s
+  docstring says "nothing in the staged archive can reach back to the real one,
+  which is what makes it safe to break". That was true of `store_root`,
+  `vault_path` and `locations`, and false of everything else in the config — most
+  consequentially `lockdown.required_replica_locations`, the set
+  `execute_lockdown` verifies before shredding a vault and `execute_stand_up`
+  copies a vault back **from**. A `seized-primary` rehearsal on the previous code
+  would have read the community's real off-box replica and pulled real vault bytes
+  into a scratch directory. Measured: it read, it did not write, so no live copy
+  was damaged — but the sentence in the docstring was not true, and a scenario
+  that writes to a location (`heal` already does) would have made it worse.
+
+  Staging now rewrites those paths into the workdir, reusing a configured
+  `StorageLocation`'s staged copy when the replica is the same directory — two
+  copies would let a scenario heal one and verify the other. `attestation_signing_key`
+  is **cleared** rather than copied: a rehearsal has no business holding a
+  steward's private signing key. A test now holds the docstring's promise over
+  *every* string in the staged config rather than three known fields, so a path
+  field added later cannot quietly reopen it.
 - **An archive with nothing in it verified as a good backup, and that verdict was
   what authorised shredding the vault.** `lockdown.verify_backup_location` ended in
   `all_ok = all(bag.ok for bag in bags)`, and `all([])` is `True`. An off-box replica

@@ -209,6 +209,24 @@ back from the stale mirror is a `failed`, not a success — which is what makes 
 the rehearsal for the one recovery path where doing nothing is safer than doing the
 obvious thing.
 
+`seized-primary` is the other one to read carefully, because it is the only scenario
+whose fault is something the archive does to itself on purpose. It runs `ledger
+lockdown --execute` against the scratch copy — freezing disclosure and **shredding
+that copy's identity vault** — and then `ledger stand-up --execute`, which restores
+the vault from a configured off-box replica. `recovered` means the vault came back
+byte for byte from the replica and the freeze lifted.
+
+Two of its `not-applicable` reasons are findings rather than shrugs:
+
+- *"this archive is not configured to shred its vault under duress"* — `shred_vault`
+  is off, which is the default and is a perfectly good posture. Nothing to rehearse.
+- *"only 0 of 1 configured off-box replica(s) verify with a vault present
+  (`nothing-verified=1`)"* — **act on this one.** It means a real lockdown would
+  refuse to shred, which is the correct refusal and also tells you the replica you
+  are relying on would not stand the archive back up. The reason names the replica's
+  own verdict code, because `nothing-verified` (the copy is empty) and
+  `fixity-failed` (the copy is damaged) call for opposite responses.
+
 `detect` is the failure worth understanding. A recovery path that only works when
 someone already knows what broke is not a recovery path, so a fault the archive
 could not see stops the scenario **before** recovery is attempted rather than

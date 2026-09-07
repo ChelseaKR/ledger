@@ -41,12 +41,20 @@ import hashlib
 import json
 import shutil
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from pathlib import Path
 
 from ledger.bag import validate_bag
 from ledger.config import Config, StorageLocation
+from ledger.lockdown import (
+    BackupVerification,
+    execute_lockdown,
+    execute_stand_up,
+    is_locked_down,
+    lockdown_flag_path,
+    verify_backup_location,
+)
 from ledger.models import now_iso
 from ledger.replicate import heal, verify_replicas
 from ledger.tombstones import TombstoneStore
@@ -273,6 +281,13 @@ def stage(live_root: Path, workdir: Path) -> StagedArchive:
     ``workdir``. Nothing in the staged archive can reach back to the real one,
     which is what makes it safe to break: a scenario that deletes a location
     deletes a copy of one.
+
+    "Every path" used to mean ``store_root``, ``vault_path`` and ``locations``, and
+    the sentence above was written as if it meant all of them. See
+    :func:`_stage_external_paths` for the rest, and
+    ``tests/test_drill.py::test_no_path_in_a_staged_config_points_outside_the_workdir``
+    for the check that now holds the sentence to its word over *every* string field
+    in the config, so a path field added later cannot quietly reopen it.
     """
 
     config_path = live_root / CONFIG_RELATIVE
@@ -309,6 +324,7 @@ def stage(live_root: Path, workdir: Path) -> StagedArchive:
     config.store_root = str(store_root)
     config.vault_path = str(vault or (staged_root / Path(config.vault_path).name))
     config.locations = list(staged_locations)
+    _stage_external_paths(config, live_root, staged_root, workdir, staged_locations)
     config.save(store_root / "config.json")
     return StagedArchive(
         root=staged_root,
@@ -316,6 +332,99 @@ def stage(live_root: Path, workdir: Path) -> StagedArchive:
         config=config,
         locations=tuple(staged_locations),
     )
+
+
+def _stage_external_paths(
+    config: Config,
+    live_root: Path,
+    staged_root: Path,
+    workdir: Path,
+    staged_locations: Sequence[StorageLocation],
+) -> None:
+    """Point the config's remaining filesystem paths inside ``workdir`` too.
+
+    ``store_root``, ``vault_path`` and ``locations`` were the three the staging code
+    knew about, and its docstring said "nothing in the staged archive can reach back
+    to the real one" on the strength of them. That was not true of the rest of the
+    config, and one of them matters: ``lockdown.required_replica_locations`` is the
+    set of off-box replicas ``execute_lockdown`` verifies before it shreds a vault,
+    and ``execute_stand_up`` copies a vault *back from*. A staged archive still
+    carrying live paths there would have rehearsed a duress transition by reading
+    the community's real off-box replica -- a read the drill promises it does not
+    make, and one that would have copied real vault bytes into a scratch directory.
+
+    Three treatments, and the differences are deliberate:
+
+    * A replica location that is also a configured ``StorageLocation`` reuses **that
+      location's** staged copy. Two copies would let a scenario heal one and verify
+      the other, and credit a recovery that happened somewhere nobody reads.
+    * Any other external replica is copied into ``workdir`` like a location is, and
+      an absent one is staged as an empty directory -- the same choice, for the same
+      reason: an unreachable replica is a finding, not something to skip.
+    * ``attestation_signing_key`` is **cleared**, not copied. It is a steward's
+      private signing key; a rehearsal has no business holding one, and no scenario
+      signs anything. Clearing it means a drill that ever tried would fail loudly
+      rather than reach outside the workdir.
+    """
+
+    key = config.attestation_signing_key
+    if key:
+        config.attestation_signing_key = ""
+
+    log = config.transparency_log_path
+    if log:
+        source = Path(log).expanduser()
+        inside = _remap(source, live_root, staged_root)
+        if inside is not None:
+            config.transparency_log_path = str(inside)
+        else:
+            dest = workdir / "external" / "transparency.json"
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            if source.is_file():
+                shutil.copyfile(source, dest)
+            config.transparency_log_path = str(dest)
+
+    lockdown = config.lockdown
+    if lockdown is None or not lockdown.required_replica_locations:
+        return
+
+    by_live_path = {
+        Path(live.path).expanduser().resolve(): staged.path
+        for live, staged in zip(_live_locations(live_root), staged_locations, strict=False)
+    }
+    staged_replicas: list[str] = []
+    for index, replica in enumerate(lockdown.required_replica_locations):
+        source = Path(replica).expanduser()
+        reused = by_live_path.get(source.resolve() if source.exists() else source)
+        if reused is not None:
+            staged_replicas.append(reused)
+            continue
+        inside = _remap(source, live_root, staged_root)
+        if inside is not None:
+            staged_replicas.append(str(inside))
+            continue
+        dest = workdir / "lockdown-replicas" / f"{index:02d}"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        if source.exists():
+            shutil.copytree(source, dest)
+        else:
+            dest.mkdir(parents=True, exist_ok=True)
+        staged_replicas.append(str(dest))
+    # LockdownConfig is frozen, so the staged replicas replace the object rather
+    # than mutating it -- the immutability is what stops a duress posture being
+    # edited in flight, and the drill has no business being the exception.
+    config.lockdown = replace(lockdown, required_replica_locations=staged_replicas)
+
+
+def _live_locations(live_root: Path) -> list[StorageLocation]:
+    """The archive's locations as configured on disk, before staging rewrote them.
+
+    Read back from the live config rather than remembered, because ``stage`` mutates
+    the ``Config`` object it loaded; by the time the replica paths are staged the
+    in-memory ``locations`` already point at the copies.
+    """
+
+    return list(Config.load(live_root / CONFIG_RELATIVE).locations)
 
 
 def _safe(name: str) -> str:
@@ -790,6 +899,251 @@ def _source_bag_still_validates(staged: StagedArchive) -> bool:
         return False
 
 
+# --- seized-primary: the duress transition, rehearsed end to end ---------------------
+
+
+# Not frozen, deliberately: ``lockdown.ArchiveLike`` declares ``logs_dir``,
+# ``store_root`` and ``vault_path`` as settable variables, and a frozen dataclass's
+# read-only attributes do not satisfy that Protocol. Nothing here mutates them.
+@dataclass
+class _StagedArchiveLike:
+    """The four attributes :mod:`ledger.lockdown` needs, over a staged copy.
+
+    A structural stand-in rather than a real :class:`ledger.ingest.Archive`, for the
+    same reason :func:`_tombstone_store` spells its path out: opening an ``Archive``
+    would decrypt a vault the drill has no business reading, and this scenario is
+    about the vault *file*, never its contents.
+    """
+
+    logs_dir: Path
+    store_root: Path
+    vault_path: Path
+    _config: Config
+
+    @property
+    def config(self) -> object:
+        return self._config
+
+
+def _archive_like(staged: StagedArchive) -> _StagedArchiveLike:
+    return _StagedArchiveLike(
+        logs_dir=staged.store_root / "logs",
+        store_root=staged.store_root,
+        vault_path=Path(staged.config.vault_path),
+        _config=staged.config,
+    )
+
+
+def _seized_primary_applicability(staged: StagedArchive) -> str | None:
+    """Every reason this archive's *configuration* cannot rehearse a seizure.
+
+    Each is a real deployment state and none of them is a failure of the archive, so
+    each is a reason rather than a red line. The last one is the important one: a
+    duress posture whose off-box replicas would not verify is a finding a steward
+    needs, and reporting it as not-applicable with the reason names it, where a
+    ``FAILED`` would have read as "the recovery path is broken" when what is broken
+    is the replica.
+    """
+
+    lockdown = staged.config.lockdown
+    if lockdown is None or not lockdown.shred_vault:
+        return (
+            "this archive is not configured to shred its vault under duress "
+            "(lockdown.shred_vault is off), so there is no seizure transition to rehearse"
+        )
+    if not lockdown.required_replica_locations:
+        return (
+            "lockdown.shred_vault is set with no required_replica_locations, so a "
+            "lockdown here would refuse to shred and there would be nothing to stand up from"
+        )
+    if not Path(staged.config.vault_path).is_file():
+        return "the archive has no identity vault, so a seizure has nothing to destroy"
+    if _first_bag(staged) is None:
+        return "the archive holds no bags, so a stand-up would restore nothing"
+
+    results = _replica_verifications(staged)
+    clean = [r for r in results if r.ok and r.has_vault]
+    if len(clean) < lockdown.min_verified_replicas:
+        return (
+            f"only {len(clean)} of {lockdown.min_verified_replicas} configured off-box "
+            f"replica(s) verify with a vault present ({_replica_reasons(results)}), so a "
+            "lockdown here would refuse to shred — which is the correct refusal, and is "
+            "itself worth acting on before a real seizure"
+        )
+    return None
+
+
+def _replica_verifications(staged: StagedArchive) -> list[BackupVerification]:
+    """Verify every configured off-box replica of the *staged* copy.
+
+    Through :func:`ledger.lockdown.verify_backup_location`, the same function
+    ``execute_lockdown`` consults before it shreds, so applicability is answered by
+    the gate rather than by a second opinion that could disagree with it.
+    """
+
+    lockdown = staged.config.lockdown
+    if lockdown is None:  # pragma: no cover - callers check first
+        return []
+    return [verify_backup_location(Path(loc)) for loc in lockdown.required_replica_locations]
+
+
+def _replica_reasons(results: Sequence[BackupVerification]) -> str:
+    """A tally of replica verdicts by reason code — counts and codes only.
+
+    ``nothing-verified`` and ``fixity-failed`` call for opposite responses (re-run
+    the copy vs. restore from elsewhere), so a bare count would tell a steward
+    reading the drill report nothing about what to do. No location path, bag name or
+    identity appears here (no-outing rule).
+    """
+
+    tally: dict[str, int] = {}
+    for result in results:
+        code = result.reason or "verified"
+        tally[code] = tally.get(code, 0) + 1
+    return ", ".join(f"{code}={count}" for code, count in sorted(tally.items()))
+
+
+def _inject_seized_primary(staged: StagedArchive) -> Injection:
+    """Run the real ``ledger lockdown --execute`` against the staged copy.
+
+    The injected fault is not damage somebody did to the archive; it is the archive
+    doing the most destructive thing it knows how to do, on purpose. Which is why
+    the landing check reads **three** things off disk: that a vault was there to
+    begin with, that the freeze marker is now present, and that the vault file is
+    now gone.
+
+    The first of those is the one that is easy to leave out, and leaving it out
+    makes this scenario unfalsifiable. ``execute_lockdown`` over an archive with no
+    vault takes the branch "local vault already absent; nothing to shred" and
+    returns *success*: flag written, vault absent, both halves of a two-part check
+    satisfied — by an archive that had nothing to destroy. The stand-up afterwards
+    restores nothing, because it only restores a vault that is missing *and*
+    configured to be, and the scenario would end "recovered" having rehearsed a
+    seizure of an empty box. The applicability check refuses that state too; this is
+    the same refusal at the point where the fault is claimed to have landed, because
+    a rehearsal that can only be trusted when something upstream was also right is
+    not one.
+    """
+
+    archive = _archive_like(staged)
+    vault = Path(staged.config.vault_path)
+    if not vault.is_file():
+        return Injection(
+            description="the archive holds no identity vault",
+            landed=False,
+            bags_touched=0,
+            reason=(
+                "there was no vault for a lockdown to shred, so its absence afterwards "
+                "is not evidence of a seizure"
+            ),
+        )
+    try:
+        execute_lockdown(archive, actor=DRILL_AGENT, now=now_iso())
+    except Exception as error:
+        return Injection(
+            description="lockdown refused to complete",
+            landed=False,
+            bags_touched=0,
+            reason=(
+                f"the lockdown command raised {type(error).__name__}; the vault was kept, "
+                "so no seizure was rehearsed"
+            ),
+        )
+    flagged = lockdown_flag_path(archive).is_file()
+    shredded = not vault.exists()
+    if not (flagged and shredded):
+        return Injection(
+            description="lockdown ran but did not reach the duress state",
+            landed=False,
+            bags_touched=0,
+            reason=(
+                f"after lockdown: flag_present={flagged}, vault_absent={shredded}; both "
+                "must hold for a seizure to have been rehearsed"
+            ),
+        )
+    return Injection(
+        description="lockdown executed: disclosure frozen and the local identity vault shredded",
+        landed=True,
+        bags_touched=len(staged.bag_names()),
+        reason="",
+    )
+
+
+def _the_archive_reports_itself_locked_down(staged: StagedArchive) -> bool:
+    """``ledger.lockdown.is_locked_down`` — the predicate the server calls per request.
+
+    Routed through the archive's own check rather than re-reading the flag file, for
+    the same reason the damage scenarios route through ``verify_replicas``: the
+    question is whether the thing that *stops disclosure* would notice, not whether
+    the bytes changed. A duress freeze the server cannot see is a freeze that is not
+    freezing anything.
+    """
+
+    return is_locked_down(_archive_like(staged))
+
+
+def _stand_up_from_the_off_box_replica(staged: StagedArchive) -> None:
+    """``ledger stand-up --execute``: restore the vault, then lift the freeze."""
+
+    execute_stand_up(_archive_like(staged), actor=DRILL_AGENT, now=now_iso())
+
+
+def _the_vault_is_back_and_disclosure_resumed(staged: StagedArchive) -> bool:
+    """Both halves of the stand-up, and the vault compared against the replica's copy.
+
+    Asserting the file merely *exists* would credit a stand-up that wrote an empty
+    file, or one that left a truncated copy behind. The bytes are compared against
+    the replica they were restored from -- a digest, never the contents, so nothing
+    here can put a vault byte in a report.
+    """
+
+    archive = _archive_like(staged)
+    vault = Path(staged.config.vault_path)
+    if not vault.is_file() or is_locked_down(archive):
+        return False
+    lockdown = staged.config.lockdown
+    if lockdown is None:  # pragma: no cover - applicability already refused this
+        return False
+    restored = hashlib.sha256(vault.read_bytes()).hexdigest()
+    return any(
+        (Path(location) / "identity.vault").is_file()
+        and hashlib.sha256((Path(location) / "identity.vault").read_bytes()).hexdigest() == restored
+        for location in lockdown.required_replica_locations
+    )
+
+
+def _seized_primary_scenario() -> Scenario:
+    """The threat model's worst day: the primary host is taken, and comes back.
+
+    The other four scenarios damage a replica and heal it. This one runs the two
+    commands a steward runs under duress -- ``ledger lockdown --execute``, which
+    freezes disclosure and destroys the only local copy of the identity vault, and
+    then ``ledger stand-up --execute``, which rebuilds it from an off-box replica --
+    and asks whether the archive comes back. It is the one scenario where the fault
+    is deliberate and irreversible, which is exactly why rehearsing it on a copy is
+    worth doing: the first time a steward finds out whether their configured replica
+    can actually restore the vault must not be the day they need it to.
+
+    The dual-control proposal ``ledger lockdown --execute`` requires is a control on
+    the *steward*, and it is not rehearsed here: this calls
+    :func:`ledger.lockdown.execute_lockdown` directly, the same function the CLI
+    calls once its gate is satisfied. A drill that had to mint an approved proposal
+    would be rehearsing the approval workflow, not the recovery path, and would need
+    write access to a dual-control store to do it.
+    """
+
+    return Scenario(
+        name="seized-primary",
+        fault="the primary host is seized: disclosure frozen and the local vault shredded",
+        recovering_command="ledger stand-up",
+        applicability=_seized_primary_applicability,
+        inject=_inject_seized_primary,
+        detect=_the_archive_reports_itself_locked_down,
+        recover=_stand_up_from_the_off_box_replica,
+        verify=_the_vault_is_back_and_disclosure_resumed,
+    )
+
+
 #: Every scenario this drill knows, by name. A closed registry: ``--scenario``
 #: rejects anything not listed here rather than silently rehearsing nothing.
 SCENARIOS: dict[str, Scenario] = {
@@ -799,6 +1153,7 @@ SCENARIOS: dict[str, Scenario] = {
         _lost_location_scenario(),
         _truncated_log_scenario(),
         _stale_replica_scenario(),
+        _seized_primary_scenario(),
     )
 }
 
