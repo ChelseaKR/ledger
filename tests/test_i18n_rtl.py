@@ -41,9 +41,7 @@ def _server(
 ) -> Iterator[str]:
     monkeypatch.setenv("LEDGER_VAULT_KEY", _VAULT_KEY)
     archive = Archive.init(Config.default("RTL Archive", tmp_path / "arc"))
-    httpd = make_server(
-        archive, host="127.0.0.1", port=0, allow_contributions=allow_contributions
-    )
+    httpd = make_server(archive, host="127.0.0.1", port=0, allow_contributions=allow_contributions)
     base = f"http://127.0.0.1:{int(httpd.server_address[1])}"
     sink = StringIO()
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
@@ -290,7 +288,9 @@ def _visible_unwrapped_words(page: str) -> set[str]:
         flags=re.DOTALL,
     )
     text = re.sub(r"<[^>]+>", " ", without_wrapped)
-    return set(re.findall(r"[A-Za-z][A-Za-z'’\-]*", text))
+    # \u2019 is the typographic apostrophe French uses ("d\u2019exemple"); spelled as an
+    # escape because ruff's RUF001 rejects the literal character in source.
+    return set(re.findall("[A-Za-z][A-Za-z'\u2019\\-]*", text))
 
 
 def test_no_prose_reaches_the_page_shell_without_going_through_the_seam(
