@@ -36,10 +36,14 @@ from ledger.server import make_server
 _VAULT_KEY = "0123456789abcdef0123456789abcdef0123456789a="
 
 
-def _server(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
+def _server(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, allow_contributions: bool = False
+) -> Iterator[str]:
     monkeypatch.setenv("LEDGER_VAULT_KEY", _VAULT_KEY)
     archive = Archive.init(Config.default("RTL Archive", tmp_path / "arc"))
-    httpd = make_server(archive, host="127.0.0.1", port=0)
+    httpd = make_server(
+        archive, host="127.0.0.1", port=0, allow_contributions=allow_contributions
+    )
     base = f"http://127.0.0.1:{int(httpd.server_address[1])}"
     sink = StringIO()
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
@@ -56,6 +60,17 @@ def _server(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
 @pytest.fixture
 def base(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
     yield from _server(tmp_path, monkeypatch)
+
+
+@pytest.fixture
+def contributing_base(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
+    """A server with the submission surface on, so the Contribute link is rendered.
+
+    `make_server` defaults `allow_contributions=False`, which means the nav link this
+    file most needs to check does not appear on the `base` fixture at all — a test
+    asserting it is translated there would pass over a page that does not contain it.
+    """
+    yield from _server(tmp_path, monkeypatch, allow_contributions=True)
 
 
 def _request(url: str, *, accept_language: str | None = None) -> tuple[int, str, dict[str, str]]:
@@ -320,12 +335,20 @@ def test_the_widened_gate_is_not_vacuous(monkeypatch: pytest.MonkeyPatch) -> Non
 
 
 @pytest.mark.parametrize("lang", ["es", "fr", "ar"])
-def test_the_shell_renders_no_english_prose_in_a_translated_page(base: str, lang: str) -> None:
+def test_the_shell_renders_no_english_prose_in_a_translated_page(
+    contributing_base: str, lang: str
+) -> None:
     """The same claim from the other end, against a real served page.
 
     The pseudolocale test above proves every shell string goes through the seam; this
     proves the catalogs actually answer for them, in the language a reader asked for.
+
+    On `contributing_base` rather than `base`, and the link's presence is asserted
+    first: with the submission surface off — `make_server`'s default — the Contribute
+    link is not rendered at all, and every assertion below it about `"Contribute"`
+    would hold over a page that never contained the word.
     """
-    _status, body, _headers = _request(f"{base}/?lang={lang}")
+    _status, body, _headers = _request(f"{contributing_base}/?lang={lang}")
+    assert 'href="/contribute"' in body, "the Contribute link is absent; this proves nothing"
     for english in ("Contribute", "Governance", "How it works", "Reference implementation"):
         assert english not in body, f"{english!r} was served untranslated on a {lang} page"
