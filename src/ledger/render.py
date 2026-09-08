@@ -131,11 +131,11 @@ def _page(title: str, *, lang: str, main_html: str, nav_html: str = "") -> str:
         "<body>\n"
         f'  <a class="skip-link" href="#main">{_esc(i18n.t(lang, "skip_link"))}</a>\n'
         '  <p class="banner" role="note">'
-        f'{_esc(i18n.t(lang, "banner_reference_implementation"))}</p>\n'
+        f"{_esc(i18n.t(lang, 'banner_reference_implementation'))}</p>\n"
         f"{translation_block}"
         "  <header>\n"
         '    <p class="brand"><a href="/">ledger — '
-        f'{_esc(i18n.t(lang, "brand_tagline"))}</a></p>'
+        f"{_esc(i18n.t(lang, 'brand_tagline'))}</a></p>"
         f"{nav_block}\n"
         "  </header>\n"
         '  <main id="main" tabindex="-1">\n'
