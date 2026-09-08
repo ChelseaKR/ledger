@@ -27,6 +27,13 @@ Design qualities deliberately preserved:
   ambient locale, no mutable global state, so the same request renders the same
   string.
 
+Translation review is **declared, not measured.** :func:`translation_review`
+answers "who has read this catalog" in three states, because the catalog gates
+cannot tell an approved translation from an unread one — see
+:class:`TranslationReview`. :data:`REVIEWED_LOCALES` is empty today, so every
+non-English page carries the ``translation_notice`` banner and every non-source
+``.po`` header carries a matching ``X-Translation-Review`` field.
+
 No-outing rule: this module holds only generic UI chrome and plain-language glosses
 for a *controlled* content-warning vocabulary. It never contains, logs, or formats a
 contributor identity or a sealed value; callers pass only UI keys and CW tags. The
@@ -38,6 +45,7 @@ from __future__ import annotations
 
 import gettext
 from collections.abc import Sequence
+from enum import StrEnum
 from functools import cache
 from pathlib import Path
 
@@ -80,6 +88,65 @@ _LANGUAGE_NAMES: dict[str, str] = {
 # lay out correctly for Arabic/Hebrew/Persian/Urdu readers. The set is keyed by
 # primary subtag, so a regional variant (``ar-EG``) is still recognized as RTL.
 _RTL_LANGS: frozenset[str] = frozenset({"ar", "he", "fa", "ur"})
+
+
+class TranslationReview(StrEnum):
+    """Who has read a shipped catalog, in three states rather than two.
+
+    The catalog gates (``tools/check_catalog_parity.py``) enforce key parity,
+    non-empty ``msgstr`` and placeholder parity. **Nothing they check can see the
+    difference between a translation a qualified speaker approved and one nobody
+    read** — a verbatim-English Spanish string satisfies all three: it is
+    non-empty, its keys match, and its placeholders are trivially identical. So
+    review status is not derivable from the catalog and has to be *declared*.
+
+    Two states would not do it. "Reviewed / not reviewed" collapses the English
+    catalog -- whose ``msgstr`` *is* the msgid, and which no translator wrote --
+    into the same bucket as an unread Arabic one, and the honest thing to say
+    about each is different.
+    """
+
+    #: The msgids themselves. Nothing was translated, so nothing is unreviewed.
+    SOURCE = "source"
+    #: A qualified speaker of this language has read the catalog and signed off.
+    REVIEWED = "reviewed"
+    #: Drafted in-project. Not a claim of damage, and not a claim of quality:
+    #: nobody who speaks the language has read it. Disclosed, never inferred.
+    DRAFTED = "drafted"
+
+
+#: The locale whose ``msgstr`` values are the msgids — the text every other
+#: catalog is translated *from*, and the fallback for an unknown tag.
+SOURCE_LANG = DEFAULT_LANG
+
+#: Locales a qualified speaker has reviewed. **Empty on purpose, and it is the
+#: honest value**: no review has happened. Adding a locale here is a claim about a
+#: person, so it is a human's edit to make, with the reviewer recorded in
+#: ``docs/I18N.md``. The emptiness is why every non-English page carries the
+#: ``translation_notice`` banner today.
+REVIEWED_LOCALES: frozenset[str] = frozenset()
+
+#: The ``X-Translation-Review`` header field every shipped non-source catalog
+#: declares, so the disclosure travels with the ``.po`` file itself rather than
+#: living only in this module. ``tools/check_catalog_parity.py`` requires the
+#: value in each catalog to equal :func:`translation_review` for that locale.
+PO_REVIEW_HEADER = "X-Translation-Review"
+
+
+def translation_review(lang: str) -> TranslationReview:
+    """What can honestly be said about who has read ``lang``'s catalog.
+
+    An unknown or unshipped tag is :data:`TranslationReview.SOURCE`, not
+    ``DRAFTED``: :func:`get_translation` falls back to the English msgids for it,
+    so what such a reader is served is the source text and there is no translation
+    to have gone unreviewed. Matched on the full tag against :data:`SUPPORTED`,
+    the same set the rest of this module gates on.
+    """
+    if lang == SOURCE_LANG or lang not in SUPPORTED:
+        return TranslationReview.SOURCE
+    if lang in REVIEWED_LOCALES:
+        return TranslationReview.REVIEWED
+    return TranslationReview.DRAFTED
 
 
 def get_translation(lang: str) -> gettext.NullTranslations:
@@ -128,6 +195,12 @@ def _messages(translation: gettext.NullTranslations) -> dict[str, str]:
         "overview_date_range": _("Spanning {earliest} to {latest}."),
         "overview_empty": _("There are no public records yet."),
         "skip_link": _("Skip to main content"),
+        # Rendered on every page whose locale is TranslationReview.DRAFTED. The
+        # string itself is in the same unreviewed catalogs it describes, which is
+        # the point: it says so.
+        "translation_notice": _(
+            "This translation was drafted by the project and has not been reviewed by a qualified speaker of this language. The English pages are the source text."
+        ),
         "search_label": _("Search the archive"),
         "search_button": _("Search"),
         "withheld_heading": _("Some parts of this record are not shown"),
@@ -693,7 +766,9 @@ def text_direction(lang: str) -> str:
 # any string that was NOT run through the gettext seam — it stays plain ASCII while
 # translated chrome is accented. This is a TEST-ONLY affordance: ``pseudolocalize``
 # is never wired into ``SUPPORTED`` and ships no catalog, so production only ever
-# serves real, human-authored locales.
+# serves a catalog whose review status :func:`translation_review` can state.
+# (This comment used to end "real, human-authored locales". Nothing in this
+# repository establishes that, and :data:`REVIEWED_LOCALES` is empty.)
 _PSEUDO_MAP = str.maketrans(
     "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ",
     "ábčđéƒǧĥíĵķłmñóþqŕš†úvwxyžÁßČĐÉƑǦĤÍĴĶŁMÑÓÞQŔŠŤÚVWXYŽ",

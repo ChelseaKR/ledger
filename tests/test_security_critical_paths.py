@@ -2,7 +2,7 @@
 
 These pin the failure and refusal branches of the modules that carry the
 per-module coverage floor (CODE-QUALITY-STANDARD: security/crypto-critical paths
-hold >=95% branch coverage, above the 85% baseline). The floor is enforced by the
+hold >=95% branch coverage, above the 90% branch-coverage floor). The floor is enforced by the
 scoped ``coverage report --fail-under=95`` step in the Makefile ``cov`` target and
 in CI, over ``src/ledger/access/*``, ``consent.py``, and ``dualcontrol.py``.
 """

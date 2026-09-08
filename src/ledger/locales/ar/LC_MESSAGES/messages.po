@@ -4,6 +4,14 @@
 # project.
 # FIRST AUTHOR <EMAIL@ADDRESS>, 2026.
 #
+# TRANSLATION REVIEW: drafted. These strings were written inside the
+# project. No qualified speaker of this language has reviewed them, and
+# the catalog gates cannot tell an approved translation from an unread
+# one -- they check key parity, non-empty msgstr and placeholder parity,
+# all of which a verbatim-English string would satisfy. The status is
+# therefore declared, here and in ledger.i18n.REVIEWED_LOCALES, and every
+# page served in this language says so. See docs/I18N.md.
+#
 msgid ""
 msgstr ""
 "Project-Id-Version: ledger-archive 0.1.0\n"
@@ -19,6 +27,7 @@ msgstr ""
 "Content-Type: text/plain; charset=utf-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Generated-By: Babel 2.18.0\n"
+"X-Translation-Review: drafted\n"
 
 #, python-brace-format
 msgid ""
@@ -766,6 +775,14 @@ msgstr "لهذا السجل قيود وصول."
 
 msgid "This record links to"
 msgstr "يشير هذا السجل إلى"
+
+msgid ""
+"This translation was drafted by the project and has not been reviewed by "
+"a qualified speaker of this language. The English pages are the source "
+"text."
+msgstr ""
+"صيغت هذه الترجمة داخل المشروع ولم يراجعها متحدث مؤهل بهذه اللغة. الصفحات "
+"الإنجليزية هي النص المصدر."
 
 msgid "Those contact details are too long."
 msgstr "بيانات الاتصال هذه طويلة جدًا."

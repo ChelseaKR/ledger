@@ -51,7 +51,8 @@ cov: ## Run tests with coverage (95% floor on the access/consent/dual-control co
 	$(PY) -m pytest --cov --cov-report=term-missing
 	# Per-module floor (CODE-QUALITY-STANDARD, security/crypto-critical paths): the
 	# access-policy, consent, and dual-control modules must hold >=95% branch
-	# coverage, above the 85% baseline. Scoped re-report over the .coverage data.
+	# coverage, above the 90% branch-coverage floor. Scoped re-report over the
+	# .coverage data.
 	#
 	# NOTE ON THE POOL: `coverage report --fail-under` gates the TOTAL row, not each
 	# module, so this line passes at 95% overall while `grants.py` (92%) and
