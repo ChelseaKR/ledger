@@ -77,6 +77,24 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the next ratchet fails the truthfulness gate rather than leaving a fourth and
   fifth stale sentence. Negative control: the `Makefile` reverted to `85` →
   `make claims` exits 1 naming the file, the stated value and the enforced one.
+- **"16 of 24 Harden-Runner jobs enforce `egress-policy: block`" was wrong the day it
+  was written, and stayed wrong for seventeen days.** Both the README's standards row
+  and `docs/ROADMAP.md`'s SEC-04 row state that ratio. At `8030558` — *the commit that
+  wrote it* — the workflows already held **17 blocking and 8 auditing** jobs, and they
+  still do. This is not drift: the parent commit measures the same 17 of 25, so the
+  sentence never matched the tree it described.
+
+  A ratio is the most perishable claim shape in this repository, because **adding one
+  workflow job makes both numbers wrong at once** and nothing else looks at the prose.
+  So both are now re-derived by `tools/check_claims.py`: the denominator is every
+  `egress-policy:` line under `.github/workflows/` (Harden-Runner on every job is
+  itself part of the claim), the numerator the `block` subset, and a sentence that
+  stops stating the ratio fails rather than passing silently.
+
+  While adding it: a claim kind with no `_KIND_LABEL` entry was still enforced but
+  vanished from the gate's own passing line, so the output would have understated what
+  it verified. The summary now refuses to build with an unlabelled kind, with
+  `ReferenceExists` named as the one deliberate exception rather than left as a hole.
 - **The release notes' own date was the one value nothing checked, and it is
   already wrong.** `release.yml`'s REL-10 step greps for the `## [0.1.0]` heading
   and nothing else, so the date beside it — written the day the release was
