@@ -32,6 +32,38 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   box.
 
 ### Fixed
+- **An Arabic page's navigation ended in the English word "Contribute", and the gate
+  that exists to catch that could not see it.** Five strings in the shared page shell
+  — which *every* page renders — never went through the gettext seam: the `Contribute`
+  nav link, the reference-implementation banner, the brand tagline `community
+  archive`, `Governance` and `How it works`. `Contribute` is the sharpest: it is one
+  of nine navigation links and the only one not localized, `_nav_html`'s own docstring
+  says "Labels are localized (i18n)", and it is the link inviting somebody to give
+  this archive their material. An `ar` reader's footer read `حول · Governance · How it
+  works` — one translated link between two English ones.
+
+  **G9, the pseudolocale gate, is what should have caught them.** `docs/I18N.md`
+  describes it as asserting "no un-wrapped (hardcoded) English leaks". The test
+  asserted that four specific words were absent — `Browse`, `Search`, `Overview`,
+  `Skip to main content` — and all four already go through the seam. The gate could
+  only find hardcoded English among the strings that are not hardcoded, and it had
+  been green over all five leaks since `ar` shipped.
+
+  All five now resolve through `i18n.t` and are translated in all four catalogs, and
+  G9 works the other way round: render the whole shell under the pseudolocale, strip
+  every `⟦…⟧` span (the wrapper every seam-resolved string comes back in), strip tags
+  whole so `href`/`lang`/`hreflang` values are excluded structurally, and require what
+  is left to be in a named allowlist — the three language autonyms and the product
+  name `ledger`. Deliberately not "assert every word is accented": `_PSEUDO_MAP`
+  leaves `m`, `q`, `v`, `w` and `x` as themselves, so that form would quietly pass a
+  hardcoded word built only from those letters.
+
+  Measured after the fix: the only Latin-script words left on a rendered Arabic page
+  are `English`, `Español`, `Français` and `ledger`.
+
+  The brand line keeps the product name and translates only the tagline
+  (`ledger — {tagline}`). If the whole line should stay English everywhere, that is one
+  line to revert.
 - **Two more sentences the 85 → 88 → 90 coverage ratchet left behind, one of them
   beside the gate itself.** #196 tied three documents to
   `[tool.coverage.report] fail_under` after finding they stated a floor two points

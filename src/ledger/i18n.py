@@ -177,6 +177,16 @@ def _messages(translation: gettext.NullTranslations) -> dict[str, str]:
         "nav_status": _("Status"),
         "nav_about": _("About"),
         "nav_transparency": _("Transparency"),
+        # The five strings the page shell used to hardcode. `nav_contribute` was the
+        # only one of nine navigation labels not routed through this seam, on the
+        # link that invites somebody to give the archive their material.
+        "nav_contribute": _("Contribute"),
+        "nav_governance": _("Governance"),
+        "nav_how_it_works": _("How it works"),
+        "brand_tagline": _("community archive"),
+        "banner_reference_implementation": _(
+            "Reference implementation — sample data is synthetic."
+        ),
         "overview_heading": _("Collection overview"),
         "overview_intro": _(
             "An at-a-glance summary of the public records in this archive — the topics, kinds, and languages they cover. Every number counts only what is publicly visible."

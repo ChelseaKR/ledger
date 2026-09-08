@@ -130,11 +130,12 @@ def _page(title: str, *, lang: str, main_html: str, nav_html: str = "") -> str:
         "</head>\n"
         "<body>\n"
         f'  <a class="skip-link" href="#main">{_esc(i18n.t(lang, "skip_link"))}</a>\n'
-        '  <p class="banner" role="note">Reference implementation — sample data is '
-        "synthetic.</p>\n"
+        '  <p class="banner" role="note">'
+        f"{_esc(i18n.t(lang, 'banner_reference_implementation'))}</p>\n"
         f"{translation_block}"
         "  <header>\n"
-        '    <p class="brand"><a href="/">ledger — community archive</a></p>'
+        '    <p class="brand"><a href="/">ledger — '
+        f"{_esc(i18n.t(lang, 'brand_tagline'))}</a></p>"
         f"{nav_block}\n"
         "  </header>\n"
         '  <main id="main" tabindex="-1">\n'
@@ -143,8 +144,8 @@ def _page(title: str, *, lang: str, main_html: str, nav_html: str = "") -> str:
         "  <footer>\n"
         f"    <p>{_esc(i18n.t(lang, 'footer_privacy'))}</p>\n"
         f'    <p class="meta"><a href="/about">{_esc(i18n.t(lang, "nav_about"))}</a> · '
-        '<a href="/governance">Governance</a> · '
-        '<a href="/how-it-works">How it works</a></p>\n'
+        f'<a href="/governance">{_esc(i18n.t(lang, "nav_governance"))}</a> · '
+        f'<a href="/how-it-works">{_esc(i18n.t(lang, "nav_how_it_works"))}</a></p>\n'
         "  </footer>\n"
         "</body>\n"
         "</html>\n"
@@ -1280,7 +1281,11 @@ def _nav_html(lang: str = "en", *, contribute: bool = False, current_path: str =
     A language picker (:func:`_language_switch_html`) lets a reader switch language
     explicitly and stay on ``current_path`` (user research P2-1, I2).
     """
-    contribute_link = '      <a href="/contribute">Contribute</a>\n' if contribute else ""
+    contribute_link = (
+        f'      <a href="/contribute">{_esc(i18n.t(lang, "nav_contribute"))}</a>\n'
+        if contribute
+        else ""
+    )
     switch = _language_switch_html(lang, current_path)
     return (
         f'\n      <a href="/">{_esc(i18n.t(lang, "nav_browse"))}</a>\n'

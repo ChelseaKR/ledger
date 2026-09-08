@@ -16,6 +16,7 @@ These pin the newly closed i18n gates end to end:
 
 from __future__ import annotations
 
+import re
 import threading
 import urllib.error
 import urllib.request
@@ -35,10 +36,12 @@ from ledger.server import make_server
 _VAULT_KEY = "0123456789abcdef0123456789abcdef0123456789a="
 
 
-def _server(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
+def _server(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, allow_contributions: bool = False
+) -> Iterator[str]:
     monkeypatch.setenv("LEDGER_VAULT_KEY", _VAULT_KEY)
     archive = Archive.init(Config.default("RTL Archive", tmp_path / "arc"))
-    httpd = make_server(archive, host="127.0.0.1", port=0)
+    httpd = make_server(archive, host="127.0.0.1", port=0, allow_contributions=allow_contributions)
     base = f"http://127.0.0.1:{int(httpd.server_address[1])}"
     sink = StringIO()
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
@@ -55,6 +58,17 @@ def _server(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
 @pytest.fixture
 def base(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
     yield from _server(tmp_path, monkeypatch)
+
+
+@pytest.fixture
+def contributing_base(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
+    """A server with the submission surface on, so the Contribute link is rendered.
+
+    `make_server` defaults `allow_contributions=False`, which means the nav link this
+    file most needs to check does not appear on the `base` fixture at all — a test
+    asserting it is translated there would pass over a page that does not contain it.
+    """
+    yield from _server(tmp_path, monkeypatch, allow_contributions=True)
 
 
 def _request(url: str, *, accept_language: str | None = None) -> tuple[int, str, dict[str, str]]:
@@ -219,3 +233,122 @@ def test_review_status_is_three_states_and_an_unknown_tag_is_source() -> None:
     assert i18n.translation_review("en") is i18n.TranslationReview.SOURCE
     assert i18n.translation_review("zz") is i18n.TranslationReview.SOURCE
     assert i18n.translation_review("es") is i18n.TranslationReview.DRAFTED
+
+
+# --- G9, widened so it can actually fail -------------------------------------
+#
+# `docs/I18N.md` describes G9 as asserting "no un-wrapped (hardcoded) English
+# leaks". The test above it does not do that: it asserts four specific words are
+# absent, and all four already go through the seam. **The gate could only find
+# hardcoded English in the set of strings that are not hardcoded** — a fixture
+# sitting where the failure is impossible. Measured on origin/main before this
+# change, five real leaks had been green in the page shell since `ar` shipped:
+# `Contribute` (one of nine nav links, and the only one not localized),
+# `Governance`, `How it works`, the reference-implementation banner, and the brand
+# tagline.
+
+#: Latin-script words allowed to survive un-wrapped in a pseudolocalized page, each
+#: for a stated reason. This list is the design work: a blanket rule fires on `href`
+#: values and `lang="ar"` immediately, and a gate with false positives gets deleted.
+#: Attribute values are excluded structurally instead (tags are stripped whole), so
+#: only *visible text* reaches this allowlist.
+_INVARIANT_IN_EVERY_LANGUAGE = {
+    # Autonyms. `docs/I18N.md`: "an autonym is invariant across the UI language, so a
+    # language picker always reads naturally to a native speaker." Deliberately NOT
+    # gettext-translated, so deliberately not wrapped.
+    "English",
+    "Espa",  # Español — the ñ splits the word for a Latin-letter regex
+    "ol",
+    "Fran",  # Français — same, for the ç
+    "ais",
+    # The product name. The tagline beside it ("community archive") is translated;
+    # the name is not, the way "Wikipedia" is not.
+    "ledger",
+}
+
+
+def _visible_unwrapped_words(page: str) -> set[str]:
+    """Latin-script words in a pseudolocalized page that never went through the seam.
+
+    Every string resolved through `i18n.t`/`gloss_cw` comes back bracketed by
+    `PSEUDO_PREFIX`/`PSEUDO_SUFFIX`, so removing those spans leaves exactly the text
+    that reached the page some other way. Tags are then stripped **whole**, which
+    drops `href`, `lang` and `hreflang` values — they are Latin by necessity and are
+    not prose.
+
+    Deliberately not written as "assert every word is accented": `pseudolocalize`'s
+    map leaves `m`, `q`, `v`, `w` and `x` as themselves, so accent-detection would
+    quietly pass a hardcoded word built only from those. Bracket-stripping does not
+    depend on which letters a word happens to contain.
+    """
+    without_wrapped = re.sub(
+        re.escape(i18n.PSEUDO_PREFIX) + r".*?" + re.escape(i18n.PSEUDO_SUFFIX),
+        " ",
+        page,
+        flags=re.DOTALL,
+    )
+    text = re.sub(r"<[^>]+>", " ", without_wrapped)
+    # \u2019 is the typographic apostrophe French uses ("d\u2019exemple"); spelled as an
+    # escape because ruff's RUF001 rejects the literal character in source.
+    return set(re.findall("[A-Za-z][A-Za-z'\u2019\\-]*", text))
+
+
+def test_no_prose_reaches_the_page_shell_without_going_through_the_seam(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The gate `docs/I18N.md` always described, finally able to fail.
+
+    Renders the whole shared shell — banner, brand, nav, footer — through the
+    pseudolocale and asserts that the only un-wrapped Latin-script text left is the
+    handful of things that are invariant by design.
+    """
+    _install_pseudolocale(monkeypatch)
+    nav = _nav_html("en", contribute=True, current_path="/")
+    # An empty <main>: the claim under test is about the *shell* — banner, brand, nav,
+    # footer — which every page renders. Page bodies are a larger surface and some of
+    # them are steward-authored config text ledger cannot translate at all.
+    page = _page(i18n.t("en", "nav_browse"), lang="en", main_html="", nav_html=nav)
+
+    leaked = _visible_unwrapped_words(page) - _INVARIANT_IN_EVERY_LANGUAGE
+    assert leaked == set(), (
+        f"prose reached the page without going through i18n.t: {sorted(leaked)}. "
+        "Route it through the gettext seam, or — if it is genuinely invariant across "
+        "every language — add it to _INVARIANT_IN_EVERY_LANGUAGE with a reason."
+    )
+
+
+def test_the_widened_gate_is_not_vacuous(monkeypatch: pytest.MonkeyPatch) -> None:
+    """It must be looking at a page with real text in it.
+
+    A shell that rendered nothing, or a bracket regex that ate everything, would make
+    the assertion above pass over an empty set. This pins that the page really does
+    carry wrapped chrome and that the extractor really does see words.
+    """
+    _install_pseudolocale(monkeypatch)
+    nav = _nav_html("en", contribute=True, current_path="/")
+    page = _page(i18n.t("en", "nav_browse"), lang="en", main_html="", nav_html=nav)
+
+    assert page.count(i18n.PSEUDO_PREFIX) >= 10, "the shell is not routing chrome through the seam"
+    assert _visible_unwrapped_words(page) >= _INVARIANT_IN_EVERY_LANGUAGE, (
+        "the extractor found none of the invariants, so it is not reading the page"
+    )
+
+
+@pytest.mark.parametrize("lang", ["es", "fr", "ar"])
+def test_the_shell_renders_no_english_prose_in_a_translated_page(
+    contributing_base: str, lang: str
+) -> None:
+    """The same claim from the other end, against a real served page.
+
+    The pseudolocale test above proves every shell string goes through the seam; this
+    proves the catalogs actually answer for them, in the language a reader asked for.
+
+    On `contributing_base` rather than `base`, and the link's presence is asserted
+    first: with the submission surface off — `make_server`'s default — the Contribute
+    link is not rendered at all, and every assertion below it about `"Contribute"`
+    would hold over a page that never contained the word.
+    """
+    _status, body, _headers = _request(f"{contributing_base}/?lang={lang}")
+    assert 'href="/contribute"' in body, "the Contribute link is absent; this proves nothing"
+    for english in ("Contribute", "Governance", "How it works", "Reference implementation"):
+        assert english not in body, f"{english!r} was served untranslated on a {lang} page"

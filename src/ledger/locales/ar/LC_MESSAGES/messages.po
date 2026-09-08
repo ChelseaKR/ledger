@@ -233,6 +233,9 @@ msgstr "تحذيرات المحتوى: {list}"
 msgid "Continue"
 msgstr "متابعة"
 
+msgid "Contribute"
+msgstr "ساهم"
+
 msgid "Contribute to the archive"
 msgstr "ساهم في الأرشيف"
 
@@ -345,8 +348,14 @@ msgstr "ملفات"
 msgid "From"
 msgstr "من"
 
+msgid "Governance"
+msgstr "الحوكمة"
+
 msgid "Hate speech — contains slurs or attacks on a group"
 msgstr "خطاب كراهية — يحتوي على شتائم أو هجمات على جماعة"
+
+msgid "How it works"
+msgstr "كيف يعمل"
 
 msgid "How should this be shared?"
 msgstr "كيف ينبغي مشاركة هذا؟"
@@ -599,6 +608,9 @@ msgstr "السجلات التي تشير إلى هنا"
 
 msgid "Reference"
 msgstr "المرجع"
+
+msgid "Reference implementation — sample data is synthetic."
+msgstr "تنفيذ مرجعي — البيانات النموذجية اصطناعية."
 
 msgid "Related records"
 msgstr "سجلات ذات صلة"
@@ -969,6 +981,9 @@ msgstr "اطلب من مشرف إجراء اتصال"
 
 msgid "changed"
 msgstr "معدّل"
+
+msgid "community archive"
+msgstr "أرشيف مجتمعي"
 
 msgid "community members only"
 msgstr "أعضاء المجتمع فقط"
