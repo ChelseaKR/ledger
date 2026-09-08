@@ -97,9 +97,26 @@ def _page(title: str, *, lang: str, main_html: str, nav_html: str = "") -> str:
     Colour is never the sole signal anywhere in the shell, and no positive
     ``tabindex`` is used, so keyboard focus order follows source order
     (accessibility).
+
+    A page served from a catalog no qualified speaker has read carries a second
+    ``role="note"`` banner saying so, in that catalog's own language
+    (:func:`ledger.i18n.translation_review`). It is a disclosure rather than a
+    warning: the translation gates check key parity, completeness and placeholder
+    parity, none of which can distinguish an approved translation from an unread
+    one, so the fact has to be published rather than inferred.
     """
     nav_block = f'\n    <nav aria-label="Site">{nav_html}</nav>' if nav_html else ""
     direction = i18n.text_direction(lang)
+    # Disclosure, not a warning: the catalog gates cannot see the difference
+    # between a translation a qualified speaker approved and one nobody read, so
+    # a reader served an unreviewed catalog is told, on every page, in the
+    # language they asked for. Emitted only for DRAFTED — an English reader is
+    # reading the source text and a reviewed locale has nothing to disclose.
+    translation_block = (
+        f'  <p class="banner" role="note">{_esc(i18n.t(lang, "translation_notice"))}</p>\n'
+        if i18n.translation_review(lang) is i18n.TranslationReview.DRAFTED
+        else ""
+    )
     return (
         "<!doctype html>\n"
         f'<html lang="{_esc(lang)}" dir="{_esc(direction)}">\n'
@@ -115,6 +132,7 @@ def _page(title: str, *, lang: str, main_html: str, nav_html: str = "") -> str:
         f'  <a class="skip-link" href="#main">{_esc(i18n.t(lang, "skip_link"))}</a>\n'
         '  <p class="banner" role="note">Reference implementation — sample data is '
         "synthetic.</p>\n"
+        f"{translation_block}"
         "  <header>\n"
         '    <p class="brand"><a href="/">ledger — community archive</a></p>'
         f"{nav_block}\n"
