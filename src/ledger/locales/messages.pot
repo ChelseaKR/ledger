@@ -214,6 +214,9 @@ msgstr ""
 msgid "Continue"
 msgstr ""
 
+msgid "Contribute"
+msgstr ""
+
 msgid "Contribute to the archive"
 msgstr ""
 
@@ -318,7 +321,13 @@ msgstr ""
 msgid "From"
 msgstr ""
 
+msgid "Governance"
+msgstr ""
+
 msgid "Hate speech — contains slurs or attacks on a group"
+msgstr ""
+
+msgid "How it works"
 msgstr ""
 
 msgid "How should this be shared?"
@@ -554,6 +563,9 @@ msgid "Records that link here"
 msgstr ""
 
 msgid "Reference"
+msgstr ""
+
+msgid "Reference implementation — sample data is synthetic."
 msgstr ""
 
 msgid "Related records"
@@ -904,6 +916,9 @@ msgid "ask a steward to make contact"
 msgstr ""
 
 msgid "changed"
+msgstr ""
+
+msgid "community archive"
 msgstr ""
 
 msgid "community members only"

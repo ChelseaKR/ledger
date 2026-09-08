@@ -218,6 +218,9 @@ msgstr "Advertencias de contenido: {list}"
 msgid "Continue"
 msgstr "Continuar"
 
+msgid "Contribute"
+msgstr "Contribuir"
+
 msgid "Contribute to the archive"
 msgstr "Contribuir al archivo"
 
@@ -314,8 +317,14 @@ msgstr "Archivos"
 msgid "From"
 msgstr "Desde"
 
+msgid "Governance"
+msgstr "Gobernanza"
+
 msgid "Hate speech — contains slurs or attacks on a group"
 msgstr "Discurso de odio — contiene insultos o ataques a un grupo"
+
+msgid "How it works"
+msgstr "Cómo funciona"
 
 msgid "How should this be shared?"
 msgstr "¿Cómo debería compartirse esto?"
@@ -571,6 +580,9 @@ msgstr "Registros que enlazan aquí"
 
 msgid "Reference"
 msgstr "Referencia"
+
+msgid "Reference implementation — sample data is synthetic."
+msgstr "Implementación de referencia: los datos de ejemplo son sintéticos."
 
 msgid "Related records"
 msgstr "Registros relacionados"
@@ -918,6 +930,9 @@ msgstr "e introduzca ambos."
 
 msgid "ask a steward to make contact"
 msgstr "pedir a una persona responsable que se ponga en contacto"
+
+msgid "community archive"
+msgstr "archivo comunitario"
 
 msgid "community members only"
 msgstr "solo los miembros de la comunidad"
