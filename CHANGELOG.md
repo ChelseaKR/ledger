@@ -32,6 +32,19 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   box.
 
 ### Fixed
+- **Two more sentences the 85 → 88 → 90 coverage ratchet left behind, one of them
+  beside the gate itself.** #196 tied three documents to
+  `[tool.coverage.report] fail_under` after finding they stated a floor two points
+  below the one being enforced. Two restatements were missed and still said **85**
+  while pyproject enforced **90**: the comment in the `Makefile`'s own `cov` recipe,
+  which is the sentence a contributor reads *while looking at the command*, and the
+  module docstring of `tests/test_security_critical_paths.py`, the file that exists
+  to hold the per-module floor.
+
+  Both now say 90, and both are tied to the source with a `ConfigNumber` claim, so
+  the next ratchet fails the truthfulness gate rather than leaving a fourth and
+  fifth stale sentence. Negative control: the `Makefile` reverted to `85` →
+  `make claims` exits 1 naming the file, the stated value and the enforced one.
 - **The release notes' own date was the one value nothing checked, and it is
   already wrong.** `release.yml`'s REL-10 step greps for the `## [0.1.0]` heading
   and nothing else, so the date beside it — written the day the release was
