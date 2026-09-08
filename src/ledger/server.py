@@ -60,6 +60,7 @@ from ledger import (
     consent,
     contribute,
     export,
+    fixity,
     i18n,
     oai,
     pagination,
@@ -78,7 +79,7 @@ from ledger.errors import (
     ObjectNotFound,
     ValidationError,
 )
-from ledger.fixity import CHUNK_SIZE
+from ledger.fixity import CHUNK_SIZE, FixityStatus
 from ledger.ingest import Archive
 from ledger.lockdown import is_locked_down
 from ledger.models import (
@@ -2230,6 +2231,17 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         users ("have I broken it?") and was an unreadable wall of punctuation to a
         screen reader (user research P1-1). This renders the same fixity summary as
         a plain, accessible page; the JSON stays at ``/healthz`` for monitors.
+
+        The verdict is three-state (:func:`ledger.fixity.overall_status`), not
+        ``passed == total``. That predicate is vacuously true over an empty sweep, so
+        an archive holding **nothing** printed *"Everything is healthy."* and *"Every
+        stored record passed its most recent integrity check."* — a claim about
+        checks that never ran, on the page a non-technical reader is sent to when
+        they want to know whether the archive is all right (#208).
+
+        Every sentence here goes through the gettext seam. They used to be English
+        literals, so an Arabic or Spanish reader got this whole page in English —
+        the same defect as the page shell in #216, one route further in.
         """
         lang = self._lang()
         archive = self._archive()
@@ -2239,31 +2251,40 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             passed = sum(1 for _n, r in reports if r.ok)
             total = len(reports)
             files = sum(r.checked for _n, r in reports)
-            healthy = passed == total
-            headline = (
-                "Everything is healthy." if healthy else "Some records need a steward's attention."
+            verdict = fixity.overall_status(report for _n, report in reports)
+            # An archive with no bags and an archive with one unverifiable bag are
+            # both UNVERIFIED and they are not the same sentence: the first has
+            # nothing to check, the second has something it could not check. The
+            # enum is right to hold three states — a reader needs four words.
+            slug = (
+                "empty"
+                if (verdict is FixityStatus.UNVERIFIED and not total)
+                else verdict.name.lower()
             )
+            headline = i18n.t(lang, f"status_headline_{slug}")
             # Absolute counts include sealed records, so the exact numbers are shown
             # only to a steward; everyone else gets the qualitative headline (P2-2).
+            # `total` is still the guard on the steward line: with no bags there are
+            # no counts to show, and "0 of 0 passed every integrity check" would be
+            # the vacuous claim again, in numerals.
             if grant.is_steward and total:
-                detail = (
-                    f"{passed} of {total} record package(s) passed every integrity check "
-                    f"({files} file checksum(s) verified)."
+                detail = i18n.t(
+                    lang, "status_detail_counts", passed=passed, total=total, files=files
                 )
-            elif healthy:
-                detail = "Every stored record passed its most recent integrity check."
             else:
-                detail = "One or more records did not pass their integrity check."
+                detail = i18n.t(lang, f"status_detail_{slug}")
         except LedgerError:
-            headline, detail = "Status check failed.", "An integrity check could not be completed."
+            headline = i18n.t(lang, "status_headline_error")
+            detail = i18n.t(lang, "status_detail_error")
+        heading = i18n.t(lang, "status_heading")
         main_html = (
-            f"    <h1>Archive status</h1>\n"
+            f"    <h1>{_esc(heading)}</h1>\n"
             f"    <p><strong>{_esc(headline)}</strong></p>\n"
             f"    <p>{_esc(detail)}</p>\n"
-            '    <p class="muted">Machine-readable health is at '
-            '<a href="/healthz">/healthz</a>.</p>'
+            '    <p class="muted"><a href="/healthz">'
+            f"{_esc(i18n.t(lang, 'status_machine_readable'))}</a></p>"
         )
-        self._send_html(200, _page("Status", lang=lang, main_html=main_html, nav_html=self._nav()))
+        self._send_html(200, _page(heading, lang=lang, main_html=main_html, nav_html=self._nav()))
 
     def _handle_consent_status(self, params: dict[str, list[str]]) -> None:
         """``GET /consent-status`` — let a contributor check a request's progress.

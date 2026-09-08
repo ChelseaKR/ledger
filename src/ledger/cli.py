@@ -1509,7 +1509,20 @@ def _cmd_handoff(args: argparse.Namespace) -> int:
         print(f"wrote hand-off manifest for {manifest.total_records} record(s) to {out_path}")
     else:
         print(manifest_json)
-    status = "all bags verified" if manifest.all_fixity_ok else "FIXITY FAILURES PRESENT"
+    # Same three-state reading as the runbook, for the same reason: `all_fixity_ok`
+    # is vacuously true over an archive with no bags, so this line printed "0
+    # record(s); all bags verified" to the operator running the hand-off (#208).
+    # The EXIT CODE is deliberately unchanged — an empty archive is not a corrupt
+    # one, and turning a fresh install into a non-zero `ledger handoff` is a
+    # contract change, not a wording fix.
+    if not manifest.records:
+        status = "no bags to verify"
+    elif manifest.fixity_status is FixityStatus.FAILED:
+        status = "FIXITY FAILURES PRESENT"
+    elif manifest.fixity_status is FixityStatus.UNVERIFIED:
+        status = "some bags declared no files to check"
+    else:
+        status = "all bags verified"
     print(
         f"hand-off: {manifest.total_records} record(s); {status}; "
         f"vault {'present' if manifest.vault_present else 'absent'} "

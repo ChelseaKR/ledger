@@ -193,3 +193,37 @@ def audit_files(base_dir: Path, manifest: Mapping[str, str], algo: HashAlgo) -> 
         for relpath, expected in sorted(manifest.items())
     ]
     return AuditReport(results=results)
+
+
+def overall_status(reports: Iterable[AuditReport]) -> FixityStatus:
+    """Fold a set of per-bag audits into one verdict for a whole archive.
+
+    :class:`AuditReport` closes the vacuous-pass hole for the files inside *one*
+    bag. This closes it for the *set* of bags, which is a separate hole with the
+    same shape: every caller that summarised a sweep wrote ``all(report.ok ...)``
+    or ``failed == 0``, and both are vacuously true over an empty sequence -- so an
+    archive nobody looked at rendered as an archive that passed.
+
+    Three outcomes, and which one wins is deliberate:
+
+    * an **empty** sweep is :data:`FixityStatus.UNVERIFIED`. Nothing was checked;
+      that is neither a pass nor damage, and an archive that genuinely holds
+      nothing yet is not corrupt.
+    * a **failure dominates**, because damage is the fact a reader must act on
+      first, and one intact bag does not make a corrupt one intact.
+    * an **unverifiable** bag among otherwise-passing ones is
+      :data:`FixityStatus.UNVERIFIED`, never a pass -- the same rule one level down,
+      applied one level up.
+
+    The whole iterable is consumed rather than short-circuited on the first
+    failure, so a caller passing a generator that is also doing the I/O gets every
+    bag audited whatever the verdict turns out to be.
+    """
+    statuses = [report.status for report in reports]
+    if not statuses:
+        return FixityStatus.UNVERIFIED
+    if any(status is FixityStatus.FAILED for status in statuses):
+        return FixityStatus.FAILED
+    if any(status is FixityStatus.UNVERIFIED for status in statuses):
+        return FixityStatus.UNVERIFIED
+    return FixityStatus.VERIFIED

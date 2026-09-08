@@ -111,14 +111,27 @@ msgstr ""
 "عثر فحص تلقائي يعمل دون اتصال على {count} من التفاصيل التعريفية المحتملة "
 "أدناه. لم يتغير شيء — راجع كل تفصيل وعدّل روايتك بنفسك إذا أردت إزالته."
 
+msgid "An integrity check could not be completed."
+msgstr "تعذّر إكمال فحص السلامة."
+
 msgid "Apply dates"
 msgstr "تطبيق التواريخ"
+
+msgid "Archive status"
+msgstr "حالة الأرشيف"
 
 msgid "Are you named in this record and object to it? Tell a steward"
 msgstr "هل أنت مذكور في هذا السجل وتعترض عليه؟ أخبر مشرفًا"
 
 msgid "Are you the contributor? Manage or withdraw your consent"
 msgstr "هل أنت المساهم؟ أدِر موافقتك أو اسحبها"
+
+msgid ""
+"At least one record package declares no files to verify, so it could not "
+"be checked. That is not a failure, and it is not a pass either."
+msgstr ""
+"لا تُعلن حزمة سجل واحدة على الأقل عن أي ملفات للتحقق منها، لذا تعذّر "
+"فحصها. هذا ليس فشلًا، وليس نجاحًا أيضًا."
 
 msgid "Attach a file (optional)"
 msgstr "إرفاق ملف (اختياري)"
@@ -327,6 +340,12 @@ msgstr ""
 "كل إجراء مُسجَّل عبر الأرشيف، الأحدث أولًا. لا يحمل هذا السجل هوية مساهم "
 "ولا قيمة مختومة — بل فقط ما حدث ومن قام به والنتيجة."
 
+msgid "Every stored record passed its most recent integrity check."
+msgstr "اجتاز كل سجل مُخزَّن آخر فحص سلامة له."
+
+msgid "Everything is healthy."
+msgstr "كل شيء في حالة جيدة."
+
 msgid "Field"
 msgstr "الحقل"
 
@@ -421,6 +440,9 @@ msgstr "السجلات المرتبطة"
 msgid "Load my submission"
 msgstr "تحميل مساهمتي"
 
+msgid "Machine-readable health is at /healthz."
+msgstr "الحالة القابلة للقراءة آليًا متاحة على /healthz."
+
 msgid "Mark resolved"
 msgstr "وضع علامة كمحلول"
 
@@ -487,6 +509,9 @@ msgid ""
 msgstr ""
 "سطر واحد يظهر في القوائم ونتائج البحث والموجز. سيرى هذا الملخّص كل من "
 "يستطيع رؤية هذا السجل."
+
+msgid "One or more records did not pass their integrity check."
+msgstr "لم يجتز سجل واحد أو أكثر فحص السلامة الخاص به."
 
 msgid ""
 "Only a steward with explicit permission can ever see this. It is "
@@ -695,6 +720,12 @@ msgstr "بعض أجزاء هذا السجل غير متاحة ضمن وصولك 
 msgid "Some parts of this record are not shown"
 msgstr "بعض أجزاء هذا السجل غير معروضة"
 
+msgid "Some records could not be checked."
+msgstr "تعذّر فحص بعض السجلات."
+
+msgid "Some records need a steward's attention."
+msgstr "بعض السجلات تحتاج إلى انتباه المشرف."
+
 msgid "Sort by:"
 msgstr "الترتيب حسب:"
 
@@ -704,6 +735,9 @@ msgstr "يمتد من {earliest} إلى {latest}."
 
 msgid "Status"
 msgstr "الحالة"
+
+msgid "Status check failed."
+msgstr "فشل فحص الحالة."
 
 #, python-brace-format
 msgid "Status: {status}"
@@ -768,6 +802,16 @@ msgstr "تم تأكيد الإزالة في كل موقع تخزين."
 
 msgid "There are no public records yet."
 msgstr "لا توجد سجلات عامة بعد."
+
+msgid ""
+"There is no record package here to check, so no integrity check has run. "
+"An empty archive is not a verified one."
+msgstr ""
+"لا توجد هنا أي حزمة سجل لفحصها، لذا لم يُجرَ أي فحص سلامة. الأرشيف الفارغ "
+"ليس أرشيفًا مُتحقَّقًا منه."
+
+msgid "This archive holds nothing yet."
+msgstr "لا يحتوي هذا الأرشيف على شيء بعد."
 
 msgid ""
 "This check looks for common patterns only. It finds some identifying "
@@ -1063,6 +1107,14 @@ msgstr "هناك {count} من السجلات بلا تاريخ ولا تظهر �
 #, python-brace-format
 msgid "{count} record(s) name no place and are not shown here."
 msgstr "هناك {count} من السجلات لا تسمّي مكانًا ولا تظهر هنا."
+
+#, python-brace-format
+msgid ""
+"{passed} of {total} record package(s) passed every integrity check "
+"({files} file checksum(s) verified)."
+msgstr ""
+"اجتاز {passed} من {total} حزمة سجل جميع فحوص السلامة (تم التحقق من "
+"{files} مجموع تحقق للملفات)."
 
 #, python-brace-format
 msgid "{when} — superseded by {event}"
