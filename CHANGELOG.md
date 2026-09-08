@@ -7,6 +7,29 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **`/healthz` tells a steward when nothing was verified (#208, #205).** The #208
+  sweep closed the vacuous fixity fold on `/status`, the hand-off runbook and
+  `ledger handoff`'s summary line, and left `/healthz`'s `all_verified` alone as a
+  machine contract. Reading that contract: nothing outside this repository consumes
+  it, and every consumer inside it (`infra/Dockerfile`, `infra/docker-compose.yml`,
+  `infra/aws/docker-compose.deploy.yml`) is a `curl -fsS` that reads only the HTTP
+  status code. But the constraint that binds the anonymous payload is not a consumer,
+  it is a disclosure: every other route to `all_verified: false` also answers
+  `degraded` with a 503, so making the empty case honest for an outsider would make
+  `200` + `ok` + `all_verified: false` reachable **only** by an archive holding
+  nothing — an emptiness oracle, which is exactly what the gated counts on this
+  endpoint exist to withhold. `ledger.attestation.build_attestation` records the same
+  trade for the signed attestation.
+
+  So the anonymous payload is unchanged, byte for byte, and the fix goes where the
+  disclosure has already been made: a steward grant already reads `bags_audited`, so
+  it already knows when the archive is empty, and it now gets `fixity.status` — the
+  three-state `ledger.fixity.overall_status` verdict — beside the counts.
+  `tests/test_healthz_says_nothing_new_to_an_outsider.py` asserts the anonymous body
+  over an empty archive is identical to the anonymous body over a healthy one, so a
+  later change to `all_verified` fails loudly rather than leaking quietly. Whether to
+  make that trade stays the owner's, at #205.
+
 - **`ledger drill --scenario seized-primary`: the duress transition, rehearsed end
   to end.** #187 named five scenarios and four shipped. This one runs the two
   commands a steward runs when the primary host is taken — `lockdown --execute`,

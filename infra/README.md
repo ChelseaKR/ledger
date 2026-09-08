@@ -90,12 +90,23 @@ From the **repository root** (the compose build context is the repo root):
    ```
 
    An anonymous request to `/healthz` returns `status`, `all_verified`, and `ready`.
-   The fixity counts (bags audited / passed / failed, files checked) and the live
-   `chain_head` commitment are gated to a steward grant, so an uptime monitor can see
-   whether the archive is healthy without learning how large it is or when it last
-   changed; point a monitor at it with a provisioned steward grant if you want either.
-   It never exposes a bag path, a record id, or any identity — it is safe to point a
-   monitor at.
+   The fixity verdict and counts (`status`, bags audited / passed / failed, files
+   checked) and the live `chain_head` commitment are gated to a steward grant, so an
+   uptime monitor can see whether the archive is healthy without learning how large it
+   is or when it last changed; point a monitor at it with a provisioned steward grant
+   if you want either. It never exposes a bag path, a record id, or any identity — it
+   is safe to point a monitor at.
+
+   **`all_verified` is vacuously `true` over an archive with no bags, deliberately.**
+   It is "no bag failed", and no bag failed when there are no bags. Every other way of
+   reaching `all_verified: false` also answers `degraded` with a 503, so making the
+   empty case honest for an anonymous caller would make `200 + ok + all_verified:
+   false` reachable only by an empty archive — turning this endpoint into a way for a
+   stranger to learn that the archive holds nothing, which is what the gated counts
+   exist to prevent. A steward grant gets the honest three-state reading instead, in
+   `fixity.status`: `verified`, `failed`, or `could-not-verify` when nothing was
+   checked. Whether the anonymous payload should make that trade is recorded at
+   issue #205.
 
 5. **Front it with a reverse proxy.** Terminate TLS and add rate limiting on the
    host, forwarding to `127.0.0.1:<LEDGER_PORT>`. Do not publish the container
@@ -324,8 +335,10 @@ Schedule it on the host (example: daily at 03:30):
 ```
 
 The live `/healthz` endpoint also reports `all_verified` for the whole archive (the
-counts behind it need a steward grant), so your uptime monitor will turn the box red
-on drift even between scheduled audits. When a bag fails, do not overwrite it blindly:
+verdict and counts behind it need a steward grant), so your uptime monitor will turn
+the box red on drift even between scheduled audits. It will **not** turn red on an
+archive with nothing in it, which is not drift; a monitor that should notice that reads
+`fixity.status` with a steward grant. When a bag fails, do not overwrite it blindly:
 
 ```sh
 docker compose -f infra/docker-compose.yml exec ledger \
