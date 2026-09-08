@@ -2177,6 +2177,32 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         surfaces dates every non-public deposit. Only a steward grant sees
         either; a monitor uses a provisioned grant. No path, digest, id, or
         identity ever appears (no-outing rule).
+
+        **The anonymous payload is deliberately vacuous over an archive with no
+        bags, and that is not an oversight — it is the anti-enumeration line.**
+        ``all_verified`` is ``failed == 0``, and over zero bags that is ``True``,
+        so an empty archive answers an outsider exactly as a healthy one does.
+        Making it honest for the outsider would make it a disclosure: every other
+        route to ``all_verified: False`` also sets ``status: "degraded"`` and
+        returns 503 (a failing bag, and — since :attr:`AuditReport.ok` became
+        ``status is VERIFIED`` — a bag that declared no files to check), so
+        ``200 + "ok" + all_verified: False`` would be reachable **only** by an
+        archive holding nothing at all. An anonymous caller would learn the
+        absolute fact that the archive is empty, which is precisely what the
+        gated counts below exist to withhold. :func:`ledger.attestation.
+        build_attestation` records the same trade for the signed attestation, and
+        it is the owner's to make: issue #205.
+
+        So the fix goes where the disclosure has already been made. A steward — or
+        a monitor holding a provisioned grant — already sees ``bags_audited``, and
+        therefore already knows when the archive is empty; it gets
+        ``fixity.status``, the honest three-state verdict from
+        :func:`ledger.fixity.overall_status`, beside the counts. ``all_verified``
+        is untouched for every caller, so no contract moves, and
+        ``tests/test_healthz_says_nothing_new_to_an_outsider.py`` asserts the
+        anonymous body over an empty archive is byte-identical to the anonymous
+        body over a healthy one — which is the property, rather than a promise
+        about it.
         """
         archive = self._archive()
         grant = self._resolve_grant()
@@ -2217,6 +2243,11 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             # attestation at /proof/attestation.json (no-outing / P2-2).
             body["chain_head"] = archive.chain_head_summary()
             body["fixity"] = {
+                # The three-state verdict, for the one caller already permitted to
+                # know the archive's size. `bags_audited: 0` beside
+                # `all_verified: true` is a contradiction a reader has to resolve by
+                # knowing the fold is vacuous; `status: "could-not-verify"` says it.
+                "status": str(fixity.overall_status(r for _name, r in reports)),
                 "bags_audited": len(reports),
                 "bags_passed": passed,
                 "bags_failed": failed,
