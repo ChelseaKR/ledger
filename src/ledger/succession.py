@@ -34,6 +34,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ledger.config import StorageLocation
+from ledger.fixity import FixityStatus
 from ledger.ingest import Archive
 from ledger.models import canonical_json
 
@@ -84,6 +85,30 @@ class HandoffManifest:
     vault_path: str
     locations: tuple[StorageLocation, ...]
 
+    @property
+    def fixity_status(self) -> FixityStatus:
+        """Three-state verdict over the audited bags, derived from :attr:`records`.
+
+        Not a serialized field: :meth:`to_dict` is unchanged and
+        :data:`HANDOFF_SCHEMA_VERSION` does not move, so a third party's verifier
+        written against this document still reads exactly what it read before. This
+        exists so the two places that *describe* the hand-off in prose — the
+        runbook and ``ledger handoff``'s summary line — classify it by one rule
+        instead of two copies that can drift apart.
+
+        :attr:`all_fixity_ok` cannot answer this question: it is ``all(report.ok)``,
+        which is vacuously ``True`` over no bags, and ``False`` for both a corrupt
+        bag and a bag that declared no files to check. A ``files_checked`` of zero
+        is what tells those two apart, and it is already published per record.
+        """
+        if not self.records:
+            return FixityStatus.UNVERIFIED
+        if any(not r.fixity_ok and r.files_checked > 0 for r in self.records):
+            return FixityStatus.FAILED
+        if any(r.files_checked == 0 for r in self.records):
+            return FixityStatus.UNVERIFIED
+        return FixityStatus.VERIFIED
+
     def to_dict(self) -> dict[str, object]:
         """Serialize to a JSON-ready mapping, with the runbook embedded.
 
@@ -124,12 +149,34 @@ class HandoffManifest:
         that must never go in the same channel as the data — the vault key — and
         points at the existing, audited tools (`ledger verify-backup`) so the
         successor confirms intactness rather than assuming it.
+
+        The fixity sentence is derived from :attr:`records`, not from
+        :attr:`all_fixity_ok`, because that boolean is ``all_ok`` folded over the
+        audit and is vacuously ``True`` over an archive with no bags. It rendered
+        *"Records: 0. All bags verified intact at hand-off time."* to a non-ops
+        volunteer — the reader least equipped to notice the sentence is empty —
+        with the count that contradicts it sitting in the same line (#208). Every
+        input here is already a published field of this manifest, so the schema is
+        unchanged and ``all_fixity_ok`` still means exactly what it meant; what
+        changes is the sentence built from it.
         """
-        fixity_line = (
-            "All bags verified intact at hand-off time."
-            if self.all_fixity_ok
-            else "WARNING: one or more bags failed fixity — investigate before relying on this copy."
-        )
+        if not self.records:
+            fixity_line = (
+                "No bags were audited, so nothing was verified — an archive with "
+                "nothing in it is not an archive checked and found intact."
+            )
+        elif self.fixity_status is FixityStatus.FAILED:
+            fixity_line = (
+                "WARNING: one or more bags failed fixity — investigate before relying on this copy."
+            )
+        elif self.fixity_status is FixityStatus.UNVERIFIED:
+            fixity_line = (
+                "WARNING: one or more bags declared no files to check, so they could "
+                "not be verified — investigate before relying on this copy. This is "
+                "not a failure and it is not a pass."
+            )
+        else:
+            fixity_line = "All bags verified intact at hand-off time."
         successor_line = (
             f"Designated successor: {self.successor}."
             if self.successor

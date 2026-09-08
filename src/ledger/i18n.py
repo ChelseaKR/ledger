@@ -194,6 +194,31 @@ def _messages(translation: gettext.NullTranslations) -> dict[str, str]:
         "overview_total": _("{count} public record(s)."),
         "overview_date_range": _("Spanning {earliest} to {latest}."),
         "overview_empty": _("There are no public records yet."),
+        # The /status page. Every sentence on it used to be an English literal in
+        # ``server.py``, so an Arabic reader got an English health report next to a
+        # correctly translated footer (#216, the same defect as the page shell, one
+        # route further in). The three headline/detail pairs are keyed by
+        # :class:`ledger.fixity.FixityStatus`, and the third pair is the point of
+        # #208: an archive with nothing in it must not read as one that passed.
+        "status_heading": _("Archive status"),
+        "status_headline_verified": _("Everything is healthy."),
+        "status_headline_failed": _("Some records need a steward's attention."),
+        "status_headline_unverified": _("Some records could not be checked."),
+        "status_headline_empty": _("This archive holds nothing yet."),
+        "status_detail_verified": _("Every stored record passed its most recent integrity check."),
+        "status_detail_failed": _("One or more records did not pass their integrity check."),
+        "status_detail_unverified": _(
+            "At least one record package declares no files to verify, so it could not be checked. That is not a failure, and it is not a pass either."
+        ),
+        "status_detail_empty": _(
+            "There is no record package here to check, so no integrity check has run. An empty archive is not a verified one."
+        ),
+        "status_detail_counts": _(
+            "{passed} of {total} record package(s) passed every integrity check ({files} file checksum(s) verified)."
+        ),
+        "status_headline_error": _("Status check failed."),
+        "status_detail_error": _("An integrity check could not be completed."),
+        "status_machine_readable": _("Machine-readable health is at /healthz."),
         "skip_link": _("Skip to main content"),
         # Rendered on every page whose locale is TranslationReview.DRAFTED. The
         # string itself is in the same unreviewed catalogs it describes, which is

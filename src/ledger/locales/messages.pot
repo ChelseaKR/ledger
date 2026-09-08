@@ -90,13 +90,24 @@ msgid ""
 "yourself if you want it removed."
 msgstr ""
 
+msgid "An integrity check could not be completed."
+msgstr ""
+
 msgid "Apply dates"
+msgstr ""
+
+msgid "Archive status"
 msgstr ""
 
 msgid "Are you named in this record and object to it? Tell a steward"
 msgstr ""
 
 msgid "Are you the contributor? Manage or withdraw your consent"
+msgstr ""
+
+msgid ""
+"At least one record package declares no files to verify, so it could not "
+"be checked. That is not a failure, and it is not a pass either."
 msgstr ""
 
 msgid "Attach a file (optional)"
@@ -300,6 +311,12 @@ msgid ""
 "and the outcome."
 msgstr ""
 
+msgid "Every stored record passed its most recent integrity check."
+msgstr ""
+
+msgid "Everything is healthy."
+msgstr ""
+
 msgid "Field"
 msgstr ""
 
@@ -383,6 +400,9 @@ msgstr ""
 msgid "Load my submission"
 msgstr ""
 
+msgid "Machine-readable health is at /healthz."
+msgstr ""
+
 msgid "Mark resolved"
 msgstr ""
 
@@ -446,6 +466,9 @@ msgstr ""
 msgid ""
 "One line shown in listings, search results, and the feed. Anyone who can "
 "see this record will see this summary."
+msgstr ""
+
+msgid "One or more records did not pass their integrity check."
 msgstr ""
 
 msgid ""
@@ -648,6 +671,12 @@ msgstr ""
 msgid "Some parts of this record are not shown"
 msgstr ""
 
+msgid "Some records could not be checked."
+msgstr ""
+
+msgid "Some records need a steward's attention."
+msgstr ""
+
 msgid "Sort by:"
 msgstr ""
 
@@ -656,6 +685,9 @@ msgid "Spanning {earliest} to {latest}."
 msgstr ""
 
 msgid "Status"
+msgstr ""
+
+msgid "Status check failed."
 msgstr ""
 
 #, python-brace-format
@@ -726,6 +758,14 @@ msgid "The takedown is confirmed at every storage location."
 msgstr ""
 
 msgid "There are no public records yet."
+msgstr ""
+
+msgid ""
+"There is no record package here to check, so no integrity check has run. "
+"An empty archive is not a verified one."
+msgstr ""
+
+msgid "This archive holds nothing yet."
 msgstr ""
 
 msgid ""
@@ -982,6 +1022,12 @@ msgstr ""
 
 #, python-brace-format
 msgid "{count} record(s) name no place and are not shown here."
+msgstr ""
+
+#, python-brace-format
+msgid ""
+"{passed} of {total} record package(s) passed every integrity check "
+"({files} file checksum(s) verified)."
 msgstr ""
 
 #, python-brace-format

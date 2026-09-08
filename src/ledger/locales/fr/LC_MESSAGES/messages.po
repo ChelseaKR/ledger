@@ -121,8 +121,14 @@ msgstr ""
 "chaque élément et modifiez vous-même votre récit si vous souhaitez le "
 "retirer."
 
+msgid "An integrity check could not be completed."
+msgstr "Une vérification d’intégrité n’a pas pu être menée à terme."
+
 msgid "Apply dates"
 msgstr "Appliquer les dates"
+
+msgid "Archive status"
+msgstr "État de l’archive"
 
 msgid "Are you named in this record and object to it? Tell a steward"
 msgstr ""
@@ -131,6 +137,14 @@ msgstr ""
 
 msgid "Are you the contributor? Manage or withdraw your consent"
 msgstr "Êtes-vous le contributeur ? Gérez ou retirez votre consentement"
+
+msgid ""
+"At least one record package declares no files to verify, so it could not "
+"be checked. That is not a failure, and it is not a pass either."
+msgstr ""
+"Au moins un paquet d’enregistrement ne déclare aucun fichier à vérifier ; "
+"il n’a donc pas pu être contrôlé. Ce n’est pas un échec, et ce n’est pas "
+"non plus une réussite."
 
 msgid "Attach a file (optional)"
 msgstr "Joindre un fichier (facultatif)"
@@ -343,6 +357,14 @@ msgstr ""
 "journal ne contient aucune identité de contributeur ni valeur scellée — "
 "seulement ce qui s’est passé, qui a agi et le résultat."
 
+msgid "Every stored record passed its most recent integrity check."
+msgstr ""
+"Chaque enregistrement conservé a réussi sa dernière vérification "
+"d’intégrité."
+
+msgid "Everything is healthy."
+msgstr "Tout est en bon état."
+
 msgid "Field"
 msgstr "Champ"
 
@@ -444,6 +466,9 @@ msgstr "Enregistrements liés"
 msgid "Load my submission"
 msgstr "Charger mon envoi"
 
+msgid "Machine-readable health is at /healthz."
+msgstr "L’état lisible par machine se trouve à /healthz."
+
 msgid "Mark resolved"
 msgstr "Marquer comme résolu"
 
@@ -510,6 +535,11 @@ msgid ""
 msgstr ""
 "Une ligne affichée dans les listes, les résultats de recherche et le "
 "flux. Quiconque peut voir cet enregistrement verra ce résumé."
+
+msgid "One or more records did not pass their integrity check."
+msgstr ""
+"Un ou plusieurs enregistrements n’ont pas réussi leur vérification "
+"d’intégrité."
 
 msgid ""
 "Only a steward with explicit permission can ever see this. It is "
@@ -729,6 +759,12 @@ msgstr ""
 msgid "Some parts of this record are not shown"
 msgstr "Certaines parties de cet enregistrement ne sont pas affichées"
 
+msgid "Some records could not be checked."
+msgstr "Certains enregistrements n’ont pas pu être vérifiés."
+
+msgid "Some records need a steward's attention."
+msgstr "Certains enregistrements demandent l’attention d’un·e responsable."
+
 msgid "Sort by:"
 msgstr "Trier par :"
 
@@ -738,6 +774,9 @@ msgstr "De {earliest} à {latest}."
 
 msgid "Status"
 msgstr "État"
+
+msgid "Status check failed."
+msgstr "La vérification de l’état a échoué."
 
 #, python-brace-format
 msgid "Status: {status}"
@@ -802,6 +841,17 @@ msgstr "Le retrait est confirmé sur chaque emplacement de stockage."
 
 msgid "There are no public records yet."
 msgstr "Il n’y a pas encore d’enregistrements publics."
+
+msgid ""
+"There is no record package here to check, so no integrity check has run. "
+"An empty archive is not a verified one."
+msgstr ""
+"Il n’y a ici aucun paquet d’enregistrement à contrôler, donc aucune "
+"vérification d’intégrité n’a été effectuée. Une archive vide n’est pas "
+"une archive vérifiée."
+
+msgid "This archive holds nothing yet."
+msgstr "Cette archive ne contient encore rien."
 
 msgid ""
 "This check looks for common patterns only. It finds some identifying "
@@ -1107,6 +1157,15 @@ msgstr "{count} enregistrement(s) sans date ne sont pas affiché(s) ici."
 #, python-brace-format
 msgid "{count} record(s) name no place and are not shown here."
 msgstr "{count} enregistrement(s) ne nommant aucun lieu ne sont pas affiché(s) ici."
+
+#, python-brace-format
+msgid ""
+"{passed} of {total} record package(s) passed every integrity check "
+"({files} file checksum(s) verified)."
+msgstr ""
+"{passed} paquet(s) d’enregistrement sur {total} ont réussi toutes les "
+"vérifications d’intégrité ({files} somme(s) de contrôle de fichier "
+"vérifiée(s))."
 
 #, python-brace-format
 msgid "{when} — superseded by {event}"

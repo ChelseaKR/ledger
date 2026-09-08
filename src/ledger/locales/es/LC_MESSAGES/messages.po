@@ -105,8 +105,14 @@ msgstr ""
 "dato(s) identificativo(s) a continuación. Nada se ha modificado: revisa "
 "cada uno y edita tu relato tú mismo/a si quieres quitarlo."
 
+msgid "An integrity check could not be completed."
+msgstr "No se pudo completar una comprobación de integridad."
+
 msgid "Apply dates"
 msgstr "Aplicar fechas"
+
+msgid "Archive status"
+msgstr "Estado del archivo"
 
 msgid "Are you named in this record and object to it? Tell a steward"
 msgstr ""
@@ -115,6 +121,14 @@ msgstr ""
 
 msgid "Are you the contributor? Manage or withdraw your consent"
 msgstr "¿Es usted el colaborador? Gestione o retire su consentimiento"
+
+msgid ""
+"At least one record package declares no files to verify, so it could not "
+"be checked. That is not a failure, and it is not a pass either."
+msgstr ""
+"Al menos un paquete de registro no declara ningún archivo que verificar, "
+"así que no se pudo comprobar. Eso no es un fallo, y tampoco es un "
+"resultado favorable."
 
 msgid "Attach a file (optional)"
 msgstr "Adjuntar un archivo (opcional)"
@@ -304,6 +318,14 @@ msgstr ""
 "Este registro no contiene ninguna identidad de colaborador ni valor "
 "sellado: solo qué ocurrió, quién actuó y el resultado."
 
+msgid "Every stored record passed its most recent integrity check."
+msgstr ""
+"Todos los registros almacenados superaron su comprobación de integridad "
+"más reciente."
+
+msgid "Everything is healthy."
+msgstr "Todo está en buen estado."
+
 msgid "File"
 msgstr "Archivo"
 
@@ -397,6 +419,9 @@ msgstr "Registros vinculados"
 msgid "Load my submission"
 msgstr "Cargar mi envío"
 
+msgid "Machine-readable health is at /healthz."
+msgstr "El estado legible por máquina está en /healthz."
+
 msgid "Mark resolved"
 msgstr "Marcar como resuelta"
 
@@ -460,6 +485,9 @@ msgid ""
 msgstr ""
 "Una línea que se muestra en los listados, los resultados de búsqueda y el"
 " canal. Cualquiera que pueda ver este registro verá este resumen."
+
+msgid "One or more records did not pass their integrity check."
+msgstr "Uno o más registros no superaron su comprobación de integridad."
 
 msgid ""
 "Only a steward with explicit permission can ever see this. It is "
@@ -656,6 +684,12 @@ msgstr "Algunas partes de este registro no están disponibles con su acceso actu
 msgid "Some parts of this record are not shown"
 msgstr "Algunas partes de este registro no se muestran"
 
+msgid "Some records could not be checked."
+msgstr "No se pudieron comprobar algunos registros."
+
+msgid "Some records need a steward's attention."
+msgstr "Algunos registros necesitan la atención de una persona responsable."
+
 msgid "Sort by:"
 msgstr "Ordenar por:"
 
@@ -665,6 +699,9 @@ msgstr "Desde {earliest} hasta {latest}."
 
 msgid "Status"
 msgstr "Estado"
+
+msgid "Status check failed."
+msgstr "La comprobación de estado falló."
 
 #, python-brace-format
 msgid "Status: {status}"
@@ -726,6 +763,17 @@ msgstr "La retirada está confirmada en todas las ubicaciones de almacenamiento.
 
 msgid "There are no public records yet."
 msgstr "Aún no hay registros públicos."
+
+msgid ""
+"There is no record package here to check, so no integrity check has run. "
+"An empty archive is not a verified one."
+msgstr ""
+"Aquí no hay ningún paquete de registro que comprobar, así que no se ha "
+"ejecutado ninguna comprobación de integridad. Un archivo vacío no es un "
+"archivo verificado."
+
+msgid "This archive holds nothing yet."
+msgstr "Este archivo todavía no contiene nada."
 
 msgid ""
 "This check looks for common patterns only. It finds some identifying "
@@ -996,6 +1044,15 @@ msgstr "{count} registro(s) no tienen fecha y no se muestran aquí."
 #, python-brace-format
 msgid "{count} record(s) name no place and are not shown here."
 msgstr "{count} registro(s) no nombran ningún lugar y no se muestran aquí."
+
+#, python-brace-format
+msgid ""
+"{passed} of {total} record package(s) passed every integrity check "
+"({files} file checksum(s) verified)."
+msgstr ""
+"{passed} de {total} paquete(s) de registro superaron todas las "
+"comprobaciones de integridad ({files} suma(s) de verificación de archivo "
+"comprobadas)."
 
 #, python-brace-format
 msgid "{when}, ref {ref}"

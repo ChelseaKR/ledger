@@ -93,14 +93,27 @@ msgstr ""
 "below. Nothing is changed — review each one and edit your account "
 "yourself if you want it removed."
 
+msgid "An integrity check could not be completed."
+msgstr "An integrity check could not be completed."
+
 msgid "Apply dates"
 msgstr "Apply dates"
+
+msgid "Archive status"
+msgstr "Archive status"
 
 msgid "Are you named in this record and object to it? Tell a steward"
 msgstr "Are you named in this record and object to it? Tell a steward"
 
 msgid "Are you the contributor? Manage or withdraw your consent"
 msgstr "Are you the contributor? Manage or withdraw your consent"
+
+msgid ""
+"At least one record package declares no files to verify, so it could not "
+"be checked. That is not a failure, and it is not a pass either."
+msgstr ""
+"At least one record package declares no files to verify, so it could not "
+"be checked. That is not a failure, and it is not a pass either."
 
 msgid "Attach a file (optional)"
 msgstr "Attach a file (optional)"
@@ -287,6 +300,12 @@ msgstr ""
 "no contributor identity or sealed value — only what happened, who acted, "
 "and the outcome."
 
+msgid "Every stored record passed its most recent integrity check."
+msgstr "Every stored record passed its most recent integrity check."
+
+msgid "Everything is healthy."
+msgstr "Everything is healthy."
+
 msgid "File"
 msgstr "File"
 
@@ -376,6 +395,9 @@ msgstr "Linked records"
 msgid "Load my submission"
 msgstr "Load my submission"
 
+msgid "Machine-readable health is at /healthz."
+msgstr "Machine-readable health is at /healthz."
+
 msgid "Mark resolved"
 msgstr "Mark resolved"
 
@@ -439,6 +461,9 @@ msgid ""
 msgstr ""
 "One line shown in listings, search results, and the feed. Anyone who can "
 "see this record will see this summary."
+
+msgid "One or more records did not pass their integrity check."
+msgstr "One or more records did not pass their integrity check."
 
 msgid ""
 "Only a steward with explicit permission can ever see this. It is "
@@ -630,6 +655,12 @@ msgstr "Some parts of this record are not available under your current access:"
 msgid "Some parts of this record are not shown"
 msgstr "Some parts of this record are not shown"
 
+msgid "Some records could not be checked."
+msgstr "Some records could not be checked."
+
+msgid "Some records need a steward's attention."
+msgstr "Some records need a steward's attention."
+
 msgid "Sort by:"
 msgstr "Sort by:"
 
@@ -639,6 +670,9 @@ msgstr "Spanning {earliest} to {latest}."
 
 msgid "Status"
 msgstr "Status"
+
+msgid "Status check failed."
+msgstr "Status check failed."
 
 #, python-brace-format
 msgid "Status: {status}"
@@ -700,6 +734,16 @@ msgstr "The takedown is confirmed at every storage location."
 
 msgid "There are no public records yet."
 msgstr "There are no public records yet."
+
+msgid ""
+"There is no record package here to check, so no integrity check has run. "
+"An empty archive is not a verified one."
+msgstr ""
+"There is no record package here to check, so no integrity check has run. "
+"An empty archive is not a verified one."
+
+msgid "This archive holds nothing yet."
+msgstr "This archive holds nothing yet."
 
 msgid ""
 "This check looks for common patterns only. It finds some identifying "
@@ -965,6 +1009,14 @@ msgstr "{count} record(s) carry no date and are not shown here."
 #, python-brace-format
 msgid "{count} record(s) name no place and are not shown here."
 msgstr "{count} record(s) name no place and are not shown here."
+
+#, python-brace-format
+msgid ""
+"{passed} of {total} record package(s) passed every integrity check "
+"({files} file checksum(s) verified)."
+msgstr ""
+"{passed} of {total} record package(s) passed every integrity check "
+"({files} file checksum(s) verified)."
 
 #, python-brace-format
 msgid "{when}, ref {ref}"
