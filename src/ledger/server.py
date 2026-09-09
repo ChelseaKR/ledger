@@ -2423,6 +2423,17 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
     # --- plain-language safety surface (user research P0-4) -----------------
 
     def _info_page(self, title: str, heading: str, paragraphs: list[str]) -> None:
+        """Render one of the three plain-language safety pages.
+
+        Callers pass strings that have already been resolved through
+        :mod:`ledger.i18n`, except the steward-authored config text, which this
+        project cannot translate: ``about``, ``operators``, ``contact``,
+        ``steward_vetting`` and ``consent_response_time`` are a particular
+        archive's own words, edited in its config. Every sentence *this project*
+        writes on these pages goes through the seam; ``tests/test_i18n_rtl.py``
+        holds that line by rendering each route under the pseudolocale and
+        asserting the only un-wrapped text left is the config's.
+        """
         lang = self._lang()
         body = "\n".join(f"    <p>{_esc(p)}</p>" for p in paragraphs if p)
         main_html = f"    <h1>{_esc(heading)}</h1>\n{body}"
@@ -2430,30 +2441,29 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
 
     def _handle_about(self) -> None:
         """``GET /about`` — who runs the archive and how it protects people."""
+        lang = self._lang()
         cfg = self._archive().config
         self._info_page(
-            "About",
-            f"About {cfg.archive_name}",
+            i18n.t(lang, "nav_about"),
+            i18n.t(lang, "about_heading", archive=cfg.archive_name),
             [
                 cfg.about,
-                "Who runs this archive: " + cfg.operators if cfg.operators else "",
-                "How to reach us: " + cfg.contact if cfg.contact else "",
+                i18n.t(lang, "about_operators", operators=cfg.operators) if cfg.operators else "",
+                i18n.t(lang, "about_contact", contact=cfg.contact) if cfg.contact else "",
             ],
         )
 
     def _handle_governance(self) -> None:
         """``GET /governance`` — how stewards are chosen and held accountable."""
+        lang = self._lang()
         cfg = self._archive().config
         self._info_page(
-            "Governance",
-            "Governance",
+            i18n.t(lang, "nav_governance"),
+            i18n.t(lang, "nav_governance"),
             [
                 cfg.steward_vetting,
-                "Stewards can read access-restricted content in order to do their work, "
-                + "but they can never see a contributor's sealed identity, and content "
-                + "sealed with the 'sealed' policy is restricted from everyone — including "
-                + "stewards. Every steward action records who acted and why.",
-                "Consent and takedown requests: " + cfg.consent_response_time
+                i18n.t(lang, "governance_steward_powers"),
+                i18n.t(lang, "governance_consent_window", window=cfg.consent_response_time)
                 if cfg.consent_response_time
                 else "",
             ],
@@ -2461,19 +2471,15 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
 
     def _handle_how_it_works(self) -> None:
         """``GET /how-it-works`` — plain-language explanation + how to contribute."""
+        lang = self._lang()
         self._info_page(
-            "How it works",
-            "How this protects you, and how to contribute",
+            i18n.t(lang, "nav_how_it_works"),
+            i18n.t(lang, "how_it_works_heading"),
             [
-                "You can publish a story while sealing the names, the location, or your "
-                + "own identity. Sealed parts are shown to you as 'withheld', never exposed.",
-                "Your identity as a contributor is stored separately and encrypted, and is "
-                + "shown on no page here — not even to a steward — unless you explicitly grant it.",
-                "You stay in control: from any record you can ask a steward to tighten access "
-                + "or take it down (see the 'Manage or withdraw consent' link on each record).",
-                "Contributing currently happens with a steward's help so your choices about "
-                + "what to seal are made deliberately. See the proof that we keep these promises "
-                + "at /proof.",
+                i18n.t(lang, "how_it_works_sealing"),
+                i18n.t(lang, "how_it_works_identity"),
+                i18n.t(lang, "how_it_works_control"),
+                i18n.t(lang, "how_it_works_contributing"),
             ],
         )
 

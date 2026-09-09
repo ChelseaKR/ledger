@@ -37,10 +37,14 @@ _VAULT_KEY = "0123456789abcdef0123456789abcdef0123456789a="
 
 
 def _server(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, allow_contributions: bool = False
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    allow_contributions: bool = False,
+    config: Config | None = None,
 ) -> Iterator[str]:
     monkeypatch.setenv("LEDGER_VAULT_KEY", _VAULT_KEY)
-    archive = Archive.init(Config.default("RTL Archive", tmp_path / "arc"))
+    archive = Archive.init(config or Config.default("RTL Archive", tmp_path / "arc"))
     httpd = make_server(archive, host="127.0.0.1", port=0, allow_contributions=allow_contributions)
     base = f"http://127.0.0.1:{int(httpd.server_address[1])}"
     sink = StringIO()
@@ -352,3 +356,136 @@ def test_the_shell_renders_no_english_prose_in_a_translated_page(
     assert 'href="/contribute"' in body, "the Contribute link is absent; this proves nothing"
     for english in ("Contribute", "Governance", "How it works", "Reference implementation"):
         assert english not in body, f"{english!r} was served untranslated on a {lang} page"
+
+
+# --- the same gate, one route further in: the safety-surface page bodies -----
+#
+# `/about`, `/governance` and `/how-it-works` are the plain-language pages an
+# at-risk contributor is sent to for *who runs this archive* and *how it protects
+# them* (user research P0-4, `config.Config`'s own comment on these fields). Every
+# sentence on all three used to be an English literal in `server.py`, so a reader
+# who asked for Arabic got the archive's safety promises in English under a
+# correctly translated footer.
+#
+# The gate above could not see it: its scope selector is the page **shell**, and
+# a shell rendered with `main_html=""` is blind to every page body by
+# construction. That is the same hole `/status` sat in until #208, and this is the
+# rest of #216.
+#
+# What may legitimately survive un-wrapped here is the steward-authored config
+# text: `Config.about` and `Config.steward_vetting` are passed through as
+# paragraphs, and they are a particular archive's own words, which this project
+# cannot translate. The fixture sets each to a distinct nonsense token so the
+# assertion can name exactly what is allowed to leak instead of subtracting a
+# paragraph of English prose and hoping. `operators`, `contact` and
+# `consent_response_time` are interpolated *into* seam strings, so they come back
+# inside the wrapper and never reach this set at all.
+
+#: config field -> the token this fixture puts in it.
+_CONFIG_SENTINELS = {
+    "about": "Zzqabouttext",
+    "steward_vetting": "Zzqvettingtext",
+    "operators": "Zzqoperatorstext",
+    "contact": "Zzqcontacttext",
+    "consent_response_time": "Zzqwindowtext",
+}
+
+#: route -> the sentinels that must appear un-wrapped in its `<main>`, verbatim.
+#: `/how-it-works` renders no config text at all, so its body must leak nothing.
+_SAFETY_PAGE_CONFIG_TEXT = {
+    "/about": ("Zzqabouttext",),
+    "/governance": ("Zzqvettingtext",),
+    "/how-it-works": (),
+}
+
+#: route -> how many seam-resolved strings its `<main>` must carry. A body that
+#: rendered nothing would satisfy the leak assertion over an empty set.
+_SAFETY_PAGE_SEAM_STRINGS = {"/about": 3, "/governance": 3, "/how-it-works": 5}
+
+
+@pytest.fixture
+def sentinel_base(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
+    """A server whose steward-authored config text is a set of unique tokens."""
+    config = Config.default("RTL Archive", tmp_path / "arc")
+    for name, token in _CONFIG_SENTINELS.items():
+        setattr(config, name, token)
+    yield from _server(tmp_path, monkeypatch, config=config)
+
+
+def _main_section(page: str) -> str:
+    """Just the `<main>` element: the shell is already gated by the tests above."""
+    start = page.index('<main id="main"')
+    return page[start : page.index("</main>", start)]
+
+
+@pytest.mark.parametrize("path", sorted(_SAFETY_PAGE_CONFIG_TEXT))
+def test_no_prose_reaches_a_safety_page_body_without_going_through_the_seam(
+    sentinel_base: str, monkeypatch: pytest.MonkeyPatch, path: str
+) -> None:
+    _install_pseudolocale(monkeypatch)
+    _status, page, _headers = _request(f"{sentinel_base}{path}?lang=en")
+    main = _main_section(page)
+
+    expected = set(_SAFETY_PAGE_CONFIG_TEXT[path])
+    words = _visible_unwrapped_words(main)
+    assert expected <= words, (
+        f"{path} does not carry the config text it is supposed to: expected "
+        f"{sorted(expected)}, found {sorted(words)}. An absence assertion over a "
+        "page that never contained the string proves nothing."
+    )
+
+    leaked = words - _INVARIANT_IN_EVERY_LANGUAGE - expected
+    assert leaked == set(), (
+        f"prose reached {path} without going through i18n.t: {sorted(leaked)}. "
+        "Route it through the gettext seam. Steward-authored config text is the "
+        "only thing this project may not translate, and it is named above."
+    )
+
+
+@pytest.mark.parametrize("path", sorted(_SAFETY_PAGE_SEAM_STRINGS))
+def test_the_safety_page_gate_is_looking_at_a_body_with_text_in_it(
+    sentinel_base: str, monkeypatch: pytest.MonkeyPatch, path: str
+) -> None:
+    """A body that rendered nothing would pass the assertion above over an empty set."""
+    _install_pseudolocale(monkeypatch)
+    _status, page, _headers = _request(f"{sentinel_base}{path}?lang=en")
+    main = _main_section(page)
+
+    expected = _SAFETY_PAGE_SEAM_STRINGS[path]
+    assert main.count(i18n.PSEUDO_PREFIX) == expected, (
+        f"{path} rendered {main.count(i18n.PSEUDO_PREFIX)} seam-resolved strings in "
+        f"<main>, expected {expected}"
+    )
+
+
+#: route -> (heading key, one body key), both of which must be answered by the
+#: catalog a reader asked for rather than falling back to the English source.
+_SAFETY_PAGE_KEYS = {
+    "/about": ("about_heading", "about_operators"),
+    "/governance": ("nav_governance", "governance_steward_powers"),
+    "/how-it-works": ("how_it_works_heading", "how_it_works_control"),
+}
+
+
+@pytest.mark.parametrize("path", sorted(_SAFETY_PAGE_KEYS))
+@pytest.mark.parametrize("lang", ["es", "fr", "ar"])
+def test_a_safety_page_is_answered_by_the_catalog_the_reader_asked_for(
+    sentinel_base: str, lang: str, path: str
+) -> None:
+    """The claim from the other end, against a real served page.
+
+    The pseudolocale tests prove every sentence goes through the seam; this proves
+    the catalogs answer for them. Both halves are needed: a msgid with no entry in
+    a catalog resolves to its English source through gettext's `fallback=True`, so
+    a page can be fully seam-routed and still entirely English.
+    """
+    _status, body, _headers = _request(f"{sentinel_base}{path}?lang={lang}")
+    heading_key, body_key = _SAFETY_PAGE_KEYS[path]
+    for key in (heading_key, body_key):
+        translated = i18n.t(
+            lang, key, archive="RTL Archive", operators=_CONFIG_SENTINELS["operators"]
+        )
+        english = i18n.t("en", key, archive="RTL Archive", operators=_CONFIG_SENTINELS["operators"])
+        assert translated != english, f"{key!r} is not translated in the {lang} catalog"
+        assert _esc(translated) in body, f"{key!r} was not served on the {lang} {path} page"
+        assert _esc(english) not in body, f"{key!r} was served in English on a {lang} page"

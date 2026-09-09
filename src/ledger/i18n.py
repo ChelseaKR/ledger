@@ -219,6 +219,38 @@ def _messages(translation: gettext.NullTranslations) -> dict[str, str]:
         "status_headline_error": _("Status check failed."),
         "status_detail_error": _("An integrity check could not be completed."),
         "status_machine_readable": _("Machine-readable health is at /healthz."),
+        # The three plain-language safety pages — /about, /governance,
+        # /how-it-works (user research P0-4). Every sentence on them used to be an
+        # English literal in ``server.py``, so a reader who came to find out who
+        # runs this archive and how it protects them got the answer in a language
+        # they may not read. Same defect as the page shell (#216) and /status
+        # (#208), one route further in again.
+        #
+        # What is NOT here, deliberately: ``Config.about``, ``operators``,
+        # ``contact``, ``steward_vetting`` and ``consent_response_time``. Those are
+        # a particular archive's own words, edited by its stewards, and this
+        # project cannot translate them. They are interpolated into the strings
+        # below, never replaced by them.
+        "about_heading": _("About {archive}"),
+        "about_operators": _("Who runs this archive: {operators}"),
+        "about_contact": _("How to reach us: {contact}"),
+        "governance_steward_powers": _(
+            "Stewards can read access-restricted content in order to do their work, but they can never see a contributor's sealed identity, and content sealed with the 'sealed' policy is restricted from everyone — including stewards. Every steward action records who acted and why."
+        ),
+        "governance_consent_window": _("Consent and takedown requests: {window}"),
+        "how_it_works_heading": _("How this protects you, and how to contribute"),
+        "how_it_works_sealing": _(
+            "You can publish a story while sealing the names, the location, or your own identity. Sealed parts are shown to you as 'withheld', never exposed."
+        ),
+        "how_it_works_identity": _(
+            "Your identity as a contributor is stored separately and encrypted, and is shown on no page here — not even to a steward — unless you explicitly grant it."
+        ),
+        "how_it_works_control": _(
+            "You stay in control: from any record you can ask a steward to tighten access or take it down (see the 'Manage or withdraw consent' link on each record)."
+        ),
+        "how_it_works_contributing": _(
+            "Contributing currently happens with a steward's help so your choices about what to seal are made deliberately. See the proof that we keep these promises at /proof."
+        ),
         "skip_link": _("Skip to main content"),
         # Rendered on every page whose locale is TranslationReview.DRAFTED. The
         # string itself is in the same unreviewed catalogs it describes, which is

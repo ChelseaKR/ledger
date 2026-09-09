@@ -49,6 +49,10 @@ msgstr ""
 msgid "About"
 msgstr ""
 
+#, python-brace-format
+msgid "About {archive}"
+msgstr ""
+
 msgid "Abuse — describes ongoing harm or mistreatment"
 msgstr ""
 
@@ -200,6 +204,10 @@ msgstr ""
 msgid "Comparing the current record with an earlier saved version. Record {id}."
 msgstr ""
 
+#, python-brace-format
+msgid "Consent and takedown requests: {window}"
+msgstr ""
+
 msgid "Consent tokens for the people named in this record"
 msgstr ""
 
@@ -229,6 +237,12 @@ msgid "Contribute"
 msgstr ""
 
 msgid "Contribute to the archive"
+msgstr ""
+
+msgid ""
+"Contributing currently happens with a steward's help so your choices "
+"about what to seal are made deliberately. See the proof that we keep "
+"these promises at /proof."
 msgstr ""
 
 msgid ""
@@ -348,6 +362,13 @@ msgid "How it works"
 msgstr ""
 
 msgid "How should this be shared?"
+msgstr ""
+
+msgid "How this protects you, and how to contribute"
+msgstr ""
+
+#, python-brace-format
+msgid "How to reach us: {contact}"
 msgstr ""
 
 msgid "How to reach you"
@@ -697,6 +718,13 @@ msgstr ""
 msgid "Steward console"
 msgstr ""
 
+msgid ""
+"Stewards can read access-restricted content in order to do their work, "
+"but they can never see a contributor's sealed identity, and content "
+"sealed with the 'sealed' policy is restricted from everyone — including "
+"stewards. Every steward action records who acted and why."
+msgstr ""
+
 #, python-brace-format
 msgid "Still pending at: {locations}."
 msgstr ""
@@ -866,6 +894,10 @@ msgid ""
 "together they let someone withdraw this submission:"
 msgstr ""
 
+#, python-brace-format
+msgid "Who runs this archive: {operators}"
+msgstr ""
+
 msgid "Withdraw a submission"
 msgstr ""
 
@@ -904,6 +936,11 @@ msgid ""
 msgstr ""
 
 msgid ""
+"You can publish a story while sealing the names, the location, or your "
+"own identity. Sealed parts are shown to you as 'withheld', never exposed."
+msgstr ""
+
+msgid ""
 "You can read access-restricted content to do your work, but content "
 "sealed with the 'sealed' policy — and every contributor's identity — is "
 "restricted even from you. Some records may be sealed above your access; "
@@ -918,6 +955,12 @@ msgid ""
 "anyone can read — copy them now:"
 msgstr ""
 
+msgid ""
+"You stay in control: from any record you can ask a steward to tighten "
+"access or take it down (see the 'Manage or withdraw consent' link on each"
+" record)."
+msgstr ""
+
 msgid "Your account"
 msgstr ""
 
@@ -928,6 +971,12 @@ msgid "Your code"
 msgstr ""
 
 msgid "Your contribution could not be saved right now. Please try again."
+msgstr ""
+
+msgid ""
+"Your identity as a contributor is stored separately and encrypted, and is"
+" shown on no page here — not even to a steward — unless you explicitly "
+"grant it."
 msgstr ""
 
 msgid "Your identity is never shown. Contributors control what is public."

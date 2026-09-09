@@ -68,6 +68,10 @@ msgstr "Un titre est requis."
 msgid "About"
 msgstr "À propos"
 
+#, python-brace-format
+msgid "About {archive}"
+msgstr "À propos de {archive}"
+
 msgid "Abuse — describes ongoing harm or mistreatment"
 msgstr "Maltraitance — décrit un préjudice ou de mauvais traitements continus"
 
@@ -238,6 +242,10 @@ msgstr ""
 "Comparaison de l’enregistrement actuel avec une version antérieure "
 "enregistrée. Enregistrement {id}."
 
+#, python-brace-format
+msgid "Consent and takedown requests: {window}"
+msgstr "Demandes de consentement et de retrait : {window}"
+
 msgid "Consent tokens for the people named in this record"
 msgstr "Jetons de consentement pour les personnes nommées dans cet enregistrement"
 
@@ -268,6 +276,15 @@ msgstr "Contribuer"
 
 msgid "Contribute to the archive"
 msgstr "Contribuer à l’archive"
+
+msgid ""
+"Contributing currently happens with a steward's help so your choices "
+"about what to seal are made deliberately. See the proof that we keep "
+"these promises at /proof."
+msgstr ""
+"Pour l’instant, contribuer se fait avec l’aide d’un·e responsable afin "
+"que vos choix sur ce qu’il faut sceller soient délibérés. Voyez la preuve "
+"que nous tenons ces promesses sur /proof."
 
 msgid ""
 "Contributions arrive sealed — nothing is visible until you publish it. "
@@ -399,6 +416,13 @@ msgstr "Comment ça marche"
 
 msgid "How should this be shared?"
 msgstr "Comment cela doit-il être partagé ?"
+
+msgid "How this protects you, and how to contribute"
+msgstr "Comment cela vous protège, et comment contribuer"
+
+#, python-brace-format
+msgid "How to reach us: {contact}"
+msgstr "Comment nous joindre : {contact}"
 
 msgid "How to reach you"
 msgstr "Comment vous joindre"
@@ -785,6 +809,18 @@ msgstr "État : {status}"
 msgid "Steward console"
 msgstr "Console de responsable"
 
+msgid ""
+"Stewards can read access-restricted content in order to do their work, "
+"but they can never see a contributor's sealed identity, and content "
+"sealed with the 'sealed' policy is restricted from everyone — including "
+"stewards. Every steward action records who acted and why."
+msgstr ""
+"Les responsables peuvent lire du contenu à accès restreint pour faire "
+"leur travail, mais ils ne peuvent jamais voir l’identité scellée d’un "
+"contributeur, et le contenu scellé par la politique « sealed » est "
+"restreint à tout le monde — y compris aux responsables. Chaque action "
+"d’un·e responsable enregistre qui a agi et pourquoi."
+
 #, python-brace-format
 msgid "Still pending at: {locations}."
 msgstr "Toujours en attente sur : {locations}."
@@ -972,6 +1008,10 @@ msgstr ""
 "même. Pour cela, vous aurez besoin des deux éléments suivants — gardez-"
 "les privés, car ensemble ils permettent de retirer cet envoi :"
 
+#, python-brace-format
+msgid "Who runs this archive: {operators}"
+msgstr "Qui gère cette archive : {operators}"
+
 msgid "Withdraw a submission"
 msgstr "Retirer un envoi"
 
@@ -1013,6 +1053,14 @@ msgstr ""
 " envoi et n’est pas public tant qu’un·e responsable ne l’a pas publié."
 
 msgid ""
+"You can publish a story while sealing the names, the location, or your "
+"own identity. Sealed parts are shown to you as 'withheld', never exposed."
+msgstr ""
+"Vous pouvez publier un récit tout en scellant les noms, le lieu ou votre "
+"propre identité. Les parties scellées vous sont montrées comme « retenues "
+"», jamais exposées."
+
+msgid ""
 "You can read access-restricted content to do your work, but content "
 "sealed with the 'sealed' policy — and every contributor's identity — is "
 "restricted even from you. Some records may be sealed above your access; "
@@ -1038,6 +1086,16 @@ msgstr ""
 " sont affichés qu’une fois et ne sont pas stockés sous une forme lisible "
 "— copiez-les maintenant :"
 
+msgid ""
+"You stay in control: from any record you can ask a steward to tighten "
+"access or take it down (see the 'Manage or withdraw consent' link on each"
+" record)."
+msgstr ""
+"Vous gardez le contrôle : depuis n’importe quel enregistrement, vous "
+"pouvez demander à un·e responsable de restreindre l’accès ou de le "
+"retirer (voyez le lien « Gérez ou retirez votre consentement » sur chaque "
+"enregistrement)."
+
 msgid "Your account"
 msgstr "Votre compte"
 
@@ -1051,6 +1109,15 @@ msgid "Your contribution could not be saved right now. Please try again."
 msgstr ""
 "Votre contribution n’a pas pu être enregistrée pour le moment. Veuillez "
 "réessayer."
+
+msgid ""
+"Your identity as a contributor is stored separately and encrypted, and is"
+" shown on no page here — not even to a steward — unless you explicitly "
+"grant it."
+msgstr ""
+"Votre identité de contributeur est conservée séparément et chiffrée, et "
+"n’apparaît sur aucune page ici — pas même pour un·e responsable — sauf si "
+"vous l’autorisez explicitement."
 
 msgid "Your identity is never shown. Contributors control what is public."
 msgstr ""
