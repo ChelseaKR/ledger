@@ -62,6 +62,10 @@ msgstr "العنوان مطلوب."
 msgid "About"
 msgstr "حول"
 
+#, python-brace-format
+msgid "About {archive}"
+msgstr "حول {archive}"
+
 msgid "Abuse — describes ongoing harm or mistreatment"
 msgstr "إساءة — يصف أذًى أو سوء معاملة مستمرًّا"
 
@@ -221,6 +225,10 @@ msgstr "المجتمع فقط — أعضاء موثوقون في هذا المج
 msgid "Comparing the current record with an earlier saved version. Record {id}."
 msgstr "مقارنة السجل الحالي بنسخة سابقة محفوظة. السجل {id}."
 
+#, python-brace-format
+msgid "Consent and takedown requests: {window}"
+msgstr "طلبات الموافقة والإزالة: {window}"
+
 msgid "Consent tokens for the people named in this record"
 msgstr "رموز الموافقة للأشخاص المذكورين في هذا السجل"
 
@@ -251,6 +259,14 @@ msgstr "ساهم"
 
 msgid "Contribute to the archive"
 msgstr "ساهم في الأرشيف"
+
+msgid ""
+"Contributing currently happens with a steward's help so your choices "
+"about what to seal are made deliberately. See the proof that we keep "
+"these promises at /proof."
+msgstr ""
+"تتم المساهمة حاليًا بمساعدة المشرف كي تُتخذ خياراتك بشأن ما تختمه بتروٍّ. "
+"اطّلع على إثبات وفائنا بهذه الوعود على /proof."
 
 msgid ""
 "Contributions arrive sealed — nothing is visible until you publish it. "
@@ -378,6 +394,13 @@ msgstr "كيف يعمل"
 
 msgid "How should this be shared?"
 msgstr "كيف ينبغي مشاركة هذا؟"
+
+msgid "How this protects you, and how to contribute"
+msgstr "كيف يحميك هذا، وكيف تساهم"
+
+#, python-brace-format
+msgid "How to reach us: {contact}"
+msgstr "كيفية التواصل معنا: {contact}"
 
 msgid "How to reach you"
 msgstr "كيفية الوصول إليك"
@@ -746,6 +769,16 @@ msgstr "الحالة: {status}"
 msgid "Steward console"
 msgstr "لوحة المشرف"
 
+msgid ""
+"Stewards can read access-restricted content in order to do their work, "
+"but they can never see a contributor's sealed identity, and content "
+"sealed with the 'sealed' policy is restricted from everyone — including "
+"stewards. Every steward action records who acted and why."
+msgstr ""
+"يمكن للمشرفين قراءة المحتوى المقيّد الوصول لأداء عملهم، لكنهم لا يرون "
+"أبدًا هوية المساهم المختومة، والمحتوى المختوم بسياسة «sealed» مقيّد عن "
+"الجميع — بمن فيهم المشرفون. ويُسجّل مع كل إجراء للمشرف من قام به ولماذا."
+
 #, python-brace-format
 msgid "Still pending at: {locations}."
 msgstr "ما زال معلقًا في: {locations}."
@@ -923,6 +956,10 @@ msgstr ""
 "ما دامت مساهمتك تنتظر المراجعة يمكنك سحبها بنفسك. للقيام بذلك ستحتاج إلى "
 "كلا هذين — أبقِهما خاصين، فمعًا يتيحان لأحدهم سحب هذه المساهمة:"
 
+#, python-brace-format
+msgid "Who runs this archive: {operators}"
+msgstr "من يدير هذا الأرشيف: {operators}"
+
 msgid "Withdraw a submission"
 msgstr "سحب مساهمة"
 
@@ -963,6 +1000,13 @@ msgstr ""
 "{accepted}. تُراجَع الملف مع بقية مساهمتك ولا يكون عامًا حتى ينشره مشرف."
 
 msgid ""
+"You can publish a story while sealing the names, the location, or your "
+"own identity. Sealed parts are shown to you as 'withheld', never exposed."
+msgstr ""
+"يمكنك نشر قصة مع ختم الأسماء أو الموقع أو هويتك أنت. وتُعرض عليك الأجزاء "
+"المختومة على أنها «محجوبة»، ولا تُكشف أبدًا."
+
+msgid ""
 "You can read access-restricted content to do your work, but content "
 "sealed with the 'sealed' policy — and every contributor's identity — is "
 "restricted even from you. Some records may be sealed above your access; "
@@ -984,6 +1028,14 @@ msgstr ""
 "على ذكر اسمه، وسيعامل المشرف اعتراضه على أنه مؤكّد. تُعرض هذه الرموز مرة "
 "واحدة فقط ولا تُخزَّن بصيغة يمكن لأي شخص قراءتها — انسخها الآن:"
 
+msgid ""
+"You stay in control: from any record you can ask a steward to tighten "
+"access or take it down (see the 'Manage or withdraw consent' link on each"
+" record)."
+msgstr ""
+"تبقى أنت من يتحكم: من أي سجل يمكنك أن تطلب من المشرف تشديد الوصول إليه أو "
+"إزالته (انظر رابط «أدِر موافقتك أو اسحبها» في كل سجل)."
+
 msgid "Your account"
 msgstr "حسابك"
 
@@ -995,6 +1047,14 @@ msgstr "رمزك"
 
 msgid "Your contribution could not be saved right now. Please try again."
 msgstr "تعذّر حفظ مساهمتك الآن. يرجى المحاولة مرة أخرى."
+
+msgid ""
+"Your identity as a contributor is stored separately and encrypted, and is"
+" shown on no page here — not even to a steward — unless you explicitly "
+"grant it."
+msgstr ""
+"تُخزَّن هويتك كمساهم بشكل منفصل ومُشفَّر، ولا تُعرض في أي صفحة هنا — ولا "
+"حتى للمشرف — إلا إذا منحت الإذن صراحةً."
 
 msgid "Your identity is never shown. Contributors control what is public."
 msgstr "لا تُعرض هويتك أبدًا. المساهمون يتحكمون بما هو عام."

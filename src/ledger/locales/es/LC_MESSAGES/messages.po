@@ -60,6 +60,10 @@ msgstr "Se requiere un título."
 msgid "About"
 msgstr "Acerca de"
 
+#, python-brace-format
+msgid "About {archive}"
+msgstr "Acerca de {archive}"
+
 msgid "Abuse — describes ongoing harm or mistreatment"
 msgstr "Abuso — describe daño o maltrato continuo"
 
@@ -239,6 +243,15 @@ msgid "Contribute to the archive"
 msgstr "Contribuir al archivo"
 
 msgid ""
+"Contributing currently happens with a steward's help so your choices "
+"about what to seal are made deliberately. See the proof that we keep "
+"these promises at /proof."
+msgstr ""
+"Por ahora, contribuir se hace con la ayuda de una persona responsable "
+"para que sus decisiones sobre qué sellar se tomen de forma deliberada. "
+"Vea la prueba de que cumplimos estas promesas en /proof."
+
+msgid ""
 "Contributions arrive sealed — nothing is visible until you publish it. "
 "Publishing opens a record to the visibility the contributor asked for; "
 "withholding holds it for revision. Every choice is recorded."
@@ -350,6 +363,13 @@ msgstr "Cómo funciona"
 
 msgid "How should this be shared?"
 msgstr "¿Cómo debería compartirse esto?"
+
+msgid "How this protects you, and how to contribute"
+msgstr "Cómo le protege esto y cómo contribuir"
+
+#, python-brace-format
+msgid "How to reach us: {contact}"
+msgstr "Cómo comunicarse con nosotros: {contact}"
 
 msgid "How to reach you"
 msgstr "Cómo localizarle"
@@ -710,6 +730,19 @@ msgstr "Estado: {status}"
 msgid "Steward console"
 msgstr "Consola de administración"
 
+msgid ""
+"Stewards can read access-restricted content in order to do their work, "
+"but they can never see a contributor's sealed identity, and content "
+"sealed with the 'sealed' policy is restricted from everyone — including "
+"stewards. Every steward action records who acted and why."
+msgstr ""
+"Las personas responsables pueden leer contenido de acceso restringido "
+"para hacer su trabajo, pero nunca pueden ver la identidad sellada de un "
+"colaborador, y el contenido sellado con la política «sealed» está "
+"restringido para todo el mundo, incluidas las propias personas "
+"responsables. Cada acción de una persona responsable registra quién actuó "
+"y por qué."
+
 #, python-brace-format
 msgid "Still pending at: {locations}."
 msgstr "Aún pendiente en: {locations}."
@@ -886,6 +919,10 @@ msgstr ""
 "mismo. Para ello necesitará ambos datos; manténgalos en privado, ya que "
 "juntos permiten retirar este envío:"
 
+#, python-brace-format
+msgid "Who runs this archive: {operators}"
+msgstr "Quién gestiona este archivo: {operators}"
+
 msgid "Withdraw a submission"
 msgstr "Retirar un envío"
 
@@ -927,6 +964,14 @@ msgstr ""
 "envío y no es público hasta que una persona responsable lo publique."
 
 msgid ""
+"You can publish a story while sealing the names, the location, or your "
+"own identity. Sealed parts are shown to you as 'withheld', never exposed."
+msgstr ""
+"Puede publicar una historia y sellar los nombres, el lugar o su propia "
+"identidad. Las partes selladas se le muestran como «retenidas», nunca se "
+"exponen."
+
+msgid ""
 "You can read access-restricted content to do your work, but content "
 "sealed with the 'sealed' policy — and every contributor's identity — is "
 "restricted even from you. Some records may be sealed above your access; "
@@ -949,6 +994,15 @@ msgstr "Su código"
 
 msgid "Your contribution could not be saved right now. Please try again."
 msgstr "No se pudo guardar su contribución en este momento. Inténtelo de nuevo."
+
+msgid ""
+"Your identity as a contributor is stored separately and encrypted, and is"
+" shown on no page here — not even to a steward — unless you explicitly "
+"grant it."
+msgstr ""
+"Su identidad como colaborador se almacena por separado y cifrada, y no se "
+"muestra en ninguna página de este sitio —ni siquiera a una persona "
+"responsable— salvo que usted lo autorice explícitamente."
 
 msgid "Your identity is never shown. Contributors control what is public."
 msgstr "Su identidad nunca se muestra. Los colaboradores controlan qué es público."
@@ -1078,6 +1132,10 @@ msgstr "Volver al registro"
 msgid "Comparing the current record with an earlier saved version. Record {id}."
 msgstr "Comparando el registro actual con una versión anterior guardada. Registro {id}."
 
+#, python-brace-format
+msgid "Consent and takedown requests: {window}"
+msgstr "Solicitudes de consentimiento y de retirada: {window}"
+
 msgid "Content warnings"
 msgstr "Advertencias de contenido"
 
@@ -1140,6 +1198,15 @@ msgstr "Ficha para una persona nombrada"
 
 msgid "You said this record names other people. Give each of them one of the tokens below, privately and in person where you can. Anyone who holds a token can object to being named and a steward will treat their objection as confirmed. These are shown only once and are not stored in a form anyone can read — copy them now:"
 msgstr "Dijiste que este registro nombra a otras personas. Entrega a cada una de ellas una de las fichas siguientes, en privado y en persona cuando puedas. Cualquiera que tenga una ficha puede oponerse a ser nombrado y un administrador tratará su objeción como confirmada. Se muestran una sola vez y no se guardan de forma legible para nadie — cópialas ahora:"
+
+msgid ""
+"You stay in control: from any record you can ask a steward to tighten "
+"access or take it down (see the 'Manage or withdraw consent' link on each"
+" record)."
+msgstr ""
+"Usted mantiene el control: desde cualquier registro puede pedir a una "
+"persona responsable que restrinja el acceso o lo retire (vea el enlace "
+"«Gestione o retire su consentimiento» en cada registro)."
 
 msgid "verified objection from a named subject (token confirmed)"
 msgstr "objeción verificada de una persona nombrada (ficha confirmada)"

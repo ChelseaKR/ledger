@@ -6,6 +6,28 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- **The three plain-language safety pages were English only, and the gate for that
+  was blind to them (#216).** `/about`, `/governance` and `/how-it-works` are where
+  an at-risk contributor is sent to find out who runs this archive and how it
+  protects them (user research P0-4). Every sentence on all three was an English
+  literal in `server.py`, so a reader who asked for Arabic got the archive's safety
+  promises in English under a correctly translated footer — the same defect #217
+  fixed in the page shell and #218 fixed on `/status`, one route further in again.
+  Ten msgids added, translated in all four catalogs, `make i18n-compile` run;
+  English output is unchanged, string for string.
+
+  The G9 pseudolocale gate #217 widened could not see it, and not by accident: its
+  scope selector renders the shell with an empty `<main>`, so it is blind to every
+  page body by construction. Each of the three routes now gets the same check
+  against its served `<main>` — strip the `⟦…⟧` spans and require what is left to be
+  nothing but the steward-authored config text ledger cannot translate. The fixture
+  sets `Config.about` and `Config.steward_vetting` to unique nonsense tokens so the
+  assertion names exactly what may survive, and a companion test pins how many
+  seam-resolved strings each body carries, so the leak assertion cannot pass over an
+  empty body. `docs/I18N.md`'s G9 row and scope note say which surfaces are covered
+  and that a green shell says nothing about a body.
+
 ### Added
 - **`/healthz` tells a steward when nothing was verified (#208, #205).** The #208
   sweep closed the vacuous fixity fold on `/status`, the hand-off runbook and
