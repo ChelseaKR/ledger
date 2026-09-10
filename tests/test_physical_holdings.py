@@ -879,3 +879,135 @@ def test_the_status_page_calls_a_shoebox_catalogue_what_it_is(physical_site: str
 def test_the_status_page_still_says_healthy_for_a_digital_archive(digital_site: str) -> None:
     _code, body = _get(digital_site, "/status")
     assert i18n.t("en", "status_headline_verified") in body
+
+
+# --- the steward's own surface ----------------------------------------------
+
+
+def test_browse_carries_the_holding_kind_through_the_catalog_index(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The browse path reads through a sqlite cache, not the record files.
+
+    A cache that stored a subset of the manifest would drop ``holding_kind`` and
+    every page built from browse would render a physical holding as an ordinary
+    record — a build-time model that the runtime never sees. It stores the manifest
+    text verbatim, and this is the assertion that says so.
+    """
+    archive = _archive(tmp_path / "arc", monkeypatch)
+    record = _physical_record()
+    archive.ingest({}, record, now=_NOW)
+    browsed = {r.record_id: r for r in archive.browse(anonymous(), now=_NOW)}
+    assert browsed[record.record_id].holding_kind is HoldingKind.PHYSICAL
+    assert browsed[record.record_id].physical is not None
+    assert browsed[record.record_id].physical.extent == "1 box, ~380 flyers"
+
+
+def test_the_cli_catalogues_a_shoebox_audits_it_and_attaches_a_scan(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Done-when 1, 2 and 3 through the surface a community archivist actually uses.
+
+    The audit line is the whole point of the feature in one row: ``n/a``, never
+    ``PASS``, with the denominators beside it so "0 failed" cannot be read as
+    "everything is fine".
+    """
+    from ledger import cli
+
+    monkeypatch.setenv("LEDGER_VAULT_KEY", _VAULT_KEY)
+    root = tmp_path / "arc"
+    assert cli.main(["init", "--root", str(root), "--name", "Shoebox"]) == 0
+    capsys.readouterr()
+
+    assert (
+        cli.main(
+            [
+                "ingest",
+                "--root",
+                str(root),
+                "--title",
+                "Four boxes, 1994 clinic defence",
+                "--description",
+                "Leaflets and a newsletter run.",
+                "--physical",
+                "flyer",
+                "--extent",
+                "1 box, ~380 flyers",
+                "--custodian",
+                _SENTINEL_CUSTODIAN,
+                "--now",
+                _NOW,
+            ]
+        )
+        == 0
+    )
+    captured = capsys.readouterr()
+    record_id = next(
+        line.split(": ", 1)[1] for line in captured.out.splitlines() if line.startswith("record_id")
+    )
+    assert "not-applicable" in captured.err
+    assert _SENTINEL_CUSTODIAN not in captured.out, "the custodian is never echoed back"
+
+    assert cli.main(["audit", "--root", str(root)]) == 0
+    audit = capsys.readouterr().out
+    assert f"n/a\t{record_id}" in audit
+    assert "PASS\t" + record_id not in audit
+    assert "NOTHING TO VERIFY: 1 bag(s) audited, 0 verified, 1 not applicable" in audit
+
+    scan = tmp_path / "page-01.txt"
+    scan.write_text("a photographed page\n", encoding="utf-8")
+    assert (
+        cli.main(
+            [
+                "surrogate",
+                "--root",
+                str(root),
+                "--id",
+                record_id,
+                "--file",
+                str(scan),
+                "--now",
+                _NOW,
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+
+    # And after a scan is attached the row still refuses to say PASS.
+    assert cli.main(["audit", "--root", str(root)]) == 0
+    after = capsys.readouterr().out
+    assert f"n/a\t{record_id}" in after
+    assert "physical_with_surrogate" in after
+
+
+def test_the_cli_refuses_a_custodian_with_no_physical_declaration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Silently dropping a custodian the steward typed loses exactly the datum this
+    feature exists to protect, so it is a refusal rather than a shrug."""
+    from ledger import cli
+
+    monkeypatch.setenv("LEDGER_VAULT_KEY", _VAULT_KEY)
+    root = tmp_path / "arc"
+    assert cli.main(["init", "--root", str(root), "--name", "Shoebox"]) == 0
+    capsys.readouterr()
+    code = cli.main(
+        [
+            "ingest",
+            "--root",
+            str(root),
+            "--title",
+            "A record",
+            "--custodian",
+            _SENTINEL_CUSTODIAN,
+            "--now",
+            _NOW,
+        ]
+    )
+    assert code != 0
+    captured = capsys.readouterr()
+    assert "pass --physical FORMAT" in captured.err
+    # The refusal names the flags without echoing the value it refused to store.
+    assert _SENTINEL_CUSTODIAN not in captured.err
+    assert _SENTINEL_CUSTODIAN not in captured.out

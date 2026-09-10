@@ -20,10 +20,34 @@ Governance Standard without restating that standard.
 | Backups | inherits the highest tier, L3 | encrypted snapshot of the archive and encrypted vault | at most one backup cycle beyond the operator's live-data policy; reference schedule keeps 14 nightly copies | `ledger backup --keep N` plus matching off-box rotation |
 
 The baseline sensitive inventory is credentials, vault/backup keys, grant tokens,
-direct contact or identity, precise location, sealed payload/field values, and any
-combination that can reveal contributor identity. Those values must not enter
-logs, filenames, public errors, metrics, or unencrypted backups. The no-outing
-sentinel tests are the enforcement of that classification at output boundaries.
+direct contact or identity, precise location, sealed payload/field values,
+**custody of a physical holding** (`custody.location` and `custody.custodian` —
+see below), and any combination that can reveal contributor identity. Those values
+must not enter logs, filenames, public errors, metrics, or unencrypted backups. The
+no-outing sentinel tests are the enforcement of that classification at output
+boundaries.
+
+### Custody of a physical holding (#188, ADR 0019)
+
+A physical-holding record catalogues an object the archive does **not** hold a copy
+of — a box of flyers in somebody's flat. The person keeping it is often the most
+exposed person in the chain, and this is the one place the no-outing rule extends
+from *authorship* to *possession*.
+
+Custody is therefore **not** a store of its own and not a structured block with a
+disclosure path of its own. It is two ordinary sealed `Field`s on the record,
+`custody.location` and `custody.custodian`, defaulting to `SEALED_UNTIL` with no
+date. They are classified exactly as any other sealed field value: L3, gated by the
+one disclosure decision point, encrypted at rest if given the absolute `SEALED`
+policy, removable by the redaction verb, and covered by the existing sentinel
+tests. There is no new output boundary to enforce, which is the whole reason for
+carrying them this way.
+
+What every viewer *is* told is a three-state word — `CustodyState`:
+recorded-and-shown, recorded-and-withheld, or not-recorded. That word says whether a
+fact was recorded; it never says what the fact is. The third state is deliberately
+not collapsed into the second: rendering "not recorded" as "withheld" would publish
+*somebody is looking after this* over an object nobody is looking after.
 
 ## Provenance and lineage
 
