@@ -44,7 +44,8 @@ from ledger.bag import validate_bag, write_bag
 from ledger.export import records_csv
 from ledger.fixity import hash_file
 from ledger.ingest import Archive
-from ledger.models import DisclosedRecord, Grant, HashAlgo, now_iso
+from ledger.models import DisclosedRecord, Grant, HashAlgo, HoldingKind, now_iso
+from ledger.print_edition import CUSTODY_SENTENCES
 
 _BAGS_DIRNAME = "bags"
 _CHECKSUMS_FILENAME = "CHECKSUMS.sha256"
@@ -93,6 +94,35 @@ def _record_page_html(record: DisclosedRecord, *, lang: str) -> str:
         f"see <code>bags/{_esc(record.record_id)}/data/{_esc(p.filename)}</code></li>"
         for p in record.payloads
     )
+    # #188. Without this block a physical holding exports as a record whose Files
+    # section reads "No files disclosed." — which tells the reader that files exist
+    # and are being withheld from them, when the truth is that there are none and
+    # never were. A courier package is an offline copy somebody carries across a
+    # border; it has to say what it is not carrying.
+    holding_block = ""
+    if record.holding_kind.is_physical and record.physical is not None:
+        rows = [("Format", record.physical.format.value.replace("-", " "))]
+        if record.physical.extent:
+            rows.append(("Extent", record.physical.extent))
+        if record.physical.condition:
+            rows.append(("Condition", record.physical.condition))
+        rows.append(("Custody", CUSTODY_SENTENCES[record.custody_state]))
+        holding_rows = "".join(
+            f'<tr><th scope="row">{_esc(k)}</th><td>{_esc(v)}</td></tr>' for k, v in rows
+        )
+        holding_block = (
+            '<section aria-labelledby="holding-heading">\n'
+            '<h2 id="holding-heading">Physical holding</h2>\n'
+            "<p>This entry describes an object the archive does not hold a copy of. "
+            "Its integrity cannot be checked from this package or from anywhere else.</p>\n"
+            f"<table><caption>Physical description</caption><tbody>{holding_rows}"
+            "</tbody></table>\n</section>\n"
+        )
+    no_files = (
+        "<li>Not digitized — there are no files, and none are being withheld.</li>"
+        if record.holding_kind is HoldingKind.PHYSICAL
+        else "<li>No files disclosed.</li>"
+    )
     withheld_items = "".join(f"<li>{_esc(r.name)}: {_esc(r.reason)}</li>" for r in record.withheld)
     withheld_block = (
         f'<section aria-labelledby="withheld-heading">\n'
@@ -111,10 +141,11 @@ def _record_page_html(record: DisclosedRecord, *, lang: str) -> str:
         '<header><p><a href="../index.html">&larr; Back to index</a></p></header>\n'
         f'<main id="main" tabindex="-1">\n<h1>{_esc(record.title)}</h1>\n'
         f"{cw_block}"
+        f"{holding_block}"
         f"<table><caption>Descriptive metadata</caption><tbody>{dc_rows}{field_rows}"
         f"</tbody></table>\n"
         f'<section aria-labelledby="files-heading"><h2 id="files-heading">Files</h2>'
-        f"<ul>{payload_items or '<li>No files disclosed.</li>'}</ul></section>\n"
+        f"<ul>{payload_items or no_files}</ul></section>\n"
         f"{withheld_block}"
         "</main>\n</body>\n</html>\n"
     )
@@ -123,7 +154,10 @@ def _record_page_html(record: DisclosedRecord, *, lang: str) -> str:
 def _index_html(records: Sequence[DisclosedRecord], *, archive_name: str, lang: str) -> str:
     items = "".join(
         f'<li><a href="records/{_esc(r.record_id)}.html">{_esc(r.title)}</a>'
-        f"{' <em>(content warning)</em>' if r.content_warnings else ''}</li>"
+        f"{' <em>(content warning)</em>' if r.content_warnings else ''}"
+        # #188: scannable from the index, so a recipient can see at a glance which
+        # entries the drive actually carries and which only describe something.
+        f"{' <em>(not digitized)</em>' if r.holding_kind.is_physical else ''}</li>"
         for r in records
     )
     return (

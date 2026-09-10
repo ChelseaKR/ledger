@@ -117,6 +117,12 @@ class VerifyReport:
     bag_results: list[tuple[str, bool, int]]
     failures: int
     status: FixityStatus = FixityStatus.FAILED
+    #: How many of ``bag_results`` describe a PHYSICAL holding (#188). Those bags
+    #: hold a catalogue entry and no content, so their ``ok`` is a statement about
+    #: the entry: a backup of forty undigitized zines is a complete backup of
+    #: everything ledger ever had, and it is not a backup of the zines. Defaulted so
+    #: every existing construction site keeps working and keeps meaning what it did.
+    physical_bags: int = 0
 
     @property
     def verified_bags(self) -> int:
@@ -293,10 +299,13 @@ def verify_backup(backup_root: Path) -> VerifyReport:
     results: list[tuple[str, bool, int]] = []
     failures = 0
     statuses: list[FixityStatus] = []
-    for name, report in archive.audit_fixity():
+    physical = 0
+    for name, kind, report in archive.audit_holdings():
         ok = report.ok
         if not ok:
             failures += 1
+        if kind.is_physical:
+            physical += 1
         statuses.append(report.status)
         results.append((name, ok, report.checked))
     # `failures == 0` is vacuously true over a backup that contained nothing, which is
@@ -317,6 +326,7 @@ def verify_backup(backup_root: Path) -> VerifyReport:
         bag_results=results,
         failures=failures,
         status=status,
+        physical_bags=physical,
     )
 
 

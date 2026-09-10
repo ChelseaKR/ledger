@@ -18,7 +18,16 @@ from urllib.parse import parse_qsl, quote, urlencode, urlsplit
 
 from ledger import i18n, pagination, search, transparency
 from ledger.metadata.pid import is_pid
-from ledger.models import AccessPolicy, DisclosedRecord, Grant, PayloadFile, Record, TranscriptCue
+from ledger.models import (
+    AccessPolicy,
+    CustodyState,
+    DisclosedRecord,
+    Grant,
+    HoldingKind,
+    PayloadFile,
+    Record,
+    TranscriptCue,
+)
 
 # The site's one stylesheet, linked from every page.
 _STYLESHEET_HREF: str = "/static/app.css"
@@ -208,6 +217,87 @@ def _result_detail(record: DisclosedRecord, query: str) -> str:
     return _esc(_summary_text(record))
 
 
+def holding_badge_text(record: DisclosedRecord, *, lang: str) -> str:
+    """The browse badge for a physical holding, or ``""`` for a digital record.
+
+    "Physical · not digitized" is the sentence #188 asks browse to show, and the
+    reason it is a *badge* rather than a footnote is that a reader scanning a list
+    of forty titles has to be able to see, without opening anything, which of them
+    the archive actually holds a copy of. A record with a partial scan gets a
+    different badge for the same reason: "there is a photo of one page of this" and
+    "the archive has this" are different promises and must not share a word.
+
+    Returns the plain (unescaped) label; the caller escapes at interpolation, like
+    every other text in this module.
+    """
+    if record.holding_kind is HoldingKind.PHYSICAL:
+        return i18n.t(lang, "holding_physical_badge")
+    if record.holding_kind is HoldingKind.PHYSICAL_WITH_SURROGATE:
+        return i18n.t(lang, "holding_surrogate_badge")
+    return ""
+
+
+def _holding_badge_html(record: DisclosedRecord, *, lang: str) -> str:
+    """The badge as markup, or ``""``. Escaped here so no call site can forget."""
+    label = holding_badge_text(record, lang=lang)
+    return f' <span class="badge holding">{_esc(label)}</span>' if label else ""
+
+
+def _custody_sentence(record: DisclosedRecord, *, lang: str) -> str:
+    """The plain-language custody state word for ``record`` (three states).
+
+    Never the custodian, never the location — those are the sealed ``custody.*``
+    field values and are disclosed, if at all, by the field loop in
+    :func:`ledger.access.policy.disclose` like any other sealed field. This says
+    only *whether* somebody wrote the fact down, which is the part a reader needs
+    in order to know whether the catalogue is complete.
+    """
+    return {
+        CustodyState.DISCLOSED: i18n.t(lang, "custody_disclosed"),
+        CustodyState.WITHHELD: i18n.t(lang, "custody_withheld"),
+        CustodyState.NOT_RECORDED: i18n.t(lang, "custody_not_recorded"),
+    }[record.custody_state]
+
+
+def _holding_section_html(record: DisclosedRecord, *, lang: str) -> str:
+    """The "Physical holding" section of a record page, or ``""`` if digital.
+
+    Renders the format, the extent and the condition — the description that makes
+    an object findable — plus the custody state word and, always, the sentence
+    saying ledger cannot check the object's integrity. That last line is not
+    decoration: without it the page looks exactly like a record whose files
+    verified, which is the confusion #188 exists to prevent.
+    """
+    if not record.holding_kind.is_physical or record.physical is None:
+        return ""
+    holding = record.physical
+    rows = [
+        (i18n.t(lang, "holding_format"), i18n.physical_format_label(lang, holding.format.value))
+    ]
+    if holding.extent:
+        rows.append((i18n.t(lang, "holding_extent"), holding.extent))
+    if holding.condition:
+        rows.append((i18n.t(lang, "holding_condition"), holding.condition))
+    rows.append((i18n.t(lang, "holding_custody"), _custody_sentence(record, lang=lang)))
+    body = "\n".join(
+        f'      <div class="field"><dt>{_esc(label)}</dt><dd>{_esc(value)}</dd></div>'
+        for label, value in rows
+    )
+    notes = [i18n.t(lang, "holding_no_fixity")]
+    if record.holding_kind is HoldingKind.PHYSICAL_WITH_SURROGATE:
+        notes.append(i18n.t(lang, "holding_surrogate_note"))
+    notes_html = "\n".join(f'      <p class="holding-note">{_esc(n)}</p>' for n in notes)
+    return (
+        '    <section class="holding" aria-labelledby="holding-heading">\n'
+        f'      <h2 id="holding-heading">{_esc(i18n.t(lang, "holding_heading"))}</h2>\n'
+        "      <dl>\n"
+        f"{body}\n"
+        "      </dl>\n"
+        f"{notes_html}\n"
+        "    </section>"
+    )
+
+
 def _records_list_html(
     records: Iterable[DisclosedRecord], *, query: str = "", lang: str = "en"
 ) -> str:
@@ -226,11 +316,15 @@ def _records_list_html(
     for record in records:
         detail = _result_detail(record, query)
         warn = f' <span class="badge">{badge}</span>' if record.content_warnings else ""
+        # #188: whether the archive holds a copy of the thing is scannable from the
+        # list, beside the content-warning badge and in the same textual form —
+        # never colour or an icon alone (accessibility).
+        holding = _holding_badge_html(record, lang=lang)
         summary_html = f'<p class="result-detail">{detail}</p>' if detail else ""
         items.append(
             "    <li>\n"
             f'      <h3><a href="/record/{quote(record.record_id)}">'
-            f"{_esc(record.title)}</a>{warn}</h3>\n"
+            f"{_esc(record.title)}</a>{warn}{holding}</h3>\n"
             f"      {summary_html}\n"
             "    </li>"
         )
@@ -266,11 +360,17 @@ def _records_table_html(
     for record in records:
         warn = yes if record.content_warnings else no
         detail = _result_detail(record, query)
+        # The badge goes in the existing summary cell rather than a fourth column:
+        # the two views have to stay equivalent, and a column the list view has no
+        # counterpart for would break that. Rendered as a sentence, so a screen
+        # reader hears it as part of the record's description.
+        badge_text = holding_badge_text(record, lang=lang)
+        holding = f' <span class="badge holding">{_esc(badge_text)}</span>' if badge_text else ""
         rows.append(
             "      <tr>\n"
             f'        <td><a href="/record/{quote(record.record_id)}">'
             f"{_esc(record.title)}</a></td>\n"
-            f"        <td>{detail}</td>\n"
+            f"        <td>{detail}{holding}</td>\n"
             f"        <td>{warn}</td>\n"
             "      </tr>"
         )
@@ -1014,6 +1114,13 @@ def _record_main_html(
         parts.append(
             f'    <p id="content" class="visually-hidden">{_esc(i18n.t(lang, "rec_content_sr"))}</p>'
         )
+
+    # #188: the physical holding, above the descriptive fields, because "the
+    # archive does not hold a copy of this" is the first thing a reader has to know
+    # about the record — before they start reading it as though it were digitized.
+    # Extended from a one-element generator rather than an `if`, so this composition
+    # step adds no branch to a function already at the repo's complexity ceiling.
+    parts.extend(s for s in (_holding_section_html(record, lang=lang),) if s)
 
     # Disclosed descriptive fields.
     if record.fields:

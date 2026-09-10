@@ -28,7 +28,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from ledger.models import FixityResult, HashAlgo
+from ledger.models import FixityResult, HashAlgo, HoldingKind
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from hashlib import _Hash
@@ -126,6 +126,21 @@ class FixityStatus(StrEnum):
     FAILED = "failed"
     #: Nothing was checked. Not a pass, not a failure, and never rendered as either.
     UNVERIFIED = "could-not-verify"
+    #: There was nothing to check, **by declaration** — a physical holding, whose
+    #: content is a box in somebody's flat and whose bytes ledger has never had
+    #: (#188). Distinct from :data:`UNVERIFIED`, and the distinction is the whole
+    #: point: "nothing was checked" is an alarm a steward must act on, and "there is
+    #: nothing here to check" is the expected, healthy state of a catalogue entry.
+    #: Folding them together would either alarm on every shoebox forever, which
+    #: retires the alarm, or silence the alarm where it matters.
+    #:
+    #: **Only** :func:`holding_status` and :func:`overall_holding_status` return
+    #: this. :attr:`AuditReport.status` and :func:`overall_status` cannot: they
+    #: answer "did the bytes on disk match their manifest", which is a question
+    #: about stored bytes and has no not-applicable answer.
+    #: ``tests/test_physical_holdings.py`` pins that separation, because the value
+    #: of a fourth state is entirely in nothing else learning to return it.
+    NOT_APPLICABLE = "not-applicable"
 
 
 @dataclass(frozen=True)
@@ -227,3 +242,76 @@ def overall_status(reports: Iterable[AuditReport]) -> FixityStatus:
     if any(status is FixityStatus.UNVERIFIED for status in statuses):
         return FixityStatus.UNVERIFIED
     return FixityStatus.VERIFIED
+
+
+def holding_status(kind: HoldingKind, report: AuditReport) -> FixityStatus:
+    """The verdict about one record's **content**, given what kind of holding it is.
+
+    :attr:`AuditReport.status` answers a narrower question than a steward is
+    asking. It says whether the bytes in a bag matched their manifest — and a
+    physical holding's bag is full of bytes: ``record.json``, ``premis.json``, the
+    Dublin Core sidecar, the manifests themselves. Those verify, so the bag
+    verifies, so before #188 an undigitized shoebox printed ``PASS`` in the same
+    column as a fully re-hashed video, which is exactly the reading the issue was
+    filed to prevent.
+
+    So the content verdict is a function of two things, not one:
+
+    * a **failure always dominates**. A physical record whose ``record.json`` has
+      been altered is a real, actionable failure and must not be filed under "not
+      applicable" — that would make ``not_applicable`` a place to hide damage,
+      which is the same defect wearing the opposite mask.
+    * otherwise a :attr:`~ledger.models.HoldingKind.is_physical` holding is
+      :data:`FixityStatus.NOT_APPLICABLE`. Including
+      :data:`~ledger.models.HoldingKind.PHYSICAL_WITH_SURROGATE`: a verified phone
+      photo of a zine says the *photo* is intact and says nothing whatever about
+      the zine, and "the surrogate verified, so the holding verified" is the
+      inference this whole state exists to refuse.
+    * a digital record keeps exactly the verdict it had before this function
+      existed.
+
+    Pure in its arguments, like everything else in this module.
+    """
+    if report.status is FixityStatus.FAILED:
+        return FixityStatus.FAILED
+    if kind.is_physical:
+        return FixityStatus.NOT_APPLICABLE
+    return report.status
+
+
+def overall_holding_status(pairs: Iterable[tuple[HoldingKind, AuditReport]]) -> FixityStatus:
+    """Fold per-record content verdicts into one verdict for a whole archive.
+
+    The precedence is the one :func:`overall_status` uses, with the fourth state
+    slotted in where it belongs rather than at either end:
+
+    * an **empty** archive is :data:`FixityStatus.UNVERIFIED` — nothing was
+      checked, as before.
+    * a **failure dominates**: damage is what a reader must act on first.
+    * an **unverifiable** record beats a verified one: a bag that proved nothing
+      is not made healthy by a neighbour that did.
+    * if anything was actually verified, and nothing failed or went unverified,
+      the archive is :data:`FixityStatus.VERIFIED`. Physical records do not drag
+      that down — there was never anything of theirs to verify, and an archive of
+      forty zines plus one intact scan is not less healthy than one with no zines
+      in it.
+    * an archive where **every** record is a physical holding is
+      :data:`FixityStatus.NOT_APPLICABLE`. That is the honest word for a shoebox
+      catalogue: nothing is broken and nothing was demonstrated. Reporting it as
+      ``VERIFIED`` is the vacuous pass this project keeps finding; reporting it as
+      ``UNVERIFIED`` would tell a steward to go and repair something that is
+      working exactly as designed.
+
+    The whole iterable is consumed rather than short-circuited, so a caller
+    passing a generator that is also doing the I/O gets every record audited.
+    """
+    statuses = [holding_status(kind, report) for kind, report in pairs]
+    if not statuses:
+        return FixityStatus.UNVERIFIED
+    if any(status is FixityStatus.FAILED for status in statuses):
+        return FixityStatus.FAILED
+    if any(status is FixityStatus.UNVERIFIED for status in statuses):
+        return FixityStatus.UNVERIFIED
+    if any(status is FixityStatus.VERIFIED for status in statuses):
+        return FixityStatus.VERIFIED
+    return FixityStatus.NOT_APPLICABLE

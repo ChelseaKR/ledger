@@ -1171,3 +1171,108 @@ msgstr ""
 
 msgid "verified objection from a named subject (token confirmed)"
 msgstr "verified objection from a named subject (token confirmed)"
+
+msgid "Artwork"
+msgstr "Artwork"
+
+msgid "Audio cassette"
+msgstr "Audio cassette"
+
+msgid "Banner"
+msgstr "Banner"
+
+msgid "Book"
+msgstr "Book"
+
+msgid "Button or badge"
+msgstr "Button or badge"
+
+msgid "Condition"
+msgstr "Condition"
+
+msgid "Correspondence"
+msgstr "Correspondence"
+
+msgid "Custody"
+msgstr "Custody"
+
+msgid "Ephemera"
+msgstr "Ephemera"
+
+msgid "Every record here describes a physical object that has not been digitized, so there are no stored files to check. Nothing is wrong; nothing has been proved either. The objects are only as safe as the people keeping them."
+msgstr "Every record here describes a physical object that has not been digitized, so there are no stored files to check. Nothing is wrong; nothing has been proved either. The objects are only as safe as the people keeping them."
+
+msgid "Extent"
+msgstr "Extent"
+
+msgid "Film reel"
+msgstr "Film reel"
+
+msgid "Flyer"
+msgstr "Flyer"
+
+msgid "Format"
+msgstr "Format"
+
+msgid "Not recorded — nobody has written down who is keeping this."
+msgstr "Not recorded — nobody has written down who is keeping this."
+
+msgid "Notebook"
+msgstr "Notebook"
+
+msgid "Other"
+msgstr "Other"
+
+msgid "Periodical"
+msgstr "Periodical"
+
+msgid "Photograph"
+msgstr "Photograph"
+
+msgid "Photographic negative"
+msgstr "Photographic negative"
+
+msgid "Physical holding"
+msgstr "Physical holding"
+
+msgid "Physical · not digitized"
+msgstr "Physical · not digitized"
+
+msgid "Physical · partial scan"
+msgstr "Physical · partial scan"
+
+msgid "Poster"
+msgstr "Poster"
+
+msgid "Recorded and shown below."
+msgstr "Recorded and shown below."
+
+msgid "Recorded. Not shown at your level of access."
+msgstr "Recorded. Not shown at your level of access."
+
+msgid "Slide"
+msgstr "Slide"
+
+msgid "Textile"
+msgstr "Textile"
+
+msgid "The scan below is checked for integrity like any other file. The object it was made from is not, and a checked scan is not a checked object."
+msgstr "The scan below is checked for integrity like any other file. The object it was made from is not, and a checked scan is not a checked object."
+
+msgid "This archive is a catalogue, not a copy."
+msgstr "This archive is a catalogue, not a copy."
+
+msgid "Video cassette"
+msgstr "Video cassette"
+
+msgid "Vinyl record"
+msgstr "Vinyl record"
+
+msgid "Zine"
+msgstr "Zine"
+
+msgid "ledger holds no copy of this object, so it cannot check whether it is intact. Its condition is whatever the last person to look at it wrote down."
+msgstr "ledger holds no copy of this object, so it cannot check whether it is intact. Its condition is whatever the last person to look at it wrote down."
+
+msgid "{count} of them describe physical objects that have not been digitized, so there is nothing stored for those to check."
+msgstr "{count} of them describe physical objects that have not been digitized, so there is nothing stored for those to check."

@@ -1186,3 +1186,108 @@ msgstr "{when}، مرجع {ref}"
 
 msgid "— every recorded action across the archive."
 msgstr "— كل إجراء مُسجَّل عبر الأرشيف."
+
+msgid "Artwork"
+msgstr "عمل فني"
+
+msgid "Audio cassette"
+msgstr "شريط صوتي"
+
+msgid "Banner"
+msgstr "لافتة"
+
+msgid "Book"
+msgstr "كتاب"
+
+msgid "Button or badge"
+msgstr "دبوس أو شارة"
+
+msgid "Condition"
+msgstr "حالة الحفظ"
+
+msgid "Correspondence"
+msgstr "مراسلات"
+
+msgid "Custody"
+msgstr "الحيازة"
+
+msgid "Ephemera"
+msgstr "مطبوعات عابرة"
+
+msgid "Every record here describes a physical object that has not been digitized, so there are no stored files to check. Nothing is wrong; nothing has been proved either. The objects are only as safe as the people keeping them."
+msgstr "كل سجل هنا يصف شيئًا ماديًا لم يُرقمن، فلا توجد ملفات محفوظة يمكن التحقق منها. لا خطأ هنا، ولم يُثبت شيء أيضًا. هذه الأشياء آمنة بقدر أمان الأشخاص الذين يحتفظون بها."
+
+msgid "Extent"
+msgstr "الحجم"
+
+msgid "Film reel"
+msgstr "بكرة فيلم"
+
+msgid "Flyer"
+msgstr "منشور"
+
+msgid "Format"
+msgstr "الشكل المادي"
+
+msgid "Not recorded — nobody has written down who is keeping this."
+msgstr "غير مسجَّل: لم يدوِّن أحد من يحتفظ به."
+
+msgid "Notebook"
+msgstr "دفتر"
+
+msgid "Other"
+msgstr "أخرى"
+
+msgid "Periodical"
+msgstr "دورية"
+
+msgid "Photograph"
+msgstr "صورة فوتوغرافية"
+
+msgid "Photographic negative"
+msgstr "سلبية فوتوغرافية"
+
+msgid "Physical holding"
+msgstr "مقتنى مادي"
+
+msgid "Physical · not digitized"
+msgstr "مادي · غير مرقمن"
+
+msgid "Physical · partial scan"
+msgstr "مادي · مسح جزئي"
+
+msgid "Poster"
+msgstr "ملصق"
+
+msgid "Recorded and shown below."
+msgstr "مسجَّلة ومعروضة أدناه."
+
+msgid "Recorded. Not shown at your level of access."
+msgstr "مسجَّلة. لا تُعرض عند مستوى وصولك."
+
+msgid "Slide"
+msgstr "شريحة شفافة"
+
+msgid "Textile"
+msgstr "منسوجات"
+
+msgid "The scan below is checked for integrity like any other file. The object it was made from is not, and a checked scan is not a checked object."
+msgstr "يُتحقق من سلامة النسخة الممسوحة أدناه كأي ملف آخر. أما الشيء الذي أُخذت عنه فلا، ونسخة مُتحقَّق منها ليست شيئًا مُتحقَّقًا منه."
+
+msgid "This archive is a catalogue, not a copy."
+msgstr "هذا الأرشيف فهرس، وليس نسخة."
+
+msgid "Video cassette"
+msgstr "شريط فيديو"
+
+msgid "Vinyl record"
+msgstr "أسطوانة فينيل"
+
+msgid "Zine"
+msgstr "مجلة مستقلة"
+
+msgid "ledger holds no copy of this object, so it cannot check whether it is intact. Its condition is whatever the last person to look at it wrote down."
+msgstr "لا يحتفظ ledger بأي نسخة من هذا الشيء، فلا يستطيع التحقق مما إذا كان سليمًا. حالته هي ما دوَّنه آخر شخص نظر إليه."
+
+msgid "{count} of them describe physical objects that have not been digitized, so there is nothing stored for those to check."
+msgstr "{count} منها تصف أشياء مادية لم تُرقمن، فلا يوجد شيء محفوظ للتحقق منه في حالتها."

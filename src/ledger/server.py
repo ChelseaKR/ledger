@@ -2216,10 +2216,21 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             )
             return
         try:
-            reports = archive.audit_fixity()
+            holdings = archive.audit_holdings()
         except LedgerError:
             self._send_json(503, {"status": "degraded", "all_verified": False, "ready": True})
             return
+        # The ANONYMOUS half is computed exactly as it was before #188, from the
+        # report alone: a physical holding's bag is metadata that verifies, so it is
+        # `ok`, so it is not `failed`, so a shoebox-only archive still answers a
+        # monitor 200/"ok". That is deliberate and it is the anti-enumeration line
+        # above, not an oversight — `200 + ok + all_verified: false` must stay
+        # reachable only by an empty archive, and making a physical archive
+        # "honest" to an outsider would hand them a second oracle: poll /healthz,
+        # see `degraded` with no failing bag, and you have learned the archive holds
+        # only undigitized material. The honest content verdict goes where the
+        # disclosure has already been made — the steward block below.
+        reports = [(name, report) for name, _kind, report in holdings]
         passed = sum(1 for _name, r in reports if r.ok)
         failed = len(reports) - passed
         status = "ok" if failed == 0 else "degraded"
@@ -2242,14 +2253,27 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             # steward's publication cadence rather than per request, from the signed
             # attestation at /proof/attestation.json (no-outing / P2-2).
             body["chain_head"] = archive.chain_head_summary()
+            verdicts = [fixity.holding_status(kind, r) for _n, kind, r in holdings]
             body["fixity"] = {
-                # The three-state verdict, for the one caller already permitted to
-                # know the archive's size. `bags_audited: 0` beside
-                # `all_verified: true` is a contradiction a reader has to resolve by
-                # knowing the fold is vacuous; `status: "could-not-verify"` says it.
-                "status": str(fixity.overall_status(r for _name, r in reports)),
-                "bags_audited": len(reports),
-                "bags_passed": passed,
+                # The verdict, for the one caller already permitted to know the
+                # archive's size. `bags_audited: 0` beside `all_verified: true` is a
+                # contradiction a reader has to resolve by knowing the fold is
+                # vacuous; `status: "could-not-verify"` says it. Since #188 it has a
+                # fourth answer, `not-applicable`, for an archive whose records are
+                # physical holdings — nothing broken, nothing demonstrated.
+                "status": str(fixity.overall_holding_status((kind, r) for _n, kind, r in holdings)),
+                "bags_audited": len(holdings),
+                # Three disjoint counts that sum to `bags_audited`, so a monitor can
+                # tell "verified nothing because everything is physical" from
+                # "verified nothing because nothing was checked" without a second
+                # request. `bags_verified` is the CONTENT verdict, not
+                # `AuditReport.ok`: a physical bag's metadata verifying is not the
+                # holding verifying, and the whole of #188 is that those are
+                # different sentences.
+                "bags_verified": sum(1 for v in verdicts if v is fixity.FixityStatus.VERIFIED),
+                "bags_not_applicable": sum(
+                    1 for v in verdicts if v is fixity.FixityStatus.NOT_APPLICABLE
+                ),
                 "bags_failed": failed,
                 "files_checked": sum(r.checked for _name, r in reports),
             }
@@ -2278,15 +2302,24 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         archive = self._archive()
         grant = self._resolve_grant()
         try:
-            reports = archive.audit_fixity()
-            passed = sum(1 for _n, r in reports if r.ok)
-            total = len(reports)
-            files = sum(r.checked for _n, r in reports)
-            verdict = fixity.overall_status(report for _n, report in reports)
+            holdings = archive.audit_holdings()
+            verdicts = [fixity.holding_status(kind, r) for _n, kind, r in holdings]
+            # `passed` is the CONTENT verdict, not `AuditReport.ok`: a physical
+            # holding's bag verifies as bytes and its object has not been checked by
+            # anybody, and this page is read by a person asking whether the archive
+            # is all right (#188).
+            passed = sum(1 for v in verdicts if v is FixityStatus.VERIFIED)
+            not_applicable = sum(1 for v in verdicts if v is FixityStatus.NOT_APPLICABLE)
+            total = len(holdings)
+            files = sum(r.checked for _n, _k, r in holdings)
+            verdict = fixity.overall_holding_status((kind, r) for _n, kind, r in holdings)
             # An archive with no bags and an archive with one unverifiable bag are
             # both UNVERIFIED and they are not the same sentence: the first has
             # nothing to check, the second has something it could not check. The
-            # enum is right to hold three states — a reader needs four words.
+            # enum is right to hold three states — a reader needs four words. A
+            # fifth, since #188: an archive of physical holdings has nothing to
+            # check either, and for an entirely different and entirely healthy
+            # reason.
             slug = (
                 "empty"
                 if (verdict is FixityStatus.UNVERIFIED and not total)
@@ -2302,6 +2335,12 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
                 detail = i18n.t(
                     lang, "status_detail_counts", passed=passed, total=total, files=files
                 )
+                if not_applicable:
+                    # Without this sentence the steward line reads "3 of 40 passed"
+                    # over an archive where 37 records are zines nobody has
+                    # digitized, which looks like 37 failures. The count has to say
+                    # which of the two kinds of "not passed" it is.
+                    detail += " " + i18n.t(lang, "status_detail_physical", count=not_applicable)
             else:
                 detail = i18n.t(lang, f"status_detail_{slug}")
         except LedgerError:
@@ -2560,6 +2599,18 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
                 f"    <p>As of {_esc(attestation.generated_at)}, this archive {_esc(health)}, "
                 f"running ledger {_esc(attestation.software_version)}. The attestation is "
                 f"{_esc(signed)}.</p>\n"
+                # #188. A fixity check is a statement about files this archive
+                # stores. Some records here may describe a physical object it does
+                # not store — a box of flyers in somebody's flat — and no check,
+                # signed or otherwise, can say anything about those. Said as a
+                # property of the attestation rather than as a count, because a
+                # count of physical holdings would tell an anonymous visitor part
+                # of the archive's size, which is the line /healthz's gated block
+                # exists to hold.
+                "    <p>A fixity check covers files this archive stores. Records that "
+                "describe a physical object the archive does not hold a copy of have no "
+                "stored content to check, and no attestation — this one included — says "
+                "anything about whether those objects are safe.</p>\n"
                 "    <p>The full, machine-readable attestation is at "
                 '<a href="/proof/attestation.json">/proof/attestation.json</a>. Its '
                 "<code>chain_head_summary</code> field changes the instant any record's or "

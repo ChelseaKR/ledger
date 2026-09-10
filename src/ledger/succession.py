@@ -36,7 +36,7 @@ from pathlib import Path
 from ledger.config import StorageLocation
 from ledger.fixity import FixityStatus
 from ledger.ingest import Archive
-from ledger.models import canonical_json
+from ledger.models import HoldingKind, canonical_json
 
 # Schema version for the hand-off manifest, so a successor's tooling can tell which
 # shape it is reading and evolve it later without misreading an older file.
@@ -54,13 +54,27 @@ class RecordInventory:
     record_id: str
     fixity_ok: bool
     files_checked: int
+    # #188. Defaulted, and omitted from `to_dict` at its default, so a hand-off
+    # document for a digital-only archive is byte-identical to the one this code
+    # produced before physical holdings existed and `HANDOFF_SCHEMA_VERSION` does
+    # not move. A third party's verifier reads exactly what it read before; a
+    # newer one learns which rows describe an object nobody can check.
+    holding_kind: HoldingKind = HoldingKind.DIGITAL
 
     def to_dict(self) -> dict[str, object]:
-        return {
+        out: dict[str, object] = {
             "record_id": self.record_id,
+            # NOTE (#188): this stays "did this record's stored bytes verify". For a
+            # physical holding those bytes are its catalogue entry, so `true` here
+            # is true and says nothing about the object. `holding_kind` beside it is
+            # what tells the two apart, and `fixity_status` is the verdict a human
+            # should read.
             "fixity_ok": self.fixity_ok,
             "files_checked": self.files_checked,
         }
+        if self.holding_kind is not HoldingKind.DIGITAL:
+            out["holding_kind"] = self.holding_kind.value
+        return out
 
 
 @dataclass(frozen=True)
@@ -107,6 +121,15 @@ class HandoffManifest:
             return FixityStatus.FAILED
         if any(r.files_checked == 0 for r in self.records):
             return FixityStatus.UNVERIFIED
+        # #188. A physical holding's bag is metadata that verifies, so before this
+        # branch a hand-off of forty catalogued-but-undigitized zines told the
+        # volunteer inheriting it "All bags verified intact at hand-off time" —
+        # about forty objects nothing had ever checked and nothing ever could.
+        # `VERIFIED` therefore now requires that at least one record actually held
+        # content to verify; an archive of nothing but physical holdings is
+        # `NOT_APPLICABLE`, which is neither an alarm nor a clean bill of health.
+        if all(r.holding_kind.is_physical for r in self.records):
+            return FixityStatus.NOT_APPLICABLE
         return FixityStatus.VERIFIED
 
     def to_dict(self) -> dict[str, object]:
@@ -175,8 +198,26 @@ class HandoffManifest:
                 "not be verified — investigate before relying on this copy. This is "
                 "not a failure and it is not a pass."
             )
+        elif self.fixity_status is FixityStatus.NOT_APPLICABLE:
+            fixity_line = (
+                "Every record here describes a physical object that has not been "
+                "digitized, so there were no stored files to verify. Nothing is "
+                "wrong and nothing was proved: those objects are only as safe as "
+                "the people keeping them, and this hand-off does not move them."
+            )
         else:
             fixity_line = "All bags verified intact at hand-off time."
+        # #188. Said separately from the verdict, because a mixed archive gets
+        # "All bags verified intact" — true of its stored bytes — and the person
+        # inheriting it still needs to know that some of what they are taking on is
+        # a list of things in other people's homes.
+        physical = sum(1 for r in self.records if r.holding_kind.is_physical)
+        if physical and self.fixity_status is not FixityStatus.NOT_APPLICABLE:
+            fixity_line += (
+                f" {physical} of these record(s) describe physical objects that are not "
+                "digitized; nothing here verifies those, and copying this archive does "
+                "not copy them."
+            )
         successor_line = (
             f"Designated successor: {self.successor}."
             if self.successor
@@ -259,11 +300,16 @@ def build_handoff(
         )
     inventory: list[RecordInventory] = []
     all_ok = True
-    for bag_name, report in archive.audit_fixity():
+    for bag_name, kind, report in archive.audit_holdings():
         ok = report.ok
         all_ok = all_ok and ok
         inventory.append(
-            RecordInventory(record_id=bag_name, fixity_ok=ok, files_checked=report.checked)
+            RecordInventory(
+                record_id=bag_name,
+                fixity_ok=ok,
+                files_checked=report.checked,
+                holding_kind=kind,
+            )
         )
     return HandoffManifest(
         schema_version=HANDOFF_SCHEMA_VERSION,

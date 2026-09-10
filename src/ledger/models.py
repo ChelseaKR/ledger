@@ -151,6 +151,26 @@ class PremisEventType(StrEnum):
     LOCKDOWN = "lockdown"
     STANDUP = "stand-up"
     QUERY = "query"  # EXP-14 reading-room enclave: an aggregate query, answered or refused
+    # --- physical holdings (#188) ------------------------------------------
+    # PREMIS leaves the event vocabulary to the repository, and these three are
+    # local terms in the same way LOCKDOWN and QUERY above already are. They exist
+    # because a physical holding's whole history happens outside ledger: the only
+    # thing the archive can honestly record is that somebody *told* it these things
+    # happened, and an event log is exactly the right shape for that (ADR 0019).
+    #
+    # ``CUSTODY_TRANSFER`` — the object moved from one person's keeping to
+    # another's. The event records that a transfer was reported; the names of both
+    # parties stay in the sealed custody fields and never in the event detail.
+    CUSTODY_TRANSFER = "custody transfer"
+    # ``CONDITION_CHECK`` — somebody looked at the object and wrote down what state
+    # it is in. This is the physical analogue of a fixity check and is deliberately
+    # NOT spelled ``fixity check``: a person's eyes are not a digest, and a reader
+    # filtering the log by ``fixity check`` must not pick up a human judgement.
+    CONDITION_CHECK = "condition check"
+    # ``DIGITIZATION`` — a surrogate (a phone photo, a scan of one page) was
+    # attached to a physical record. It links the record to the bytes of its
+    # derivative, which is what makes the two findable from each other later.
+    DIGITIZATION = "digitization"
 
 
 # PREMIS ``linkingObjectIdentifierType`` values ledger writes (ADR 0012). PREMIS
@@ -391,6 +411,187 @@ class DublinCore:
         return cls(**known)
 
 
+# --- physical holdings (a catalogue entry for something not digitized) ------
+#
+# The README's shoebox under someone's bed is full of zines, flyers, buttons,
+# photographs and cassettes, and ledger can only *preserve* them once they are
+# digitized. What a community needs first is a catalogue of what exists — and a
+# catalogue entry is a record whose payload is absent **by declaration**, which is
+# a different fact from a payload that was lost, never written, or could not be
+# read. Every surface in this package that answers "is this safe?" has to be able
+# to tell those apart, which is why the kind is a declared field and never
+# inferred from an empty payload list (#188).
+
+
+class HoldingKind(StrEnum):
+    """Whether a record's content is digital, physical, or physical with a scan.
+
+    Declared, never derived. An empty ``payloads`` list is not evidence that a
+    record describes a physical object: it is equally what a failed ingest, a
+    withdrawn payload, or a record built by a caller that has not attached files
+    yet looks like. Deriving the kind from that absence is the same defect this
+    field exists to prevent — an archive stating something it did not read.
+
+    The three values, and the question each one answers differently:
+
+    * :data:`DIGITAL` — ledger holds the bytes. Fixity is a real question with a
+      real answer.
+    * :data:`PHYSICAL` — ledger holds a *description* of an object somebody else
+      is keeping. There are no content bytes, so content fixity is
+      :data:`~ledger.fixity.FixityStatus.NOT_APPLICABLE`: not a pass, not a
+      failure, and not "could not verify" either, because nothing was expected.
+    * :data:`PHYSICAL_WITH_SURROGATE` — the object is still physical, and a phone
+      photo or a scan of one page has been attached. The surrogate is ordinary
+      digital content with ordinary fixity; the *object* is still unverifiable by
+      any digital means, and a verified surrogate must never be read as a verified
+      holding.
+    """
+
+    DIGITAL = "digital"
+    PHYSICAL = "physical"
+    PHYSICAL_WITH_SURROGATE = "physical_with_surrogate"
+
+    @property
+    def is_physical(self) -> bool:
+        """True for a record describing an object ledger does not hold the bytes of."""
+        return self in (HoldingKind.PHYSICAL, HoldingKind.PHYSICAL_WITH_SURROGATE)
+
+
+class PhysicalFormat(StrEnum):
+    """A controlled vocabulary for what the physical thing *is*.
+
+    Controlled rather than free text so browse can facet on it, a print edition can
+    group by it, and two volunteers cataloguing the same box cannot produce
+    ``cassette``/``Cassette tape``/``audio cassette`` as three formats. The list is
+    drawn from what community and movement collections actually hold (the README's
+    shoebox), not from a library-supply catalogue.
+
+    :data:`OTHER` exists so a volunteer is never blocked by the vocabulary, and it
+    is deliberately the honest answer rather than a near-miss: an object filed as
+    ``OTHER`` with an ``extent`` note is more useful than one mis-filed as
+    ``EPHEMERA`` because that was the closest word on the list.
+    """
+
+    ZINE = "zine"
+    FLYER = "flyer"
+    POSTER = "poster"
+    BUTTON = "button"
+    PHOTOGRAPH = "photograph"
+    NEGATIVE = "negative"
+    SLIDE = "slide"
+    AUDIO_CASSETTE = "audio-cassette"
+    VIDEO_CASSETTE = "video-cassette"
+    FILM_REEL = "film-reel"
+    VINYL_RECORD = "vinyl-record"
+    CORRESPONDENCE = "correspondence"
+    NOTEBOOK = "notebook"
+    PERIODICAL = "periodical"
+    BOOK = "book"
+    BANNER = "banner"
+    TEXTILE = "textile"
+    ARTWORK = "artwork"
+    EPHEMERA = "ephemera"
+    OTHER = "other"
+
+
+class CustodyState(StrEnum):
+    """What a read path may say about custody, in three states.
+
+    Custody — where the object is and who is keeping it — is the most exposed
+    datum in a physical holding: the custodian is often the person whose apartment
+    holds the box. It is therefore carried as ordinary sealed
+    :class:`Field` values that go through the one disclosure decision point
+    (:func:`ledger.access.policy.is_visible`), never as a second channel beside it.
+
+    What a viewer sees *about* custody is this word, and it has three values for
+    the reason the rest of this codebase has three-state verdicts:
+
+    * :data:`NOT_RECORDED` — nobody wrote down who is holding it. A real gap in the
+      catalogue and the thing a steward most needs to see.
+    * :data:`WITHHELD` — it was recorded and this viewer may not see it.
+    * :data:`DISCLOSED` — this viewer may see it, and the values are in the
+      record's disclosed fields.
+
+    Collapsing the first two — always saying "withheld" — would publish "somebody
+    is looking after this" over a record where nobody is, which is this project's
+    named defect (absence rendered as a value) pointed at the one number a steward
+    reads to decide whether a collection is safe. Collapsing them the other way
+    would out the gap only when it is absent. So all three are rendered, to every
+    viewer, and the *values* are gated. The state word says whether a fact was
+    recorded; it never says what the fact is.
+    """
+
+    NOT_RECORDED = "not-recorded"
+    WITHHELD = "withheld"
+    DISCLOSED = "disclosed"
+
+
+#: The reserved :class:`Field` names a custody block occupies. Custody deliberately
+#: does **not** get a structured block of its own on :class:`Record`: a second place
+#: that holds protected values is a second place disclosure can go wrong, and this
+#: package's whole safety argument is that there is exactly one. Carried as fields,
+#: custody inherits per-value policies, at-rest encryption for an absolute
+#: ``SEALED``, the redaction verb, the withheld-reason vocabulary, and every
+#: existing no-outing sentinel, with no new code on the read path.
+CUSTODY_LOCATION_FIELD = "custody.location"
+CUSTODY_CUSTODIAN_FIELD = "custody.custodian"
+CUSTODY_FIELDS: tuple[str, ...] = (CUSTODY_LOCATION_FIELD, CUSTODY_CUSTODIAN_FIELD)
+
+
+@dataclass(frozen=True)
+class PhysicalHolding:
+    """The description of an object ledger does **not** hold the bytes of.
+
+    Descriptive, not protected: ``format``, ``extent`` and ``condition`` are what a
+    community member needs in order to find out that the thing exists and what
+    state it is in, and they are disclosed with the record's other collection-level
+    description (the same rule :class:`DublinCore` follows). The protected half —
+    where it is and who has it — is **not** here; it lives in the sealed
+    :data:`CUSTODY_FIELDS`, so it cannot be disclosed without going through
+    :func:`ledger.access.policy.is_visible`.
+
+    ``extent`` is the archivist's word for how much there is ("1 box, ~380
+    flyers", "12 cassettes"). ``condition`` is free text because condition
+    reporting is a judgement a volunteer writes in their own words ("water damage
+    along the spine"), and a controlled vocabulary here would push them into
+    picking a wrong word rather than describing what they see.
+    """
+
+    format: PhysicalFormat = PhysicalFormat.OTHER
+    extent: str = ""
+    condition: str = ""
+
+    def to_dict(self) -> dict[str, str]:
+        """Serialize, dropping empty parts (compact, deterministic)."""
+        out: dict[str, str] = {"format": self.format.value}
+        if self.extent:
+            out["extent"] = self.extent
+        if self.condition:
+            out["condition"] = self.condition
+        return out
+
+    @classmethod
+    def from_dict(cls, data: dict[str, object]) -> PhysicalHolding:
+        """Rebuild from :meth:`to_dict` output.
+
+        An unknown ``format`` degrades to :data:`PhysicalFormat.OTHER` rather than
+        raising: a manifest written by a newer ledger whose vocabulary has grown
+        must still open here, and "other" is the honest reading of a word this
+        build does not know (robustness; the same fallback discipline as
+        :meth:`DublinCore.from_dict`).
+        """
+        raw_format = str(data.get("format", PhysicalFormat.OTHER.value))
+        try:
+            fmt = PhysicalFormat(raw_format)
+        except ValueError:
+            fmt = PhysicalFormat.OTHER
+        return cls(
+            format=fmt,
+            extent=str(data.get("extent", "")),
+            condition=str(data.get("condition", "")),
+        )
+
+
 # --- record (description + access + payload manifest) -----------------------
 
 
@@ -406,6 +607,36 @@ class Field:
     policy: AccessPolicy = AccessPolicy.SEALED_UNTIL
     unseal_at: str | None = None
     unseal_condition: str | None = None
+
+
+def custody_fields(
+    *,
+    location: str = "",
+    custodian: str = "",
+    policy: AccessPolicy = AccessPolicy.SEALED_UNTIL,
+    unseal_at: str | None = None,
+    unseal_condition: str | None = None,
+) -> list[Field]:
+    """Build the sealed :class:`Field` pair that carries a custody block.
+
+    Default policy is :data:`AccessPolicy.SEALED_UNTIL` with **no** date — the same
+    default every other :class:`Field` gets, and the narrowest level that still
+    lets a steward run the archive. An empty ``location``/``custodian`` produces no
+    field at all rather than a field holding ``""``: "not recorded" must stay
+    distinguishable from "recorded as nothing" (:class:`CustodyState`).
+    """
+    values = ((CUSTODY_LOCATION_FIELD, location), (CUSTODY_CUSTODIAN_FIELD, custodian))
+    return [
+        Field(
+            name=name,
+            value=value,
+            policy=policy,
+            unseal_at=unseal_at,
+            unseal_condition=unseal_condition,
+        )
+        for name, value in values
+        if value
+    ]
 
 
 @dataclass(frozen=True)
@@ -495,6 +726,15 @@ class Record:
     Distinct from the bag payload (the bytes). The record says what the item is
     and who may see which part of it. It carries NO identity — only an opaque
     `identity_ref` resolvable solely through the vault.
+
+    ``holding_kind`` and ``physical`` describe an item ledger does not hold the
+    bytes of (#188). Both default to the digital case, and both are **omitted from
+    the serialized manifest when they are at their defaults**, so a record written
+    before this field existed round-trips byte-for-byte and its hash chain is
+    undisturbed — the same rule :meth:`PremisEvent.to_dict` already follows. That
+    absence *is* the migration: a manifest with no ``holding_kind`` reads as
+    :data:`HoldingKind.DIGITAL`, which is what every record written before #188
+    is.
     """
 
     title: str
@@ -506,12 +746,25 @@ class Record:
     content_warnings: list[str] = field(default_factory=list)
     identity_ref: str | None = None  # opaque token into the vault; NEVER an identity
     created_at: str = field(default_factory=now_iso)
+    holding_kind: HoldingKind = HoldingKind.DIGITAL
+    physical: PhysicalHolding | None = None
 
     def field_named(self, name: str) -> Field | None:
         for f in self.fields:
             if f.name == name:
                 return f
         return None
+
+    def has_custody(self) -> bool:
+        """Whether custody was recorded on this record at all.
+
+        The *storage-side* question, answered before any grant is considered: a
+        record either carries a non-empty custody field or it does not. The
+        read-side question — may this viewer see the values — is answered by
+        :attr:`DisclosedRecord.custody_state`, which takes a different input and
+        must not be confused with this one.
+        """
+        return any(f.name in CUSTODY_FIELDS and f.value for f in self.fields)
 
 
 @dataclass(frozen=True)
@@ -548,11 +801,35 @@ class DisclosedRecord:
     payloads: tuple[PayloadFile, ...]
     content_warnings: tuple[str, ...]
     withheld: tuple[Redaction, ...]  # fields/payloads withheld, each with a safe reason
+    # #188. Defaulted so every existing construction site keeps compiling and keeps
+    # meaning what it meant: a record that says nothing about a holding is digital.
+    holding_kind: HoldingKind = HoldingKind.DIGITAL
+    physical: PhysicalHolding | None = None
 
     @property
     def redactions(self) -> tuple[str, ...]:
         """The names of withheld fields/payloads (compatibility accessor)."""
         return tuple(r.name for r in self.withheld)
+
+    @property
+    def custody_state(self) -> CustodyState:
+        """What this viewer may be told about custody, in three states.
+
+        Derived from what disclosure actually did, never from a flag a caller could
+        set: :data:`CustodyState.DISCLOSED` when a custody field survived into
+        :attr:`fields`, :data:`CustodyState.WITHHELD` when one was withheld, and
+        :data:`CustodyState.NOT_RECORDED` when the record carries none at all.
+
+        Deriving it here rather than passing it in is what makes it impossible for
+        this word to disagree with the values beside it — a read path cannot render
+        "withheld" over a disclosed custodian or vice versa, because both come from
+        the same projection.
+        """
+        if any(name in CUSTODY_FIELDS for name in self.fields):
+            return CustodyState.DISCLOSED
+        if any(r.name in CUSTODY_FIELDS for r in self.withheld):
+            return CustodyState.WITHHELD
+        return CustodyState.NOT_RECORDED
 
     def to_dict(self, *, withheld_reasons: bool = True) -> dict[str, object]:
         """Serialize for an API response.
@@ -561,6 +838,14 @@ class DisclosedRecord:
         names or reasons — the form a read path serves to an *outsider* so the
         redaction set cannot be scraped as targeting metadata (P2-2). With reasons,
         each withheld part is named for a legitimate viewer (honesty, P1-3).
+
+        ``holding_kind`` and ``custody_state`` are emitted on **every** response,
+        including the outsider's. Both are facts about what the archive knows, not
+        about who anybody is: the first is already visible as the browse badge, and
+        the second says whether a custodian was recorded without saying who. Hiding
+        the second would publish "somebody is looking after this" over a record
+        where nobody is (#188). ``physical`` is emitted only for a physical holding,
+        where it is the description that makes the object findable.
         """
         out: dict[str, object] = {
             "record_id": self.record_id,
@@ -581,7 +866,11 @@ class DisclosedRecord:
                 for p in self.payloads
             ],
             "content_warnings": list(self.content_warnings),
+            "holding_kind": self.holding_kind.value,
+            "custody_state": self.custody_state.value,
         }
+        if self.physical is not None:
+            out["physical"] = self.physical.to_dict()
         if withheld_reasons:
             out["withheld"] = [
                 {"name": r.name, "reason": r.reason, "category": r.category} for r in self.withheld

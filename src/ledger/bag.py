@@ -317,6 +317,79 @@ def write_bag(
     return Bag(path=bag_dir)
 
 
+def add_payload(bag_dir: Path, relpath: str, source: Path) -> None:
+    """Add one payload file to an already-written bag, updating its payload manifests.
+
+    Written for the one case that needs it: a surrogate — a phone photo, a scan of
+    one page — attached to a physical holding some time after it was catalogued
+    (#188). Everything else in this package writes a bag once and thereafter only
+    reseals *tag* manifests (:func:`refresh_tag_manifests`), deliberately, because
+    touching a payload manifest is how content rot gets papered over.
+
+    So this is narrow and fails closed:
+
+    * refuses an unsafe relative path before anything is created;
+    * refuses if the bag has no payload manifest to extend;
+    * refuses if the path is already declared in any payload manifest, or already
+      present on disk under ``data/`` — an *add* must never overwrite content, and
+      a replace is a different act with a different event;
+    * writes the copy first, then every payload manifest, then ``Payload-Oxum``,
+      so a crash leaves a bag that fails validation loudly rather than one whose
+      manifest silently omits a file that is there.
+
+    It does **not** reseal the tag manifests: the payload manifests it just
+    rewrote are themselves tag files, and the caller is expected to rewrite
+    ``record.json`` and ``premis.json`` in the same operation and reseal once
+    (:meth:`ledger.ingest.Archive.apply_update`). Resealing here would seal a bag
+    whose record manifest does not yet mention the file.
+    """
+    bag_dir = Path(bag_dir)
+    _reject_unsafe_relpath(relpath, context="payload")
+    manifest_paths = sorted(bag_dir.glob("manifest-*.txt"))
+    if not manifest_paths:
+        raise BagValidationError(f"no payload manifest to extend: {bag_dir}")
+
+    manifest_key = f"{_DATA_PREFIX}{relpath}"
+    parsed = {path: _parse_manifest(path) for path in manifest_paths}
+    for path, entries in parsed.items():
+        if manifest_key in entries:
+            raise BagValidationError(f"{manifest_key} is already declared in {path.name}")
+    dest = bag_dir / _DATA_PREFIX / relpath
+    if dest.exists():
+        raise BagValidationError(f"payload already present, refusing to overwrite: {manifest_key}")
+
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    with Path(source).open("rb") as src_handle, dest.open("wb") as dest_handle:
+        shutil.copyfileobj(src_handle, dest_handle, length=CHUNK_SIZE)
+
+    algos = [_algo_of_manifest(path) for path in manifest_paths]
+    digests = hash_file_multi(dest, algos)
+    for path, entries in parsed.items():
+        entries[manifest_key] = digests[_algo_of_manifest(path)]
+        _write_text(path, _manifest_body(entries))
+
+    # Payload-Oxum is a claim about the payload's total size and file count, and a
+    # stale one is a bag describing a payload it no longer has. Recomputed from
+    # what is on disk rather than incremented, so it cannot drift.
+    _rewrite_payload_oxum(bag_dir)
+
+
+def _rewrite_payload_oxum(bag_dir: Path) -> None:
+    """Recompute ``Payload-Oxum`` in ``bag-info.txt`` from the files under ``data/``.
+
+    Every other line of ``bag-info.txt`` is caller-supplied and is preserved
+    verbatim, in order. A bag with no ``Payload-Oxum`` line gains one at the top,
+    which is where :func:`write_bag` puts it.
+    """
+    data_dir = bag_dir / "data"
+    files = [p for p in data_dir.rglob("*") if p.is_file()] if data_dir.exists() else []
+    oxum = f"Payload-Oxum: {sum(p.stat().st_size for p in files)}.{len(files)}"
+    info_path = bag_dir / _BAG_INFO_TXT
+    existing = info_path.read_text(encoding="utf-8").splitlines() if info_path.exists() else []
+    rest = [line for line in existing if not line.startswith("Payload-Oxum:")]
+    _write_text(info_path, "".join(f"{line}\n" for line in [oxum, *rest]))
+
+
 def refresh_tag_manifests(bag_dir: Path) -> Bag:
     """Recompute every ``tagmanifest-<algo>.txt`` from the bag's current tag files.
 
