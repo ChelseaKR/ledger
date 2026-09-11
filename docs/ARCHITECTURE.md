@@ -385,10 +385,10 @@ The site binds to `127.0.0.1` by default.
 
 ### 1.11 CLI: `cli.py` and `config.py`
 
-`cli.py` is the one discoverable steward surface: 42 subcommands, which `ledger --help`
+`cli.py` is the one discoverable steward surface: 43 subcommands, which `ledger --help`
 lists in full — `init`, `ingest`, `browse`, `show`, `serve`, `audit`, `policy`,
 `takedown`, `replicas`, `heal`, `add-location`, `demo`, `acr`, and the `grant`, `vault`,
-`mutual-aid`, `transparency`, `moderation`, and `session` groups among them. A capability with no
+`mutual-aid`, `transparency`, `moderation`, `arrange`, and `session` groups among them. A capability with no
 subcommand is not a capability a steward has (#123), so the count above is asserted
 against the parser itself in `tests/test_cli.py`. Exit codes are meaningful (`audit`
 returns non-zero on any failing bag so cron/CI can branch). It is held to the no-outing rule: a contributor name/contact is accepted only

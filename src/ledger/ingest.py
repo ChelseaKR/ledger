@@ -28,11 +28,14 @@ import os
 import re
 import shutil
 import tempfile
+from dataclasses import replace
 from pathlib import Path
 
+from ledger import arrangement as arrangement_mod
 from ledger import catalog_index
 from ledger._filelock import file_lock
 from ledger.access import disclose, is_listable
+from ledger.arrangement import Arrangement
 from ledger.attest import attested_conditions
 from ledger.bag import (
     _reject_unsafe_relpath,
@@ -55,9 +58,11 @@ from ledger.metadata.dublincore import to_json as dublincore_to_json
 from ledger.metadata.pid import mint_urn
 from ledger.metadata.premis import PremisLog, append_event
 from ledger.models import (
+    OBJECT_TYPE_CONTAINER,
     OBJECT_TYPE_PAYLOAD,
     OBJECT_TYPE_RECORD,
     AccessPolicy,
+    ArchivalContainer,
     ContentAddress,
     DisclosedRecord,
     DublinCore,
@@ -760,6 +765,12 @@ class Archive:
         # about the archive's governance, and a takedown's rationale must outlive the
         # bag it was about (accountability -- docs/GOVERNANCE.md).
         self.moderation_log_path = self.logs_dir / "moderation.json"
+        # #202: the arrangement — one manifest per collection or series. Beside
+        # `records/` rather than inside a bag, because a container is not an item
+        # and has no payload: it is description and policy, and it outlives any
+        # single record filed in it. A directory that does not exist is an archive
+        # with no arrangement, which is every archive written before #202.
+        self.containers_dir = self.store_root / "containers"
         self.index_path = catalog_index.index_path(self.store_root)
         self.vault_path = Path(config.vault_path)
         self._vault: IdentityVault | None = None
@@ -784,6 +795,7 @@ class Archive:
             archive.bags_dir,
             archive.records_dir,
             archive.logs_dir,
+            archive.containers_dir,
         ):
             directory.mkdir(parents=True, exist_ok=True)
         config.save(archive.store_root / "config.json")
@@ -837,6 +849,19 @@ class Archive:
         of the stored record manifest is also written under ``records/`` for fast
         lookup by :meth:`get` without unpacking a bag (efficiency).
         """
+        if record.placement is not None:
+            # A placement into a container that is not there, or whose chain does
+            # not resolve, makes the record invisible to everyone the moment it
+            # lands. Refuse at the door rather than let a steward discover it by
+            # the record's absence from browse (#202).
+            graph = self.arrangement()
+            if graph.get(record.placement) is None:
+                raise ObjectNotFound(record.placement)
+            if graph.chain(record.placement) is None:
+                raise LedgerError(
+                    f"container {record.placement} has an unresolvable parent chain; "
+                    "a record filed in it would be visible to no one"
+                )
         if (self.bags_dir / record.record_id).exists():
             # Preflight before even opening/creating the vault. ``ingest_sip``
             # repeats this guard for direct callers, but the facade owns this
@@ -881,6 +906,171 @@ class Archive:
         record_copy = self.records_dir / f"{record.record_id}.json"
         shutil.copyfile(aip.record_path, record_copy)
         return aip
+
+    # --- arrangement (#202) -------------------------------------------------
+
+    def arrangement(self) -> Arrangement:
+        """The archive's collections and series, loaded fresh from disk.
+
+        Read on every call rather than cached: containers are few (an archive
+        has collections, not millions of them) and a stale ceiling is the one
+        kind of staleness that could show a record a steward has just sealed.
+        An archive with no ``containers/`` directory gets the empty
+        arrangement, and every record in it resolves exactly as it did before
+        #202.
+        """
+        return arrangement_mod.load_arrangement(self.containers_dir)
+
+    def get_container(self, container_id: str) -> ArchivalContainer:
+        """Load one container's manifest, or raise
+        :class:`~ledger.errors.ObjectNotFound` naming only the id.
+
+        This is **not** a disclosure path — it returns the raw container
+        including both its policies, exactly as :meth:`get` returns a raw
+        :class:`~ledger.models.Record`. A read path must pass the result
+        through :func:`ledger.access.policy.disclose_container`.
+        """
+        return arrangement_mod.read_container(self.containers_dir, container_id)
+
+    def describe_container(
+        self,
+        container: ArchivalContainer,
+        *,
+        agent: str = "ledger",
+        now: str | None = None,
+    ) -> ArchivalContainer:
+        """Create or re-describe one container, validating its shape first.
+
+        Refuses, loudly, anything :func:`ledger.arrangement.validate_container`
+        rejects — a series under a series, a collection claiming a parent, a
+        dangling parent link. The read path already fails closed over such data
+        (every record below it becomes invisible), so a store that accepted it
+        would turn a steward's typo into 400 silently missing records with no
+        error anywhere.
+
+        Writes a PREMIS ``arrangement`` event to
+        ``logs/arrangement.premis.json`` naming only the container id and its
+        level — never its title or scope note, which are themselves disclosable
+        material (no-outing rule: an audit log discloses nothing).
+        """
+        arrangement_mod.validate_container(container, self.arrangement())
+        existing = (
+            self.containers_dir
+            / f"{arrangement_mod.safe_container_component(container.container_id)}.json"
+        )
+        action = "re-described" if existing.is_file() else "described"
+        arrangement_mod.save_container(self.containers_dir, container)
+        self._log_arrangement_event(
+            container.container_id,
+            f"{container.level.value} {action}",
+            agent=agent,
+            now=now,
+        )
+        return container
+
+    def place(
+        self,
+        record_id: str,
+        container_id: str | None,
+        *,
+        agent: str = "ledger",
+        now: str | None = None,
+    ) -> Record:
+        """File ``record_id`` in ``container_id`` (or, with ``None``, unfile it).
+
+        A record has exactly one place, so this replaces any previous placement
+        rather than adding to it. The container must already exist and must be
+        resolvable: a placement into a container whose chain does not resolve
+        would make the record invisible to everyone, and discovering that by
+        its absence from browse is not an acceptable way to be told.
+
+        Recorded on the record's own PREMIS log as an ``arrangement`` event
+        through :meth:`apply_update`, so the move is in the record's history
+        beside every other change to it.
+        """
+        record = self.get(record_id)
+        if container_id is not None:
+            graph = self.arrangement()
+            if graph.get(container_id) is None:
+                raise ObjectNotFound(container_id)
+            if graph.chain(container_id) is None:
+                raise LedgerError(
+                    f"container {container_id} has an unresolvable parent chain; "
+                    "a record filed in it would be visible to no one"
+                )
+        moved = replace(record, placement=container_id)
+        detail = (
+            f"record filed in container {container_id}"
+            if container_id is not None
+            else "record removed from its container"
+        )
+        self.apply_update(
+            moved,
+            PremisEvent(
+                event_type=PremisEventType.ARRANGEMENT,
+                agent=agent,
+                outcome="success",
+                detail=detail,
+                linked_object=record_id,
+                linked_object_type=OBJECT_TYPE_RECORD,
+                event_datetime=now if now is not None else now_iso(),
+            ),
+        )
+        return moved
+
+    def _log_arrangement_event(
+        self, container_id: str, detail: str, *, agent: str, now: str | None
+    ) -> None:
+        """Append one container-level PREMIS event to the archive's arrangement log.
+
+        A container has no bag, so its events live beside the takedown and
+        key-rotation logs under ``logs/`` and are picked up by
+        :meth:`audit_events` like every other archive-level log.
+        """
+        self.logs_dir.mkdir(parents=True, exist_ok=True)
+        append_event(
+            self.logs_dir / "arrangement.premis.json",
+            PremisEvent(
+                event_type=PremisEventType.ARRANGEMENT,
+                agent=agent,
+                outcome="success",
+                detail=detail,
+                linked_object=container_id,
+                linked_object_type=OBJECT_TYPE_CONTAINER,
+                event_datetime=now if now is not None else now_iso(),
+            ),
+        )
+
+    def arrangement_problems(self) -> list[str]:
+        """Every placement or container this archive cannot resolve, as plain lines.
+
+        The surface that makes fail-closed operable. The resolver denies a record
+        whose chain will not resolve, silently and correctly; without something
+        that *says so*, the only symptom is a record that stopped appearing.
+        Each line names the ids and the condition, never a title or a note.
+        """
+        graph = self.arrangement()
+        problems: list[str] = []
+        for container in graph.all_containers():
+            if graph.chain(container.container_id) is None:
+                problems.append(
+                    f"container {container.container_id}: parent chain does not resolve"
+                )
+        if self.containers_dir.is_dir():
+            for path in sorted(self.containers_dir.glob("*.json")):
+                try:
+                    arrangement_mod.deserialize_container(path.read_text(encoding="utf-8"))
+                except (LedgerError, ValueError, OSError):
+                    problems.append(f"container file {path.name}: manifest cannot be read")
+        for record in self._all_records():
+            if record.placement is None:
+                continue
+            if graph.chain(record.placement) is None:
+                problems.append(
+                    f"record {record.record_id}: filed in {record.placement}, "
+                    "which does not resolve — the record is visible to no one"
+                )
+        return problems
 
     # --- reads --------------------------------------------------------------
 
@@ -1283,7 +1473,11 @@ class Archive:
         """
         stamp = now if now is not None else now_iso()
         return disclose(
-            self.get(record_id), grant, stamp, conditions_met=self.attested_conditions()
+            self.get(record_id),
+            grant,
+            stamp,
+            conditions_met=self.attested_conditions(),
+            arrangement=self.arrangement(),
         )
 
     def _all_records(self) -> list[Record]:
@@ -1361,10 +1555,16 @@ class Archive:
         """
         stamp = now if now is not None else now_iso()
         conditions = self.attested_conditions()
+        # Loaded once for the whole listing rather than per record: the ceiling
+        # every record is judged against must be the same one, or a container
+        # re-described mid-browse would produce a page half under each policy.
+        graph = self.arrangement()
         out: list[DisclosedRecord] = []
         for record in self._all_records():
-            if is_listable(record, grant, stamp, conditions_met=conditions):
-                out.append(disclose(record, grant, stamp, conditions_met=conditions))
+            if is_listable(record, grant, stamp, conditions_met=conditions, arrangement=graph):
+                out.append(
+                    disclose(record, grant, stamp, conditions_met=conditions, arrangement=graph)
+                )
         return out
 
     def resolve_identity(

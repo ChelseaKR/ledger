@@ -72,7 +72,7 @@ from ledger.ai.provenance import resolve_commit as resolve_ai_commit
 from ledger.attestation import build_attestation, publish_attestation, sign_attestation
 from ledger.backup import create_backup, prune_backups, restore_backup, verify_backup
 from ledger.config import Config, StorageLocation
-from ledger.errors import LedgerError
+from ledger.errors import LedgerError, ObjectNotFound
 from ledger.export_drive import build_export_drive
 from ledger.fixity import FixityStatus
 from ledger.identity import ContributorIdentity
@@ -85,6 +85,8 @@ from ledger.lockdown import (
 )
 from ledger.models import (
     AccessPolicy,
+    ArchivalContainer,
+    ContainerLevel,
     ContentAddress,
     DublinCore,
     Field,
@@ -218,6 +220,10 @@ def _cmd_ingest(args: argparse.Namespace) -> int:  # noqa: C901 - argparse optio
         ),
         fields=fields,
         content_warnings=list(args.cw or []),
+        # #202: file the item in a collection or series at ingest. `Archive.ingest`
+        # refuses a container that is not there or whose chain will not resolve,
+        # rather than storing a record no viewer could ever see.
+        placement=args.collection,
     )
 
     # A bag's payload is keyed by filename, so two sources sharing a basename would
@@ -372,6 +378,110 @@ def _cmd_ingest(args: argparse.Namespace) -> int:  # noqa: C901 - argparse optio
             file=sys.stderr,
         )
     return 0
+
+
+def _cmd_arrange_describe(args: argparse.Namespace) -> int:
+    """``arrange describe`` — create or re-describe a collection or series (#202).
+
+    The same verb for both, because an archivist re-describes a collection far
+    more often than they create one, and a separate ``update`` would be a second
+    place for the shape rules to be checked. Both policies are set here and both
+    default to the narrowest thing that still lets the container exist: a
+    container nobody named a policy for is sealed, not public.
+    """
+    archive = _open_archive(Path(args.root))
+    level = ContainerLevel(args.level)
+    existing: ArchivalContainer | None = None
+    try:
+        existing = archive.get_container(args.id)
+    except ObjectNotFound:
+        existing = None
+    container = ArchivalContainer(
+        container_id=args.id,
+        title=args.title if args.title is not None else (existing.title if existing else ""),
+        level=level,
+        parent_id=args.parent,
+        scope_and_content=(
+            args.scope
+            if args.scope is not None
+            else (existing.scope_and_content if existing else "")
+        ),
+        extent=args.extent if args.extent is not None else (existing.extent if existing else ""),
+        dates=args.dates if args.dates is not None else (existing.dates if existing else ""),
+        policy=AccessPolicy(args.policy),
+        unseal_at=args.unseal_at,
+        unseal_condition=args.unseal_condition,
+        records_policy=AccessPolicy(args.records_policy),
+        records_unseal_at=args.records_unseal_at,
+        records_unseal_condition=args.records_unseal_condition,
+        created_at=(existing.created_at if existing else (args.now if args.now else now_iso())),
+    )
+    archive.describe_container(container, agent=args.actor, now=args.now)
+    print(f"{container.level.value} {container.container_id}: {container.title}")
+    print(f"  own description: {container.policy.value}")
+    print(f"  records in it:   {container.records_policy.value} (a ceiling, never a widening)")
+    return 0
+
+
+def _cmd_arrange_place(args: argparse.Namespace) -> int:
+    """``arrange place`` — file one record in a container, or unfile it."""
+    archive = _open_archive(Path(args.root))
+    target = None if args.into is None else args.into
+    archive.place(args.id, target, agent=args.actor, now=args.now)
+    if target is None:
+        print(f"{args.id}: removed from its container")
+    else:
+        print(f"{args.id}: filed in {target}")
+    return 0
+
+
+def _cmd_arrange_list(args: argparse.Namespace) -> int:
+    """``arrange list`` — the arrangement as a steward sees it, indented by level.
+
+    A steward-side view over the raw containers, so it shows both policies and
+    every container including the sealed ones. It is not a disclosure path and
+    is not what the browse server renders; ``ledger browse --as`` is how you
+    check what a given viewer would be shown.
+    """
+    archive = _open_archive(Path(args.root))
+    graph = archive.arrangement()
+    shown = 0
+    for collection in graph.roots():
+        print(
+            f"{collection.container_id}\t{collection.title}\t"
+            f"own={collection.policy.value}\trecords={collection.records_policy.value}"
+        )
+        shown += 1
+        for series in graph.children(collection.container_id):
+            print(
+                f"  {series.container_id}\t{series.title}\t"
+                f"own={series.policy.value}\trecords={series.records_policy.value}"
+            )
+            shown += 1
+    orphans = [c for c in graph.all_containers() if graph.chain(c.container_id) is None]
+    for orphan in orphans:
+        print(f"! {orphan.container_id}\t{orphan.title}\tUNRESOLVABLE (see `arrange check`)")
+    print(f"({shown} container(s), {len(orphans)} unresolvable)")
+    return 0
+
+
+def _cmd_arrange_check(args: argparse.Namespace) -> int:
+    """``arrange check`` — report every placement this archive cannot resolve.
+
+    The operability half of failing closed. A record filed in a container that
+    is missing, unparseable, or wrongly parented is denied to *everyone*, which
+    is the only safe answer and also a completely silent one: the record simply
+    stops appearing. This says so, and exits non-zero so a cron can notice.
+    """
+    archive = _open_archive(Path(args.root))
+    problems = archive.arrangement_problems()
+    for line in problems:
+        print(line)
+    if not problems:
+        print("arrangement: every container resolves and every placement is reachable")
+        return 0
+    print(f"({len(problems)} problem(s); each denies its records to every viewer)")
+    return 1
 
 
 def _cmd_browse(args: argparse.Namespace) -> int:
@@ -2026,11 +2136,86 @@ def _build_parser() -> argparse.ArgumentParser:
             "speech-to-text — the file must already be transcribed)"
         ),
     )
+    p_ingest.add_argument(
+        "--collection",
+        metavar="CONTAINER_ID",
+        help=(
+            "file this item in an existing collection or series (#202); the "
+            "container's policy is a ceiling over the record, never a widening"
+        ),
+    )
     p_ingest.add_argument("--contributor-name", help="sealed into the vault; never printed back")
     p_ingest.add_argument("--contributor-contact", help="sealed into the vault")
     p_ingest.add_argument("--actor", default="ledger", help="ingest agent id")
     p_ingest.add_argument("--now", help="ISO-8601 timestamp for reproducible ingest")
     p_ingest.set_defaults(func=_cmd_ingest)
+
+    p_arrange = sub.add_parser(
+        "arrange",
+        help="describe collections and series, and file records in them (#202)",
+    )
+    arrange_sub = p_arrange.add_subparsers(
+        dest="arrange_command", required=True, metavar="SUBCOMMAND"
+    )
+
+    p_arr_describe = arrange_sub.add_parser(
+        "describe", help="create or re-describe a collection or series"
+    )
+    p_arr_describe.add_argument("--root", required=True)
+    p_arr_describe.add_argument("--id", required=True, help="container id (letters, digits, _ -)")
+    p_arr_describe.add_argument("--title", help="required when creating; kept when re-describing")
+    p_arr_describe.add_argument(
+        "--level",
+        choices=[level.value for level in ContainerLevel],
+        default=ContainerLevel.COLLECTION.value,
+    )
+    p_arr_describe.add_argument("--parent", help="the collection a series belongs to")
+    p_arr_describe.add_argument("--scope", help="scope-and-content note")
+    p_arr_describe.add_argument("--extent", help='extent as an archivist writes it ("4 boxes")')
+    p_arr_describe.add_argument("--dates", help='inclusive/bulk dates ("1987-1994, bulk 1991")')
+    p_arr_describe.add_argument(
+        "--policy",
+        choices=[policy.value for policy in AccessPolicy],
+        default=AccessPolicy.SEALED_UNTIL.value,
+        help=(
+            "who may know this container exists and read its description; "
+            "defaults to sealed, because a container's title can out a depositor"
+        ),
+    )
+    p_arr_describe.add_argument("--unseal-at", dest="unseal_at", help="ISO-8601 instant")
+    p_arr_describe.add_argument("--unseal-condition", dest="unseal_condition")
+    p_arr_describe.add_argument(
+        "--records-policy",
+        dest="records_policy",
+        choices=[policy.value for policy in AccessPolicy],
+        default=AccessPolicy.SEALED_UNTIL.value,
+        help="the ceiling over every record filed in this container; never a widening",
+    )
+    p_arr_describe.add_argument("--records-unseal-at", dest="records_unseal_at")
+    p_arr_describe.add_argument("--records-unseal-condition", dest="records_unseal_condition")
+    p_arr_describe.add_argument("--actor", default="ledger")
+    p_arr_describe.add_argument("--now", help="ISO-8601 timestamp for a reproducible write")
+    p_arr_describe.set_defaults(func=_cmd_arrange_describe)
+
+    p_arr_place = arrange_sub.add_parser("place", help="file one record in a container")
+    p_arr_place.add_argument("--root", required=True)
+    p_arr_place.add_argument("--id", required=True, help="record id")
+    p_arr_place.add_argument(
+        "--into", help="container id; omit to remove the record from its container"
+    )
+    p_arr_place.add_argument("--actor", default="ledger")
+    p_arr_place.add_argument("--now", help="ISO-8601 timestamp")
+    p_arr_place.set_defaults(func=_cmd_arrange_place)
+
+    p_arr_list = arrange_sub.add_parser("list", help="print the arrangement (steward view)")
+    p_arr_list.add_argument("--root", required=True)
+    p_arr_list.set_defaults(func=_cmd_arrange_list)
+
+    p_arr_check = arrange_sub.add_parser(
+        "check", help="report placements and containers that do not resolve"
+    )
+    p_arr_check.add_argument("--root", required=True)
+    p_arr_check.set_defaults(func=_cmd_arrange_check)
 
     p_browse = sub.add_parser("browse", help="list records a viewer may see")
     p_browse.add_argument("--root", required=True)
