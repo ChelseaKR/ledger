@@ -34,7 +34,9 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `/healthz`'s steward block gains `bags_verified` and `bags_not_applicable` and the
   holding-aware verdict (the **anonymous** payload is unchanged, deliberately —
   making it honest would turn it into a second emptiness oracle); `/status` gains a
-  headline that calls a catalogue a catalogue; the hand-off runbook will not tell a
+  headline that calls a catalogue a catalogue — for a steward only, because the
+  same sentence to an outsider would say that the records they cannot see are
+  physical objects in people's keeping; the hand-off runbook will not tell a
   volunteer inheriting the archive that "all bags verified intact" over records
   nothing can verify; `replicas`, `heal` and `verify-backup` each say what was and
   was not covered; and the print edition and courier package say on the page that the

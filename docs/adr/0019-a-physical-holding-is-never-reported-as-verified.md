@@ -133,6 +133,15 @@ identical to anything counting successes, and only one of them is a statement.
   material. Every other route to `all_verified: false` also returns 503, so the honest
   verdict goes in the steward-gated block — the same place #219 put the three-state
   one — which gains `bags_verified` and `bags_not_applicable`.
+- `/status` applies the **same line** to its headline, and this was caught on
+  review of this change rather than designed in. The page's verdict is a claim about
+  the whole archive, sealed records included, so "this archive is a catalogue, not a
+  copy" shown to an outsider who can list nothing told them that hidden records exist
+  and that they describe physical objects in people's keeping — measured: an
+  all-sealed physical archive said exactly that to an anonymous request. That points
+  an adversary at custodians. A non-steward is therefore served the verdict this page
+  served before #188, and only a steward gets the holding-aware one; the per-record
+  truth still reaches every reader on each listable record's own page and badge.
 - `succession`'s `fixity_status` will not say `VERIFIED` over an archive of nothing but
   physical holdings, and the runbook a non-ops volunteer reads names the count of
   records nothing can verify. `all_fixity_ok` and `HANDOFF_SCHEMA_VERSION` are

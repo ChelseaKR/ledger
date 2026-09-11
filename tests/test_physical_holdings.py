@@ -816,14 +816,14 @@ def _get(base: str, path: str, *, steward_token: bool = False) -> tuple[int, str
 
 @pytest.fixture
 def physical_site(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
-    archive = _archive(tmp_path / "physical", monkeypatch, name="Physical Only")
+    archive = _archive(tmp_path / "physical", monkeypatch, name="Status Test Archive")
     archive.ingest({}, _physical_record(), now=_NOW)
     yield from _serve(archive, tmp_path, "physical")
 
 
 @pytest.fixture
 def digital_site(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
-    archive = _archive(tmp_path / "digital", monkeypatch, name="Digital Only")
+    archive = _archive(tmp_path / "digital", monkeypatch, name="Status Test Archive")
     _ingest_digital(archive, tmp_path, "A scan")
     yield from _serve(archive, tmp_path, "digital")
 
@@ -870,10 +870,29 @@ def test_a_steward_reading_healthz_over_a_digital_archive_still_sees_a_verified_
     assert fixity_block["bags_not_applicable"] == 0
 
 
-def test_the_status_page_calls_a_shoebox_catalogue_what_it_is(physical_site: str) -> None:
-    _code, body = _get(physical_site, "/status")
+def test_a_steward_reading_status_is_told_the_archive_is_a_catalogue(physical_site: str) -> None:
+    _code, body = _get(physical_site, "/status", steward_token=True)
     assert i18n.t("en", "status_headline_not_applicable") in body
     assert i18n.t("en", "status_headline_verified") not in body
+
+
+def test_the_anonymous_status_page_is_identical_for_a_physical_and_a_digital_archive(
+    physical_site: str, digital_site: str
+) -> None:
+    """The same line /healthz holds, held on the human-readable page.
+
+    The /status verdict is a claim about the WHOLE archive, sealed records
+    included. Telling an outsider "this archive is a catalogue, not a copy" tells
+    them that the records they cannot see describe physical objects in somebody's
+    keeping, which points an adversary at the custodians #188 exists to protect.
+    Measured before the gate: an all-sealed physical archive said exactly that to
+    an anonymous request. Both fixtures carry the same archive name, so any
+    difference between the two bodies is the verdict and nothing else.
+    """
+    physical = _get(physical_site, "/status")
+    digital = _get(digital_site, "/status")
+    assert physical == digital
+    assert i18n.t("en", "status_headline_not_applicable") not in physical[1]
 
 
 def test_the_status_page_still_says_healthy_for_a_digital_archive(digital_site: str) -> None:

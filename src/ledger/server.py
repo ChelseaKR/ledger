@@ -2312,7 +2312,23 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             not_applicable = sum(1 for v in verdicts if v is FixityStatus.NOT_APPLICABLE)
             total = len(holdings)
             files = sum(r.checked for _n, _k, r in holdings)
-            verdict = fixity.overall_holding_status((kind, r) for _n, kind, r in holdings)
+            # WHO GETS THE FOURTH WORD. The verdict is a qualitative claim about the
+            # WHOLE archive, sealed records included, and "every record here is a
+            # physical object" said to an outsider who can list none of them is a
+            # disclosure: it tells them hidden records exist and that the material
+            # is in people's keeping — which points an adversary at custodians, the
+            # person #188 exists to protect. Measured before this gate: an
+            # all-sealed physical archive answered an anonymous request with "This
+            # archive is a catalogue, not a copy." So a non-steward is served
+            # exactly the verdict this page served before #188 (the byte verdict),
+            # and only a steward — who already sees the counts — gets the
+            # holding-aware one. The per-record truth still reaches every reader
+            # where it belongs: on each listable record's own page and badge.
+            verdict = (
+                fixity.overall_holding_status((kind, r) for _n, kind, r in holdings)
+                if grant.is_steward
+                else fixity.overall_status(r for _n, _k, r in holdings)
+            )
             # An archive with no bags and an archive with one unverifiable bag are
             # both UNVERIFIED and they are not the same sentence: the first has
             # nothing to check, the second has something it could not check. The
