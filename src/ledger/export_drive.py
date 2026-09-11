@@ -100,6 +100,16 @@ def _record_page_html(record: DisclosedRecord, *, lang: str) -> str:
         if withheld_items
         else ""
     )
+    # #202: a courier package has no server to link back to, so the arrangement
+    # is stated as plain text. Named only when this viewer may describe the
+    # container — an unarranged record and one filed somewhere hidden from the
+    # reader produce the same (empty) block.
+    part_of_block = (
+        f'<p class="part-of">Part of: '
+        f"{_esc(' / '.join(step.title for step in record.placement))}</p>\n"
+        if record.placement
+        else ""
+    )
     return (
         "<!doctype html>\n"
         f'<html lang="{_esc(lang)}">\n<head>\n<meta charset="utf-8">\n'
@@ -110,6 +120,7 @@ def _record_page_html(record: DisclosedRecord, *, lang: str) -> str:
         '<a class="skip-link" href="#main">Skip to content</a>\n'
         '<header><p><a href="../index.html">&larr; Back to index</a></p></header>\n'
         f'<main id="main" tabindex="-1">\n<h1>{_esc(record.title)}</h1>\n'
+        f"{part_of_block}"
         f"{cw_block}"
         f"<table><caption>Descriptive metadata</caption><tbody>{dc_rows}{field_rows}"
         f"</tbody></table>\n"

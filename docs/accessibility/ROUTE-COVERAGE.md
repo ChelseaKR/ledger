@@ -1,6 +1,6 @@
 # Automated accessibility coverage, by route
 
-Last verified: 2026-09-05 · Recheck cadence: whenever a route is added, removed, or
+Last verified: 2026-09-11 · Recheck cadence: whenever a route is added, removed, or
 gains coverage
 
 This page names exactly which of ledger's HTML-emitting routes the two automated
@@ -41,7 +41,7 @@ reads them, under a floor that fails if it recovers fewer than twenty.
 
 ## Inventory
 
-21 GET routes in `src/ledger/server.py` render HTML for a person rather than JSON, XML,
+23 GET routes in `src/ledger/server.py` render HTML for a person rather than JSON, XML,
 a binary payload, or a static asset. Counting `/record/{id}` once regardless of its two
 content-warning states (as `axe.spec.ts` and `reflow.spec.ts` already do):
 
@@ -60,6 +60,8 @@ content-warning states (as `axe.spec.ts` and `reflow.spec.ts` already do):
 | `/transparency` | Yes | — | Yes |
 | `/record/{id}` (both content-warning states) | Yes | Yes | Yes |
 | `/steward` | — | Yes | Yes |
+| `/collections` | Yes | — | Yes |
+| `/collection/{id}` | Yes | — | Yes |
 | `/status` | — | — | **No** |
 | `/consent-status` | — | — | **No** |
 | `/governance` | — | — | **No** |
@@ -69,9 +71,10 @@ content-warning states (as `axe.spec.ts` and `reflow.spec.ts` already do):
 | `/record/{id}/object` | — | — | **No** |
 | `/record/{id}/history` | — | — | **No** |
 
-**13 of 21** routes have coverage from at least one engine. **8** have none.
+**15 of 23** routes have coverage from at least one engine. **8** have none.
 
-Four of the covered routes — `/places`, `/timeline`, `/overview`, `/transparency` —
+Six of the covered routes — `/places`, `/timeline`, `/overview`, `/transparency`,
+`/collections`, `/collection/{id}` —
 are covered by the static gate *only*. That is exactly the surface issue #122 was
 about: before that fix, a `_render_sample_pages()` failure silently zeroed out the
 static gate's coverage entirely, and these four routes' coverage would have
@@ -80,6 +83,23 @@ pass having examined zero documents, so that specific failure mode can no longer
 it does not add coverage to a route that was never covered. Two more —
 `/withdraw` and `/edit` — are covered by the static gate only as of this fix (see
 below).
+
+## The two arrangement routes, added covered rather than as gaps (#202)
+
+`/collections` and `/collection/{id}` arrived with
+[#202](https://github.com/ChelseaKR/ledger/issues/202)'s collections and series.
+They are built the way the paragraph above describes as "already built the right
+way": each handler composes its `<main>` through a pure function
+(`ledger.render.collections_main_html`, `ledger.render.collection_main_html`), so
+`_render_sample_pages()` calls them directly and the static gate covers both from
+the commit that introduced them. No `server.py` change was needed for the coverage,
+and neither route joins the documented-gap list below.
+
+The sample archive the gate builds now carries a real arrangement — one public
+collection, one public series inside it, and the sample record filed in the series —
+so both pages are exercised **populated**, with rows in their list and table views,
+rather than in their empty state. A list/table equivalence check over two empty
+views is the shape of check that passes having examined nothing.
 
 ## What this fix added: 3 routes, with no `server.py` change
 

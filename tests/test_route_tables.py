@@ -68,6 +68,7 @@ _EXPECTED_GET_PAGES: dict[str, str] = {
     "/withdraw": "_handle_withdraw_form",
     "/edit": "_handle_edit_form",
     "/api/records": "_handle_api_records",
+    "/collections": "_handle_collections",
 }
 
 #: Exact GET paths whose handler also reads the query string.
@@ -224,6 +225,8 @@ def routed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[st
         "_handle_record_history",
         "_handle_record",
         "_handle_api_record",
+        "_handle_collection",
+        "_handle_collection_ead",
         "_handle_static",
         "_handle_not_found",
     ):
@@ -315,6 +318,25 @@ def test_the_remaining_prefixed_get_routes_reach_their_handlers(
     assert _request(base, "/api/record/abc123") == 204
     assert _request(base, "/static/site.css") == 204
     assert recorded == ["_handle_api_record:abc123", "_handle_static:site.css"]
+
+
+def test_the_collection_family_tries_the_finding_aid_before_the_catch_all(
+    routed: tuple[str, list[str]],
+) -> None:
+    """The same ordering hazard as ``/record/{id}``, one family later (#202).
+
+    ``/collection/{id}`` is a catch-all: ``casa-abierta/ead.xml`` matches it
+    too, so the finding-aid route is reachable only because it is tried first.
+    Asserted over loopback, with the slicing, for the same reason the record
+    family is.
+    """
+    base, recorded = routed
+    assert _request(base, "/collection/casa-abierta/ead.xml") == 204
+    assert _request(base, "/collection/casa-abierta") == 204
+    assert recorded == [
+        "_handle_collection_ead:casa-abierta",
+        "_handle_collection:casa-abierta",
+    ]
 
 
 def test_a_path_no_table_claims_is_a_not_found(routed: tuple[str, list[str]]) -> None:

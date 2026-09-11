@@ -29,6 +29,55 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and that a green shell says nothing about a body.
 
 ### Added
+- **Records have a place in the archive: collections and series (#202, ADR 0020).**
+  `ledger` described items and nothing above them. It now has an arrangement — a
+  `Collection`, a `Series` under it, and a record's placement in exactly one of
+  them — with its own title, scope-and-content note, extent, dates, and two
+  policies. `ledger arrange describe|place|list|check` and `ledger ingest
+  --collection` are the steward's surface; `/collections`, `/collection/{id}` and
+  a `collection` facet that composes with search and the Dublin Core facets are
+  the reader's.
+
+  **The resolution is a logical AND over the root-to-parent chain.** Placing a
+  record in a container can remove visibility and can never add any: there is no
+  ordering over `AccessPolicy` to get wrong, and no cell where a broad container
+  widens a narrow record. All 144 cells of (6 record policies × 8 container
+  ceilings × 3 viewers) are asserted against a hand-written truth table.
+
+  **A container carries two policies, because it is two things at once.** One
+  governs its own description — a collection titled "2019 raid testimony,
+  deposited by Casa Abierta" outs its depositor by aggregation even when every
+  record inside it is sealed — and one is the ceiling over what it holds. A public
+  record filed in a hidden collection renders, facets, harvests, exports and
+  breadcrumbs exactly like an unarranged one; three differential tests assert the
+  anonymous bodies are byte-identical across 22 routes.
+
+  **Nothing is migrated and no bag is rewritten.** Placement is optional forever,
+  an unarranged record has an empty chain, and `serialize_record` omits the
+  property entirely when there is none — so every manifest written before this
+  change serialises to exactly the bytes it always did.
+
+  **Everything fails closed, and says so.** A dangling placement, a corrupt parent
+  link, or a read path that was never given the arrangement all deny the record,
+  to stewards too. `ledger arrange check` names every record the resolver is
+  hiding for that reason and exits non-zero.
+
+  EAD now emits the hierarchy its own docstring has described since it was
+  written (`<c01 level="collection">` / `<c02 level="series">` / items), and
+  `/collection/{id}/ead.xml` is the first read path ever to call it. OAI-PMH gains
+  `ListSets`, a `<setSpec>` per visible level, and `&set=` filtering. METS gains a
+  `logical` structMap and DCMI `isPartOf`; the CSV gains a `collection` column,
+  appended so a consumer reading by position is unaffected; the print booklet and
+  the courier drive state it as plain text. 15 new interface strings in
+  en/es/fr/ar.
+
+- **`tests/test_sealed_existence_leaks.py`'s completeness check checks something
+  again.** `test_the_route_list_covers_every_anonymous_get` recovered routes with
+  a regex over `do_GET`'s source text; #83 moved them into route tables as data,
+  so it had matched **zero** routes ever since and its set difference was against
+  an empty set. Green, in the one file whose inventory is a disclosure control. It
+  reads the tables now, under a floor.
+
 - **`/healthz` tells a steward when nothing was verified (#208, #205).** The #208
   sweep closed the vacuous fixity fold on `/status`, the hand-off runbook and
   `ledger handoff`'s summary line, and left `/healthz`'s `all_verified` alone as a
