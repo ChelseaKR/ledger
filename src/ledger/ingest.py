@@ -34,7 +34,7 @@ from pathlib import Path
 from ledger import arrangement as arrangement_mod
 from ledger import catalog_index
 from ledger._filelock import file_lock
-from ledger.access import disclose, is_listable
+from ledger.access import disclose, disclose_container, is_listable
 from ledger.arrangement import Arrangement
 from ledger.attest import attested_conditions
 from ledger.bag import (
@@ -51,7 +51,7 @@ from ledger.config import (
     SEALED_PEAK_RSS_MULTIPLIER,
     Config,
 )
-from ledger.errors import BagValidationError, LedgerError, ObjectNotFound
+from ledger.errors import AccessDenied, BagValidationError, LedgerError, ObjectNotFound
 from ledger.fixity import AuditReport, hash_file_multi
 from ledger.identity import ContributorIdentity, IdentityVault
 from ledger.metadata.dublincore import to_json as dublincore_to_json
@@ -64,6 +64,7 @@ from ledger.models import (
     AccessPolicy,
     ArchivalContainer,
     ContentAddress,
+    DisclosedContainer,
     DisclosedRecord,
     DublinCore,
     Field,
@@ -920,6 +921,60 @@ class Archive:
         #202.
         """
         return arrangement_mod.load_arrangement(self.containers_dir)
+
+    def browse_containers(self, grant: Grant, now: str | None = None) -> list[DisclosedContainer]:
+        """Every container ``grant`` may know exists, root-first then by id.
+
+        The container analogue of :meth:`browse`, and the only listing a read
+        path may render. A container this viewer may not describe is skipped
+        silently, exactly as a non-listable record is: the absence of a row is
+        the whole point, because a row saying "1 collection withheld" would be
+        the aggregation leak #202 exists to prevent.
+
+        No count of holdings travels with a container — see
+        :class:`~ledger.models.DisclosedContainer` for why.
+        """
+        stamp = now if now is not None else now_iso()
+        conditions = self.attested_conditions()
+        graph = self.arrangement()
+        out: list[DisclosedContainer] = []
+        for collection in graph.roots():
+            for container in (collection, *graph.children(collection.container_id)):
+                try:
+                    out.append(
+                        disclose_container(
+                            container,
+                            grant,
+                            stamp,
+                            arrangement=graph,
+                            conditions_met=conditions,
+                        )
+                    )
+                except AccessDenied:
+                    continue
+        return out
+
+    def disclose_container(
+        self, container_id: str, grant: Grant, now: str | None = None
+    ) -> DisclosedContainer:
+        """Disclose one container to ``grant``, or raise
+        :class:`~ledger.errors.AccessDenied`.
+
+        Raises the same way for a container that does not exist and for one this
+        viewer may not know about, so probing ids tells a caller nothing (#202).
+        """
+        stamp = now if now is not None else now_iso()
+        graph = self.arrangement()
+        container = graph.get(container_id)
+        if container is None:
+            raise AccessDenied(container_id)
+        return disclose_container(
+            container,
+            grant,
+            stamp,
+            arrangement=graph,
+            conditions_met=self.attested_conditions(),
+        )
 
     def get_container(self, container_id: str) -> ArchivalContainer:
         """Load one container's manifest, or raise

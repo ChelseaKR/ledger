@@ -37,7 +37,7 @@ from __future__ import annotations
 
 import re
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from html.parser import HTMLParser
 from pathlib import Path
 
@@ -475,7 +475,14 @@ def _render_sample_pages() -> dict[str, str]:
         from ledger import contribute, i18n
         from ledger.config import Config
         from ledger.ingest import Archive
-        from ledger.models import AccessPolicy, DublinCore, Field, Record
+        from ledger.models import (
+            AccessPolicy,
+            ArchivalContainer,
+            ContainerLevel,
+            DublinCore,
+            Field,
+            Record,
+        )
         from ledger.render import (
             _browse_main_html,
             _overview_main_html,
@@ -483,6 +490,8 @@ def _render_sample_pages() -> dict[str, str]:
             _places_html,
             _record_main_html,
             _timeline_html,
+            collection_main_html,
+            collections_main_html,
             transparency_main_html,
         )
         from ledger.transparency import TransparencyLog
@@ -501,11 +510,47 @@ def _render_sample_pages() -> dict[str, str]:
             ),
             fields=[Field(name="story", value="A sample story.", policy=AccessPolicy.PUBLIC)],
         )
+        # #202's two pages are rendered here rather than left as a documented
+        # gap. The sample archive gets a real arrangement — one collection with
+        # one series, both public — so the pages under test are the populated
+        # ones, not the empty state, and the list/table equivalence the gate
+        # checks is checked over actual rows.
+        archive.describe_container(
+            ArchivalContainer(
+                container_id="sample-collection",
+                title="Sample collection",
+                level=ContainerLevel.COLLECTION,
+                scope_and_content="A sample deposit used only to render the surface.",
+                extent="2 boxes",
+                dates="1990-1994",
+                policy=AccessPolicy.PUBLIC,
+                records_policy=AccessPolicy.PUBLIC,
+                created_at="2026-01-01T00:00:00Z",
+            ),
+            now="2026-01-01T00:00:00Z",
+        )
+        archive.describe_container(
+            ArchivalContainer(
+                container_id="sample-series",
+                title="Sample series",
+                level=ContainerLevel.SERIES,
+                parent_id="sample-collection",
+                policy=AccessPolicy.PUBLIC,
+                records_policy=AccessPolicy.PUBLIC,
+                created_at="2026-01-01T00:00:00Z",
+            ),
+            now="2026-01-01T00:00:00Z",
+        )
+        record = replace(record, placement="sample-series")
         archive.ingest({}, record, now="2026-01-01T00:00:00Z")
         from ledger.access.grants import anonymous
 
         disclosed = archive.browse(anonymous(), now="2026-01-01T00:00:00Z")
         one = archive.disclose(record.record_id, anonymous(), now="2026-01-01T00:00:00Z")
+        containers = archive.browse_containers(anonymous(), now="2026-01-01T00:00:00Z")
+        collection = archive.disclose_container(
+            "sample-collection", anonymous(), now="2026-01-01T00:00:00Z"
+        )
 
         transparency_log = TransparencyLog(root / "transparency.json")
         latest_attestation = transparency_log.append(
@@ -557,6 +602,21 @@ def _render_sample_pages() -> dict[str, str]:
             ),
             "rendered:/edit": _page(
                 "Edit", lang="en", main_html=contribute.render_edit_main(config, lang="en")
+            ),
+            "rendered:/collections": _page(
+                i18n.t("en", "collections_heading"),
+                lang="en",
+                main_html=collections_main_html(containers, lang="en"),
+            ),
+            "rendered:/collection/{id}": _page(
+                collection.title,
+                lang="en",
+                main_html=collection_main_html(
+                    collection,
+                    disclosed,
+                    [c for c in containers if c.container_id == "sample-series"],
+                    lang="en",
+                ),
             ),
         }
     except OSError:

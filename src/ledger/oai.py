@@ -6,7 +6,7 @@ the archive's own browse UI. This module answers that with two standard surfaces
 
 * an OAI-PMH 2.0 provider (:func:`oai_response`) supporting the ``oai_dc`` metadata
   format and the verbs ``Identify``, ``ListMetadataFormats``, ``ListIdentifiers``,
-  ``ListRecords``, and ``GetRecord``; and
+  ``ListRecords``, ``ListSets``, and ``GetRecord``; and
 * an XML sitemap (:func:`sitemap_xml`) of public record URLs; and
 * an Atom 1.0 feed (:func:`atom_feed_xml`) of the most recent public records, so a
   reader or aggregator can *follow* the collection as it grows.
@@ -35,7 +35,7 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 
 from ledger.metadata.dublincore import escape, to_oai_dc_xml
-from ledger.models import DisclosedRecord, DublinCore
+from ledger.models import DisclosedContainer, DisclosedRecord, DublinCore
 
 __all__ = [
     "OAI_DC_PREFIX",
@@ -65,9 +65,38 @@ _SUPPORTED_VERBS: frozenset[str] = frozenset(
         "ListMetadataFormats",
         "ListIdentifiers",
         "ListRecords",
+        "ListSets",
         "GetRecord",
     }
 )
+
+
+def _set_spec(steps: Sequence[object]) -> str:
+    """An OAI ``setSpec`` from a placement chain: ``collection:series``.
+
+    OAI-PMH gives ``setSpec`` a colon-separated hierarchy and nothing else, and
+    ledger's container ids are one allow-listed path component each
+    (``[A-Za-z0-9_-]``), so joining them with ``:`` is unambiguous in both
+    directions and needs no escaping.
+    """
+    return ":".join(getattr(step, "container_id", "") for step in steps)
+
+
+def _record_set_specs(record: DisclosedRecord) -> list[str]:
+    """Every set ``record`` belongs to, outermost first.
+
+    A record in a series belongs to its series' set *and* to its collection's,
+    which is what makes harvesting a collection pick up everything filed under
+    it. Derived from the record's **disclosed** placement chain, so a container
+    this viewer may not see contributes no set and the record simply looks
+    unarranged (#202).
+    """
+    return [_set_spec(record.placement[: i + 1]) for i in range(len(record.placement))]
+
+
+def _container_set_spec(container: DisclosedContainer) -> str:
+    """The ``setSpec`` for one disclosed container, including its visible ancestors."""
+    return _set_spec([*container.ancestors, container])
 
 
 def oai_response(
@@ -79,6 +108,7 @@ def oai_response(
     base_url: str,
     admin_email: str,
     now: str,
+    containers: Sequence[DisclosedContainer] = (),
 ) -> tuple[int, str]:
     """Dispatch an OAI-PMH verb and return ``(http_status, xml_text)``.
 
@@ -86,6 +116,11 @@ def oai_response(
     grant; this function never widens that set, so it cannot reveal sealed material
     (no-outing rule). ``now`` is the response timestamp *and* the fallback datestamp
     for a record without a Dublin Core ``date`` — passed in for determinism.
+
+    ``containers`` is the caller's already-disclosed arrangement (#202). It is
+    what ``ListSets`` enumerates and what ``&set=`` filters against; a container
+    the anonymous grant may not describe is simply not in it, so harvesting
+    cannot reveal that a collection exists any more than browsing can.
 
     OAI-PMH convention: even an *error* response is a well-formed OAI document
     returned with HTTP status ``200``; the failure is carried by an ``<error>``
@@ -110,12 +145,77 @@ def oai_response(
         return _identify(base_url, now, request_attr, archive_name, admin_email)
     if verb == "ListMetadataFormats":
         return _list_metadata_formats(base_url, now, request_attr)
-    if verb == "ListIdentifiers":
-        return _list_identifiers(base_url, now, request_attr, params, records)
-    if verb == "ListRecords":
-        return _list_records(base_url, now, request_attr, params, records)
+    if verb == "ListSets":
+        return _list_sets(base_url, now, request_attr, containers)
+    if verb in ("ListIdentifiers", "ListRecords"):
+        # `&set=` narrows to one container and everything below it. An unknown
+        # set and an empty one are the same `noRecordsMatch` answer, so probing
+        # set names cannot tell a harvester which collections exist.
+        selected = _select_set(records, params.get("set"))
+        if verb == "ListIdentifiers":
+            return _list_identifiers(base_url, now, request_attr, params, selected)
+        return _list_records(base_url, now, request_attr, params, selected)
     # verb == "GetRecord" (the only remaining supported verb)
     return _get_record(base_url, now, request_attr, params, records)
+
+
+def _select_set(
+    records: Sequence[DisclosedRecord], set_spec: str | None
+) -> Sequence[DisclosedRecord]:
+    """The records in ``set_spec``, or all of them when no set was requested."""
+    if not set_spec:
+        return records
+    return [record for record in records if set_spec in _record_set_specs(record)]
+
+
+def _list_sets(
+    base_url: str,
+    now: str,
+    request_attr: str,
+    containers: Sequence[DisclosedContainer],
+) -> tuple[int, str]:
+    """The ``ListSets`` response: one ``<set>`` per container the public may see.
+
+    An archive with no arrangement — and an archive whose every container is
+    sealed from this viewer — both answer ``noSetHierarchy``, which is the
+    OAI-PMH code for "this repository has no sets". The two are deliberately the
+    same answer: a distinct reply for "there are sets but not for you" would
+    tell a harvester that hidden collections exist (#202).
+
+    No set carries a count of its members, for the same reason the browse page
+    does not: a number over records the caller cannot list is an oracle about
+    them.
+    """
+    if not containers:
+        return _error_response(
+            base_url,
+            now,
+            {"verb": "ListSets"},
+            "noSetHierarchy",
+            "This repository does not expose a set hierarchy.",
+        )
+    lines = ["  <ListSets>"]
+    for container in sorted(containers, key=_container_set_spec):
+        lines.append("    <set>")
+        lines.append(f"      <setSpec>{escape(_container_set_spec(container))}</setSpec>")
+        lines.append(f"      <setName>{escape(container.title)}</setName>")
+        if container.scope_and_content:
+            lines.append("      <setDescription>")
+            lines.append(
+                "        <oai_dc:dc "
+                f'xmlns:oai_dc="{_OAI_DC_FORMAT_NS}" '
+                'xmlns:dc="http://purl.org/dc/elements/1.1/" '
+                f'xmlns:xsi="{_XSI_NS}" '
+                f'xsi:schemaLocation="{_OAI_DC_FORMAT_NS} {_OAI_DC_SCHEMA}">'
+            )
+            lines.append(
+                f"          <dc:description>{escape(container.scope_and_content)}</dc:description>"
+            )
+            lines.append("        </oai_dc:dc>")
+            lines.append("      </setDescription>")
+        lines.append("    </set>")
+    lines.append("  </ListSets>")
+    return 200, _envelope(base_url, now, request_attr, lines)
 
 
 def sitemap_xml(record_ids: Sequence[str], base_url: str) -> str:
@@ -384,15 +484,23 @@ def _get_record(
 
 
 def _header_lines(record: DisclosedRecord, now: str, *, indent: str) -> list[str]:
-    """The ``<header>`` block for one record: identifier + datestamp."""
+    """The ``<header>`` block for one record: identifier, datestamp, sets."""
     identifier = escape(record.record_id)
     datestamp = escape(_datestamp(record, now))
-    return [
+    lines = [
         f"{indent}<header>",
         f"{indent}  <identifier>{identifier}</identifier>",
         f"{indent}  <datestamp>{datestamp}</datestamp>",
-        f"{indent}</header>",
     ]
+    # One `<setSpec>` per visible level of the record's arrangement (#202), so a
+    # harvester can tell which collection and series an item came from. An
+    # unarranged record — and a record whose container this viewer may not
+    # describe — emits none, which is exactly the pre-#202 header.
+    lines.extend(
+        f"{indent}  <setSpec>{escape(spec)}</setSpec>" for spec in _record_set_specs(record)
+    )
+    lines.append(f"{indent}</header>")
+    return lines
 
 
 def _record_lines(record: DisclosedRecord, now: str, *, indent: str) -> list[str]:
@@ -496,7 +604,7 @@ def _request_attrs(verb: str | None, params: dict[str, str]) -> str:
     attrs: dict[str, str] = {}
     if verb is not None and verb in _SUPPORTED_VERBS:
         attrs["verb"] = verb
-    for key in ("metadataPrefix", "identifier"):
+    for key in ("metadataPrefix", "identifier", "set"):
         value = params.get(key)
         if value:
             attrs[key] = value

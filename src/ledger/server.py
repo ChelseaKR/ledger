@@ -82,10 +82,12 @@ from ledger.errors import (
 from ledger.fixity import CHUNK_SIZE, FixityStatus
 from ledger.ingest import Archive
 from ledger.lockdown import is_locked_down
+from ledger.metadata.ead import to_ead_xml
 from ledger.models import (
     OBJECT_TYPE_RECORD,
     AccessPolicy,
     ContentAddress,
+    DisclosedContainer,
     DisclosedRecord,
     Grant,
     HashAlgo,
@@ -120,6 +122,8 @@ from ledger.render import (
     _record_main_html,
     _status_region,
     _timeline_html,
+    collection_main_html,
+    collections_main_html,
     transparency_main_html,
     transparency_unattested_main_html,
 )
@@ -644,10 +648,20 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         if path.startswith("/api/record/"):
             self._handle_api_record(path[len("/api/record/") :])
             return True
+        if path.startswith("/collection/"):
+            return self._route_get_collection(path[len("/collection/") :])
         if path.startswith("/static/"):
             self._handle_static(path[len("/static/") :])
             return True
         return False
+
+    def _route_get_collection(self, rest: str) -> bool:
+        """One container's pages. ``/ead.xml`` must be tried before the catch-all."""
+        if rest.endswith("/ead.xml"):
+            self._handle_collection_ead(rest[: -len("/ead.xml")])
+            return True
+        self._handle_collection(rest)
+        return True
 
     def _route_get_record(self, rest: str, params: dict[str, list[str]]) -> bool:
         """One record's pages, dispatched on what follows the identifier.
@@ -1455,7 +1469,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         browse compose with the rest. Only the first value of each field is taken, so a
         crafted repeated param cannot AND a field against itself into nothing."""
         active: list[tuple[str, str]] = []
-        for field in ("subject", "type", "language", "coverage"):
+        for field in ("subject", "type", "language", "coverage", search.COLLECTION_FACET):
             values = params.get(field)
             if values and values[0]:
                 active.append((field, values[0]))
@@ -2828,9 +2842,109 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         """Records disclosed to the anonymous public — the only set harvest exposes."""
         return self._archive().browse(anonymous())
 
+    def _public_containers(self) -> list[DisclosedContainer]:
+        """The arrangement disclosed to the anonymous public — what harvest sees."""
+        return self._archive().browse_containers(anonymous())
+
     def _base_url(self) -> str:
         host = self.headers.get("Host", "localhost")
         return f"http://{host}"
+
+    def _handle_collections(self) -> None:
+        """``GET /collections`` — the archive's arrangement, as this viewer may see it.
+
+        A container whose own description this viewer may not read is absent,
+        not withheld-with-a-placeholder: an archive with no arrangement and an
+        archive whose every collection is sealed from this reader render the
+        same page (#202).
+        """
+        lang = self._lang()
+        grant = self._resolve_grant()
+        containers = self._archive().browse_containers(grant)
+        self._send_html(
+            200,
+            _page(
+                "Collections",
+                lang=lang,
+                main_html=collections_main_html(containers, lang=lang),
+                nav_html=self._nav(),
+            ),
+        )
+
+    def _handle_collection(self, raw_id: str) -> None:
+        """``GET /collection/{id}`` — one container and what is filed in it.
+
+        A container this viewer may not describe answers with the *same* 404 as
+        one that does not exist, so probing ids establishes nothing (#202).
+        """
+        container_id = _decode_id(raw_id)
+        grant = self._resolve_grant()
+        archive = self._archive()
+        try:
+            container = archive.disclose_container(container_id, grant)
+        except (AccessDenied, LedgerError):
+            self._handle_not_found()
+            return
+        lang = self._lang()
+        records = search.filter_by_facet(
+            archive.browse(grant), search.COLLECTION_FACET, container_id
+        )
+        children = [
+            child
+            for child in archive.browse_containers(grant)
+            if child.ancestors and child.ancestors[-1].container_id == container_id
+        ]
+        self._send_html(
+            200,
+            _page(
+                container.title,
+                lang=lang,
+                main_html=collection_main_html(container, records, children, lang=lang),
+                nav_html=self._nav(),
+            ),
+        )
+
+    def _handle_collection_ead(self, raw_id: str) -> None:
+        """``GET /collection/{id}/ead.xml`` — one collection's EAD finding aid.
+
+        The first caller `ledger.metadata.ead` has ever had from a read path.
+        The ``archdesc`` is this container; its series become ``<c01>`` and the
+        items under them ``<c02>``, which is the hierarchy the module's own
+        docstring has always described and never produced.
+
+        Everything in it went through :func:`ledger.access.disclose` or
+        :func:`ledger.access.policy.disclose_container` first, so the finding
+        aid carries exactly what this viewer's browse page does — no more.
+        """
+        container_id = _decode_id(raw_id)
+        grant = self._resolve_grant()
+        archive = self._archive()
+        try:
+            container = archive.disclose_container(container_id, grant)
+        except (AccessDenied, LedgerError):
+            self._handle_not_found()
+            return
+        records = search.filter_by_facet(
+            archive.browse(grant), search.COLLECTION_FACET, container_id
+        )
+        children = [
+            child
+            for child in archive.browse_containers(grant)
+            if child.ancestors and child.ancestors[-1].container_id == container_id
+        ]
+        xml = to_ead_xml(
+            container.title,
+            records,
+            created=now_iso()[:10],
+            collection_id=container.container_id,
+            base_url=self._base_url(),
+            repository=self._archive().config.archive_name,
+            arrangement=children,
+            scope_and_content=container.scope_and_content,
+            extent=container.extent,
+            dates=container.dates,
+        )
+        self._send(200, xml.encode("utf-8"), "text/xml; charset=utf-8")
 
     def _handle_overview(self) -> None:
         """``GET /overview`` — an at-a-glance summary of the public collection.
@@ -2899,6 +3013,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             flat.get("verb", ""),
             flat,
             records=self._public_records(),
+            containers=self._public_containers(),
             archive_name=cfg.archive_name,
             base_url=self._base_url() + "/oai",
             admin_email=cfg.contact or "",
@@ -3036,6 +3151,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         "/withdraw": _handle_withdraw_form,
         "/edit": _handle_edit_form,
         "/api/records": _handle_api_records,
+        "/collections": _handle_collections,
     }
 
     #: Exact GET paths whose handler reads the query string.

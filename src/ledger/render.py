@@ -13,12 +13,22 @@ construction). The server imports these names, so they remain reachable as
 from __future__ import annotations
 
 import html
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from urllib.parse import parse_qsl, quote, urlencode, urlsplit
 
 from ledger import i18n, pagination, search, transparency
 from ledger.metadata.pid import is_pid
-from ledger.models import AccessPolicy, DisclosedRecord, Grant, PayloadFile, Record, TranscriptCue
+from ledger.models import (
+    AccessPolicy,
+    ContainerLevel,
+    DisclosedContainer,
+    DisclosedRecord,
+    Grant,
+    PayloadFile,
+    PlacementStep,
+    Record,
+    TranscriptCue,
+)
 
 # The site's one stylesheet, linked from every page.
 _STYLESHEET_HREF: str = "/static/app.css"
@@ -332,11 +342,21 @@ def _facets_html(
     active_set = set(active or [])
     blocks: list[str] = []
     for field_name, label_key in (
+        (search.COLLECTION_FACET, "facet_collections"),
         ("subject", "facet_subjects"),
         ("type", "facet_types"),
         ("language", "facet_languages"),
     ):
-        items = search.facets(records, field_name)
+        # The arrangement facet (#202) is counted from the disclosed placement
+        # chain rather than from Dublin Core, because where a record is filed is
+        # structural, not descriptive. Everything after that is identical, which
+        # is the point: a reader narrows by collection exactly as they narrow by
+        # subject, and the two compose.
+        items = (
+            search.facet_by_collection(records)
+            if field_name == search.COLLECTION_FACET
+            else search.facets(records, field_name)
+        )
         if not items:
             continue
         rows: list[str] = []
@@ -345,7 +365,7 @@ def _facets_html(
             href = _facet_href(current_path, field_name, f.value, active=is_active)
             mark = ' aria-current="true"' if is_active else ""
             rows.append(
-                f'        <li><a href="{_esc(href)}"{mark}>{_esc(f.value)}</a> '
+                f'        <li><a href="{_esc(href)}"{mark}>{_esc(f.label or f.value)}</a> '
                 f'<span class="muted">({f.count})</span></li>'
             )
         blocks.append(
@@ -761,6 +781,219 @@ def _browse_main_html(
     )
 
 
+def _level_label(container: DisclosedContainer, *, lang: str) -> str:
+    """ "Collection" or "Series", localized. The level is chrome, not an archivist's word."""
+    key = (
+        "collection_level_series"
+        if container.level is ContainerLevel.SERIES
+        else "collection_level_collection"
+    )
+    return i18n.t(lang, key)
+
+
+def _container_href(container_id: str) -> str:
+    return f"/collection/{quote(container_id)}"
+
+
+def _breadcrumb_html(steps: Sequence[PlacementStep], *, lang: str) -> str:
+    """ "Part of: Collection > Series", as links, or "" when there is nothing to say.
+
+    Renders only the steps it is given, and it is given only the ones the viewer
+    may describe (:func:`ledger.access.policy.visible_placement`). An unarranged
+    record and a record in a container this reader may not see produce the same
+    empty string — the reader is not told that a container exists and is
+    withheld, because that sentence is itself the leak (#202).
+    """
+    lines = _breadcrumb_lines(steps, lang=lang)
+    return (lines[0] + "\n") if lines else ""
+
+
+def _breadcrumb_lines(steps: Sequence[PlacementStep], *, lang: str) -> list[str]:
+    """The breadcrumb as zero or one line, so a caller needs no branch of its own."""
+    if not steps:
+        return []
+    links = " / ".join(
+        f'<a href="{_esc(_container_href(step.container_id))}">{_esc(step.title)}</a>'
+        for step in steps
+    )
+    label = _esc(i18n.t(lang, "collection_part_of"))
+    return [f'    <p class="breadcrumb">{label}: {links}</p>']
+
+
+def _container_description_html(container: DisclosedContainer, *, lang: str) -> str:
+    """The archivist's own description of a container: scope note, extent, dates.
+
+    Every value here is a steward's prose about a particular deposit, so it is
+    interpolated and never translated — the same rule ``Config.about`` follows.
+    An inherited scope note says that it is inherited rather than passing the
+    collection's words off as the series' own.
+    """
+    parts: list[str] = []
+    if container.scope_and_content:
+        parts.append(
+            f'    <section aria-labelledby="scope-heading">\n'
+            f'      <h2 id="scope-heading">{_esc(i18n.t(lang, "collection_scope_heading"))}</h2>\n'
+            f"      <p>{_esc(container.scope_and_content)}</p>\n"
+            + (
+                f'      <p class="muted">{_esc(i18n.t(lang, "collection_scope_inherited"))}</p>\n'
+                if container.inherited_scope
+                else ""
+            )
+            + "    </section>"
+        )
+    rows: list[str] = []
+    if container.extent:
+        rows.append(
+            f"      <div><dt>{_esc(i18n.t(lang, 'collection_extent_label'))}</dt>"
+            f"<dd>{_esc(container.extent)}</dd></div>"
+        )
+    if container.dates:
+        rows.append(
+            f"      <div><dt>{_esc(i18n.t(lang, 'collection_dates_label'))}</dt>"
+            f"<dd>{_esc(container.dates)}</dd></div>"
+        )
+    if rows:
+        parts.append('    <dl class="container-facts">\n' + "\n".join(rows) + "\n    </dl>")
+    return "\n".join(parts) + ("\n" if parts else "")
+
+
+def _containers_list_html(containers: Sequence[DisclosedContainer], *, lang: str) -> str:
+    """The arrangement as a semantic list — one of the two equivalent views."""
+    items: list[str] = []
+    for container in containers:
+        summary = container.scope_and_content
+        summary_html = f'\n      <p class="result-detail">{_esc(summary)}</p>' if summary else ""
+        items.append(
+            "    <li>\n"
+            f'      <h3><a href="{_esc(_container_href(container.container_id))}">'
+            f"{_esc(container.title)}</a> "
+            f'<span class="muted">({_esc(_level_label(container, lang=lang))})</span></h3>'
+            f"{summary_html}\n"
+            "    </li>"
+        )
+    if not items:
+        return f'<p class="view-empty">{_esc(i18n.t(lang, "collections_empty"))}</p>'
+    return '<ul class="container-list">\n' + "\n".join(items) + "\n</ul>"
+
+
+def _containers_table_html(containers: Sequence[DisclosedContainer], *, lang: str) -> str:
+    """The arrangement as a data table — the documented non-visual equivalent.
+
+    Present for the same reason every listing here has one: the accessibility
+    gate requires a list and a table that carry the *same* information, so a
+    reader on either path gets all of it. Deliberately carries no "items" column
+    — a count over records the reader may not list is an oracle about them.
+    """
+    rows: list[str] = []
+    for container in containers:
+        rows.append(
+            "      <tr>\n"
+            f'        <td><a href="{_esc(_container_href(container.container_id))}">'
+            f"{_esc(container.title)}</a></td>\n"
+            f"        <td>{_esc(_level_label(container, lang=lang))}</td>\n"
+            f"        <td>{_esc(container.dates)}</td>\n"
+            f"        <td>{_esc(container.extent)}</td>\n"
+            "      </tr>"
+        )
+    empty_cell = _esc(i18n.t(lang, "collections_empty"))
+    body = "\n".join(rows) if rows else f'      <tr><td colspan="4">{empty_cell}</td></tr>'
+    return (
+        '<table class="container-table">\n'
+        f"  <caption>{_esc(i18n.t(lang, 'collections_intro'))}</caption>\n"
+        "  <thead>\n"
+        "    <tr>\n"
+        f'      <th scope="col">{_esc(i18n.t(lang, "col_title"))}</th>\n'
+        f'      <th scope="col">{_esc(i18n.t(lang, "col_level"))}</th>\n'
+        f'      <th scope="col">{_esc(i18n.t(lang, "collection_dates_label"))}</th>\n'
+        f'      <th scope="col">{_esc(i18n.t(lang, "collection_extent_label"))}</th>\n'
+        "    </tr>\n"
+        "  </thead>\n"
+        "  <tbody>\n"
+        f"{body}\n"
+        "  </tbody>\n"
+        "</table>"
+    )
+
+
+def collections_main_html(containers: Sequence[DisclosedContainer], *, lang: str = "en") -> str:
+    """``<main>`` for ``/collections`` — the archive's arrangement, list and table.
+
+    ``containers`` is what :meth:`ledger.ingest.Archive.browse_containers`
+    returned for this viewer, so a container they may not know about is simply
+    not here. An archive with no arrangement and an archive whose every
+    collection is sealed from this reader render the same page (#202).
+    """
+    return (
+        f"    <h1>{_esc(i18n.t(lang, 'collections_heading'))}</h1>\n"
+        f"    <p>{_esc(i18n.t(lang, 'collections_intro'))}</p>\n"
+        '    <section aria-labelledby="list-heading">\n'
+        f'      <h2 id="list-heading">{_esc(i18n.t(lang, "results_list_heading"))}</h2>\n'
+        f"      {_containers_list_html(containers, lang=lang)}\n"
+        "    </section>\n"
+        '    <section aria-labelledby="table-heading">\n'
+        f'      <h2 id="table-heading">{_esc(i18n.t(lang, "results_table_heading"))}</h2>\n'
+        f"      {_containers_table_html(containers, lang=lang)}\n"
+        "    </section>\n"
+    )
+
+
+def collection_main_html(
+    container: DisclosedContainer,
+    records: Sequence[DisclosedRecord],
+    children: Sequence[DisclosedContainer],
+    *,
+    lang: str = "en",
+) -> str:
+    """``<main>`` for ``/collection/{id}`` — one container and what is filed in it.
+
+    Every argument is already disclosed. The page shows the container's own
+    description, the series under it this viewer may see, and the records filed
+    here — list and table, like every other listing.
+
+    The one sentence that carries a safety property is the empty state: a
+    container holding nothing and a container whose every record is withheld
+    from this reader render the *same* sentence, so the page cannot be used to
+    establish that hidden material exists (#202).
+    """
+    series_block = ""
+    if children:
+        series_block = (
+            '    <section aria-labelledby="series-heading">\n'
+            f'      <h2 id="series-heading">'
+            f"{_esc(i18n.t(lang, 'collection_series_heading'))}</h2>\n"
+            f"      {_containers_list_html(children, lang=lang)}\n"
+            "    </section>\n"
+        )
+    if records:
+        records_body = (
+            '    <section aria-labelledby="list-heading">\n'
+            f'      <h2 id="list-heading">{_esc(i18n.t(lang, "results_list_heading"))}</h2>\n'
+            f"      {_records_list_html(records, lang=lang)}\n"
+            "    </section>\n"
+            '    <section aria-labelledby="table-heading">\n'
+            f'      <h2 id="table-heading">{_esc(i18n.t(lang, "results_table_heading"))}</h2>\n'
+            f"      {_records_table_html(records, lang=lang)}\n"
+            "    </section>\n"
+        )
+    else:
+        records_body = f'    <p class="empty">{_esc(i18n.t(lang, "collections_no_records"))}</p>\n'
+    finding_aid = quote(container.container_id)
+    return (
+        f"    <h1>{_esc(container.title)}</h1>\n"
+        f'    <p class="muted">{_esc(_level_label(container, lang=lang))}</p>\n'
+        f"{_breadcrumb_html(container.ancestors, lang=lang)}"
+        f"{_container_description_html(container, lang=lang)}"
+        f"{series_block}"
+        '    <section aria-labelledby="records-heading">\n'
+        f'      <h2 id="records-heading">'
+        f"{_esc(i18n.t(lang, 'collection_records_heading'))}</h2>\n"
+        f"{records_body}"
+        "    </section>\n"
+        f'    <p class="export"><a href="/collection/{finding_aid}/ead.xml">'
+        f"{_esc(i18n.t(lang, 'collection_finding_aid'))}</a></p>\n"
+    )
+
+
 def _cue_li(cue: TranscriptCue) -> str:
     """One timed transcript segment (RM6): its time range, speaker if known, and text.
 
@@ -1001,6 +1234,11 @@ def _record_main_html(
         )
 
     parts: list[str] = [f"    <h1>{_esc(record.title)}</h1>"]
+
+    # Where this record sits in the archive (#202), as far as this reader may
+    # know. Empty for an unarranged record and — identically — for one filed in
+    # a container this reader may not describe.
+    parts.extend(_breadcrumb_lines(record.placement, lang=lang))
 
     if record.content_warnings:
         # Even after proceeding, restate the warnings as text above the content so
@@ -1290,6 +1528,7 @@ def _nav_html(lang: str = "en", *, contribute: bool = False, current_path: str =
     return (
         f'\n      <a href="/">{_esc(i18n.t(lang, "nav_browse"))}</a>\n'
         f'      <a href="/search">{_esc(i18n.t(lang, "nav_search"))}</a>\n'
+        f'      <a href="/collections">{_esc(i18n.t(lang, "collections_heading"))}</a>\n'
         f'      <a href="/overview">{_esc(i18n.t(lang, "nav_overview"))}</a>\n'
         f'      <a href="/places">{_esc(i18n.t(lang, "nav_places"))}</a>\n'
         f'      <a href="/timeline">{_esc(i18n.t(lang, "nav_timeline"))}</a>\n'

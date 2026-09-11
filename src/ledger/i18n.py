@@ -281,6 +281,34 @@ def _messages(translation: gettext.NullTranslations) -> dict[str, str]:
         "facet_subjects": _("Subjects"),
         "facet_types": _("Types"),
         "facet_languages": _("Languages"),
+        # Arrangement (#202). A container's own title, scope note, extent and
+        # dates are an archivist's words about a particular deposit, so — like
+        # ``Config.about`` above — they are interpolated, never translated. What
+        # is here is only the chrome around them.
+        #
+        # ``collections_no_records`` is load-bearing beyond its wording: it is
+        # the SAME sentence for a container that holds nothing and for one whose
+        # every record is withheld from this reader. Two sentences would tell an
+        # outsider that hidden material exists, which is the aggregation leak
+        # #202's container policy exists to prevent.
+        "facet_collections": _("Collections"),
+        "collections_heading": _("Collections"),
+        "collections_intro": _(
+            "The archive's arrangement: the deposits it holds, and the runs of material inside them. Only what you may see is listed."
+        ),
+        "collections_empty": _("There are no collections to show you."),
+        "collections_no_records": _("No records here are available to you."),
+        "collection_level_collection": _("Collection"),
+        "collection_level_series": _("Series"),
+        "collection_scope_heading": _("Scope and content"),
+        "collection_scope_inherited": _("Inherited from the collection above."),
+        "collection_extent_label": _("Extent"),
+        "collection_dates_label": _("Dates"),
+        "collection_series_heading": _("Series in this collection"),
+        "collection_records_heading": _("Records filed here"),
+        "collection_finding_aid": _("Finding aid (EAD XML)"),
+        "collection_part_of": _("Part of"),
+        "col_level": _("Level"),
         "clear_filters": _("Clear filters"),
         "download_csv": _("Download results (CSV)"),
         "sort_label": _("Sort by:"),

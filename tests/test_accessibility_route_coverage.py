@@ -64,6 +64,8 @@ _ALL_HTML_ROUTES: tuple[str, ...] = (
     "/record/{id}/consent",
     "/record/{id}/object",
     "/record/{id}/history",
+    "/collections",
+    "/collection/{id}",
 )
 
 # Every route covered end to end by axe.spec.ts / reflow.spec.ts: each file's
@@ -105,6 +107,9 @@ _RECORD_ROUTE_SHAPES: frozenset[str] = frozenset(
         "/record/{id}/consent",
         "/record/{id}/object",
         "/record/{id}/history",
+        # #202's container page carries an identifier the same way, and
+        # `tests/test_route_tables.py` drives it over a live server too.
+        "/collection/{id}",
     }
 )
 
@@ -212,17 +217,22 @@ def test_all_html_routes_are_still_present_in_dispatch() -> None:
     assert not missing, f"{missing} no longer appear in server.py's GET route tables"
 
 
-def test_static_gate_and_playwright_union_covers_exactly_thirteen_routes() -> None:
-    """The "13 of 21" figure in ROUTE-COVERAGE.md, re-derived.
+def test_static_gate_and_playwright_union_covers_exactly_fifteen_routes() -> None:
+    """The "15 of 23" figure in ROUTE-COVERAGE.md, re-derived.
 
-    10 were already covered before this fix (6 static + 7 Playwright, with 3
-    overlapping); this PR adds 3 more to the static gate (``/overview``,
+    10 were already covered before #122's fix (6 static + 7 Playwright, with 3
+    overlapping); that PR added 3 more to the static gate (``/overview``,
     ``/withdraw``, ``/edit``) by calling pure render functions ``server.py``
     already called unmodified, with no `server.py` change required.
+
+    #202 adds its two pages the same way — ``/collections`` and
+    ``/collection/{id}`` render through ``collections_main_html`` and
+    ``collection_main_html``, which the static gate calls directly — so the
+    arrangement arrives already covered rather than as two new documented gaps.
     """
     covered = _static_gate_covered_routes() | set(_PLAYWRIGHT_COVERED_ROUTES)
     assert covered <= set(_ALL_HTML_ROUTES), covered - set(_ALL_HTML_ROUTES)
-    assert len(covered) == 13, covered
+    assert len(covered) == 15, covered
 
 
 def test_uncovered_routes_match_the_documented_gap() -> None:
