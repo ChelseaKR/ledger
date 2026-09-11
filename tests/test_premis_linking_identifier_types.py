@@ -30,6 +30,7 @@ import pytest
 
 from ledger.models import (
     OBJECT_TYPE_BAG,
+    OBJECT_TYPE_CONTAINER,
     OBJECT_TYPE_CONTENT_ADDRESS,
     OBJECT_TYPE_PAYLOAD,
     OBJECT_TYPE_PROPOSAL,
@@ -87,6 +88,7 @@ def test_every_declared_type_is_in_the_vocabulary() -> None:
         "OBJECT_TYPE_CONTENT_ADDRESS",
         "OBJECT_TYPE_BAG",
         "OBJECT_TYPE_PROPOSAL",
+        "OBJECT_TYPE_CONTAINER",
     }
     strays: list[str] = []
     for path, node in _premis_calls():
@@ -109,8 +111,9 @@ def test_the_vocabulary_and_its_constants_agree() -> None:
         OBJECT_TYPE_CONTENT_ADDRESS,
         OBJECT_TYPE_BAG,
         OBJECT_TYPE_PROPOSAL,
+        OBJECT_TYPE_CONTAINER,
     } == OBJECT_TYPES
-    assert len(OBJECT_TYPES) == 5  # a duplicated value would collapse the set silently
+    assert len(OBJECT_TYPES) == 6  # a duplicated value would collapse the set silently
 
 
 @pytest.mark.parametrize(
@@ -119,6 +122,7 @@ def test_the_vocabulary_and_its_constants_agree() -> None:
         (OBJECT_TYPE_RECORD, OBJECT_TYPE_RECORD),
         (OBJECT_TYPE_BAG, OBJECT_TYPE_BAG),
         (OBJECT_TYPE_PROPOSAL, OBJECT_TYPE_PROPOSAL),
+        (OBJECT_TYPE_CONTAINER, OBJECT_TYPE_CONTAINER),
     ],
 )
 def test_a_declared_type_is_reported_not_inferred(declared: str, expected: str) -> None:

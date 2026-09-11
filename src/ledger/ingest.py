@@ -164,6 +164,17 @@ def serialize_record(record: Record) -> str:
             for p in record.payloads
         ],
     }
+    if record.placement is not None:
+        # #202: the one container this record sits in. A container id, never a
+        # container's description: the manifest says where the record is filed,
+        # and `containers/` says what that place is and who may know it.
+        #
+        # Omitted entirely when there is none, so an unarranged record — which
+        # is every record written before #202 — serializes to exactly the bytes
+        # it always did. Nothing is migrated, no bag is rewritten, and no
+        # committed manifest or bag digest moves (the same reason
+        # `PremisEvent.to_dict` omits its unset links).
+        payload["placement"] = record.placement
     return canonical_json(payload)
 
 
@@ -203,6 +214,10 @@ def deserialize_record(text: str) -> Record:
         content_warnings=[str(w) for w in _as_list(data.get("content_warnings", []))],
         identity_ref=str(ref) if ref is not None else None,
         created_at=str(data.get("created_at", "")),
+        # Absent on every record written before #202, which reads as unarranged —
+        # and an unarranged record resolves exactly as it did then (an empty
+        # chain permits). Nothing is migrated and no bag is rewritten.
+        placement=str(placement) if (placement := data.get("placement")) is not None else None,
     )
 
 
