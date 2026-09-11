@@ -220,6 +220,7 @@ def test_a_container_page_says_the_same_thing_when_empty_and_when_withheld(
     )
 
     pages = []
+    inputs = []
     for archive in (empty, withheld):
         container = archive.disclose_container("casa-abierta", anonymous(), now=_NOW)
         records = [
@@ -227,9 +228,18 @@ def test_a_container_page_says_the_same_thing_when_empty_and_when_withheld(
             for r in archive.browse(anonymous(), now=_NOW)
             if any(s.container_id == "casa-abierta" for s in r.placement)
         ]
+        inputs.append((container, records))
         pages.append(collection_main_html(container, records, [], lang="en"))
     assert pages[0] == pages[1]
     assert "No records here are available to you." in pages[0]
+    # The renderer's *inputs* are identical too, which is what makes the identity
+    # above structural rather than a coincidence of wording: the page is never
+    # handed the withheld records or a count of them, so there is nothing on the
+    # page for a future edit to start printing. (The end-to-end version of this,
+    # over a live server and every anonymous route, is
+    # `test_a_community_only_ceiling_changes_no_anonymous_surface`.)
+    assert inputs[0] == inputs[1]
+    assert inputs[1][1] == []
 
     # And a steward does see the record, so the page is not simply always empty.
     container = withheld.disclose_container("casa-abierta", steward("s"), now=_NOW)
@@ -679,3 +689,34 @@ def test_status_already_distinguishes_an_empty_archive_from_a_hidden_one(
     assert "Everything is healthy." in hidden_body
     # Whatever else it says, it still publishes no count to an outsider.
     assert "1 of 1" not in hidden_body
+
+
+def test_a_record_with_no_visible_placement_renders_no_breadcrumb_at_all(
+    tmp_path: Path,
+) -> None:
+    """Not an empty "Part of:" line — no line.
+
+    An empty label would tell a reader that the record is filed *somewhere*
+    they may not see, which is the sentence the whole gating exists to avoid.
+    Asserted at the render layer as well as at `disclose`, because the two are
+    separately editable and only one of them is the safety boundary.
+    """
+    from ledger.render import _record_main_html
+
+    hidden = _hidden_arrangement(tmp_path / "hidden")
+    plain = _unarranged(tmp_path / "plain")
+    for archive in (hidden, plain):
+        record = archive.disclose("rec-flyer", anonymous(), now=_NOW)
+        assert record.placement == ()
+        html = _record_main_html(record, proceed=True, lang="en")
+        assert "Part of" not in html
+        assert "breadcrumb" not in html
+        assert "Casa Abierta" not in html
+
+    # And a steward, who may describe the container, does get one — so the
+    # assertions above are about gating and not about a breadcrumb nobody
+    # renders.
+    as_steward = hidden.disclose("rec-flyer", steward("s"), now=_NOW)
+    steward_html = _record_main_html(as_steward, proceed=True, lang="en")
+    assert "Part of" in steward_html
+    assert "Casa Abierta" in steward_html
