@@ -232,9 +232,7 @@ def test_the_route_list_covers_every_anonymous_get(tmp_path: Path) -> None:
     """
     from ledger.server import ArchiveRequestHandler
 
-    dispatched = set(ArchiveRequestHandler._GET_PAGES) | set(
-        ArchiveRequestHandler._GET_QUERY_PAGES
-    )
+    dispatched = set(ArchiveRequestHandler._GET_PAGES) | set(ArchiveRequestHandler._GET_QUERY_PAGES)
     assert len(dispatched) >= 20, (
         f"read {len(dispatched)} exact GET routes from the dispatcher's tables; the "
         "sweep below is a set difference against this set, and against an empty one "
