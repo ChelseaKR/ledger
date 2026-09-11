@@ -155,7 +155,7 @@ def test_csv_export_applies_filters_and_is_a_download(server_base: str) -> None:
         disp = resp.headers.get("Content-Disposition", "")
     assert "text/csv" in ctype
     assert "attachment" in disp and "search-results.csv" in disp
-    assert body.splitlines()[0] == "record_id,title,date,subjects,types,languages,url"
+    assert body.splitlines()[0] == "record_id,title,date,subjects,types,languages,url,collection"
     # Only the two protest records, never the housing one.
     assert "The big march" in body and "A quiet vigil" in body
     assert "Another march" not in body

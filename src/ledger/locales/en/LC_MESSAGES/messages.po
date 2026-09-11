@@ -1171,3 +1171,48 @@ msgstr ""
 
 msgid "verified objection from a named subject (token confirmed)"
 msgstr "verified objection from a named subject (token confirmed)"
+
+msgid "Collections"
+msgstr "Collections"
+
+msgid "The archive's arrangement: the deposits it holds, and the runs of material inside them. Only what you may see is listed."
+msgstr "The archive's arrangement: the deposits it holds, and the runs of material inside them. Only what you may see is listed."
+
+msgid "There are no collections to show you."
+msgstr "There are no collections to show you."
+
+msgid "No records here are available to you."
+msgstr "No records here are available to you."
+
+msgid "Collection"
+msgstr "Collection"
+
+msgid "Series"
+msgstr "Series"
+
+msgid "Scope and content"
+msgstr "Scope and content"
+
+msgid "Inherited from the collection above."
+msgstr "Inherited from the collection above."
+
+msgid "Extent"
+msgstr "Extent"
+
+msgid "Dates"
+msgstr "Dates"
+
+msgid "Series in this collection"
+msgstr "Series in this collection"
+
+msgid "Records filed here"
+msgstr "Records filed here"
+
+msgid "Finding aid (EAD XML)"
+msgstr "Finding aid (EAD XML)"
+
+msgid "Part of"
+msgstr "Part of"
+
+msgid "Level"
+msgstr "Level"

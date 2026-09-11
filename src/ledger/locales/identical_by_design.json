@@ -18,8 +18,23 @@
     },
     {
       "locale": "fr",
+      "msgid": "Collection",
+      "reason": "'Collection' is the French word, same spelling. The level label on a container page; its sibling level 'Series' -> 'Serie' is translated."
+    },
+    {
+      "locale": "fr",
+      "msgid": "Collections",
+      "reason": "'Collections' is the French plural, same spelling. The arrangement browse heading and its facet, beside 'Series' -> 'Serie'/'Serie' and 'Extent' -> 'Importance materielle', both of which are translated."
+    },
+    {
+      "locale": "fr",
       "msgid": "Date",
       "reason": "'Date' is the French word, same spelling. Not exempt mechanically, and correctly so: the code-token rule requires upper case precisely so a four-letter word is not waved through as an acronym."
+    },
+    {
+      "locale": "fr",
+      "msgid": "Dates",
+      "reason": "'Dates' is the French plural, same spelling. An archivist's inclusive/bulk-dates label on a container, beside the already-exempt singular 'Date'."
     },
     {
       "locale": "fr",

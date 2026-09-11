@@ -127,9 +127,21 @@ def _record_section_html(record: DisclosedRecord, *, base_url: str, index: int) 
         f"<li><strong>{_esc(k)}:</strong> {_esc(v)}</li>" for k, v in sorted(record.fields.items())
     )
 
+    # #202: the booklet is read where there is no network, so the arrangement has
+    # to be on the page rather than a link. Only the containers this viewer may
+    # describe are named; an unarranged record and a record in a container the
+    # reader may not see print the same line, which is none.
+    part_of_html = (
+        f'<p class="part-of">Part of: '
+        f"{_esc(' / '.join(step.title for step in record.placement))}</p>\n"
+        if record.placement
+        else ""
+    )
+
     return (
         f'<article class="entry" aria-labelledby="entry-{index}-heading">\n'
         f'<h2 id="entry-{index}-heading">{index}. {_esc(record.title)}</h2>\n'
+        f"{part_of_html}"
         f"{cw_html}"
         f'<ul class="dc">{dc_items}{field_items}</ul>\n'
         '<footer class="fixity">\n'

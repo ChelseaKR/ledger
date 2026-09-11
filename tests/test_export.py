@@ -29,8 +29,8 @@ def test_records_csv_header_and_row() -> None:
         base_url="https://archive.example/",
     )
     lines = csv.splitlines()
-    assert lines[0] == "record_id,title,date,subjects,types,languages,url"
-    assert "a,A march,1990,protest; housing,,,https://archive.example/record/a" in csv
+    assert lines[0] == "record_id,title,date,subjects,types,languages,url,collection"
+    assert "a,A march,1990,protest; housing,,,https://archive.example/record/a," in csv
 
 
 def test_records_csv_quotes_commas() -> None:

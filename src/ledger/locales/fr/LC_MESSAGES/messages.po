@@ -1244,3 +1244,48 @@ msgstr "{when}, réf {ref}"
 
 msgid "— every recorded action across the archive."
 msgstr "— chaque action consignée dans l’archive."
+
+msgid "Collections"
+msgstr "Collections"
+
+msgid "The archive's arrangement: the deposits it holds, and the runs of material inside them. Only what you may see is listed."
+msgstr "Le classement du fonds : les versements qu'il conserve et les séries de documents qu'ils contiennent. Seul ce que vous pouvez voir est répertorié."
+
+msgid "There are no collections to show you."
+msgstr "Aucune collection à vous montrer."
+
+msgid "No records here are available to you."
+msgstr "Aucun document ici ne vous est accessible."
+
+msgid "Collection"
+msgstr "Collection"
+
+msgid "Series"
+msgstr "Série"
+
+msgid "Scope and content"
+msgstr "Présentation du contenu"
+
+msgid "Inherited from the collection above."
+msgstr "Hérité de la collection supérieure."
+
+msgid "Extent"
+msgstr "Importance matérielle"
+
+msgid "Dates"
+msgstr "Dates"
+
+msgid "Series in this collection"
+msgstr "Séries de cette collection"
+
+msgid "Records filed here"
+msgstr "Documents classés ici"
+
+msgid "Finding aid (EAD XML)"
+msgstr "Instrument de recherche (EAD XML)"
+
+msgid "Part of"
+msgstr "Fait partie de"
+
+msgid "Level"
+msgstr "Niveau"

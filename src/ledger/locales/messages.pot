@@ -188,7 +188,13 @@ msgstr ""
 msgid "Clear filters"
 msgstr ""
 
+msgid "Collection"
+msgstr ""
+
 msgid "Collection overview"
+msgstr ""
+
+msgid "Collections"
 msgstr ""
 
 msgid "Comma-separated topics, e.g. mutual aid, housing."
@@ -255,6 +261,9 @@ msgid "Current"
 msgstr ""
 
 msgid "Date"
+msgstr ""
+
+msgid "Dates"
 msgstr ""
 
 msgid "Deadnaming — refers to a name a person no longer uses"
@@ -331,6 +340,9 @@ msgstr ""
 msgid "Everything is healthy."
 msgstr ""
 
+msgid "Extent"
+msgstr ""
+
 msgid "Field"
 msgstr ""
 
@@ -347,6 +359,9 @@ msgid "Filed: {when}"
 msgstr ""
 
 msgid "Files"
+msgstr ""
+
+msgid "Finding aid (EAD XML)"
 msgstr ""
 
 msgid "From"
@@ -395,6 +410,9 @@ msgstr ""
 msgid "Incarceration — describes jail, prison, or detention"
 msgstr ""
 
+msgid "Inherited from the collection above."
+msgstr ""
+
 msgid ""
 "It has been permanently removed, along with any contact details you had "
 "sealed with it. Nothing from it remains in the archive."
@@ -413,6 +431,9 @@ msgid "Language"
 msgstr ""
 
 msgid "Languages"
+msgstr ""
+
+msgid "Level"
 msgstr ""
 
 msgid "Linked records"
@@ -464,6 +485,9 @@ msgid "No records are available to you yet."
 msgstr ""
 
 msgid "No records carry a date yet."
+msgstr ""
+
+msgid "No records here are available to you."
 msgstr ""
 
 msgid "No records match your search."
@@ -518,6 +542,9 @@ msgid "Page {number} of {pages}"
 msgstr ""
 
 msgid "Pagination"
+msgstr ""
+
+msgid "Part of"
 msgstr ""
 
 msgid ""
@@ -600,6 +627,9 @@ msgstr ""
 msgid "Records (table view)"
 msgstr ""
 
+msgid "Records filed here"
+msgstr ""
+
 msgid "Records grouped by the year they are from, oldest first."
 msgstr ""
 
@@ -648,6 +678,9 @@ msgstr ""
 msgid "Saved versions"
 msgstr ""
 
+msgid "Scope and content"
+msgstr ""
+
 msgid "Sealed — keep it withheld for now"
 msgstr ""
 
@@ -667,6 +700,12 @@ msgid "Select this submission"
 msgstr ""
 
 msgid "Self-harm — describes a person hurting themselves"
+msgstr ""
+
+msgid "Series"
+msgstr ""
+
+msgid "Series in this collection"
 msgstr ""
 
 msgid "Sexual violence — describes sexual assault or coercion"
@@ -767,6 +806,11 @@ msgstr ""
 msgid "That submission is too long."
 msgstr ""
 
+msgid ""
+"The archive's arrangement: the deposits it holds, and the runs of "
+"material inside them. Only what you may see is listed."
+msgstr ""
+
 msgid "The language of the material, e.g. English or Spanish."
 msgstr ""
 
@@ -783,6 +827,9 @@ msgid ""
 msgstr ""
 
 msgid "The takedown is confirmed at every storage location."
+msgstr ""
+
+msgid "There are no collections to show you."
 msgstr ""
 
 msgid "There are no public records yet."

@@ -1210,3 +1210,48 @@ msgstr ""
 
 msgid "verified objection from a named subject (token confirmed)"
 msgstr "objeción verificada de una persona nombrada (ficha confirmada)"
+
+msgid "Collections"
+msgstr "Colecciones"
+
+msgid "The archive's arrangement: the deposits it holds, and the runs of material inside them. Only what you may see is listed."
+msgstr "La organización del archivo: los depósitos que conserva y las series de material que contienen. Solo se enumera lo que usted puede ver."
+
+msgid "There are no collections to show you."
+msgstr "No hay colecciones que mostrarle."
+
+msgid "No records here are available to you."
+msgstr "Aquí no hay registros disponibles para usted."
+
+msgid "Collection"
+msgstr "Colección"
+
+msgid "Series"
+msgstr "Serie"
+
+msgid "Scope and content"
+msgstr "Alcance y contenido"
+
+msgid "Inherited from the collection above."
+msgstr "Heredado de la colección superior."
+
+msgid "Extent"
+msgstr "Extensión"
+
+msgid "Dates"
+msgstr "Fechas"
+
+msgid "Series in this collection"
+msgstr "Series de esta colección"
+
+msgid "Records filed here"
+msgstr "Registros archivados aquí"
+
+msgid "Finding aid (EAD XML)"
+msgstr "Instrumento de descripción (EAD XML)"
+
+msgid "Part of"
+msgstr "Parte de"
+
+msgid "Level"
+msgstr "Nivel"

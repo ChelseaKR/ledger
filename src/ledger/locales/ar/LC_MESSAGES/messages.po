@@ -1186,3 +1186,48 @@ msgstr "{when}، مرجع {ref}"
 
 msgid "— every recorded action across the archive."
 msgstr "— كل إجراء مُسجَّل عبر الأرشيف."
+
+msgid "Collections"
+msgstr "المجموعات"
+
+msgid "The archive's arrangement: the deposits it holds, and the runs of material inside them. Only what you may see is listed."
+msgstr "تنظيم الأرشيف: الإيداعات التي يحفظها والسلاسل الموجودة داخلها. لا يُدرج إلا ما يُسمح لك برؤيته."
+
+msgid "There are no collections to show you."
+msgstr "لا توجد مجموعات لعرضها عليك."
+
+msgid "No records here are available to you."
+msgstr "لا توجد سجلات متاحة لك هنا."
+
+msgid "Collection"
+msgstr "مجموعة"
+
+msgid "Series"
+msgstr "سلسلة"
+
+msgid "Scope and content"
+msgstr "النطاق والمحتوى"
+
+msgid "Inherited from the collection above."
+msgstr "موروث من المجموعة الأعلى."
+
+msgid "Extent"
+msgstr "الحجم"
+
+msgid "Dates"
+msgstr "التواريخ"
+
+msgid "Series in this collection"
+msgstr "السلاسل في هذه المجموعة"
+
+msgid "Records filed here"
+msgstr "السجلات المحفوظة هنا"
+
+msgid "Finding aid (EAD XML)"
+msgstr "أداة الوصف (EAD XML)"
+
+msgid "Part of"
+msgstr "جزء من"
+
+msgid "Level"
+msgstr "المستوى"
