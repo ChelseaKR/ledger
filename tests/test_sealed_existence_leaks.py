@@ -88,6 +88,9 @@ _ANONYMOUS_ROUTES = (
     "/record/rec-absent",
     "/api/record/rec-sealed",
     "/api/record/rec-absent",
+    "/collections",
+    "/collection/col-absent",
+    "/collection/col-absent/ead.xml",
     "/steward",
     "/steward/audit",
 )
@@ -210,18 +213,46 @@ def test_no_anonymous_surface_differs_when_a_sealed_record_is_present(
 def test_the_route_list_covers_every_anonymous_get(tmp_path: Path) -> None:
     """A differential test is only as complete as its route list.
 
-    Read the routes straight out of the dispatcher's source so a new ``elif path
-    == "/x"`` branch fails here instead of quietly escaping the sweep above.
-    """
-    from ledger import server as server_module
+    Read the routes out of the dispatcher so a new one fails here instead of
+    quietly escaping the sweep above.
 
-    source = Path(server_module.__file__).read_text(encoding="utf-8")
-    dispatcher = source.split("def do_GET")[1].split("def do_POST")[0]
-    literals = set(re.findall(r'path == "(/[^"]*)"', dispatcher))
-    covered = {route.split("?")[0] for route in _ANONYMOUS_ROUTES}
-    assert literals - covered == set(), (
-        f"an anonymous GET route is not in the differential sweep: {sorted(literals - covered)}"
+    **This check had stopped checking anything, and was green for it.** It used
+    to recover routes by running ``path == "(/[^"]*)"`` over the source text
+    between ``def do_GET`` and ``def do_POST``. #83 moved the routes into
+    ``_GET_PAGES`` / ``_GET_QUERY_PAGES`` as data, so that regex has matched
+    **zero** routes ever since, and ``literals - covered`` over an empty set is
+    empty. Measured on 2026-09-11: 0 literals recovered, test green. It is the
+    same regression ``tests/test_accessibility_route_coverage.py`` found and
+    fixed for its own inventory — in the one file whose inventory is a
+    disclosure control.
+
+    Two things changed here. The routes are read as data, as the accessibility
+    file reads them, and a floor fails the test if it recovers implausibly few
+    — because a set difference against an empty set is exactly what this was.
+    """
+    from ledger.server import ArchiveRequestHandler
+
+    dispatched = set(ArchiveRequestHandler._GET_PAGES) | set(
+        ArchiveRequestHandler._GET_QUERY_PAGES
     )
+    assert len(dispatched) >= 20, (
+        f"read {len(dispatched)} exact GET routes from the dispatcher's tables; the "
+        "sweep below is a set difference against this set, and against an empty one "
+        "it passes having checked nothing"
+    )
+    covered = {route.split("?")[0] for route in _ANONYMOUS_ROUTES}
+    # Steward-gated exact routes are swept too — an anonymous request reaches
+    # them and must get the same refusal from both archives — so every
+    # dispatched path must appear in the list.
+    missing = dispatched - covered
+    assert missing == set(), (
+        f"an anonymous GET route is not in the differential sweep: {sorted(missing)}"
+    )
+
+    # And the prefixed families, which are in neither table: each is covered by
+    # at least one concrete path above.
+    for prefix in ("/record/", "/api/record/", "/collection/"):
+        assert any(route.startswith(prefix) for route in _ANONYMOUS_ROUTES), prefix
 
 
 def test_anonymous_healthz_carries_no_live_chain_head(tmp_path: Path) -> None:
