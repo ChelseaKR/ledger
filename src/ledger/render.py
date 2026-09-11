@@ -861,7 +861,11 @@ def _containers_list_html(containers: Sequence[DisclosedContainer], *, lang: str
     """The arrangement as a semantic list — one of the two equivalent views."""
     items: list[str] = []
     for container in containers:
-        summary = container.scope_and_content
+        # An *inherited* note is the collection's words, not this series'. It is
+        # shown on the series' own page with the sentence that says so; in a list
+        # of siblings it would read as each one's own description, and repeating
+        # the parent's note under every child is both noise and a small dishonesty.
+        summary = "" if container.inherited_scope else container.scope_and_content
         summary_html = f'\n      <p class="result-detail">{_esc(summary)}</p>' if summary else ""
         items.append(
             "    <li>\n"

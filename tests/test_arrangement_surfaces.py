@@ -720,3 +720,47 @@ def test_a_record_with_no_visible_placement_renders_no_breadcrumb_at_all(
     steward_html = _record_main_html(as_steward, proceed=True, lang="en")
     assert "Part of" in steward_html
     assert "Casa Abierta" in steward_html
+
+
+def test_the_browse_heading_names_the_collection_rather_than_its_id(tmp_path: Path) -> None:
+    """`?collection=casa-abierta` reads "Collection: Casa Abierta deposit".
+
+    Every Dublin Core facet's value is its own label; this one's value is an
+    identifier. The heading resolves it through the same facet list the sidebar
+    renders, so it can only ever name a container this viewer may already
+    describe — a lookup straight into the arrangement could name one they may
+    not.
+    """
+    archive = _arranged(tmp_path)
+    server = _serve(archive)
+    port = next(server)
+    try:
+        _, body = _fetch(port, "/?collection=casa-abierta")
+        _, series = _fetch(port, "/?collection=flyers")
+    finally:
+        with pytest.raises(StopIteration):
+            next(server)
+    assert "<h1>Collection: Casa Abierta deposit</h1>" in body
+    assert "Collection: casa-abierta" not in body
+    assert "<h1>Collection: Flyers</h1>" in series
+
+
+def test_a_series_list_does_not_present_an_inherited_note_as_its_own(tmp_path: Path) -> None:
+    """The collection's words appear under the series that inherited them only
+    on that series' own page, where the "Inherited from the collection above."
+    sentence is beside them. In the list of siblings they would read as each
+    one's own description."""
+    from ledger.render import collection_main_html
+
+    archive = _arranged(tmp_path)
+    collection = archive.disclose_container("casa-abierta", anonymous(), now=_NOW)
+    series = archive.disclose_container("flyers", anonymous(), now=_NOW)
+    assert series.inherited_scope is True
+
+    listing = collection_main_html(collection, [], [series], lang="en")
+    assert "Flyers" in listing
+    assert listing.count("Four boxes left with us after the March raid.") == 1  # the collection's
+
+    own_page = collection_main_html(series, [], [], lang="en")
+    assert "Four boxes left with us after the March raid." in own_page
+    assert "Inherited from the collection above." in own_page

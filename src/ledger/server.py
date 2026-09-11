@@ -1531,7 +1531,18 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         if query:
             heading = f"Search results for “{query}”"
         elif len(active) == 1:
-            heading = f"{active[0][0].capitalize()}: {active[0][1]}"
+            # Every Dublin Core facet's value IS its label; the arrangement facet's
+            # value is a container id (#202), so the heading resolves it back to the
+            # title through the same facet list the sidebar renders — which means it
+            # can only ever name a container this viewer may already describe.
+            field_name, value = active[0]
+            label = value
+            if field_name == search.COLLECTION_FACET:
+                label = next(
+                    (f.label for f in search.facet_by_collection(records) if f.value == value),
+                    value,
+                )
+            heading = f"{field_name.capitalize()}: {label}"
         elif active:
             heading = "Filtered records"
         else:
