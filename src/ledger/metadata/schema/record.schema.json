@@ -70,6 +70,14 @@
       "type": "string",
       "format": "date-time",
       "description": "UTC ISO-8601 creation timestamp."
+    },
+    "holding_kind": {
+      "$ref": "#/$defs/holdingKind",
+      "description": "Whether ledger holds this record's content bytes. OPTIONAL, and its absence means `digital` — that is the migration for every manifest written before physical holdings existed (#188), and it is why a serializer omits the key at its default rather than churning every stored manifest's digest. NEVER inferred from an empty `payloads` array: an empty payload list is equally what a failed ingest looks like."
+    },
+    "physical": {
+      "$ref": "#/$defs/physicalHolding",
+      "description": "The description of an object ledger does not hold the bytes of. Present if and only if `holding_kind` is `physical` or `physical_with_surrogate`. Carries NO custody information: where the object is and who is keeping it are ordinary sealed `custody.location` / `custody.custodian` entries in `fields`, so they pass through the one disclosure decision point like every other sealed value (no-outing rule, extended from authorship to possession)."
     }
   },
   "$defs": {
@@ -83,6 +91,52 @@
         "sealed-conditional",
         "sealed"
       ]
+    },
+    "holdingKind": {
+      "type": "string",
+      "enum": ["digital", "physical", "physical_with_surrogate"]
+    },
+    "physicalFormat": {
+      "type": "string",
+      "description": "The controlled physical-format vocabulary. Closed on purpose: two volunteers cataloguing the same box must not produce three spellings of `cassette`. `other` is the honest answer for anything not listed, and is better than a near-miss.",
+      "enum": [
+        "zine",
+        "flyer",
+        "poster",
+        "button",
+        "photograph",
+        "negative",
+        "slide",
+        "audio-cassette",
+        "video-cassette",
+        "film-reel",
+        "vinyl-record",
+        "correspondence",
+        "notebook",
+        "periodical",
+        "book",
+        "banner",
+        "textile",
+        "artwork",
+        "ephemera",
+        "other"
+      ]
+    },
+    "physicalHolding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["format"],
+      "properties": {
+        "format": { "$ref": "#/$defs/physicalFormat" },
+        "extent": {
+          "type": "string",
+          "description": "How much there is, in the archivist's sense: \"1 box, ~380 flyers\", \"12 cassettes\". Omitted when empty."
+        },
+        "condition": {
+          "type": "string",
+          "description": "The object's condition in the cataloguer's own words. Free text, not a vocabulary: condition reporting is a judgement, and a closed list would push a volunteer into picking a word that is wrong rather than describing what they see. Omitted when empty."
+        }
+      }
     },
     "dublinCore": {
       "type": "object",

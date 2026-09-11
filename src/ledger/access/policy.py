@@ -192,6 +192,14 @@ def disclose(
 
     # `dublin_core` is collection-level descriptive metadata; pass it through but
     # never add identity (no-outing rule). `to_dict` already drops empty elements.
+    #
+    # `holding_kind` and `physical` travel with it, for the same reason and under
+    # the same rule: what an object *is* — a zine, twelve cassettes, one box — is
+    # collection-level description, and a reader has to be able to learn that the
+    # thing exists before they can ask to see it (#188). The protected half of a
+    # physical holding is NOT here: custody is carried as ordinary sealed
+    # `custody.*` fields and has already been through the field loop above, which
+    # is the whole reason there is no second disclosure branch to audit.
     return DisclosedRecord(
         record_id=record.record_id,
         title=record.title,
@@ -200,6 +208,8 @@ def disclose(
         payloads=tuple(payloads),
         content_warnings=tuple(record.content_warnings),
         withheld=tuple(withheld),
+        holding_kind=record.holding_kind,
+        physical=record.physical,
     )
 
 

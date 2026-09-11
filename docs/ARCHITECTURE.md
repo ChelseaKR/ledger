@@ -68,7 +68,22 @@ system:
 `AccessPolicy` is the small documented vocabulary (`PUBLIC`, `COMMUNITY`, `STEWARDS`,
 `SEALED_UNTIL`, `SEALED_CONDITIONAL`). New records and fields default to
 `SEALED_UNTIL` — the narrowest level that still lets a thing exist (a seal with no
-unseal date is sealed indefinitely). Determinism helpers (`now_iso`, `parse_iso`,
+unseal date is sealed indefinitely).
+
+`HoldingKind` (`DIGITAL` / `PHYSICAL` / `PHYSICAL_WITH_SURROGATE`) says whether ledger
+holds a record's content bytes at all, and `PhysicalHolding` describes an object it
+does not: a controlled `PhysicalFormat`, an extent, a condition note (#188, ADR 0019).
+The kind is **declared, never derived from an empty payload list** — an empty payload
+list is equally what a failed ingest looks like. Both are omitted from the serialized
+manifest at their defaults, so a record written before this feature existed serializes
+byte-for-byte as it always did and no stored digest moves; a manifest with no
+`holding_kind` reads as `DIGITAL`, and that absence *is* the migration. The protected
+half of a physical holding — where the object is and who keeps it — is **not** in
+`PhysicalHolding`: it is carried as ordinary sealed `custody.location` /
+`custody.custodian` `Field`s, so it passes through the one disclosure decision point
+rather than a second one beside it. What a read path shows about custody is
+`CustodyState`, a three-state word (`DISCLOSED` / `WITHHELD` / `NOT_RECORDED`) derived
+from what disclosure actually did, so the word can never disagree with the values. Determinism helpers (`now_iso`, `parse_iso`,
 `canonical_json`) live here too, so any layer that must be reproducible (golden bags,
 audit records) sorts keys and stamps an injected time rather than reaching for the
 wall clock.
@@ -88,7 +103,16 @@ identity; they hash bytes, store bytes, and package bytes.
 
 **`fixity.py`** is the primitive layer: `hash_bytes`, `hash_file`, and
 `hash_file_multi` (one disk read feeds every requested hasher), plus `verify_file`,
-`audit_files`, and the `AuditReport` aggregate. It supports SHA-256 *and* BLAKE2b on
+`audit_files`, and the `AuditReport` aggregate. `FixityStatus` is four states, and
+which function may return which is part of the contract: `AuditReport.status` and
+`overall_status` answer "did the stored bytes match their manifest" and return
+`VERIFIED` / `FAILED` / `UNVERIFIED`; `holding_status` and `overall_holding_status`
+answer "what can be said about this record's *content*", take the record's
+`HoldingKind` as well, and are the only two that return `NOT_APPLICABLE` (#188).
+A physical holding's bag is full of verifiable metadata bytes, so reading the report
+alone would print `PASS` for an undigitized shoebox in the same column as a re-hashed
+video; a failure always dominates the kind, so `not_applicable` can never become a
+place to hide damage. It supports SHA-256 *and* BLAKE2b on
 purpose — a single weakened or backdoored algorithm cannot mask tampering when an
 independent digest must agree. Hashing streams in 1 MiB windows so a multi-gigabyte
 oral-history video is verified without being held in RAM. That is a claim about
@@ -385,10 +409,11 @@ The site binds to `127.0.0.1` by default.
 
 ### 1.11 CLI: `cli.py` and `config.py`
 
-`cli.py` is the one discoverable steward surface: 42 subcommands, which `ledger --help`
+`cli.py` is the one discoverable steward surface: 43 subcommands, which `ledger --help`
 lists in full — `init`, `ingest`, `browse`, `show`, `serve`, `audit`, `policy`,
-`takedown`, `replicas`, `heal`, `add-location`, `demo`, `acr`, and the `grant`, `vault`,
-`mutual-aid`, `transparency`, `moderation`, and `session` groups among them. A capability with no
+`takedown`, `replicas`, `heal`, `surrogate`, `add-location`, `demo`, `acr`, and the
+`grant`, `vault`, `mutual-aid`, `transparency`, `moderation`, and `session` groups among
+them. A capability with no
 subcommand is not a capability a steward has (#123), so the count above is asserted
 against the parser itself in `tests/test_cli.py`. Exit codes are meaningful (`audit`
 returns non-zero on any failing bag so cron/CI can branch). It is held to the no-outing rule: a contributor name/contact is accepted only

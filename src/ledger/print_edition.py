@@ -44,7 +44,14 @@ from pathlib import Path
 from ledger.access.grants import anonymous
 from ledger.fixity import hash_bytes
 from ledger.ingest import Archive
-from ledger.models import DisclosedRecord, HashAlgo, canonical_json, now_iso
+from ledger.models import (
+    CustodyState,
+    DisclosedRecord,
+    HashAlgo,
+    HoldingKind,
+    canonical_json,
+    now_iso,
+)
 
 try:  # pragma: no cover - exercised indirectly by whichever branch is installed
     import segno  # type: ignore[import-not-found]  # optional extra, ships no stubs
@@ -131,14 +138,86 @@ def _record_section_html(record: DisclosedRecord, *, base_url: str, index: int) 
         f'<article class="entry" aria-labelledby="entry-{index}-heading">\n'
         f'<h2 id="entry-{index}-heading">{index}. {_esc(record.title)}</h2>\n'
         f"{cw_html}"
+        f"{_holding_html(record)}"
         f'<ul class="dc">{dc_items}{field_items}</ul>\n'
         '<footer class="fixity">\n'
+        f"{_fixity_scope_note(record)}"
         f"<p>Verify: <code>{_esc(verify_string)}</code></p>\n"
         f"<p>SHA-256: <code>{_esc(digest)}</code></p>\n"
         f"{qr}\n"
         "</footer>\n"
         "</article>\n"
     )
+
+
+def _holding_html(record: DisclosedRecord) -> str:
+    """The physical-holding block for a printed entry, or ``""`` if digital (#188).
+
+    A booklet is the surface where getting this wrong lasts longest: paper cannot
+    be corrected, and a reader holding a printed catalogue two years from now has
+    no way to check anything against the live site. So the entry states, in words
+    on the page, that this is an object the archive does not hold a copy of, what
+    it is, how much there is, and whether anyone recorded who is keeping it.
+
+    Custody *values* are never here. The booklet is built under the anonymous
+    grant, so a sealed ``custody.*`` field never reached
+    :attr:`~ledger.models.DisclosedRecord.fields` in the first place — this block
+    prints only the state word, which is the same three-state sentence the web
+    record page shows.
+    """
+    if not record.holding_kind.is_physical or record.physical is None:
+        return ""
+    holding = record.physical
+    rows = [("Format", holding.format.value.replace("-", " "))]
+    if holding.extent:
+        rows.append(("Extent", holding.extent))
+    if holding.condition:
+        rows.append(("Condition", holding.condition))
+    rows.append(("Custody", CUSTODY_SENTENCES[record.custody_state]))
+    items = "".join(f"<li><strong>{_esc(k)}:</strong> {_esc(v)}</li>" for k, v in rows)
+    headline = (
+        "Physical item — not digitized"
+        if record.holding_kind is HoldingKind.PHYSICAL
+        else "Physical item — partial scan only"
+    )
+    return (
+        '<div class="holding" role="note">\n'
+        f"<p><strong>{_esc(headline)}</strong> — this entry describes an object the archive "
+        "does not hold a copy of.</p>\n"
+        f'<ul class="holding-detail">{items}</ul>\n</div>\n'
+    )
+
+
+def _fixity_scope_note(record: DisclosedRecord) -> str:
+    """One sentence saying what the digest below it does and does not cover.
+
+    For a digital record the digest has always covered the entry *and* stood for
+    content the archive holds and re-hashes, and nothing is added. For a physical
+    holding it covers **only this description**: the object itself has no digest,
+    and a printed SHA-256 under a description of a cassette would otherwise read as
+    proof that the cassette is intact. That is the same absence-rendered-as-a-value
+    confusion the audit report was fixed for, arriving on paper (#188).
+    """
+    if not record.holding_kind.is_physical:
+        return ""
+    return (
+        "<p>The digest below covers this printed description only. The object it "
+        "describes has no digest and ledger has never checked it.</p>\n"
+    )
+
+
+#: The three custody sentences, in English, for ledger's OFFLINE artifacts — the
+#: print booklet and the courier package. Both are English-only today (neither
+#: renders gettext chrome), so these are literals here rather than catalog keys;
+#: the web surface's ``custody_*`` keys are the translated pair. One dict, shared
+#: by both offline surfaces on purpose: two copies of three sentences is two
+#: copies that can come to disagree about what "withheld" means.
+#: ``tests/test_physical_holdings.py`` holds all three states to being distinct.
+CUSTODY_SENTENCES: dict[CustodyState, str] = {
+    CustodyState.DISCLOSED: "Recorded and shown above.",
+    CustodyState.WITHHELD: "Recorded. Not shown in a public booklet.",
+    CustodyState.NOT_RECORDED: "Not recorded — nobody has written down who is keeping this.",
+}
 
 
 _BOOKLET_CSS = (
@@ -149,6 +228,8 @@ _BOOKLET_CSS = (
     ".skip-link:focus{position:static;display:inline-block;margin:0.5rem}"
     ".entry{margin:2rem 0 3rem}"
     ".cw{border:2px solid currentColor;padding:0.75rem 1rem;margin:1rem 0}"
+    ".holding{border:1px dashed currentColor;padding:0.5rem 1rem;margin:1rem 0}"
+    ".holding-detail{margin:0.25rem 0 0}"
     ".fixity code{word-break:break-all;font-size:0.85em}"
     ".qr{display:inline-block;margin-top:0.5rem}"
     "@media print{"

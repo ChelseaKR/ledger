@@ -6,6 +6,62 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **Physical-holding records, so a shoebox archive can be catalogued undigitized
+  (#188, ADR 0019).** ledger can only *preserve* what has been digitized, and most
+  community collections never get that far. A record may now declare
+  `holding_kind: digital | physical | physical_with_surrogate` and carry a
+  `PhysicalHolding` — a controlled `PhysicalFormat`, an extent, a condition note —
+  describing an object the archive does not hold the bytes of. `ledger ingest
+  --physical FORMAT` catalogues one; `ledger surrogate` attaches a scan or a phone
+  photo to it later.
+
+  **The load-bearing part is that such a record is never reported as passing
+  fixity.** A physical record's bag is full of verifiable bytes — `record.json`,
+  `premis.json`, the manifests — so `ledger audit` used to print `PASS  <bag>
+  (7 file(s) checked)` for four hundred flyers in somebody's flat that nothing has
+  ever looked at, in the same column as a fully re-hashed video. `FixityStatus` gains
+  a fourth state, `not-applicable`, and it is returned by exactly two new functions,
+  `holding_status(kind, report)` and `overall_holding_status(pairs)`;
+  `AuditReport.status` and `overall_status` keep their three states and their
+  meaning, and a test asserts they never learn the fourth. A **failure always
+  dominates the kind**, so `not_applicable` cannot become a place to hide damage —
+  including for somebody with disk access who relabels a rotted digital record as
+  physical, whose bag still declares the payload that failed.
+
+  Every steward-facing surface that reports on health was taken with it: `audit`
+  prints three counts and a `NOTHING TO VERIFY` summary for an all-physical archive;
+  `/healthz`'s steward block gains `bags_verified` and `bags_not_applicable` and the
+  holding-aware verdict (the **anonymous** payload is unchanged, deliberately —
+  making it honest would turn it into a second emptiness oracle); `/status` gains a
+  headline that calls a catalogue a catalogue — for a steward only, because the
+  same sentence to an outsider would say that the records they cannot see are
+  physical objects in people's keeping; the hand-off runbook will not tell a
+  volunteer inheriting the archive that "all bags verified intact" over records
+  nothing can verify; `replicas`, `heal` and `verify-backup` each say what was and
+  was not covered; and the print edition and courier package say on the page that the
+  digest covers the description, not the object.
+
+  **Custody is on the no-outing path.** Where the object is and who is keeping it are
+  ordinary sealed `custody.location` / `custody.custodian` fields, not a structured
+  block with a disclosure branch of its own — so they pass through the one decision
+  point every other sealed value does, and inherit at-rest encryption, the redaction
+  verb and every existing sentinel with no new read-path code. What a viewer sees is
+  a three-state word (`CustodyState`): recorded-and-shown, recorded-and-withheld, or
+  not-recorded. The third is not collapsed into the second, because saying "withheld"
+  over a record where nobody wrote anything down publishes *somebody is looking after
+  this* about an object nobody is.
+
+  The migration is an absence: `holding_kind` and `physical` are omitted from the
+  serialized manifest at their defaults, so a record written before this feature
+  serializes to the bytes it always did — no stored digest moves, no bag is resealed,
+  nothing is rewritten — and a manifest with no `holding_kind` reads as `digital`. An
+  *unreadable* one is refused rather than defaulted (ADR 0018's rule, one layer down).
+  Three local PREMIS event types (`custody transfer`, `condition check`,
+  `digitization`) and a new archive-level `logs/holdings.premis.json`, hash-chained
+  like every other log, carry the standing statement that a given record's content
+  fixity is not applicable. Thirty-five new msgids, translated in all four catalogs.
+
 ### Fixed
 - **The three plain-language safety pages were English only, and the gate for that
   was blind to them (#216).** `/about`, `/governance` and `/how-it-works` are where

@@ -216,6 +216,18 @@ def _messages(translation: gettext.NullTranslations) -> dict[str, str]:
         "status_detail_counts": _(
             "{passed} of {total} record package(s) passed every integrity check ({files} file checksum(s) verified)."
         ),
+        # #188. An archive of catalogued-but-undigitized material is healthy and
+        # has demonstrated nothing, and both halves have to be in the sentence: a
+        # reader who is told "everything is healthy" will believe their zines are
+        # backed up, and a reader who is told "could not be checked" will go
+        # looking for damage that is not there.
+        "status_headline_not_applicable": _("This archive is a catalogue, not a copy."),
+        "status_detail_not_applicable": _(
+            "Every record here describes a physical object that has not been digitized, so there are no stored files to check. Nothing is wrong; nothing has been proved either. The objects are only as safe as the people keeping them."
+        ),
+        "status_detail_physical": _(
+            "{count} of them describe physical objects that have not been digitized, so there is nothing stored for those to check."
+        ),
         "status_headline_error": _("Status check failed."),
         "status_detail_error": _("An integrity check could not be completed."),
         "status_machine_readable": _("Machine-readable health is at /healthz."),
@@ -430,6 +442,57 @@ def _messages(translation: gettext.NullTranslations) -> dict[str, str]:
         "rec_withheld_insider": _(
             "Some parts of this record are not available under your current access:"
         ),
+        # Physical holdings (#188). The browse badge is the one string that has to
+        # carry the whole idea in four words, and it says two things a reader needs
+        # in the order they need them: this is a real object, and the archive does
+        # not have a copy of it. It must never read as a failure — an undigitized
+        # zine is a catalogue entry doing its job, not a broken record.
+        "holding_physical_badge": _("Physical · not digitized"),
+        "holding_surrogate_badge": _("Physical · partial scan"),
+        "holding_heading": _("Physical holding"),
+        "holding_format": _("Format"),
+        "holding_extent": _("Extent"),
+        "holding_condition": _("Condition"),
+        "holding_custody": _("Custody"),
+        # The three custody states. "Recorded, not shown" and "not recorded" are
+        # deliberately different sentences: a reader must be able to tell an
+        # archive that knows who is keeping a box from one that has lost track of
+        # it, without either one naming a person.
+        "custody_disclosed": _("Recorded and shown below."),
+        "custody_withheld": _("Recorded. Not shown at your level of access."),
+        "custody_not_recorded": _("Not recorded — nobody has written down who is keeping this."),
+        "holding_no_fixity": _(
+            "ledger holds no copy of this object, so it cannot check whether it is intact. Its condition is whatever the last person to look at it wrote down."
+        ),
+        "holding_surrogate_note": _(
+            "The scan below is checked for integrity like any other file. The object it was made from is not, and a checked scan is not a checked object."
+        ),
+        # The controlled physical-format vocabulary (#188). These are ledger's
+        # own words, not a steward's, so unlike the record's descriptive prose
+        # they can be translated — leaving them English would put "audio-cassette"
+        # in the middle of an Arabic page, which is the defect #217 closed one
+        # route earlier. An unknown slug falls back to the slug itself rather
+        # than to a wrong near-neighbour (see `physical_format_label`).
+        "holding_format_zine": _("Zine"),
+        "holding_format_flyer": _("Flyer"),
+        "holding_format_poster": _("Poster"),
+        "holding_format_button": _("Button or badge"),
+        "holding_format_photograph": _("Photograph"),
+        "holding_format_negative": _("Photographic negative"),
+        "holding_format_slide": _("Slide"),
+        "holding_format_audio_cassette": _("Audio cassette"),
+        "holding_format_video_cassette": _("Video cassette"),
+        "holding_format_film_reel": _("Film reel"),
+        "holding_format_vinyl_record": _("Vinyl record"),
+        "holding_format_correspondence": _("Correspondence"),
+        "holding_format_notebook": _("Notebook"),
+        "holding_format_periodical": _("Periodical"),
+        "holding_format_book": _("Book"),
+        "holding_format_banner": _("Banner"),
+        "holding_format_textile": _("Textile"),
+        "holding_format_artwork": _("Artwork"),
+        "holding_format_ephemera": _("Ephemera"),
+        "holding_format_other": _("Other"),
         "related_heading": _("Related records"),
         "places_heading": _("Browse by place"),
         "places_intro": _(
@@ -770,6 +833,21 @@ def t(lang: str, key: str, /, **kw: object) -> str:
         return template.format(**kw)
     except (KeyError, IndexError, ValueError):
         return template
+
+
+def physical_format_label(lang: str, value: str) -> str:
+    """A localized label for a controlled physical-format value (#188).
+
+    ``"audio-cassette"`` -> ``"Audio cassette"`` / ``"Cassette audio"``. A value the
+    catalog has never seen falls back to a *humanized form of the value itself*
+    (``_humanize``), exactly as :func:`gloss_cw` does for an unseen content-warning
+    tag — never to the label of some other format. A record catalogued by a newer
+    ledger whose vocabulary has grown must read as the thing it is in an
+    untranslated form, not as the wrong thing in a translated one.
+    """
+    key = f"holding_format_{value.replace('-', '_')}"
+    label = _messages_for(lang).get(key)
+    return label if label is not None else _humanize(value)
 
 
 def gloss_cw(lang: str, tag: str) -> str:

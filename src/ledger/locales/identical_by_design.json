@@ -40,6 +40,11 @@
       "locale": "fr",
       "msgid": "Types",
       "reason": "'Types' is the French plural, same spelling. The facet heading beside 'Subjects' -> 'Sujets' and 'Languages' -> 'Langues', both of which are translated."
+    },
+    {
+      "locale": "fr",
+      "msgid": "Textile",
+      "reason": "'Textile' is the French word, same spelling. One value of the controlled physical-format vocabulary (#188); the other nineteen are all translated ('Zine' -> 'Fanzine', 'Flyer' -> 'Tract', 'Poster' -> 'Affiche'), so this is not a row somebody skipped."
     }
   ]
 }

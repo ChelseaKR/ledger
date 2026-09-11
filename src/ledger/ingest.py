@@ -36,6 +36,7 @@ from ledger.access import disclose, is_listable
 from ledger.attest import attested_conditions
 from ledger.bag import (
     _reject_unsafe_relpath,
+    add_payload,
     atomic_write_text,
     refresh_tag_manifests,
     validate_bag,
@@ -55,6 +56,7 @@ from ledger.metadata.dublincore import to_json as dublincore_to_json
 from ledger.metadata.pid import mint_urn
 from ledger.metadata.premis import PremisLog, append_event
 from ledger.models import (
+    CUSTODY_FIELDS,
     OBJECT_TYPE_PAYLOAD,
     OBJECT_TYPE_RECORD,
     AccessPolicy,
@@ -65,7 +67,9 @@ from ledger.models import (
     FixityResult,
     Grant,
     HashAlgo,
+    HoldingKind,
     PayloadFile,
+    PhysicalHolding,
     PremisEvent,
     PremisEventType,
     PremisRights,
@@ -118,8 +122,12 @@ def serialize_record(record: Record) -> str:
     if isinstance(getattr(record, "identity", None), ContributorIdentity):
         # Never let an identity object ride along into a serialized manifest.
         raise LedgerError(f"record {record.record_id} carries an in-memory identity")
+    # A manifest whose declared holding kind disagrees with what it carries would
+    # make every downstream surface report something the record cannot support, so
+    # it is refused at the same chokepoint the identity is (#188).
+    validate_holding(record)
 
-    payload = {
+    payload: dict[str, object] = {
         "record_id": record.record_id,
         "title": record.title,
         "default_policy": record.default_policy.value,
@@ -164,7 +172,121 @@ def serialize_record(record: Record) -> str:
             for p in record.payloads
         ],
     }
+    # #188. Omitted at their defaults, exactly as PremisEvent's optional links are:
+    # a record written before physical holdings existed must serialize to the SAME
+    # bytes it always did, or every stored manifest's digest moves and every bag
+    # would need a reseal to say a thing about itself that has not changed. The
+    # absence is the migration — `deserialize_record` reads a missing key as
+    # `HoldingKind.DIGITAL`.
+    if record.holding_kind is not HoldingKind.DIGITAL:
+        payload["holding_kind"] = record.holding_kind.value
+    if record.physical is not None:
+        payload["physical"] = record.physical.to_dict()
     return canonical_json(payload)
+
+
+#: The archive-level PREMIS log that records, once per physical record, that its
+#: content fixity is **not applicable** (#188). It sits in ``logs/`` beside the
+#: takedown and key-rotation logs, so it is hash-chained, covered by
+#: :meth:`Archive.audit_log_chains`, and anchored in
+#: :meth:`Archive.chain_head_summary` like every other archive-level claim.
+#:
+#: Written at ingest, not at audit. ``ledger audit`` is a read path a cron job runs
+#: on a schedule; making it append an event per physical record per run would turn
+#: a read into a write and grow the log without bound, and the fact being recorded
+#: — that this record has no content to verify — is settled the moment it is
+#: catalogued, not re-discovered nightly.
+HOLDINGS_LOG_FILENAME = "holdings.premis.json"
+
+
+def physical_holding_event(record: Record, *, agent: str, now: str) -> PremisEvent:
+    """The event that says, in the log, that this record's fixity is not applicable.
+
+    A ``fixity check`` event whose outcome is ``not-applicable``. Spelled that way
+    deliberately: a consumer filtering the log for fixity checks — which is how a
+    steward or a partner repository asks "what has been verified here?" — must
+    *see* this record and read the answer, rather than find it absent and have to
+    infer why. An absent event and a not-applicable one look identical to anything
+    that counts successes, and only one of them is a statement.
+
+    The detail carries the holding kind and the format. It carries no custody: the
+    PREMIS log is a bag tag file and an archive-level log, both readable by anyone
+    with disk access, and the custodian's whereabouts belong only in the sealed
+    fields (no-outing rule, extended from authorship to possession).
+    """
+    fmt = record.physical.format.value if record.physical is not None else "unknown"
+    return PremisEvent(
+        event_type=PremisEventType.FIXITY_CHECK,
+        agent=agent,
+        outcome="not-applicable",
+        detail=(
+            f"{record.holding_kind.value} holding ({fmt}): ledger holds no content bytes for "
+            "this record, so there is nothing to verify — this is not a passing check"
+        ),
+        linked_object=record.record_id,
+        linked_object_type=OBJECT_TYPE_RECORD,
+        event_datetime=now,
+    )
+
+
+def validate_holding(record: Record) -> None:
+    """Refuse a record whose declared holding kind disagrees with what it carries.
+
+    Four rules, and each one exists because breaking it would let a surface state
+    something the record does not support (#188):
+
+    * a ``DIGITAL`` record has no ``physical`` block, and a physical one does. A
+      description of an object's format and extent attached to a record that holds
+      its own bytes describes nothing.
+    * a ``PHYSICAL`` record has no payloads. If bytes were attached, the holding is
+      ``PHYSICAL_WITH_SURROGATE`` and must say so, because the fixity of those
+      bytes is a real result that has to be reported as one.
+    * a ``PHYSICAL_WITH_SURROGATE`` record has at least one payload. Declaring a
+      surrogate that does not exist publishes "there is a scan of this" over a
+      record with no scan.
+    * custody belongs to a physical holding. ``custody.*`` on a digital record
+      would put a sealed personal datum on a record with no object for anyone to
+      have custody of, and no read path would know to treat it as custody.
+
+    A ``DIGITAL`` record with no payloads stays legal: that is what a
+    description-only digital record has always been, and #188 does not get to
+    redefine it.
+
+    Raises :class:`~ledger.errors.LedgerError` naming the disagreement. Called from
+    :func:`serialize_record`, so no incoherent manifest can reach disk by any path
+    — the same defence-in-depth placement as the identity refusal above it.
+    """
+    kind = record.holding_kind
+    if kind is HoldingKind.DIGITAL:
+        if record.physical is not None:
+            raise LedgerError(
+                f"record {record.record_id} declares holding_kind 'digital' but carries a "
+                "physical description; declare 'physical' or drop the description"
+            )
+        custody = sorted(f.name for f in record.fields if f.name in CUSTODY_FIELDS)
+        if custody:
+            raise LedgerError(
+                f"record {record.record_id} declares holding_kind 'digital' but carries "
+                f"custody field(s) {', '.join(custody)}; custody describes who is keeping a "
+                "physical object"
+            )
+        return
+    if record.physical is None:
+        raise LedgerError(
+            f"record {record.record_id} declares holding_kind {kind.value!r} but carries no "
+            "physical description; a physical holding must say what it is"
+        )
+    if kind is HoldingKind.PHYSICAL and record.payloads:
+        raise LedgerError(
+            f"record {record.record_id} declares holding_kind 'physical' but carries "
+            f"{len(record.payloads)} payload file(s); a digitized surrogate makes it "
+            "'physical_with_surrogate'"
+        )
+    if kind is HoldingKind.PHYSICAL_WITH_SURROGATE and not record.payloads:
+        raise LedgerError(
+            f"record {record.record_id} declares holding_kind 'physical_with_surrogate' but "
+            "carries no payload; a surrogate that does not exist must not be advertised"
+        )
 
 
 def deserialize_record(text: str) -> Record:
@@ -190,6 +312,8 @@ def deserialize_record(text: str) -> Record:
         else DublinCore()
     )
     ref = data.get("identity_ref")
+    physical_raw = data.get("physical")
+    physical = PhysicalHolding.from_dict(physical_raw) if isinstance(physical_raw, dict) else None
 
     return Record(
         title=str(data.get("title", "")),
@@ -203,7 +327,35 @@ def deserialize_record(text: str) -> Record:
         content_warnings=[str(w) for w in _as_list(data.get("content_warnings", []))],
         identity_ref=str(ref) if ref is not None else None,
         created_at=str(data.get("created_at", "")),
+        # THE MIGRATION (#188), and it is one line: a manifest with no
+        # ``holding_kind`` is a record written before physical holdings existed,
+        # and every one of those is digital. Nothing rewrites a bag, nothing
+        # reseals a tag manifest, and no stored digest moves.
+        holding_kind=_holding_kind_from(data.get("holding_kind")),
+        physical=physical,
     )
+
+
+def _holding_kind_from(raw: object) -> HoldingKind:
+    """Read a serialized ``holding_kind``, defaulting to digital, never guessing.
+
+    An **absent** value is :data:`HoldingKind.DIGITAL` — the migration rule above.
+    An **unreadable** value (a kind a newer ledger writes, or a corrupted string)
+    is refused rather than silently defaulted: defaulting it would state that a
+    record holds bytes when the manifest said something this build could not read,
+    and every downstream surface would then report fixity over a holding whose
+    kind is unknown. ADR 0018's rule, one layer down — an archive never states
+    what it could not read.
+    """
+    if raw is None:
+        return HoldingKind.DIGITAL
+    try:
+        return HoldingKind(str(raw))
+    except ValueError as exc:
+        raise LedgerError(
+            f"record manifest declares an unreadable holding_kind {raw!r}; "
+            f"known kinds are {', '.join(k.value for k in HoldingKind)}"
+        ) from exc
 
 
 def _field_from_dict(item: dict[str, object]) -> Field:
@@ -653,6 +805,13 @@ def ingest_sip(  # noqa: C901 - the SIP pipeline's stages, in order (#83)
                 event_datetime=now,
             )
         )
+        if record.holding_kind.is_physical:
+            # The record's own log states, from the moment it is catalogued, that
+            # its content fixity is not applicable — so a reader of this bag learns
+            # it here rather than having to know that an empty `data/` means
+            # something (#188). The same event is written to the archive-level
+            # holdings log by `Archive.ingest`.
+            premis.record(physical_holding_event(record, agent=agent, now=now))
         for event in fixity_events:
             premis.record(event)
         for event in format_events:
@@ -865,7 +1024,28 @@ class Archive:
         # and no way to drift out of sync (see ledger.catalog_index).
         record_copy = self.records_dir / f"{record.record_id}.json"
         shutil.copyfile(aip.record_path, record_copy)
+        if record.holding_kind.is_physical:
+            # Archive-level, not only per-bag: a steward asking "what in this
+            # archive cannot be verified by any digital means?" must be able to
+            # answer it from one hash-chained log rather than by opening every bag
+            # and noticing an absence (#188, Done-when 2).
+            self.log_holding(physical_holding_event(record, agent=agent, now=stamp))
         return aip
+
+    def log_holding(self, event: PremisEvent) -> None:
+        """Append a physical-holding event to the archive-level holdings log.
+
+        ``logs/holdings.premis.json``: the standing, hash-chained statement that a
+        given record's content fixity is not applicable, plus any custody transfer,
+        condition check or digitization reported against it later.
+
+        Appended through :func:`~ledger.metadata.premis.append_event`, which holds
+        the lock across the whole read-modify-write, for the reason ADR 0018
+        records: two concurrent appends that each read the same starting log lose
+        one of the two, and a hash chain cannot see a lost append.
+        """
+        self.logs_dir.mkdir(parents=True, exist_ok=True)
+        append_event(self.logs_dir / HOLDINGS_LOG_FILENAME, event)
 
     # --- reads --------------------------------------------------------------
 
@@ -1031,6 +1211,100 @@ class Archive:
             # update (no bag on disk) stays a no-op rather than raising (robustness).
             if resealed and will_reseal:
                 refresh_tag_manifests(bag_dir)
+
+    def attach_surrogate(
+        self,
+        record_id: str,
+        filename: str,
+        source: Path,
+        *,
+        policy: AccessPolicy | None = None,
+        agent: str = "ledger",
+        now: str | None = None,
+    ) -> PremisEvent:
+        """Attach a digitized surrogate to an existing physical holding (#188).
+
+        A surrogate is a phone photo, or a scan of one page — a digital *derivative*
+        of an object ledger still does not hold. Attaching one:
+
+        * stores the bytes in the content store and adds them to the bag's payload
+          manifests (:func:`ledger.bag.add_payload`);
+        * identifies the format and records the media type with its basis, exactly
+          as an ordinary ingest does, so the surrogate is ordinary digital content
+          with an ordinary, real fixity result;
+        * moves the record from :data:`~ledger.models.HoldingKind.PHYSICAL` to
+          :data:`~ledger.models.HoldingKind.PHYSICAL_WITH_SURROGATE`, which is what
+          keeps the holding's own verdict at ``not-applicable``. **A verified
+          surrogate is not a verified holding**, and the kind is the only thing
+          standing between those two sentences;
+        * writes a ``digitization`` PREMIS event linking the record to the
+          surrogate's content address, to the bag's log and to the archive-level
+          holdings log, and returns it.
+
+        Refuses a record that is not a physical holding, and refuses a second
+        surrogate under a filename the bag already carries — an *add* never
+        overwrites (fail closed). The vault is never opened: a surrogate is not
+        given a ``SEALED`` (absolute) policy here, because that tier is encrypted at
+        rest at ingest and this is not the ingest path; pass a narrower non-absolute
+        policy, or ingest the scan as its own record if it needs the absolute seal.
+
+        The write order is: bag payload, then the shared
+        :meth:`apply_update` (which rewrites both manifests and reseals once). A
+        crash between the two leaves a bag whose payload manifest names a file the
+        record does not — which fails :func:`~ledger.bag.validate_bag` loudly at the
+        next audit rather than passing quietly, and is the same residual window
+        :meth:`apply_update` already documents.
+        """
+        stamp = now if now is not None else now_iso()
+        record = self.get(record_id)
+        if not record.holding_kind.is_physical:
+            raise LedgerError(
+                f"record {record_id} is a {record.holding_kind.value} holding; a surrogate "
+                "digitizes a physical object"
+            )
+        if policy is AccessPolicy.SEALED:
+            raise LedgerError(
+                "a surrogate cannot take the absolute 'sealed' policy: that tier is "
+                "encrypted at rest by the ingest path, which this is not"
+            )
+        if any(p.filename == filename for p in record.payloads):
+            raise LedgerError(f"record {record_id} already carries a payload named {filename!r}")
+
+        source = Path(source)
+        fmt = identify_file(source)
+        digests = hash_file_multi(source, (HashAlgo.SHA256, HashAlgo.BLAKE2B))
+        address = self.store.put_file(source)
+        add_payload(self.bags_dir / record_id, filename, source)
+
+        record.payloads.append(
+            PayloadFile(
+                filename=filename,
+                address=address,
+                media_type=fmt.media_type,
+                media_type_basis=fmt.basis,
+                size_bytes=source.stat().st_size,
+                policy=policy if policy is not None else record.default_policy,
+            )
+        )
+        record.holding_kind = HoldingKind.PHYSICAL_WITH_SURROGATE
+
+        event = PremisEvent(
+            event_type=PremisEventType.DIGITIZATION,
+            agent=agent,
+            outcome="success",
+            detail=(
+                f"surrogate {filename!r} attached to physical record {record_id}; "
+                f"the surrogate has fixity ({digests[HashAlgo.BLAKE2B][:12]}…), the holding "
+                "does not"
+            ),
+            linked_object=record_id,
+            linked_object_type=OBJECT_TYPE_RECORD,
+            linked_content_address=str(address),
+            event_datetime=stamp,
+        )
+        self.apply_update(record, event)
+        self.log_holding(event)
+        return event
 
     def _append_version(self, record_id: str, address: str, event_type: str) -> None:
         """Append one superseded-manifest snapshot to the record's version index.
@@ -1557,9 +1831,26 @@ class Archive:
         failing entry, keyed by record id rather than a bag name that does not
         exist to key it by.
         """
-        reports: list[tuple[str, AuditReport]] = []
+        return [(name, report) for name, _kind, report in self.audit_holdings()]
+
+    def audit_holdings(self) -> list[tuple[str, HoldingKind, AuditReport]]:
+        """:meth:`audit_fixity`, with each bag's declared holding kind alongside it.
+
+        The one sweep both methods share, so the fixity result and the kind of
+        holding it is a result *about* cannot come from two loops that drift apart.
+        :meth:`audit_fixity` is the compatibility view for every caller that only
+        asks about stored bytes; this is the view a caller uses to answer "is this
+        collection safe", which needs both numbers (#188).
+
+        Pair each element through :func:`ledger.fixity.holding_status` to get the
+        content verdict — never read the report's own status as the holding's, and
+        never read the kind on its own: a physical bag whose ``record.json`` was
+        altered is a **failure**, not a not-applicable, and only the pair says so.
+        """
+        reports: list[tuple[str, HoldingKind, AuditReport]] = []
         if self.bags_dir.exists():
             for bag_path in sorted(p for p in self.bags_dir.iterdir() if p.is_dir()):
+                kind = self._holding_kind_of(bag_path)
                 try:
                     report = validate_bag(bag_path)
                 except BagValidationError as exc:
@@ -1569,7 +1860,7 @@ class Archive:
                         expected="structurally valid bag",
                         actual=f"invalid: {exc}",
                     )
-                    reports.append((bag_path.name, AuditReport(results=[synthetic])))
+                    reports.append((bag_path.name, kind, AuditReport(results=[synthetic])))
                     continue
                 chain_result = self._verify_premis_chain(bag_path / _PREMIS_FILENAME)
                 if chain_result is not None and not chain_result.ok:
@@ -1586,9 +1877,9 @@ class Archive:
                 fast_result = self._fast_lookup_divergence(bag_path)
                 if fast_result is not None:
                     report = AuditReport(results=[*report.results, fast_result])
-                reports.append((bag_path.name, report))
+                reports.append((bag_path.name, kind, report))
 
-        audited = {name for name, _ in reports}
+        audited = {name for name, _kind, _report in reports}
         for record_id in sorted(self._record_ids_on_disk() - audited):
             missing = FixityResult(
                 path=f"bags/{record_id}",
@@ -1596,9 +1887,66 @@ class Archive:
                 expected="a bag directory for this record",
                 actual="no bag directory found",
             )
-            reports.append((record_id, AuditReport(results=[missing])))
+            # A bag that is gone is a FAILURE whatever kind it claimed to be, and
+            # `holding_status` puts failure first, so the kind recorded here cannot
+            # downgrade it. It is read from the surviving `records/` copy purely so
+            # the row can say what went missing.
+            reports.append(
+                (
+                    record_id,
+                    self._holding_kind_of_manifest(record_id),
+                    AuditReport(results=[missing]),
+                )
+            )
 
         return reports
+
+    def holding_kind_of(self, record_id: str) -> HoldingKind:
+        """The declared holding kind of one record, for a caller that has an id.
+
+        Reads the in-bag manifest when there is a bag and falls back to the
+        ``records/`` copy when there is not, so a caller (``ledger replicas``,
+        ``ledger heal``) can qualify what it is about to report even for a record
+        whose bag has gone missing. Never raises for an unknown id: an id nothing
+        knows about is :data:`~ledger.models.HoldingKind.DIGITAL`, the answer that
+        adds no qualification to whatever the caller was going to print anyway.
+        """
+        bag_path = self.bags_dir / record_id
+        if (bag_path / _RECORD_FILENAME).is_file():
+            return self._holding_kind_of(bag_path)
+        return self._holding_kind_of_manifest(record_id)
+
+    def _holding_kind_of(self, bag_path: Path) -> HoldingKind:
+        """The holding kind declared by a bag's own ``record.json``.
+
+        Reads the **in-bag** manifest, not the ``records/`` copy: the in-bag one is
+        the file the tag manifests cover, so a hand-edit to it is caught by the same
+        sweep that reads it here, and a divergence between the two is already its
+        own failing result (:meth:`_fast_lookup_divergence`).
+
+        An absent or unreadable manifest degrades to
+        :data:`~ledger.models.HoldingKind.DIGITAL`, which is pre-#188 behaviour and
+        loses nothing: a bag with no readable record manifest either is not a ledger
+        record bag at all, or is one whose ``record.json`` no longer matches its tag
+        manifest — and that is already a failing result, which dominates the kind.
+        """
+        manifest = bag_path / _RECORD_FILENAME
+        if not manifest.is_file():
+            return HoldingKind.DIGITAL
+        try:
+            return deserialize_record(manifest.read_text(encoding="utf-8")).holding_kind
+        except (OSError, ValueError, LedgerError):
+            return HoldingKind.DIGITAL
+
+    def _holding_kind_of_manifest(self, record_id: str) -> HoldingKind:
+        """The holding kind from the ``records/`` copy, for a record with no bag."""
+        manifest = self.records_dir / f"{record_id}.json"
+        if not manifest.is_file():
+            return HoldingKind.DIGITAL
+        try:
+            return deserialize_record(manifest.read_text(encoding="utf-8")).holding_kind
+        except (OSError, ValueError, LedgerError):
+            return HoldingKind.DIGITAL
 
     def _fast_lookup_divergence(self, bag_path: Path) -> FixityResult | None:
         """Compare a bag's ``record.json`` against its ``records/`` copy, or ``None``.

@@ -39,6 +39,7 @@ from ledger import (
     demo,
     drill,
     dualcontrol,
+    fixity,
     preservation,
     redact_suggest,
     succession,
@@ -90,9 +91,13 @@ from ledger.models import (
     Field,
     Grant,
     HashAlgo,
+    HoldingKind,
     PayloadFile,
+    PhysicalFormat,
+    PhysicalHolding,
     PremisEvent,
     Record,
+    custody_fields,
     now_iso,
 )
 from ledger.moderate import (
@@ -208,6 +213,30 @@ def _cmd_ingest(args: argparse.Namespace) -> int:  # noqa: C901 - argparse optio
     for name, value in _parse_pairs(args.sealed_field or []):
         fields.append(Field(name=name, value=value, policy=AccessPolicy.SEALED_UNTIL))
 
+    # #188. The kind is declared by `--physical`, never inferred from an empty
+    # `--file` list: a caller who forgot their files and a caller cataloguing a
+    # shoebox produce the same argv otherwise, and the archive would go on to
+    # publish a holding kind nobody chose.
+    physical: PhysicalHolding | None = None
+    holding_kind = HoldingKind.DIGITAL
+    if args.physical:
+        physical = PhysicalHolding(
+            format=PhysicalFormat(args.physical),
+            extent=args.extent or "",
+            condition=args.condition or "",
+        )
+        holding_kind = HoldingKind.PHYSICAL
+        fields.extend(
+            custody_fields(location=args.custody_location or "", custodian=args.custodian or "")
+        )
+    elif args.extent or args.condition or args.custodian or args.custody_location:
+        # Refuse rather than ignore: silently dropping a custodian the steward
+        # typed is the loss of exactly the datum this feature exists to protect.
+        raise LedgerError(
+            "--extent/--condition/--custodian/--custody-location describe a physical "
+            "holding; pass --physical FORMAT as well, or drop them"
+        )
+
     record = Record(
         title=args.title,
         default_policy=AccessPolicy.PUBLIC,
@@ -218,6 +247,8 @@ def _cmd_ingest(args: argparse.Namespace) -> int:  # noqa: C901 - argparse optio
         ),
         fields=fields,
         content_warnings=list(args.cw or []),
+        holding_kind=holding_kind,
+        physical=physical,
     )
 
     # A bag's payload is keyed by filename, so two sources sharing a basename would
@@ -371,6 +402,52 @@ def _cmd_ingest(args: argparse.Namespace) -> int:  # noqa: C901 - argparse optio
             "(including screen-reader users) context beyond the title (RM8)",
             file=sys.stderr,
         )
+    if record.holding_kind.is_physical:
+        # Said at the moment of cataloguing, in the same breath as the record id,
+        # so the steward is never surprised later by an `audit` row that does not
+        # say PASS. It is the correct row; this is where they learn why.
+        print(
+            "note: this is a physical holding. ledger has no copy of the object, so "
+            "`ledger audit` will report its content fixity as not-applicable — not as "
+            "passing, and not as a failure. Attach a scan later with `ledger surrogate`.",
+            file=sys.stderr,
+        )
+        if not record.has_custody():
+            print(
+                "note: no custodian or location was recorded, so the catalogue does not "
+                "say who is keeping this object. Add --custodian/--custody-location (both "
+                "sealed) if somebody knows.",
+                file=sys.stderr,
+            )
+    return 0
+
+
+def _cmd_surrogate(args: argparse.Namespace) -> int:
+    """``surrogate`` — attach a scan or photo to an existing physical record (#188).
+
+    Prints the record id, the surrogate's filename and its content address, and
+    restates the one thing a steward must not conclude from a successful attach:
+    the scan now has fixity; the object still does not.
+    """
+    archive = _open_archive(Path(args.root))
+    source = Path(args.file)
+    event = archive.attach_surrogate(
+        args.id,
+        args.name or source.name,
+        source,
+        policy=AccessPolicy(args.policy) if args.policy else None,
+        agent=args.actor,
+        now=args.now if args.now else now_iso(),
+    )
+    print(f"record_id: {args.id}")
+    print(f"surrogate: {args.name or source.name}")
+    print(f"address: {event.linked_content_address}")
+    print(
+        "note: the surrogate is now checked for integrity like any other file. The "
+        "object it was made from is not, and this record's content fixity stays "
+        "not-applicable.",
+        file=sys.stderr,
+    )
     return 0
 
 
@@ -505,36 +582,80 @@ def _cmd_audit(args: argparse.Namespace) -> int:
     PASS/FAIL summary and exit code.
     """
     archive = _open_archive(Path(args.root))
-    reports = archive.audit_fixity()
+    holdings = archive.audit_holdings()
     failures = 0
-    for name, report in reports:
+    verified = 0
+    not_applicable = 0
+    for name, kind, report in holdings:
         # A structurally broken bag arrives here as a report with a failing result
-        # (audit_fixity no longer aborts the sweep), so it shows as FAIL and the
+        # (audit_holdings no longer aborts the sweep), so it shows as FAIL and the
         # remaining bags are still audited (degradability, failure transparency).
-        ok = report.ok
-        if not ok:
+        #
+        # The verdict is a function of the report AND the holding kind (#188). A
+        # physical record's bag is full of verifiable metadata bytes, so before
+        # this it printed PASS in the same column as a re-hashed video — an
+        # undigitized shoebox scoring identically to a fully verified archive.
+        # `holding_status` puts failure first, so declaring a record physical can
+        # never be used to hide rot in a payload it still declares.
+        status = fixity.holding_status(kind, report)
+        word = _AUDIT_WORDS[status]
+        if status is fixity.FixityStatus.VERIFIED:
+            verified += 1
+        elif status is fixity.FixityStatus.NOT_APPLICABLE:
+            not_applicable += 1
+        else:
+            # FAILED and UNVERIFIED both count against the exit code, exactly as
+            # they did before #188 (`report.ok` was false for both). A bag that
+            # proved nothing is not a bag that passed, and the only thing that
+            # changed here is that the row now says WHICH of the two it was.
             failures += 1
-        print(f"{'PASS' if ok else 'FAIL'}\t{name}\t({report.checked} file(s) checked)")
+        note = f", {kind.value}" if kind.is_physical else ""
+        print(f"{word}\t{name}\t({report.checked} file(s) checked{note})")
     for name, chain_result in archive.audit_log_chains():
         ok = chain_result.ok
         if not ok:
             failures += 1
         print(f"{'PASS' if ok else 'FAIL'}\t{name}\t(hash chain)")
+    overall = fixity.overall_holding_status((kind, report) for _n, kind, report in holdings)
     if failures:
         summary = "FAIL"
-    elif reports:
+    elif overall is fixity.FixityStatus.NOT_APPLICABLE:
+        # Every record in this archive is a physical holding. Nothing is broken and
+        # nothing was demonstrated, and both halves of that have to be said: PASS
+        # would be the vacuous claim the three-state verdicts exist to refuse, and
+        # FAIL would send a steward looking for damage in an archive doing exactly
+        # what a catalogue is for.
+        summary = "NOTHING TO VERIFY"
+    elif holdings:
         summary = "PASS"
     else:
         # `PASS: 0 bag(s) audited, 0 failed` was the sweep's own vacuous truth: an
         # archive holding nothing reported the same verdict as one whose every bag
         # had just been re-hashed. A missing bag is already a FAIL (the records/
-        # reconciliation in `audit_fixity`), so reaching here with no reports means
+        # reconciliation in `audit_holdings`), so reaching here with no reports means
         # the archive genuinely holds nothing — a legitimate state for a new box, and
         # not something to alarm a cron job over, but not a demonstration of health
         # either. It gets its own word and the same exit 0.
         summary = "NOTHING AUDITED"
-    print(f"{summary}: {len(reports)} bag(s) audited, {failures} failed")
+    # Every count, always: "N audited, 0 failed" cannot tell an archive that
+    # verified everything from one that verified nothing because it holds nothing
+    # digital. The denominator is the finding.
+    print(
+        f"{summary}: {len(holdings)} bag(s) audited, {verified} verified, "
+        f"{not_applicable} not applicable (physical), {failures} failed"
+    )
     return 0 if failures == 0 else 1
+
+
+#: The word each content verdict prints in the ``audit`` table. ``n/a`` is
+#: deliberately not ``PASS``: a steward scanning a column of verdicts must be able
+#: to see, at a glance, which rows demonstrated anything (#188).
+_AUDIT_WORDS: dict[fixity.FixityStatus, str] = {
+    fixity.FixityStatus.VERIFIED: "PASS",
+    fixity.FixityStatus.FAILED: "FAIL",
+    fixity.FixityStatus.UNVERIFIED: "UNVERIFIED",
+    fixity.FixityStatus.NOT_APPLICABLE: "n/a",
+}
 
 
 def _cmd_reindex(args: argparse.Namespace) -> int:
@@ -750,6 +871,17 @@ def _print_verify_report(report: backup_mod.VerifyReport, location: Path) -> int
         f"{report.verified_bags} of {len(report.bag_results)} bag(s) verified, "
         f"{report.failures} failed"
     )
+    if report.physical_bags:
+        # PASS here is true and narrow: the backup holds an intact copy of every
+        # byte the archive has. For a physical holding those bytes are a catalogue
+        # entry, and a steward who reads PASS as "my zines are backed up" has read
+        # a sentence this command never said (#188).
+        print(
+            f"note: {report.physical_bags} of these bag(s) are physical holdings — a "
+            "catalogue entry for an object the archive has no copy of. Backing up the "
+            "entry does not back up the object.",
+            file=sys.stderr,
+        )
     return 0 if report.ok else 1
 
 
@@ -1259,11 +1391,23 @@ def _cmd_replicas(args: argparse.Namespace) -> int:
     archive = _open_archive(Path(args.root))
     source_head = archive.premis_chain_head(args.id)
     statuses = verify_replicas(args.id, archive.config.locations, source_head=source_head)
+    kind = archive.holding_kind_of(args.id)
     for status in statuses:
         flag = "ok" if status.ok else "FAIL"
         chain = "ok" if status.chain_ok else "DIVERGED"
         print(
             f"{flag}\t{status.location}\t({status.report.checked} file(s) checked)\tchain={chain}"
+        )
+    if kind.is_physical:
+        # The rows above are true and they are about the wrong thing. What is
+        # replicated here is the *description* of an object; the object is in
+        # somebody's flat and has exactly one copy. A steward reading three green
+        # rows would otherwise conclude their zine is in three places (#188).
+        print(
+            f"note: record {args.id} is a {kind.value} holding. What is replicated above is "
+            "its catalogue entry, not the object — replicating a description three times "
+            "does not make the thing it describes any safer.",
+            file=sys.stderr,
         )
     return 0
 
@@ -1289,6 +1433,7 @@ def _cmd_heal(args: argparse.Namespace) -> int:
     """
     archive = _open_archive(Path(args.root))
     now = args.now if args.now else now_iso()
+    kind = archive.holding_kind_of(args.id)
     events = heal(
         args.id,
         archive.config.locations,
@@ -1296,6 +1441,18 @@ def _cmd_heal(args: argparse.Namespace) -> int:
         now=now,
         tombstones=TombstoneStore(archive.logs_dir),
     )
+    if kind.is_physical:
+        # Healing a physical holding restores its catalogue entry. That is a real
+        # and worthwhile repair — losing the description loses the archive's only
+        # knowledge of the object — but it is not the recovery a steward pictures
+        # when they run a command called `heal`, and the difference has to be said
+        # out loud rather than left for them to infer from a green line (#188).
+        print(
+            f"note: record {args.id} is a {kind.value} holding. heal restores its catalogue "
+            "entry, which is all ledger has ever held for it. The object itself cannot be "
+            "healed from here by anyone.",
+            file=sys.stderr,
+        )
     if not events:
         print(f"heal: every replica of bag {args.id} already verified; nothing to do")
         return 0
@@ -2028,9 +2185,57 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p_ingest.add_argument("--contributor-name", help="sealed into the vault; never printed back")
     p_ingest.add_argument("--contributor-contact", help="sealed into the vault")
+    # --- physical holdings (#188) -----------------------------------------
+    # `--physical FORMAT` is the switch that turns an ingest into a catalogue
+    # entry for something the archive does not hold: it declares the kind rather
+    # than letting an empty --file list imply it, because "no payload" is equally
+    # what a mistake looks like.
+    p_ingest.add_argument(
+        "--physical",
+        metavar="FORMAT",
+        choices=[f.value for f in PhysicalFormat],
+        help=(
+            "catalogue an object the archive does NOT hold a copy of (a zine, a box "
+            "of flyers, a cassette). Takes a controlled format; see --help for the "
+            "list. Fixity is reported as not-applicable for such a record, never as "
+            "passing."
+        ),
+    )
+    p_ingest.add_argument("--extent", help='how much there is ("1 box, ~380 flyers")')
+    p_ingest.add_argument("--condition", help="the object's condition, in your own words")
+    p_ingest.add_argument(
+        "--custodian",
+        help=(
+            "who is keeping the object. SEALED by default — stored like any other "
+            "sealed field and never shown to an ungranted viewer"
+        ),
+    )
+    p_ingest.add_argument(
+        "--custody-location",
+        help="where the object is, at whatever precision the custodian chose. SEALED by default",
+    )
     p_ingest.add_argument("--actor", default="ledger", help="ingest agent id")
     p_ingest.add_argument("--now", help="ISO-8601 timestamp for reproducible ingest")
     p_ingest.set_defaults(func=_cmd_ingest)
+
+    p_surrogate = sub.add_parser(
+        "surrogate",
+        help="attach a digitized surrogate (a scan, a phone photo) to a physical record",
+    )
+    p_surrogate.add_argument("--root", required=True)
+    p_surrogate.add_argument("--id", required=True, help="the physical record's id")
+    p_surrogate.add_argument("--file", required=True, help="the scan or photo to attach")
+    p_surrogate.add_argument(
+        "--name", help="filename inside the bag (default: the source file's own name)"
+    )
+    p_surrogate.add_argument(
+        "--policy",
+        choices=[p.value for p in AccessPolicy if p is not AccessPolicy.SEALED],
+        help="the surrogate's disclosure policy (default: the record's own default)",
+    )
+    p_surrogate.add_argument("--actor", default="ledger", help="agent id")
+    p_surrogate.add_argument("--now", help="ISO-8601 timestamp")
+    p_surrogate.set_defaults(func=_cmd_surrogate)
 
     p_browse = sub.add_parser("browse", help="list records a viewer may see")
     p_browse.add_argument("--root", required=True)

@@ -1210,3 +1210,108 @@ msgstr ""
 
 msgid "verified objection from a named subject (token confirmed)"
 msgstr "objeción verificada de una persona nombrada (ficha confirmada)"
+
+msgid "Artwork"
+msgstr "Obra de arte"
+
+msgid "Audio cassette"
+msgstr "Casete de audio"
+
+msgid "Banner"
+msgstr "Pancarta"
+
+msgid "Book"
+msgstr "Libro"
+
+msgid "Button or badge"
+msgstr "Chapa o pin"
+
+msgid "Condition"
+msgstr "Estado de conservación"
+
+msgid "Correspondence"
+msgstr "Correspondencia"
+
+msgid "Custody"
+msgstr "Custodia"
+
+msgid "Ephemera"
+msgstr "Efímera impresa"
+
+msgid "Every record here describes a physical object that has not been digitized, so there are no stored files to check. Nothing is wrong; nothing has been proved either. The objects are only as safe as the people keeping them."
+msgstr "Cada registro de este archivo describe un objeto físico que no se ha digitalizado, así que no hay ficheros guardados que comprobar. Nada está mal; tampoco se ha demostrado nada. Esos objetos están solo tan a salvo como las personas que los guardan."
+
+msgid "Extent"
+msgstr "Volumen"
+
+msgid "Film reel"
+msgstr "Bobina de película"
+
+msgid "Flyer"
+msgstr "Volante"
+
+msgid "Format"
+msgstr "Formato"
+
+msgid "Not recorded — nobody has written down who is keeping this."
+msgstr "Sin registrar: nadie ha anotado quién lo guarda."
+
+msgid "Notebook"
+msgstr "Cuaderno"
+
+msgid "Other"
+msgstr "Otro"
+
+msgid "Periodical"
+msgstr "Publicación periódica"
+
+msgid "Photograph"
+msgstr "Fotografía"
+
+msgid "Photographic negative"
+msgstr "Negativo fotográfico"
+
+msgid "Physical holding"
+msgstr "Fondo físico"
+
+msgid "Physical · not digitized"
+msgstr "Físico · sin digitalizar"
+
+msgid "Physical · partial scan"
+msgstr "Físico · digitalización parcial"
+
+msgid "Poster"
+msgstr "Cartel"
+
+msgid "Recorded and shown below."
+msgstr "Registrada y visible más abajo."
+
+msgid "Recorded. Not shown at your level of access."
+msgstr "Registrada. No se muestra con su nivel de acceso."
+
+msgid "Slide"
+msgstr "Diapositiva"
+
+msgid "Textile"
+msgstr "Textil"
+
+msgid "The scan below is checked for integrity like any other file. The object it was made from is not, and a checked scan is not a checked object."
+msgstr "La digitalización que aparece abajo se comprueba como cualquier otro fichero. El objeto del que se hizo, no; y una copia comprobada no es un objeto comprobado."
+
+msgid "This archive is a catalogue, not a copy."
+msgstr "Este archivo es un catálogo, no una copia."
+
+msgid "Video cassette"
+msgstr "Cinta de vídeo"
+
+msgid "Vinyl record"
+msgstr "Disco de vinilo"
+
+msgid "Zine"
+msgstr "Fanzine"
+
+msgid "ledger holds no copy of this object, so it cannot check whether it is intact. Its condition is whatever the last person to look at it wrote down."
+msgstr "ledger no guarda ninguna copia de este objeto, así que no puede comprobar si sigue intacto. Su estado es el que anotó la última persona que lo miró."
+
+msgid "{count} of them describe physical objects that have not been digitized, so there is nothing stored for those to check."
+msgstr "{count} de ellos describen objetos físicos sin digitalizar, así que no hay nada guardado que comprobar en su caso."
