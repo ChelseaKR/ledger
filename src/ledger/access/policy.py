@@ -304,14 +304,26 @@ def disclose_container(
     scope = container.scope_and_content
     inherited = False
     if not scope and arrangement is not None:
+        # Every ancestor of a *visible* container is itself visible: the check
+        # above ANDs `_own_description_visible` over the whole chain, so
+        # reaching this line means each of them passed it. Re-checking here
+        # would be a branch nothing can reach — and an unreachable guard reads
+        # like protection while proving nothing. The property it would guard is
+        # asserted directly instead, in
+        # `test_a_hidden_collection_hides_its_series_so_no_note_can_be_inherited`.
+        #
+        # The vocabulary is two levels deep
+        # (:data:`ledger.arrangement.MAX_CHAIN_DEPTH`), so "the nearest ancestor"
+        # is *the* ancestor: a chain is either one collection or a collection and
+        # a series. Written as an index rather than a walk for that reason — a
+        # loop here would carry a second iteration nothing can reach.
+        # `test_the_scope_inheritance_walk_is_valid_only_while_the_chain_is_two_deep`
+        # fails if the vocabulary ever grows and this has to become a walk again.
         chain = arrangement.chain(container.container_id) or ()
-        for node in reversed(chain[:-1]):
-            if node.scope_and_content and _own_description_visible(
-                node, grant, now, conditions_met=conditions_met
-            ):
-                scope = node.scope_and_content
-                inherited = True
-                break
+        parent = chain[-2] if len(chain) > 1 else None
+        if parent is not None and parent.scope_and_content:
+            scope = parent.scope_and_content
+            inherited = True
     return DisclosedContainer(
         container_id=container.container_id,
         title=container.title,

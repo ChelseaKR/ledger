@@ -235,8 +235,10 @@ class Arrangement:
                 return None
             walked.append(node)
             current = node.parent_id
-        if walked[-1].level is not ContainerLevel.COLLECTION:
-            return None
+        # The loop can only exit with ``current is None``, and the two shape
+        # checks above mean the node that set it was a collection with no
+        # parent. So the top of ``walked`` is always a collection here; a
+        # further check would be a branch nothing can reach.
         return tuple(reversed(walked))
 
     def children(self, container_id: str) -> tuple[ArchivalContainer, ...]:

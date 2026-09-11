@@ -580,3 +580,84 @@ def test_an_attested_condition_lifts_a_conditional_ceiling_for_a_non_steward() -
         )
         is True
     )
+
+
+def test_a_dangling_placement_names_no_container_either() -> None:
+    """Not visible, and also not *nameable*: the two answers agree.
+
+    `arrangement_permits` denies a record whose chain will not resolve, so a
+    reader never reaches its placement — but `visible_placement` is a separate
+    function and a caller could reach it another way. It returns nothing for the
+    same input, so there is no path on which an unresolvable chain produces a
+    container name.
+    """
+    graph = Arrangement.from_containers([_collection("col-1")])
+    for grant in (anonymous(), community_member("m"), steward("s")):
+        assert visible_placement("col-gone", grant, _NOW, arrangement=graph) == ()
+        assert visible_placement("col-1", grant, _NOW) == ()
+
+
+def test_a_hidden_collection_hides_its_series_so_no_note_can_be_inherited() -> None:
+    """The invariant that makes the inheritance walk need no visibility check.
+
+    `disclose_container` inherits a scope note from the nearest ancestor without
+    re-checking whether that ancestor is visible, because it cannot be reached
+    over an invisible one: container visibility ANDs down the chain, so a series
+    under a hidden collection is itself hidden. This asserts that directly,
+    across every viewer and both sealed shapes, rather than leaving an
+    unreachable guard in the resolver to imply it.
+    """
+    for hiding in (AccessPolicy.STEWARDS, AccessPolicy.SEALED):
+        graph = Arrangement.from_containers(
+            [
+                ArchivalContainer(
+                    container_id="col-1",
+                    title="Casa Abierta deposit",
+                    level=ContainerLevel.COLLECTION,
+                    scope_and_content="Deposited by Casa Abierta after the March raid.",
+                    policy=hiding,
+                    records_policy=AccessPolicy.PUBLIC,
+                    created_at=_NOW,
+                ),
+                ArchivalContainer(
+                    container_id="ser-1",
+                    title="Flyers",
+                    level=ContainerLevel.SERIES,
+                    parent_id="col-1",
+                    scope_and_content="",
+                    policy=AccessPolicy.PUBLIC,
+                    records_policy=AccessPolicy.PUBLIC,
+                    created_at=_NOW,
+                ),
+            ]
+        )
+        for grant in (anonymous(), community_member("m")):
+            assert container_is_visible(graph.require("ser-1"), grant, _NOW, arrangement=graph) is (
+                False
+            )
+            with pytest.raises(AccessDenied):
+                disclose_container(graph.require("ser-1"), grant, _NOW, arrangement=graph)
+
+
+def test_a_series_with_no_note_under_a_collection_with_no_note_inherits_nothing() -> None:
+    """The other side of the inheritance branch: there is nothing to inherit."""
+    graph = Arrangement.from_containers([_collection("col-1"), _series("ser-1", "col-1")])
+    shown = disclose_container(graph.require("ser-1"), anonymous(), _NOW, arrangement=graph)
+    assert shown.scope_and_content == ""
+    assert shown.inherited_scope is False
+
+
+def test_the_scope_inheritance_walk_is_valid_only_while_the_chain_is_two_deep() -> None:
+    """`disclose_container` reads `chain[-2]`, not the whole chain above it.
+
+    That is correct for a two-level vocabulary and silently wrong for a deeper
+    one: a three-level chain whose middle container has no note would stop
+    inheriting instead of reaching the top. The index is there because a loop
+    would carry an iteration no fixture can reach, so this is the assertion that
+    makes the trade visible — grow the vocabulary and it fails, naming the line
+    that has to change with it.
+    """
+    from ledger.arrangement import MAX_CHAIN_DEPTH
+
+    assert MAX_CHAIN_DEPTH == 2
+    assert set(ContainerLevel) == {ContainerLevel.COLLECTION, ContainerLevel.SERIES}

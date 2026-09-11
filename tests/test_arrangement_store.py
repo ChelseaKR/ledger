@@ -324,3 +324,22 @@ def test_load_is_deterministic_across_two_reads_of_the_same_directory(tmp_path: 
     assert [c.container_id for c in first.all_containers()] == [
         c.container_id for c in second.all_containers()
     ]
+
+
+def test_a_series_with_no_parent_on_disk_resolves_to_no_chain_at_all() -> None:
+    """The write path refuses it; this is what the read path does if it is there.
+
+    `validate_container` will not store a parentless series, but a hand-edited
+    `containers/` directory can hold one. `chain` answers `None` — deny — rather
+    than treating it as a root, which would drop whatever ceiling its real
+    collection carried.
+    """
+    orphan = ArchivalContainer(
+        container_id="ser-1",
+        title="Flyers",
+        level=ContainerLevel.SERIES,
+        parent_id=None,
+        created_at=_NOW,
+    )
+    graph = Arrangement.from_containers([orphan])
+    assert graph.chain("ser-1") is None
