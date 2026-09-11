@@ -17,11 +17,17 @@ Governance Standard without restating that standard.
 | Identity vault | L3 | optional name/contact/notes keyed by opaque `identity_ref` | only while the contributor permits identity recovery | explicit vault-entry deletion; key destruction makes the whole vault unrecoverable |
 | Grants and revocations | L3 capability data | access capabilities, revocation state | while needed to enforce active access and audit revocation | revoke/delete grant; never publish token material |
 | Consent/moderation/PREMIS logs | L2/L3 depending on context | decisions and events without contributor identity inline | retained with the related archival record for accountability | takedown entries remain as identity-free evidence; sensitive free text is prohibited |
+| Arrangement containers (`containers/`) | L2/L3 — a collection's *title and scope note* can identify a depositor by aggregation even when every record in it is sealed | collection/series title, scope-and-content note, extent, dates, and two access policies; never a payload, never an `identity_ref`, never a depositor's name | retained with the records filed in it | delete or re-describe the manifest; every record filed in a container that no longer resolves is denied to every viewer (fail closed), and `ledger arrange check` names them |
 | Backups | inherits the highest tier, L3 | encrypted snapshot of the archive and encrypted vault | at most one backup cycle beyond the operator's live-data policy; reference schedule keeps 14 nightly copies | `ledger backup --keep N` plus matching off-box rotation |
 
 The baseline sensitive inventory is credentials, vault/backup keys, grant tokens,
-direct contact or identity, precise location, sealed payload/field values, and any
-combination that can reveal contributor identity. Those values must not enter
+direct contact or identity, precise location, sealed payload/field values, **a
+container's own description where its policy restricts it**, and any
+combination that can reveal contributor identity. A container is the clearest case
+of the last clause: *"2019 raid testimony, deposited by Casa Abierta"* names nobody
+and identifies a depositor anyway, which is why its existence is sealable separately
+from what it holds (ADR 0020) and why no log this archive writes about a container
+copies its title or note. Those values must not enter
 logs, filenames, public errors, metrics, or unencrypted backups. The no-outing
 sentinel tests are the enforcement of that classification at output boundaries.
 

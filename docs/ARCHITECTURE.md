@@ -153,7 +153,8 @@ OAI-PMH harvesters. The no-outing rule is explicit here too: `dc.creator` and
 `dc.contributor` describe the *collection or community*, never the individual who
 contributed an item.
 
-The versioned record schema lives at `metadata/schema/record.schema.json`.
+The versioned record schema lives at `metadata/schema/record.schema.json`, and the
+arrangement container's at `metadata/schema/container.schema.json`.
 
 ### 1.4 Access: the single disclosure decision point — `access/`
 
@@ -180,9 +181,35 @@ from `access/__init__.py`: `disclose`, `is_visible`, `is_listable`, `redact_fiel
   no-outing boundary is enforced *structurally* — there is no way to leak identity out
   of `disclose` because there is nowhere in the result to put it.
 
-- **`is_listable(...)`** resolves a record's *default* policy through `is_visible`, so
-  a record whose existence is sealed never appears in a listing — no padded list with
-  locked rows betraying that something is there.
+- **`is_listable(...)`** resolves a record's *default* policy through `is_visible`
+  **and** every ceiling above it through `arrangement_permits`, so a record whose
+  existence is sealed — by its own policy or by the collection it sits in — never
+  appears in a listing. No padded list with locked rows betraying that something is
+  there.
+
+- **`arrangement_permits(...)`** is the #202 addition, and it is a logical AND over
+  the root-to-parent chain rather than a comparison between policies. That is the
+  whole design: an AND has no ordering over `AccessPolicy` to get wrong, so there is
+  no cell in which a broad container makes a narrow record more visible. It fails
+  closed on everything — an unknown container, a corrupt parent link, a chain deeper
+  than the two-level vocabulary, and a caller that supplied no arrangement at all —
+  because a ceiling that cannot be applied is a ceiling of unknown height. See ADR
+  0020.
+
+- **`container_is_visible(...)` / `disclose_container(...)`** answer the *other*
+  question a container raises: may this viewer know it exists? A collection's title
+  is its own disclosure — "2019 raid testimony, deposited by Casa Abierta" outs its
+  depositor by aggregation even when every record inside it is sealed — so a
+  container carries a `policy` over its own description separately from the
+  `records_policy` ceiling over what it holds. `disclose_container` is the sole
+  constructor of `DisclosedContainer`, raises the same `AccessDenied` for a hidden
+  container as for an absent one, and carries out no policy value and no count of
+  holdings.
+
+- **`visible_placement(...)`** trims a record's chain to the containers this viewer
+  may *describe*, which is deliberately not the same question as whether they may see
+  the record. A public flyer inside a hidden collection is disclosed with an empty
+  placement, indistinguishable from an unarranged record.
 
 - **`access/grants.py`** builds grants under least privilege. The crucial separation:
   `identity_unseal` (the set of `identity_ref` tokens a grant may resolve to a real
@@ -197,6 +224,36 @@ from `access/__init__.py`: `disclose`, `is_visible`, `is_listable`, `redact_fiel
   whose detail names only the field/filename, never its withheld value. The original
   stays access-controlled wherever the caller keeps it; the lossy view never
   masquerades as the original.
+
+### 1.4b Arrangement: `arrangement.py`
+
+The graph over the archive's collections and series, their shape rules, and their
+store. Deliberately the only module that knows a container has a parent, so the
+hierarchy's shape is decided once.
+
+- **Two levels and one parent.** A `COLLECTION` is a root; a `SERIES` sits directly
+  under one. A record has exactly one place. That bounds every root-to-node chain at
+  two links, makes a cycle unrepresentable rather than merely guarded against, and
+  keeps `Arrangement.chain` a loop with a hard bound instead of a recursion.
+- **`chain()` returns `None`, never a partial chain**, for anything it cannot
+  resolve. `()` means "nothing above this record", which permits; `None` means "I
+  could not work out what is above this record", which denies. Conflating the two
+  would widen every dangling placement.
+- **The write path is strict and loud; the read path is forgiving and silent — but
+  only in the direction that hides.** `validate_container` refuses a malformed
+  container before it is stored, because a store that accepts one turns a steward's
+  typo into 400 invisible records with no error. `load_arrangement` skips a manifest
+  it cannot parse, because one broken file must not take down browse — and skipping
+  it cannot widen anything, since every record placed in it now resolves to `None`.
+  `Archive.arrangement_problems()` (`ledger arrange check`) is what makes the silence
+  operable: it names every record the resolver is denying to everyone.
+- **No disclosure decision lives here.** This module never sees a `Grant`. Who may
+  see what is decided in `access/policy.py`, the one place the archive audits for it.
+
+Containers live in `containers/` beside `records/`, one JSON manifest each, because a
+container is not an item: it has no payload and it outlives any single record filed in
+it. An archive with no `containers/` directory has an empty arrangement and behaves
+exactly as it did before #202.
 
 ### 1.5 Identity vault: `identity.py`
 
