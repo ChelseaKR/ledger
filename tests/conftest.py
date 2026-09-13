@@ -138,3 +138,36 @@ def sample_payload_file(sample_bytes: bytes) -> PayloadFile:
         size_bytes=len(sample_bytes),
         policy=AccessPolicy.PUBLIC,
     )
+
+
+# --- the G9 body-gate census ------------------------------------------------
+#
+# `tests/test_i18n_rtl.py` measures how many of the server's served HTML routes the
+# body-level pseudolocale gate actually judges. A `print` inside that test is
+# swallowed twice over — by the fixture's `redirect_stdout` and then by pytest's
+# capture on a passing test — so the number would exist and never be read, which is
+# the same failure the census exists to catch. It is recorded here and written into
+# the terminal summary of every run instead, pass or fail.
+
+_BODY_GATE_CENSUS: dict[str, int] = {}
+
+
+def record_body_gate_census(*, judged: int, served: int, leaking: int, unreachable: int) -> None:
+    _BODY_GATE_CENSUS.update(judged=judged, served=served, leaking=leaking, unreachable=unreachable)
+
+
+def pytest_terminal_summary(terminalreporter: pytest.TerminalReporter) -> None:
+    if not _BODY_GATE_CENSUS:
+        # Not "nothing to say": the census test did not run (a `-k` selection, a
+        # collection error). Say which, rather than printing a reassuring silence.
+        terminalreporter.write_line(
+            "G9 body gate: census not taken in this run — "
+            "test_the_body_gate_says_how_many_routes_it_judges did not execute"
+        )
+        return
+    c = _BODY_GATE_CENSUS
+    terminalreporter.write_line(
+        f"G9 body gate: judged {c['judged']} of {c['served']} served HTML route(s); "
+        f"{c['leaking']} leak un-seamed English prose and {c['unreachable']} are "
+        "unreachable on the i18n fixture (see _BODY_GATE_UNJUDGED)"
+    )
