@@ -34,6 +34,39 @@ msgid "(change access),"
 msgstr "(change access),"
 
 msgid ""
+"A contributor's identity is stored only as an opaque token plus encrypted"
+" data in a separate vault. The record a page is built from has no place "
+"to put an identity, so there is nothing to leak."
+msgstr ""
+"A contributor's identity is stored only as an opaque token plus encrypted"
+" data in a separate vault. The record a page is built from has no place "
+"to put an identity, so there is nothing to leak."
+
+msgid ""
+"A fixity check covers files this archive stores. Records that describe a "
+"physical object the archive does not hold a copy of have no stored "
+"content to check, and no attestation — this one included — says anything "
+"about whether those objects are safe."
+msgstr ""
+"A fixity check covers files this archive stores. Records that describe a "
+"physical object the archive does not hold a copy of have no stored "
+"content to check, and no attestation — this one included — says anything "
+"about whether those objects are safe."
+
+msgid ""
+"A stale or missing attestation is not proof of anything by itself, but it"
+" removes the reassurance a fresh one gives — a steward unable to re-"
+"attest (a gag order, a compromise, a lapse) and a steward with nothing to"
+" report look identical only until the date goes stale. Compare this page "
+"over time rather than trusting a single visit."
+msgstr ""
+"A stale or missing attestation is not proof of anything by itself, but it"
+" removes the reassurance a fresh one gives — a steward unable to re-"
+"attest (a gag order, a compromise, a lapse) and a steward with nothing to"
+" report look identical only until the date goes stale. Compare this page "
+"over time rather than trusting a single visit."
+
+msgid ""
 "A steward reviews every submission before anything becomes visible — "
 "nothing is published automatically."
 msgstr ""
@@ -112,6 +145,22 @@ msgstr "Are you named in this record and object to it? Tell a steward"
 msgid "Are you the contributor? Manage or withdraw your consent"
 msgstr "Are you the contributor? Manage or withdraw your consent"
 
+#, python-brace-format
+msgid ""
+"As of {when}, this archive did NOT pass its most recent fixity check — a "
+"steward has been notified. It is running ledger {version}."
+msgstr ""
+"As of {when}, this archive did NOT pass its most recent fixity check — a "
+"steward has been notified. It is running ledger {version}."
+
+#, python-brace-format
+msgid ""
+"As of {when}, this archive passed its most recent fixity check, running "
+"ledger {version}."
+msgstr ""
+"As of {when}, this archive passed its most recent fixity check, running "
+"ledger {version}."
+
 msgid ""
 "At least one record package declares no files to verify, so it could not "
 "be checked. That is not a failure, and it is not a pass either."
@@ -121,6 +170,10 @@ msgstr ""
 
 msgid "Attach a file (optional)"
 msgstr "Attach a file (optional)"
+
+#, python-brace-format
+msgid "Attested by: {who}."
+msgstr "Attested by: {who}."
 
 msgid "Audit log"
 msgstr "Audit log"
@@ -245,6 +298,13 @@ msgstr ""
 "Publishing opens a record to the visibility the contributor asked for; "
 "withholding holds it for revision. Every choice is recorded."
 
+msgid "Count"
+msgstr "Count"
+
+#, python-brace-format
+msgid "Current statement (as of {date})"
+msgstr "Current statement (as of {date})"
+
 msgid "Date"
 msgstr "Date"
 
@@ -281,6 +341,15 @@ msgstr "Download metadata (JSON)"
 
 msgid "Download results (CSV)"
 msgstr "Download results (CSV)"
+
+msgid ""
+"Each attestation is chained to the one before it by a SHA-256 digest, so "
+"an edited, reordered, or deleted past entry is detectable from the log "
+"file alone — see docs/TRANSPARENCY.md for how to check it yourself."
+msgstr ""
+"Each attestation is chained to the one before it by a SHA-256 digest, so "
+"an edited, reordered, or deleted past entry is detectable from the log "
+"file alone — see docs/TRANSPARENCY.md for how to check it yourself."
 
 msgid "Edit a pending submission"
 msgstr "Edit a pending submission"
@@ -347,12 +416,22 @@ msgstr "How should this be shared?"
 msgid "How this protects you, and how to contribute"
 msgstr "How this protects you, and how to contribute"
 
+msgid ""
+"How to check the signature is described in the ledger source, in this "
+"file:"
+msgstr ""
+"How to check the signature is described in the ledger source, in this "
+"file:"
+
 #, python-brace-format
 msgid "How to reach us: {contact}"
 msgstr "How to reach us: {contact}"
 
 msgid "How to reach you"
 msgstr "How to reach you"
+
+msgid "How to read this page"
+msgstr "How to read this page"
 
 msgid "If a steward publishes this, a stranger who is not signed in would see:"
 msgstr "If a steward publishes this, a stranger who is not signed in would see:"
@@ -400,6 +479,13 @@ msgstr ""
 "submitted is public yet, and any contact details you gave are encrypted "
 "and will never be shown."
 
+msgid ""
+"Its wording is a placeholder and carries no asserted legal effect. See "
+"docs/TRANSPARENCY.md."
+msgstr ""
+"Its wording is a placeholder and carries no asserted legal effect. See "
+"docs/TRANSPARENCY.md."
+
 msgid "Keep this if you might change your mind"
 msgstr "Keep this if you might change your mind"
 
@@ -408,6 +494,30 @@ msgstr "Language"
 
 msgid "Languages"
 msgstr "Languages"
+
+#, python-brace-format
+msgid ""
+"Last attested {days} day(s) ago — this is beyond the archive's "
+"{cadence}-day re-attestation cadence. Treat this statement as STALE, not "
+"current."
+msgstr ""
+"Last attested {days} day(s) ago — this is beyond the archive's "
+"{cadence}-day re-attestation cadence. Treat this statement as STALE, not "
+"current."
+
+#, python-brace-format
+msgid ""
+"Last attested {days} day(s) ago, within the archive's {cadence}-day "
+"cadence."
+msgstr ""
+"Last attested {days} day(s) ago, within the archive's {cadence}-day "
+"cadence."
+
+msgid "Legal demands received, by type, as of this attestation"
+msgstr "Legal demands received, by type, as of this attestation"
+
+msgid "Legal-process transparency"
+msgstr "Legal-process transparency"
 
 msgid "Linked records"
 msgstr "Linked records"
@@ -442,6 +552,9 @@ msgstr "Next"
 msgid "No"
 msgstr "No"
 
+msgid "No legal demands recorded as of this attestation."
+msgstr "No legal demands recorded as of this attestation."
+
 msgid "No moderation decisions recorded yet."
 msgstr "No moderation decisions recorded yet."
 
@@ -468,6 +581,13 @@ msgstr "No submissions awaiting review."
 
 msgid "No transcript provided for this audio/video."
 msgstr "No transcript provided for this audio/video."
+
+msgid ""
+"No transparency attestation has been published yet. A steward publishes "
+"one, on a schedule, by running this command:"
+msgstr ""
+"No transparency attestation has been published yet. A steward publishes "
+"one, on a schedule, by running this command:"
 
 msgid "Object"
 msgstr "Object"
@@ -499,6 +619,9 @@ msgstr "Open consent & takedown requests"
 
 msgid "Open the record to read it before deciding."
 msgstr "Open the record to read it before deciding."
+
+msgid "Our promise, proven"
+msgstr "Our promise, proven"
 
 msgid "Outcome"
 msgstr "Outcome"
@@ -555,6 +678,29 @@ msgstr "Possible name"
 
 msgid "Possible phone number"
 msgstr "Possible phone number"
+
+#, python-brace-format
+msgid ""
+"Preservation and moderation events are hash-chained, so editing history "
+"after the fact changes the archive chain head. Anyone who previously "
+"noted the head published on {when} can confirm it only moved forward:"
+msgstr ""
+"Preservation and moderation events are hash-chained, so editing history "
+"after the fact changes the archive chain head. Anyone who previously "
+"noted the head published on {when} can confirm it only moved forward:"
+
+msgid ""
+"Preservation and moderation events are hash-chained, so editing history "
+"after the fact changes the archive chain head. This archive has not "
+"published an attestation yet, so there is no chain head here to note — "
+"the value is not computed live for visitors, because a per-request value "
+"would date every deposit, including a sealed one."
+msgstr ""
+"Preservation and moderation events are hash-chained, so editing history "
+"after the fact changes the archive chain head. This archive has not "
+"published an attestation yet, so there is no chain head here to note — "
+"the value is not computed live for visitors, because a per-request value "
+"would date every deposit, including a sealed one."
 
 msgid "Preview what a stranger sees"
 msgstr "Preview what a stranger sees"
@@ -751,14 +897,85 @@ msgstr "That file type isn't accepted. Allowed types are: {types}."
 msgid "That submission is too long."
 msgstr "That submission is too long."
 
+msgid ""
+"The attestation date is invalid or in the future. Treat this statement as"
+" STALE, not current."
+msgstr ""
+"The attestation date is invalid or in the future. Treat this statement as"
+" STALE, not current."
+
+#, python-brace-format
+msgid "The attestation is signed. Signature format: {format}."
+msgstr "The attestation is signed. Signature format: {format}."
+
+msgid ""
+"The attestation is unsigned — this archive has not configured a signing "
+"key."
+msgstr ""
+"The attestation is unsigned — this archive has not configured a signing "
+"key."
+
+msgid ""
+"The claim 'contributor identities are never shown here' is not an honour-"
+"system promise — it is a test the software must pass on every build."
+msgstr ""
+"The claim 'contributor identities are never shown here' is not an honour-"
+"system promise — it is a test the software must pass on every build."
+
+msgid ""
+"The configured transparency log could not be verified. Treat the legal-"
+"process statement as unavailable until a steward repairs it."
+msgstr ""
+"The configured transparency log could not be verified. Treat the legal-"
+"process statement as unavailable until a steward repairs it."
+
+msgid ""
+"The demand types below are named in the terms of the legal system the "
+"demand came from, and are not translated: an instrument named here may "
+"have no counterpart in the reader's own jurisdiction, and translating it "
+"would assert an equivalence this project cannot vouch for."
+msgstr ""
+"The demand types below are named in the terms of the legal system the "
+"demand came from, and are not translated: an instrument named here may "
+"have no counterpart in the reader's own jurisdiction, and translating it "
+"would assert an equivalence this project cannot vouch for."
+
+msgid "The full, machine-readable attestation is at:"
+msgstr "The full, machine-readable attestation is at:"
+
 msgid "The language of the material, e.g. English or Spanish."
 msgstr "The language of the material, e.g. English or Spanish."
 
 msgid "The moderation log could not be read. It is not empty — it is unreadable, and that needs looking into before any further moderation decision is taken."
 msgstr "The moderation log could not be read. It is not empty — it is unreadable, and that needs looking into before any further moderation decision is taken."
 
+msgid ""
+"The project's audit ingests a sentinel identity and then checks that it "
+"appears on no page, in no data file, in no backup, and in no log — and "
+"that a sealed record cannot even be confirmed to exist by an outsider."
+msgstr ""
+"The project's audit ingests a sentinel identity and then checks that it "
+"appears on no page, in no data file, in no backup, and in no log — and "
+"that a sealed record cannot even be confirmed to exist by an outsider."
+
 msgid "The review queue could not be read. It is not empty — it is unreadable, so submissions may be waiting that this page cannot show. Look into it before deciding anything here."
 msgstr "The review queue could not be read. It is not empty — it is unreadable, so submissions may be waiting that this page cannot show. Look into it before deciding anything here."
+
+msgid ""
+"The statement below is reproduced exactly as the stewards published it, "
+"in the language they wrote it in. Its wording is a legal instrument, so "
+"this project never translates it — a translation could change what it "
+"asserts. Everything else on this page is this project's own explanation, "
+"and is translated."
+msgstr ""
+"The statement below is reproduced exactly as the stewards published it, "
+"in the language they wrote it in. Its wording is a legal instrument, so "
+"this project never translates it — a translation could change what it "
+"asserts. Everything else on this page is this project's own explanation, "
+"and is translated."
+
+msgid "The steward's note on that review:"
+msgstr "The steward's note on that review:"
 
 msgid "The takedown is confirmed at every storage location."
 msgstr "The takedown is confirmed at every storage location."
@@ -773,6 +990,22 @@ msgstr ""
 "There is no record package here to check, so no integrity check has run. "
 "An empty archive is not a verified one."
 
+msgid ""
+"This archive has enabled legal-process transparency but has not yet "
+"published a first attestation."
+msgstr ""
+"This archive has enabled legal-process transparency but has not yet "
+"published a first attestation."
+
+msgid ""
+"This archive has not configured legal-process transparency attestations. "
+"It publishes no statement here, positive or negative — absence of the "
+"feature is not evidence of anything."
+msgstr ""
+"This archive has not configured legal-process transparency attestations. "
+"It publishes no statement here, positive or negative — absence of the "
+"feature is not evidence of anything."
+
 msgid "This archive holds nothing yet."
 msgstr "This archive holds nothing yet."
 
@@ -786,6 +1019,28 @@ msgstr ""
 " it is shared."
 
 msgid ""
+"This field changes the instant any record's or log's history anywhere in "
+"the archive is rewritten, so saving two dated copies over time and "
+"comparing them is enough to catch a rolled-back archive — without "
+"trusting this server or any steward."
+msgstr ""
+"This field changes the instant any record's or log's history anywhere in "
+"the archive is rewritten, so saving two dated copies over time and "
+"comparing them is enough to catch a rolled-back archive — without "
+"trusting this server or any steward."
+
+msgid ""
+"This page shows the archive's most recent, dated statement about legal "
+"demands received for records or contributor identities, re-attested on a "
+"schedule. A missing or stale attestation is itself meaningful — see 'How "
+"to read this page' below."
+msgstr ""
+"This page shows the archive's most recent, dated statement about legal "
+"demands received for records or contributor identities, re-attested on a "
+"schedule. A missing or stale attestation is itself meaningful — see 'How "
+"to read this page' below."
+
+msgid ""
 "This record carries the following content warnings. Review them before "
 "continuing."
 msgstr ""
@@ -797,6 +1052,12 @@ msgstr "This record has access restrictions."
 
 msgid "This record links to"
 msgstr "This record links to"
+
+msgid "This statement has not been reviewed by counsel."
+msgstr "This statement has not been reviewed by counsel."
+
+msgid "This statement's wording has been reviewed by counsel."
+msgstr "This statement's wording has been reviewed by counsel."
 
 msgid ""
 "This translation was drafted by the project and has not been reviewed by "
@@ -836,6 +1097,12 @@ msgstr "Type"
 
 msgid "Types"
 msgstr "Types"
+
+msgid "Verify it yourself"
+msgstr "Verify it yourself"
+
+msgid "Verifying this page"
+msgstr "Verifying this page"
 
 msgid "View the audit log"
 msgstr "View the audit log"
@@ -1030,6 +1297,18 @@ msgstr "tighten access"
 
 msgid "withdraw / take down"
 msgstr "withdraw / take down"
+
+#, python-brace-format
+msgid ""
+"{count} attestation(s) on file; the hash chain FAILED VERIFICATION — "
+"contact the stewards."
+msgstr ""
+"{count} attestation(s) on file; the hash chain FAILED VERIFICATION — "
+"contact the stewards."
+
+#, python-brace-format
+msgid "{count} attestation(s) on file; the hash chain verified intact."
+msgstr "{count} attestation(s) on file; the hash chain verified intact."
 
 #, python-brace-format
 msgid ""

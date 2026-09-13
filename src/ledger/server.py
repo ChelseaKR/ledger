@@ -2524,67 +2524,73 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         lang = self._lang()
         attestation = self._load_latest_attestation()
         if attestation is None:
-            chain_html = (
-                "    <p>Preservation and moderation events are hash-chained, so editing "
-                "history after the fact changes the archive chain head. This archive has "
-                "not published an attestation yet, so there is no chain head here to note "
-                "— the value is not computed live for visitors, because a per-request "
-                "value would date every deposit, including a sealed one.</p>\n"
-            )
+            chain_html = f"    <p>{_esc(i18n.t(lang, 'proof_chain_unpublished'))}</p>\n"
             attestation_html = (
-                "    <h2>Verify it yourself</h2>\n"
-                "    <p>No transparency attestation has been published yet. A steward "
-                "publishes one, on a schedule, by running "
-                "<code>ledger attest-health</code>.</p>"
+                f"    <h2>{_esc(i18n.t(lang, 'proof_verify_heading'))}</h2>\n"
+                f"    <p>{_esc(i18n.t(lang, 'proof_not_attested'))} "
+                "<code>ledger attest-health</code></p>"
             )
         else:
-            health = (
-                "passed its most recent fixity check"
-                if attestation.fixity_ok
-                else "did NOT pass its most recent fixity check — a steward has been notified"
-            )
-            signed = (
-                f"signed (format: {_esc(attestation.signature_format or 'unknown')})"
-                if attestation.signature
-                else "unsigned — this archive has not configured a signing key"
+            health_key = "proof_attested_ok" if attestation.fixity_ok else "proof_attested_failed"
+            # Two branches, not three: `HealthAttestation.from_json` — the only
+            # way an attestation reaches this handler — rejects any signature
+            # whose format is not "ssh", so a signed attestation always has a
+            # format and the old `signature_format or "unknown"` was dead.
+            signature_key = (
+                "proof_signature_signed" if attestation.signature else "proof_signature_unsigned"
             )
             chain_html = (
-                "    <p>Preservation and moderation events are hash-chained, so editing "
-                "history after the fact changes the archive chain head. Anyone who "
-                "previously noted the head published on "
-                f"{_esc(attestation.generated_at)} can confirm it only moved forward: "
-                f"<code>{_esc(attestation.chain_head_summary)}</code>.</p>\n"
+                "    <p>"
+                + _esc(i18n.t(lang, "proof_chain_published", when=attestation.generated_at))
+                + f" <code>{_esc(attestation.chain_head_summary)}</code></p>\n"
             )
             attestation_html = (
-                "    <h2>Verify it yourself</h2>\n"
-                f"    <p>As of {_esc(attestation.generated_at)}, this archive {_esc(health)}, "
-                f"running ledger {_esc(attestation.software_version)}. The attestation is "
-                f"{_esc(signed)}.</p>\n"
-                "    <p>The full, machine-readable attestation is at "
-                '<a href="/proof/attestation.json">/proof/attestation.json</a>. Its '
-                "<code>chain_head_summary</code> field changes the instant any record's or "
-                "log's history anywhere in the archive is rewritten, so saving two dated "
-                "copies over time and comparing them is enough to catch a rolled-back archive "
-                "— without trusting this server or any steward. See "
-                "<code>docs/VERIFYING-ATTESTATIONS.md</code> in the ledger source for how to "
-                "check the signature.</p>"
+                f"    <h2>{_esc(i18n.t(lang, 'proof_verify_heading'))}</h2>\n"
+                "    <p>"
+                + _esc(
+                    i18n.t(
+                        lang,
+                        health_key,
+                        when=attestation.generated_at,
+                        version=attestation.software_version,
+                    )
+                )
+                + " "
+                + _esc(i18n.t(lang, signature_key, format=attestation.signature_format or ""))
+                + "</p>\n"
+                # #188. A fixity check is a statement about files this archive
+                # stores. Some records here may describe a physical object it does
+                # not store — a box of flyers in somebody's flat — and no check,
+                # signed or otherwise, can say anything about those. Said as a
+                # property of the attestation rather than as a count, because a
+                # count of physical holdings would tell an anonymous visitor part
+                # of the archive's size, which is the line /healthz's gated block
+                # exists to hold.
+                + f"    <p>{_esc(i18n.t(lang, 'proof_physical_caveat'))}</p>\n"
+                + f"    <p>{_esc(i18n.t(lang, 'proof_machine_readable_at'))} "
+                '<a href="/proof/attestation.json">/proof/attestation.json</a></p>\n'
+                + "    <p><code>chain_head_summary</code> — "
+                + _esc(i18n.t(lang, "proof_chain_head_field"))
+                + "</p>\n"
+                + f"    <p>{_esc(i18n.t(lang, 'proof_check_signature'))} "
+                "<code>docs/VERIFYING-ATTESTATIONS.md</code></p>"
             )
         main_html = (
-            "    <h1>Our promise, proven</h1>\n"
-            "    <p>The claim 'contributor identities are never shown here' is not an "
-            "honour-system promise — it is a test the software must pass on every build.</p>\n"
-            "    <p>A contributor's identity is stored only as an opaque token plus encrypted "
-            "data in a separate vault. The record a page is built from has no place to put an "
-            "identity, so there is nothing to leak.</p>\n"
-            "    <p>The project's audit ingests a sentinel identity and then checks that it "
-            "appears on no page, in no data file, in no backup, and in no log — and that a "
-            "sealed record cannot even be confirmed to exist by an outsider.</p>\n"
+            f"    <h1>{_esc(i18n.t(lang, 'proof_heading'))}</h1>\n"
+            f"    <p>{_esc(i18n.t(lang, 'proof_claim'))}</p>\n"
+            f"    <p>{_esc(i18n.t(lang, 'proof_identity_storage'))}</p>\n"
+            f"    <p>{_esc(i18n.t(lang, 'proof_sentinel_audit'))}</p>\n"
             f"{chain_html}"
             f"{attestation_html}"
         )
         self._send_html(
             200,
-            _page("Our promise, proven", lang=lang, main_html=main_html, nav_html=self._nav()),
+            _page(
+                i18n.t(lang, "proof_heading"),
+                lang=lang,
+                main_html=main_html,
+                nav_html=self._nav(),
+            ),
         )
 
     def _handle_proof_attestation(self) -> None:
@@ -2628,14 +2634,11 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         """
         lang = self._lang()
         cfg = self._archive().config
-        heading = "Legal-process transparency"
+        heading = i18n.t(lang, "transparency_heading")
         log_path = cfg.transparency_log_path.strip()
         if not log_path:
             main_html = transparency_unattested_main_html(
-                heading,
-                "This archive has not configured legal-process transparency "
-                "attestations. It publishes no statement here, positive or negative — "
-                "absence of the feature is not evidence of anything.",
+                heading, i18n.t(lang, "transparency_not_configured"), lang=lang
             )
             self._send_html(
                 200, _page(heading, lang=lang, main_html=main_html, nav_html=self._nav())
@@ -2647,9 +2650,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             entries = log.all()
         except LedgerError:
             main_html = transparency_unattested_main_html(
-                heading,
-                "The configured transparency log could not be verified. Treat the "
-                "legal-process statement as unavailable until a steward repairs it.",
+                heading, i18n.t(lang, "transparency_log_unverifiable"), lang=lang
             )
             self._send_html(
                 200, _page(heading, lang=lang, main_html=main_html, nav_html=self._nav())
@@ -2658,9 +2659,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         latest = entries[-1] if entries else None
         if latest is None:
             main_html = transparency_unattested_main_html(
-                heading,
-                "This archive has enabled legal-process transparency but has not yet "
-                "published a first attestation.",
+                heading, i18n.t(lang, "transparency_never_attested"), lang=lang
             )
             self._send_html(
                 200, _page(heading, lang=lang, main_html=main_html, nav_html=self._nav())
@@ -2672,6 +2671,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             latest=latest,
             entries=entries,
             cadence_days=cfg.transparency_cadence_days,
+            lang=lang,
         )
         self._send_html(200, _page(heading, lang=lang, main_html=main_html, nav_html=self._nav()))
 

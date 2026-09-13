@@ -1303,23 +1303,20 @@ def _nav_html(lang: str = "en", *, contribute: bool = False, current_path: str =
 # --- legal-process transparency (EXP-10, warrant canary) --------------------
 
 
-def transparency_unattested_main_html(heading: str, extra_paragraph: str) -> str:
+def transparency_unattested_main_html(heading: str, extra_paragraph: str, *, lang: str) -> str:
     """``<main>`` HTML for an unconfigured or never-attested ``/transparency`` page.
 
-    Never fabricates a statement: the two states that reach this — the feature
-    disabled, or enabled but not yet attested — are shown as exactly that, not a
-    synthesized "all clear" (the same honesty discipline as a stale attestation
-    never being rendered as current).
+    Never fabricates a statement: the three states that reach this — the feature
+    disabled, the log unverifiable, or enabled but not yet attested — are shown as
+    exactly that, not a synthesized "all clear" (the same honesty discipline as a
+    stale attestation never being rendered as current).
+
+    ``extra_paragraph`` is already resolved through :mod:`ledger.i18n` by the
+    caller, which is what knows which of the three states it is in.
     """
-    intro = (
-        "This page shows the archive's most recent, dated statement about legal "
-        "demands received for records or contributor identities, re-attested on a "
-        "schedule. A missing or stale attestation is itself meaningful — see "
-        "'How to read this page' below."
-    )
     return (
         f"    <h1>{_esc(heading)}</h1>\n"
-        f"    <p>{_esc(intro)}</p>\n"
+        f"    <p>{_esc(i18n.t(lang, 'transparency_intro'))}</p>\n"
         f"    <p>{_esc(extra_paragraph)}</p>"
     )
 
@@ -1330,6 +1327,7 @@ def transparency_main_html(
     latest: transparency.Attestation,
     entries: list[transparency.Attestation],
     cadence_days: int,
+    lang: str,
 ) -> str:
     """``<main>`` HTML for an attested ``/transparency`` page.
 
@@ -1337,37 +1335,57 @@ def transparency_main_html(
     — stays in :mod:`ledger.server`), so it is exercised directly by
     ``ledger.accessibility_check`` alongside the site's other sample pages, not
     only through a live request.
+
+    **Two things on this page are deliberately not translated** (#225), and one
+    translated sentence in front of each says so rather than leaving a reader to
+    work it out:
+
+    * ``latest.statement_text`` and ``latest.counsel_review_note`` — the canary's
+      operative wording and the steward's note on its legal review. This is a legal
+      instrument, supplied by a steward under counsel per ``docs/TRANSPARENCY.md``;
+      restating it in another language could change what it asserts, so the text is
+      reproduced verbatim and ``transparency_statement_untranslated`` tells the
+      reader that is what they are looking at.
+    * the ``demand_counts`` keys — ``transparency.DEMAND_TYPES`` names specific
+      legal instruments ("national security letter" is one US instrument in
+      particular), and a target-language word for one would assert a cross-
+      jurisdiction equivalence this project cannot vouch for.
+      ``transparency_types_untranslated`` says so.
+
+    Everything else here is this project's own explanation and goes through the
+    gettext seam; ``tests/test_i18n_rtl.py`` holds that line over every state this
+    function and its caller can render, not only the one a default fixture reaches.
     """
     stale = transparency.is_stale(latest, cadence_days)
     since = transparency.days_since(latest.attested_date)
     chain_ok = transparency.verify_chain(entries)
 
-    intro = (
-        "This page shows the archive's most recent, dated statement about legal "
-        "demands received for records or contributor identities, re-attested on a "
-        "schedule. A missing or stale attestation is itself meaningful — see "
-        "'How to read this page' below."
-    )
+    if since is None:
+        status_text = i18n.t(lang, "transparency_date_invalid")
+    elif stale:
+        status_text = i18n.t(lang, "transparency_stale", days=since, cadence=cadence_days)
+    else:
+        status_text = i18n.t(lang, "transparency_fresh", days=since, cadence=cadence_days)
     status_html = (
-        '    <p class="warning" role="status">The attestation date is invalid or in '
-        "the future. Treat this statement as STALE, not current.</p>\n"
-        if since is None
-        else f'    <p class="warning" role="status">Last attested {_esc(str(since))} day(s) '
-        f"ago — this is beyond the archive's {cadence_days}-day re-attestation "
-        "cadence. Treat this statement as STALE, not current.</p>\n"
-        if stale
-        else f"    <p>Last attested {_esc(str(since))} day(s) ago, within the "
-        f"archive's {cadence_days}-day cadence.</p>\n"
+        f'    <p class="warning" role="status">{_esc(status_text)}</p>\n'
+        if since is None or stale
+        else f"    <p>{_esc(status_text)}</p>\n"
     )
-    counsel_html = (
-        "    <p>This statement's wording has been reviewed by counsel"
-        + (f": {_esc(latest.counsel_review_note)}" if latest.counsel_review_note else ".")
-        + "</p>\n"
-        if latest.counsel_reviewed
-        else '    <p class="warning" role="status">This statement has <strong>not</strong> '
-        "been reviewed by counsel. Its wording is a placeholder and carries no "
-        "asserted legal effect (see docs/TRANSPARENCY.md).</p>\n"
-    )
+
+    if latest.counsel_reviewed:
+        counsel_html = f"    <p>{_esc(i18n.t(lang, 'transparency_counsel_reviewed'))}</p>\n"
+        if latest.counsel_review_note:
+            counsel_html += (
+                f"    <p>{_esc(i18n.t(lang, 'transparency_counsel_reviewed_note'))} "
+                f"{_esc(latest.counsel_review_note)}</p>\n"
+            )
+    else:
+        counsel_html = (
+            '    <p class="warning" role="status"><strong>'
+            f"{_esc(i18n.t(lang, 'transparency_counsel_not_reviewed'))}</strong></p>\n"
+            f"    <p>{_esc(i18n.t(lang, 'transparency_counsel_not_reviewed_detail'))}</p>\n"
+        )
+
     counts = latest.demand_counts
     if counts:
         rows = "".join(
@@ -1375,40 +1393,41 @@ def transparency_main_html(
             for kind, count in sorted(counts.items())
         )
         counts_html = (
+            f"    <p>{_esc(i18n.t(lang, 'transparency_types_untranslated'))}</p>\n"
             "    <table>\n"
-            "      <caption>Legal demands received, by type, as of this attestation"
-            "</caption>\n"
-            '      <thead><tr><th scope="col">Type</th><th scope="col">Count</th></tr>'
+            f"      <caption>{_esc(i18n.t(lang, 'transparency_counts_caption'))}</caption>\n"
+            '      <thead><tr><th scope="col">'
+            f'{_esc(i18n.t(lang, "transparency_col_type"))}</th><th scope="col">'
+            f"{_esc(i18n.t(lang, 'transparency_col_count'))}</th></tr>"
             "</thead>\n"
             f"      <tbody>\n{rows}      </tbody>\n"
             "    </table>\n"
         )
     else:
-        counts_html = "    <p>No legal demands recorded as of this attestation.</p>\n"
-    chain_html = (
-        f"    <p>{len(entries)} attestation(s) on file; hash-chain "
-        f"{'verified intact' if chain_ok else 'FAILED VERIFICATION — contact the stewards'}.</p>\n"
-    )
+        counts_html = f"    <p>{_esc(i18n.t(lang, 'transparency_no_demands'))}</p>\n"
+
+    chain_key = "transparency_chain_ok" if chain_ok else "transparency_chain_failed"
+    chain_html = f"    <p>{_esc(i18n.t(lang, chain_key, count=len(entries)))}</p>\n"
 
     return (
         f"    <h1>{_esc(heading)}</h1>\n"
-        f"    <p>{_esc(intro)}</p>\n"
-        f"    <h2>Current statement (as of {_esc(latest.attested_date)})</h2>\n"
+        f"    <p>{_esc(i18n.t(lang, 'transparency_intro'))}</p>\n"
+        "    <h2>"
+        + _esc(i18n.t(lang, "transparency_current_heading", date=latest.attested_date))
+        + "</h2>\n"
         + status_html
-        + f"    <p>{_esc(latest.statement_text)}</p>\n"
-        + f"    <p>Attested by: {_esc(latest.attested_by)}.</p>\n"
+        # The canary's own words, verbatim, with the translated disclosure in front
+        # of them. Never routed through the seam: see this function's docstring.
+        + f"    <p>{_esc(i18n.t(lang, 'transparency_statement_untranslated'))}</p>\n"
+        + f"    <blockquote><p>{_esc(latest.statement_text)}</p></blockquote>\n"
+        + "    <p>"
+        + _esc(i18n.t(lang, "transparency_attested_by", who=latest.attested_by))
+        + "</p>\n"
         + counsel_html
         + counts_html
-        + "    <h2>Verifying this page</h2>\n"
+        + f"    <h2>{_esc(i18n.t(lang, 'transparency_verifying_heading'))}</h2>\n"
         + chain_html
-        + "    <p>Each attestation is chained to the one before it by a SHA-256 "
-        "digest, so an edited, reordered, or deleted past entry is detectable "
-        "from the log file alone — see docs/TRANSPARENCY.md for how to check it "
-        "yourself.</p>\n"
-        + "    <h2>How to read this page</h2>\n"
-        + "    <p>A stale or missing attestation is not proof of anything by "
-        "itself, but it removes the reassurance a fresh one gives — a steward "
-        "unable to re-attest (a gag order, a compromise, a lapse) and a steward "
-        "with nothing to report look identical only until the date goes stale. "
-        "Compare this page over time rather than trusting a single visit.</p>"
+        + f"    <p>{_esc(i18n.t(lang, 'transparency_chain_explained'))}</p>\n"
+        + f"    <h2>{_esc(i18n.t(lang, 'transparency_how_to_read_heading'))}</h2>\n"
+        + f"    <p>{_esc(i18n.t(lang, 'transparency_how_to_read'))}</p>"
     )

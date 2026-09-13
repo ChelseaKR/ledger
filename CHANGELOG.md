@@ -7,6 +7,51 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Fixed
+- **`/proof` and `/transparency` were served 100% English to `es`, `fr` and `ar`
+  (#225).** The hash-chain explanation and the warrant-canary page are the two routes
+  an at-risk contributor is sent to *before* deciding whether to hand this archive
+  their material, and every sentence on both was an English literal in `server.py` and
+  `render.py`. Measured on the gate's own fixture before the change: **0 strings
+  translated of 8, 14, 3, 3 and 16 examinable**, across the five bodies the two
+  handlers can render, in each of `es`, `fr` and `ar`. All thirteen required checks
+  were green over it.
+
+  41 msgids added and translated in all four catalogs, `make i18n-compile` run. After:
+  every string this project may translate is translated in all three locales. What is
+  left in English is named, and is named *on the page* rather than left to be
+  inferred: the canary's statement text and the counsel note on it (a legal
+  instrument — a translation is a different wording, and this project cannot say the
+  two assert the same thing), the `DEMAND_TYPES` vocabulary (`national_security_letter`
+  names one specific US instrument; a target-language word would assert an equivalence
+  across jurisdictions that may not exist), and four identifiers — `attest-health`,
+  `/proof/attestation.json`, `chain_head_summary`, `docs/VERIFYING-ATTESTATIONS.md`.
+  Two new translated sentences say which is which, so a page whose scaffolding is in
+  Spanish never implies its operative sentence was translated too.
+
+  **The gate moves from 8 of 17 routes to 10 of 17, and gains a second denominator.**
+  #226 gave the route rule its denominator; a route number alone is the same
+  half-truth one level down, because these two routes render **nine** bodies between
+  them, not two. `_STATEFUL_BODY_STATES` judges every branch — `/proof` attested and
+  not, healthy and failed, signed and unsigned; `/transparency` unconfigured, log
+  unreadable, never attested, attested, stale-and-uncounselled, and future-dated with
+  a broken chain — and `test_every_branch_of_a_stateful_route_is_reached_by_some_state`
+  reads the handlers' own source by AST and fails when a message key they resolve is
+  reached by no state. A new branch cannot be added silently English behind a route
+  already marked judged. The pytest summary now prints both numbers.
+
+  The per-locale check asserts the served string **differs** from its English source,
+  because a verbatim-English `msgstr` satisfies key parity, non-emptiness and
+  placeholder parity alike — and consults
+  `locales/identical_by_design.json` for the strings where being identical is the
+  right answer, rather than making "must differ" the rule.
+
+  Two incidental findings, both now recorded in the code: `_handle_proof`'s third
+  signature branch was unreachable (`HealthAttestation.from_json` rejects any format
+  but `ssh`, so a signed attestation always has one) and is gone; and the counsel
+  warning is now two paragraphs so its emphasis does not have to live inside a
+  translatable string. `docs/I18N.md` gains a "left in English on purpose" table and
+  `docs/TRANSPARENCY.md` a section on why the statement is never translated.
+
 - **The three plain-language safety pages were English only, and the gate for that
   was blind to them (#216).** `/about`, `/governance` and `/how-it-works` are where
   an at-risk contributor is sent to find out who runs this archive and how it

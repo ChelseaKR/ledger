@@ -152,8 +152,17 @@ def sample_payload_file(sample_bytes: bytes) -> PayloadFile:
 _BODY_GATE_CENSUS: dict[str, int] = {}
 
 
-def record_body_gate_census(*, judged: int, served: int, leaking: int, unreachable: int) -> None:
-    _BODY_GATE_CENSUS.update(judged=judged, served=served, leaking=leaking, unreachable=unreachable)
+def record_body_gate_census(
+    *, judged: int, served: int, leaking: int, unreachable: int, branches: int, stateful: int
+) -> None:
+    _BODY_GATE_CENSUS.update(
+        judged=judged,
+        served=served,
+        leaking=leaking,
+        unreachable=unreachable,
+        branches=branches,
+        stateful=stateful,
+    )
 
 
 def pytest_terminal_summary(terminalreporter: pytest.TerminalReporter) -> None:
@@ -170,4 +179,13 @@ def pytest_terminal_summary(terminalreporter: pytest.TerminalReporter) -> None:
         f"G9 body gate: judged {c['judged']} of {c['served']} served HTML route(s); "
         f"{c['leaking']} leak un-seamed English prose and {c['unreachable']} are "
         "unreachable on the i18n fixture (see _BODY_GATE_UNJUDGED)"
+    )
+    # A route number alone was the *previous* half-truth: `/proof` and
+    # `/transparency` render several bodies each, and judging one of them would
+    # have reported the route green. The second line is the branch denominator.
+    terminalreporter.write_line(
+        f"G9 body gate: of those, {c['stateful']} route(s) render more than one "
+        f"body; {c['branches']} branch(es) are judged, and every message key their "
+        "handlers resolve is asserted reachable from one of them "
+        "(see _STATEFUL_BODY_STATES)"
     )

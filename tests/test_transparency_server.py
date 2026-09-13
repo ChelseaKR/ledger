@@ -94,8 +94,15 @@ def test_attested_page_shows_statement_and_unreviewed_warning(attested_base: str
     body = _get(attested_base, "/transparency")
     assert "No legal demands received to date." in body
     assert "Attested by: steward-a." in body
-    assert "has <strong>not</strong> been reviewed by counsel" in body
-    assert "hash-chain verified intact" in body
+    # Two paragraphs since #225, not one sentence with `<strong>not</strong>` inside
+    # it: the emphasis is on the whole warning rather than on a word in the middle
+    # of a translatable string, which would have put markup inside a msgid. The
+    # claim under test is unchanged — the warning is present and it is emphasised.
+    assert "<strong>This statement has not been reviewed by counsel.</strong>" in body, (
+        "the unreviewed-counsel warning is not shown, or is no longer emphasised"
+    )
+    assert "carries no asserted legal effect" in body
+    assert "the hash chain verified intact" in body
 
 
 @pytest.mark.disclosure
