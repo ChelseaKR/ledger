@@ -371,8 +371,9 @@ content-warning interstitial before the content, and a missing record and a
 not-permitted record render the *same* neutral 404, so the response never reveals
 whether a sealed record exists. `/healthz` answers an anonymous request with `status`,
 `all_verified`, and `ready` only (plus a generic `reason` code when the readiness probe
-fails); the absolute counts — bags audited, passed, failed, files checked — and the live
-`chain_head` commitment are both gated to a steward grant. The counts include sealed and
+fails); the absolute counts — bags audited, passed, failed, files checked — the
+three-state `fixity.status`, and the live
+`chain_head` commitment are all gated to a steward grant. The counts include sealed and
 community records, so they would let an outsider learn the archive's size and poll for
 the moment a sealed record is added (P2-2). The live commitment carries no count, but it
 moves the instant any record is written, so polling it while the sitemap, feed, and

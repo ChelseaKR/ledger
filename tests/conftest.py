@@ -165,7 +165,23 @@ def record_body_gate_census(
     )
 
 
+# The same shape for the fixity-claim census (#208). A hook defined in a test
+# module is not collected — only conftest.py and registered plugins supply hooks —
+# so the number would have been computed and never printed, which is the failure
+# this reporting shape exists to avoid.
+_FIXITY_CLAIM_CENSUS: dict[str, object] = {}
+
+
+def record_fixity_claim_census(
+    *, backed: int, published: int, declared: list[str], undeclared: list[str]
+) -> None:
+    _FIXITY_CLAIM_CENSUS.update(
+        backed=backed, published=published, declared=declared, undeclared=undeclared
+    )
+
+
 def pytest_terminal_summary(terminalreporter: pytest.TerminalReporter) -> None:
+    _report_fixity_claim_census(terminalreporter)
     if not _BODY_GATE_CENSUS:
         # Not "nothing to say": the census test did not run (a `-k` selection, a
         # collection error). Say which, rather than printing a reassuring silence.
@@ -189,3 +205,42 @@ def pytest_terminal_summary(terminalreporter: pytest.TerminalReporter) -> None:
         "handlers resolve is asserted reachable from one of them "
         "(see _STATEFUL_BODY_STATES)"
     )
+
+
+def _report_fixity_claim_census(terminalreporter: pytest.TerminalReporter) -> None:
+    """Two numbers: fixity claims backed by a verification, of claims published.
+
+    "Not run" is reported as not run rather than as silence, for the same reason
+    the body-gate census above does: a census that did not happen must not be
+    indistinguishable from one that found nothing to say (#208).
+    """
+    if not _FIXITY_CLAIM_CENSUS:
+        terminalreporter.write_line(
+            "fixity claim census: NOT TAKEN in this run — "
+            "test_the_census_of_published_fixity_claims did not execute"
+        )
+        return
+    census = _FIXITY_CLAIM_CENSUS
+    declared = census["declared"]
+    undeclared = census["undeclared"]
+    assert isinstance(declared, list)
+    assert isinstance(undeclared, list)
+    # Declared and undeclared are reported apart. They were one list, printed
+    # under the heading "declared in _UNBACKED_BY_DESIGN", so on the very run
+    # this census exists to catch — a surface regressing to a vacuous pass — the
+    # summary named the regressed surface as a declared decision (#208).
+    unbacked = len(declared) + len(undeclared)
+    terminalreporter.write_line(
+        f"fixity claim census: {census['backed']} of {census['published']} published "
+        "fixity claim(s) are backed by a verification; an archive with nothing in it "
+        f"still reads as verified on {unbacked}"
+    )
+    terminalreporter.write_line(
+        f"fixity claim census: declared in _UNBACKED_BY_DESIGN: {', '.join(declared) or 'none'}"
+    )
+    if undeclared:
+        terminalreporter.write_line(
+            "fixity claim census: UNDECLARED — reads as verified over nothing with no "
+            f"recorded decision: {', '.join(undeclared)}",
+            red=True,
+        )

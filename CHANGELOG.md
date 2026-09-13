@@ -7,6 +7,44 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Fixed
+- **An archive with nothing in it read as verified on four of eleven published
+  fixity claims (#208).** #207, #218 and #219 each closed one such surface, found
+  by reading code one surface at a time, which is why there were three of them and
+  why #208 stayed open after two. Measured first, by rendering every surface that
+  publishes a fixity verdict over an archive with no bags and over one whose every
+  bag had just been re-hashed: **7 of 11 published claims were backed by a
+  verification**; four said the same thing over both.
+
+  Two of the four were live defects nothing had looked at. `ledger export-drive`
+  printed `0 record(s), 0 file(s) packaged ...; all bags verified` and exited `0`
+  — to the person about to hand the drive to a courier — because
+  `all_bags_valid` is `all(report.ok for ...)` folded over the bags the build
+  wrote, and that fold is vacuously true over none. It now reports two numbers
+  (`0 of 0 bag(s) verified`) and a three-state verdict. The hand-off manifest
+  published `all_fixity_ok: true` beside `records: []`; it now also publishes
+  `fixity_status`, at `HANDOFF_SCHEMA_VERSION` 2.
+
+  **After: 9 of 11.** The two that remain are decisions, not oversights, and are
+  declared in `_UNBACKED_BY_DESIGN` with their reasons: `/healthz`'s anonymous
+  `all_verified` (making it honest would make `200 + ok + all_verified: false`
+  reachable only by an empty archive, telling an anonymous caller the absolute
+  fact the gated counts exist to withhold — the honest three-state verdict is
+  served to the steward or monitor grant that may hear it), and the signed
+  attestation's `fixity_ok` (#205).
+
+  **Then 10 of 11**, once #205 landed (#230): the attestation now distinguishes an
+  empty archive from a verified one, so its exemption went stale and the
+  self-limiting check failed on the merged head until the entry was deleted.
+  `/healthz`'s anonymous `all_verified` is the one declared exception left.
+
+  The number is now a gate rather than a finding. `tests/test_fixity_claim_census.py`
+  walks the AST of `src/ledger` for every call to the five functions that can
+  produce a fixity verdict and requires each call site to be mapped to a probed
+  surface or to a named reason it is not a claim, so a new surface cannot appear
+  unjudged; both lists are self-limiting, so an exemption that stops being needed
+  fails. The two numbers print from `pytest_terminal_summary`, because a `print`
+  in a passing test is captured and never read.
+
 - **`/proof` and `/transparency` were served 100% English to `es`, `fr` and `ar`
   (#225).** The hash-chain explanation and the warrant-canary page are the two routes
   an at-risk contributor is sent to *before* deciding whether to hand this archive
