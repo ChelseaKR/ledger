@@ -20,8 +20,9 @@ import re
 import threading
 import urllib.error
 import urllib.request
-from collections.abc import Iterator
-from contextlib import redirect_stderr, redirect_stdout
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager, redirect_stderr, redirect_stdout
+from dataclasses import dataclass
 from io import StringIO
 from pathlib import Path
 
@@ -258,7 +259,7 @@ def test_review_status_is_three_states_and_an_unknown_tag_is_source() -> None:
 #: values and `lang="ar"` immediately, and a gate with false positives gets deleted.
 #: Attribute values are excluded structurally instead (tags are stripped whole), so
 #: only *visible text* reaches this allowlist.
-_INVARIANT_IN_EVERY_LANGUAGE = {
+_INVARIANT_IN_THE_SHELL = {
     # Autonyms. `docs/I18N.md`: "an autonym is invariant across the UI language, so a
     # language picker always reads naturally to a native speaker." Deliberately NOT
     # gettext-translated, so deliberately not wrapped.
@@ -270,6 +271,19 @@ _INVARIANT_IN_EVERY_LANGUAGE = {
     # The product name. The tagline beside it ("community archive") is translated;
     # the name is not, the way "Wikipedia" is not.
     "ledger",
+}
+
+#: The same set plus the words that are invariant everywhere but appear only in a
+#: page *body*. Kept separate from `_INVARIANT_IN_THE_SHELL` above because
+#: `test_the_widened_gate_is_not_vacuous` asserts every shell invariant really is
+#: found in the shell, and a body-only entry would make that check pass over a
+#: word the shell never renders -- the same "allowance for a string the page never
+#: contained" the body gate is careful about one level down.
+_INVARIANT_IN_EVERY_LANGUAGE = _INVARIANT_IN_THE_SHELL | {
+    # A CLI subcommand `/proof` tells a steward to run. It is typed at a shell, so
+    # it is the same characters in every language -- a translated `attest-health`
+    # is an instruction that does not work.
+    "attest-health",
 }
 
 
@@ -335,7 +349,7 @@ def test_the_widened_gate_is_not_vacuous(monkeypatch: pytest.MonkeyPatch) -> Non
     page = _page(i18n.t("en", "nav_browse"), lang="en", main_html="", nav_html=nav)
 
     assert page.count(i18n.PSEUDO_PREFIX) >= 10, "the shell is not routing chrome through the seam"
-    assert _visible_unwrapped_words(page) >= _INVARIANT_IN_EVERY_LANGUAGE, (
+    assert _visible_unwrapped_words(page) >= _INVARIANT_IN_THE_SHELL, (
         "the extractor found none of the invariants, so it is not reading the page"
     )
 
@@ -400,6 +414,13 @@ _CONFIG_SENTINELS = {
 #: body the gate can already judge. `test_the_body_gate_says_how_many_routes_it_judges`
 #: below is what keeps this honest: the three-route version of this dict was judging
 #: **3 of 17** served HTML routes and nothing said so.
+#: Widened again 2026-09-13 (#225) by `/proof` and `/transparency`, whose bodies
+#: now go through the seam. **8 of 17 -> 10 of 17.** Both are *stateful* routes:
+#: what this fixture reaches is one branch of several, so being in this dict is
+#: necessary and not sufficient for them. `_STATEFUL_BODY_STATES` below judges
+#: every branch either handler can render, and is what keeps "the route is
+#: covered" from meaning "the branch a default fixture happens to reach is
+#: covered" -- the same defect as #226's, one level further in.
 _BODY_GATE_CONFIG_TEXT = {
     "/about": ("Zzqabouttext",),
     "/consent-status": (),
@@ -407,8 +428,10 @@ _BODY_GATE_CONFIG_TEXT = {
     "/how-it-works": (),
     "/overview": (),
     "/places": (),
+    "/proof": (),
     "/status": (),
     "/timeline": (),
+    "/transparency": (),
 }
 
 #: route -> how many seam-resolved strings its `<main>` must carry. A body that
@@ -420,8 +443,13 @@ _BODY_GATE_SEAM_STRINGS = {
     "/how-it-works": 5,
     "/overview": 3,
     "/places": 3,
+    # The branch `sentinel_base` reaches: no health attestation published. The
+    # other branch is pinned in `_STATEFUL_BODY_STATES`.
+    "/proof": 7,
     "/status": 4,
     "/timeline": 3,
+    # Likewise: transparency unconfigured. Three further branches are pinned below.
+    "/transparency": 3,
 }
 
 #: Routes in the server's GET tables that answer with something other than an HTML
@@ -455,15 +483,6 @@ _MACHINE_ROUTES = frozenset(
 #: These are findings, not decisions. Each leak count is English prose reaching a
 #: reader who asked for es, fr or ar.
 _BODY_GATE_UNJUDGED = {
-    "/proof": (
-        "112 un-seamed words. `_handle_proof` writes the whole body as English "
-        "literals, including the hash-chain explanation and the sentinel-identity "
-        "audit description. Issue #225."
-    ),
-    "/transparency": (
-        "55 un-seamed words. Same shape as /proof: the legal-process and "
-        "warrant-canary page is English literals. Issue #225."
-    ),
     "/": (
         "3 un-seamed words: the `<h1>` is the literal 'Browse the archive'. The "
         "rest of the body is seam-routed, so an ar reader gets an English heading "
@@ -624,6 +643,8 @@ def test_the_body_gate_says_how_many_routes_it_judges(sentinel_base: str) -> Non
         served=len(served),
         leaking=len(_BODY_GATE_UNJUDGED),
         unreachable=len(_BODY_GATE_UNREACHABLE_IN_FIXTURE),
+        branches=len(_STATEFUL_BODY_STATES),
+        stateful=len(_STATEFUL_ROUTE_SOURCES),
     )
 
     assert judged <= served, f"judged routes the server does not serve: {sorted(judged - served)}"
@@ -694,4 +715,526 @@ def test_every_route_named_unreachable_still_is(sentinel_base: str, path: str) -
     assert status != 200, (
         f"{path} now answers 200 on this fixture, so the gate can judge it. Delete "
         "its _BODY_GATE_UNREACHABLE_IN_FIXTURE entry and judge it."
+    )
+
+
+# --- the second denominator: branches, not just routes ----------------------
+#
+# #226 moved this gate from 3 of 17 routes to 8 of 17 and named the rest. Its own
+# measurement was taken on one fixture, and for the eight routes it judged that
+# was enough -- each renders a single body. `/proof` and `/transparency` do not.
+# `_handle_proof` branches on whether a health attestation has been published;
+# `/transparency` has four distinct bodies (unconfigured, log unreadable,
+# configured but never attested, attested). A gate that renders the default
+# fixture and calls the route covered would have judged 2 of those 6 branches and
+# reported both routes green -- the same shape of blindness as judging 3 of 17
+# routes, one level further in.
+#
+# So these two routes are judged per *state*, and the states are checked for
+# completeness against the handlers' own source: every `i18n` key either handler
+# resolves has to be reached by at least one state below.
+
+
+@dataclass(frozen=True)
+class _BodyState:
+    """One branch a stateful route can render, and what the gate expects of it.
+
+    `invariant` is the un-seamed visible text this branch may still render, and it
+    is asserted *present* before it is subtracted -- an allowance for a string the
+    page never contained would quietly widen the gate.
+    """
+
+    seam_strings: int
+    invariant: frozenset[str]
+    why_invariant: str
+
+
+#: The fixture's own attestation values, as recognizable tokens. Same discipline
+#: as `_CONFIG_SENTINELS`: the gate names exactly what may survive un-wrapped
+#: rather than subtracting real-looking prose and hoping.
+_ATTESTATION_SENTINELS = {
+    "chain_head": "beefcafe" * 8,
+    "statement": "Zzqstatementtext",
+    "attested_by": "Zzqattestedbytext",
+    "counsel_note": "Zzqcounselnotetext",
+}
+
+#: The demand type the attested `/transparency` fixture records. A real member of
+#: `transparency.DEMAND_TYPES` -- the handler renders the vocabulary key itself,
+#: and the point of the state is that it is rendered untranslated on purpose.
+_FIXTURE_DEMAND_TYPE = "national_security_letter"
+
+#: How each state sets its route up. Read by `_stateful_server`; keeping it data
+#: rather than a chain of `if state ==` is what makes adding the state for a new
+#: branch a two-line edit when `test_every_branch_of_a_stateful_route_is_reached_by_some_state`
+#: demands one.
+#: `/proof`'s attested body renders two source paths and one JSON field name,
+#: quoted so a reader can go and open them. They are identifiers, not prose: a
+#: translated `chain_head_summary` names no field. Plus the fixture's own digest.
+_PROOF_ATTESTED_INVARIANT = frozenset(
+    {
+        "proof",
+        "attestation",
+        "json",
+        "docs",
+        "VERIFYING-ATTESTATIONS",
+        "md",
+        "chain",
+        "head",
+        "summary",
+        _ATTESTATION_SENTINELS["chain_head"],
+    }
+)
+
+
+@dataclass(frozen=True)
+class _Attest:
+    """One transparency attestation for a fixture to publish.
+
+    `attested_date` may be the literal `"TODAY"`, resolved at fixture time: a fixed
+    recent date would drift into staleness and silently move the state from the
+    fresh branch to the stale one as the calendar advances.
+    """
+
+    attested_date: str
+    counsel_reviewed: bool
+    counsel_review_note: str
+    demand_counts: dict[str, int]
+
+
+@dataclass(frozen=True)
+class _StateSetup:
+    """What a state needs set up before the server starts."""
+
+    #: `/proof`: publish a health attestation with these properties. None = publish none.
+    health: tuple[bool, bool] | None = None  # (fixity_ok, signed)
+    #: `/transparency`: point the config at a log file at all.
+    configured: bool = False
+    #: `/transparency`: write a log file that is not a valid log.
+    corrupt: bool = False
+    #: `/transparency`: publish this attestation.
+    attest: _Attest | None = None
+    #: `/transparency`: then break the published log's digest chain.
+    break_chain: bool = False
+
+
+_STATE_SETUP: dict[tuple[str, str], _StateSetup] = {
+    ("/proof", "no-attestation-published"): _StateSetup(),
+    ("/proof", "attested-healthy-and-signed"): _StateSetup(health=(True, True)),
+    ("/proof", "attested-failed-and-unsigned"): _StateSetup(health=(False, False)),
+    ("/transparency", "not-configured"): _StateSetup(),
+    ("/transparency", "log-unreadable"): _StateSetup(configured=True, corrupt=True),
+    ("/transparency", "never-attested"): _StateSetup(configured=True),
+    ("/transparency", "attested"): _StateSetup(
+        configured=True,
+        attest=_Attest(
+            attested_date="TODAY",
+            counsel_reviewed=True,
+            counsel_review_note=_ATTESTATION_SENTINELS["counsel_note"],
+            demand_counts={_FIXTURE_DEMAND_TYPE: 0},
+        ),
+    ),
+    ("/transparency", "attested-stale-uncounselled-no-demands"): _StateSetup(
+        configured=True,
+        attest=_Attest(
+            attested_date="2020-01-01",
+            counsel_reviewed=False,
+            counsel_review_note="",
+            demand_counts={},
+        ),
+    ),
+    ("/transparency", "attested-future-dated-broken-chain"): _StateSetup(
+        configured=True,
+        attest=_Attest(
+            attested_date="2099-01-01",
+            counsel_reviewed=True,
+            counsel_review_note=_ATTESTATION_SENTINELS["counsel_note"],
+            demand_counts={_FIXTURE_DEMAND_TYPE: 1},
+        ),
+        break_chain=True,
+    ),
+}
+
+#: The canary's own words and the counsel note, which this project must not
+#: restate in another language, plus the demand-type vocabulary key split into
+#: words by the extractor.
+_TRANSPARENCY_ATTESTED_INVARIANT = frozenset(
+    {
+        _ATTESTATION_SENTINELS["statement"],
+        "national",
+        "security",
+        "letter",
+    }
+)
+
+_STATEFUL_BODY_STATES: dict[tuple[str, str], _BodyState] = {
+    ("/proof", "no-attestation-published"): _BodyState(
+        seam_strings=7,
+        invariant=frozenset(),
+        why_invariant="nothing: this branch renders no data and no identifier.",
+    ),
+    ("/proof", "attested-healthy-and-signed"): _BodyState(
+        seam_strings=12,
+        invariant=_PROOF_ATTESTED_INVARIANT,
+        why_invariant=(
+            "/proof/attestation.json, docs/VERIFYING-ATTESTATIONS.md, the "
+            "chain_head_summary field name, and the fixture's chain-head digest."
+        ),
+    ),
+    ("/proof", "attested-failed-and-unsigned"): _BodyState(
+        seam_strings=12,
+        invariant=_PROOF_ATTESTED_INVARIANT,
+        why_invariant="the same identifiers and digest as the healthy branch.",
+    ),
+    ("/transparency", "not-configured"): _BodyState(
+        seam_strings=3,
+        invariant=frozenset(),
+        why_invariant="nothing: the archive has published no statement to reproduce.",
+    ),
+    ("/transparency", "log-unreadable"): _BodyState(
+        seam_strings=3,
+        invariant=frozenset(),
+        why_invariant="nothing: the log could not be read, so nothing of its is shown.",
+    ),
+    ("/transparency", "never-attested"): _BodyState(
+        seam_strings=3,
+        invariant=frozenset(),
+        why_invariant="nothing: there is no first attestation to reproduce yet.",
+    ),
+    ("/transparency", "attested"): _BodyState(
+        seam_strings=17,
+        invariant=_TRANSPARENCY_ATTESTED_INVARIANT | {_ATTESTATION_SENTINELS["counsel_note"]},
+        why_invariant=(
+            "the canary statement and the counsel note — a legal instrument this "
+            "project must not restate — and the demand-type vocabulary key."
+        ),
+    ),
+    ("/transparency", "attested-stale-uncounselled-no-demands"): _BodyState(
+        # 14, not 17: this branch drops the counsel note and the whole demand
+        # table (caption + two column headings + the "not translated" note) and
+        # gains the "no demands" line and the second counsel-warning paragraph.
+        seam_strings=14,
+        invariant=frozenset({_ATTESTATION_SENTINELS["statement"]}),
+        why_invariant="the canary statement. No counsel note and no demand table here.",
+    ),
+    ("/transparency", "attested-future-dated-broken-chain"): _BodyState(
+        seam_strings=17,
+        invariant=_TRANSPARENCY_ATTESTED_INVARIANT | {_ATTESTATION_SENTINELS["counsel_note"]},
+        why_invariant="as the attested state; this one differs only in date and chain.",
+    ),
+}
+
+
+def _publish_health_attestation(archive: Archive, *, fixity_ok: bool, signed: bool) -> None:
+    """Put `/proof` into one of its attested branches."""
+    from ledger.attestation import HealthAttestation, publish_attestation
+
+    publish_attestation(
+        archive,
+        HealthAttestation(
+            schema_version=1,
+            archive_name="RTL Archive",
+            generated_at="2026-09-01T00:00:00Z",
+            software_version="0.1.0",
+            fixity_ok=fixity_ok,
+            chain_head_summary=_ATTESTATION_SENTINELS["chain_head"],
+            # "ssh" is the only format `HealthAttestation.from_json` accepts, so it
+            # is the only signed state a served page can ever be in — which is why
+            # `_handle_proof` has two signature branches and not three.
+            signature="Zzqsignaturevalue" if signed else None,
+            signature_format="ssh" if signed else None,
+        ),
+    )
+
+
+def _write_transparency_log(log_path: Path, spec: _Attest, *, break_chain: bool) -> None:
+    """Append one attestation, optionally breaking the chain afterwards."""
+    import json as _json
+    from datetime import UTC, datetime
+
+    from ledger import transparency
+
+    attested_date = spec.attested_date
+    if attested_date == "TODAY":
+        attested_date = datetime.now(UTC).strftime("%Y-%m-%d")
+    transparency.TransparencyLog(log_path).append(
+        attested_date=attested_date,
+        attested_by=_ATTESTATION_SENTINELS["attested_by"],
+        statement_text=_ATTESTATION_SENTINELS["statement"],
+        demand_counts=spec.demand_counts,
+        counsel_reviewed=spec.counsel_reviewed,
+        counsel_review_note=spec.counsel_review_note,
+    )
+    if break_chain:
+        # A first entry must chain to "". Point it at a real-looking digest instead:
+        # still a valid SHA-256 hex string, so the log parses, and `verify_chain`
+        # returns False, which is the branch under test.
+        entries = _json.loads(log_path.read_text(encoding="utf-8"))
+        entries[0]["prev_digest"] = "0" * 64
+        log_path.write_text(_json.dumps(entries, indent=2), encoding="utf-8")
+
+
+@contextmanager
+def _stateful_server(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, route: str, state: str
+) -> Iterator[str]:
+    """A server holding `route` in exactly one of the branches it can render.
+
+    Each state gets its **own** root under `tmp_path`. They shared one while this
+    was being written, and the states then contaminated each other: the attested
+    `/proof` fixture published into the archive the "no attestation" state was
+    about to read, so that state silently judged the wrong branch and
+    `proof_not_attested` showed up as an unreached key.
+    """
+    setup = _STATE_SETUP[route, state]
+    root = tmp_path / f"{route.strip('/').replace('/', '-')}--{state}"
+    root.mkdir(parents=True, exist_ok=True)
+
+    config = Config.default("RTL Archive", root / "arc")
+    for name, token in _CONFIG_SENTINELS.items():
+        setattr(config, name, token)
+    log_path = root / "transparency.json"
+    if setup.configured:
+        config.transparency_log_path = str(log_path)
+
+    monkeypatch.setenv("LEDGER_VAULT_KEY", _VAULT_KEY)
+    archive = Archive.init(config)
+    if setup.health is not None:
+        fixity_ok, signed = setup.health
+        _publish_health_attestation(archive, fixity_ok=fixity_ok, signed=signed)
+    if setup.corrupt:
+        log_path.write_text("this is not a transparency log\n", encoding="utf-8")
+    if setup.attest is not None:
+        _write_transparency_log(log_path, setup.attest, break_chain=setup.break_chain)
+
+    httpd = make_server(archive, host="127.0.0.1", port=0)
+    base = f"http://127.0.0.1:{int(httpd.server_address[1])}"
+    sink = StringIO()
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    with redirect_stderr(sink), redirect_stdout(sink):
+        thread.start()
+        try:
+            yield base
+        finally:
+            httpd.shutdown()
+            thread.join(timeout=5)
+            httpd.server_close()
+
+
+def _install_recording_pseudolocale() -> tuple[
+    list[tuple[str, dict[str, object]]], Callable[[], None]
+]:
+    """Pseudolocalize as usual, and record every `(key, kwargs)` resolved.
+
+    Recording the key rather than matching the rendered text back to a msgid is
+    what makes the completeness check below exact: a msgid with placeholders in it
+    does not appear on the page in a form any substring search can find.
+
+    Returns its own `restore` rather than going through `monkeypatch`, because the
+    callers need the seam back *inside* a running server fixture and
+    `monkeypatch.undo()` would also drop the `LEDGER_VAULT_KEY` that fixture set.
+    """
+    calls: list[tuple[str, dict[str, object]]] = []
+    real_t = i18n.t
+    real_gloss = i18n.gloss_cw
+
+    def recording_t(lang: str, key: str, /, **kw: object) -> str:
+        calls.append((key, dict(kw)))
+        return i18n.pseudolocalize(real_t(lang, key, **kw))
+
+    def restore() -> None:
+        i18n.t = real_t
+        i18n.gloss_cw = real_gloss
+
+    def pseudo_gloss(lang: str, tag: str) -> str:
+        return i18n.pseudolocalize(real_gloss(lang, tag))
+
+    # type: ignore[assignment] — rebinding a module-level function, which is what
+    # the pseudolocale seam has always done here; mypy cannot narrow a module
+    # attribute to a compatible callable. `restore` puts the originals back.
+    i18n.t = recording_t  # type: ignore[assignment]  # see the note above
+    i18n.gloss_cw = pseudo_gloss  # type: ignore[assignment]  # see the note above
+    return calls, restore
+
+
+#: route -> the source functions that build its `<main>`. Read by AST so the
+#: declared-key set comes from the handlers themselves, not from a list here that
+#: somebody has to remember to update.
+_STATEFUL_ROUTE_SOURCES = {
+    "/proof": (("ledger.server", "_handle_proof"),),
+    "/transparency": (
+        ("ledger.server", "_handle_transparency"),
+        ("ledger.render", "transparency_main_html"),
+        ("ledger.render", "transparency_unattested_main_html"),
+    ),
+}
+
+
+def _declared_seam_keys(route: str) -> set[str]:
+    """Every `i18n` message key named as a literal inside `route`'s handlers.
+
+    Matched against the seam's own key set rather than by looking for `i18n.t(`
+    call sites, because two of `_handle_proof`'s keys are chosen into a variable
+    first (`health_key`, `signature_key`) and a call-site scan would miss exactly
+    the branches most worth checking.
+    """
+    import ast
+    import importlib
+    import inspect
+
+    known = set(i18n._messages(i18n.get_translation("en")))
+    found: set[str] = set()
+    for module_name, func_name in _STATEFUL_ROUTE_SOURCES[route]:
+        module = importlib.import_module(module_name)
+        source = inspect.getsource(module)
+        tree = ast.parse(source)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and node.name == func_name:
+                found |= {
+                    child.value
+                    for child in ast.walk(node)
+                    if isinstance(child, ast.Constant)
+                    and isinstance(child.value, str)
+                    and child.value in known
+                }
+    return found
+
+
+@pytest.mark.parametrize(("route", "state"), sorted(_STATEFUL_BODY_STATES))
+def test_no_prose_reaches_a_stateful_route_body_in_any_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, route: str, state: str
+) -> None:
+    """Every branch of `/proof` and `/transparency`, not just the one a fixture hits."""
+    expected = _STATEFUL_BODY_STATES[route, state]
+    _install_pseudolocale(monkeypatch)
+    with _stateful_server(tmp_path, monkeypatch, route, state) as base:
+        status, page, _headers = _request(f"{base}{route}?lang=en")
+    assert status == 200, f"{route} [{state}] did not answer 200"
+    main = _main_section(page)
+    words = _visible_unwrapped_words(main)
+
+    assert expected.invariant <= words, (
+        f"{route} [{state}] does not render the un-seamed text its entry allows: "
+        f"missing {sorted(expected.invariant - words)}. An allowance for a string "
+        "the page never contained silently widens this gate."
+    )
+    leaked = words - _INVARIANT_IN_EVERY_LANGUAGE - expected.invariant
+    assert leaked == set(), (
+        f"prose reached {route} [{state}] without going through i18n.t: "
+        f"{sorted(leaked)}. Route it through the gettext seam, or — if it is an "
+        "identifier, a command, or text this project must not restate — add it to "
+        f"that state's `invariant` with a reason. Allowed here today: "
+        f"{expected.why_invariant}"
+    )
+
+
+@pytest.mark.parametrize(("route", "state"), sorted(_STATEFUL_BODY_STATES))
+def test_each_stateful_body_really_is_the_branch_it_claims(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, route: str, state: str
+) -> None:
+    """A branch that did not render would satisfy the leak assertion over nothing.
+
+    This is what caught the fixture bug while this gate was being written: an
+    attestation whose `signature_format` was not `"ssh"` is rejected by
+    `HealthAttestation.from_json`, so `/proof` fell back to its *unattested* body
+    and the "attested" state was judging the wrong branch with everything green.
+    """
+    expected = _STATEFUL_BODY_STATES[route, state]
+    _install_pseudolocale(monkeypatch)
+    with _stateful_server(tmp_path, monkeypatch, route, state) as base:
+        _status, page, _headers = _request(f"{base}{route}?lang=en")
+    main = _main_section(page)
+    assert main.count(i18n.PSEUDO_PREFIX) == expected.seam_strings, (
+        f"{route} [{state}] rendered {main.count(i18n.PSEUDO_PREFIX)} seam-resolved "
+        f"strings in <main>, expected {expected.seam_strings}. If the body changed "
+        "on purpose, update the count; if it did not, the fixture is not putting "
+        "this route in the state it says."
+    )
+
+
+@pytest.mark.parametrize(("route", "state"), sorted(_STATEFUL_BODY_STATES))
+@pytest.mark.parametrize("lang", ["es", "fr", "ar"])
+def test_a_stateful_route_is_answered_by_the_catalog_the_reader_asked_for(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, route: str, state: str, lang: str
+) -> None:
+    """The claim from the reader's end: the catalog answers, in their language.
+
+    Seam-routing and translation are separate facts and the suite needs both.
+    gettext's `fallback=True` means a msgid missing from a catalog resolves to its
+    English source, so a body can be entirely seam-routed and entirely English —
+    and a `msgstr` that is *verbatim* the English source satisfies every catalog
+    gate there is (key parity, non-empty, placeholder parity). So this asserts the
+    served text actually differs from the English, and consults
+    `locales/identical_by_design.json` for the strings where being identical is
+    the right answer rather than making "must differ" the rule.
+    """
+    declared = _declared_seam_keys(route)
+    with _stateful_server(tmp_path, monkeypatch, route, state) as base:
+        calls, restore = _install_recording_pseudolocale()
+        try:
+            # One pseudolocalized render to learn which keys this branch resolves,
+            # and with what placeholder values.
+            _request(f"{base}{route}?lang=en")
+        finally:
+            restore()
+        _status, body, _headers = _request(f"{base}{route}?lang={lang}")
+
+    rendered = [(key, kw) for key, kw in calls if key in declared]
+    assert rendered, f"{route} [{state}] resolved none of its own seam keys"
+    identical_by_design = _identical_by_design()
+    for key, kw in rendered:
+        english = i18n.t("en", key, **kw)
+        translated = i18n.t(lang, key, **kw)
+        if (lang, english) in identical_by_design:
+            continue
+        assert translated != english, (
+            f"{key!r} is served verbatim English on a {lang} {route} page. Translate "
+            f"it in src/ledger/locales/{lang}/LC_MESSAGES/messages.po, or — if it is "
+            "genuinely the same string in this language — add it to "
+            "src/ledger/locales/identical_by_design.json with a written reason."
+        )
+        assert _esc(translated) in body, f"{key!r} was not served on the {lang} {route} page"
+
+
+def _identical_by_design() -> set[tuple[str, str]]:
+    """`(locale, msgid)` pairs whose translation is legitimately the English source."""
+    import json
+
+    path = Path(i18n.__file__).resolve().parent / "locales" / "identical_by_design.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return {(row["locale"], row["msgid"]) for row in data["identical_by_design"]}
+
+
+@pytest.mark.parametrize("route", sorted(_STATEFUL_ROUTE_SOURCES))
+def test_every_branch_of_a_stateful_route_is_reached_by_some_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, route: str
+) -> None:
+    """The states registry is complete against the handlers' own source.
+
+    This is the self-limiting half. Add a branch to `_handle_proof` or to
+    `transparency_main_html` with a new seam string in it and this fails until a
+    state in `_STATEFUL_BODY_STATES` reaches it — so a new branch cannot join the
+    two this PR is about, silently English, behind a route that is already marked
+    judged.
+    """
+    declared = _declared_seam_keys(route)
+    assert declared, f"no seam keys found in {route}'s handlers; the AST scan is broken"
+
+    reached: set[str] = set()
+    for a_route, state in sorted(_STATEFUL_BODY_STATES):
+        if a_route != route:
+            continue
+        with _stateful_server(tmp_path, monkeypatch, route, state) as base:
+            calls, restore = _install_recording_pseudolocale()
+            try:
+                _request(f"{base}{route}?lang=en")
+            finally:
+                restore()
+        reached |= {key for key, _kw in calls}
+
+    assert declared <= reached, (
+        f"{route} resolves seam key(s) no state in _STATEFUL_BODY_STATES reaches: "
+        f"{sorted(declared - reached)}. Add a state that renders that branch — an "
+        "unreached branch is exactly how /proof and /transparency stayed English "
+        "under a green gate."
     )

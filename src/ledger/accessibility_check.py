@@ -515,10 +515,11 @@ def _render_sample_pages() -> dict[str, str]:
             demand_counts={"subpoena": 0},
         )
         transparency_html = transparency_main_html(
-            heading="Legal-process transparency",
+            heading=i18n.t("en", "transparency_heading"),
             latest=latest_attestation,
             entries=transparency_log.all(),
             cadence_days=90,
+            lang="en",
         )
 
         return {
@@ -538,7 +539,7 @@ def _render_sample_pages() -> dict[str, str]:
                 "Contribute", lang="en", main_html=contribute.render_contribute_main(config)
             ),
             "rendered:/transparency": _page(
-                "Legal-process transparency", lang="en", main_html=transparency_html
+                i18n.t("en", "transparency_heading"), lang="en", main_html=transparency_html
             ),
             # These three reuse a pure render function server.py already calls
             # unmodified -- no server.py change was needed to add them (#122). The

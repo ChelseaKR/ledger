@@ -34,7 +34,7 @@
     {
       "locale": "fr",
       "msgid": "Type",
-      "reason": "'Type' is the French word, same spelling. A Dublin Core field label."
+      "reason": "'Type' is the French word, same spelling. A Dublin Core field label on the contribution form, and — since #225 — also the first column heading of /transparency's legal-demand table, which shares this msgid. Load-bearing in two places now: if a French speaker would write something else in either, translate the msgstr and delete this entry."
     },
     {
       "locale": "fr",

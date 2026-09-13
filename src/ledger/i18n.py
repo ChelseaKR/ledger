@@ -251,6 +251,129 @@ def _messages(translation: gettext.NullTranslations) -> dict[str, str]:
         "how_it_works_contributing": _(
             "Contributing currently happens with a steward's help so your choices about what to seal are made deliberately. See the proof that we keep these promises at /proof."
         ),
+        # /proof and /transparency (#225) — the hash-chain explanation and the
+        # warrant-canary page. These are the two routes an at-risk contributor is
+        # sent to *before* deciding whether to hand this archive their material,
+        # and every sentence on both was an English literal in ``server.py`` /
+        # ``render.py``. Same defect as the page shell (#216), /status (#208) and
+        # the three safety pages (#221), on the routes where not understanding the
+        # page has the largest consequence. Measured on #226's own gate fixture
+        # before this change: 0 strings translated of 8, 14, 3, 3 and 16
+        # examinable, across the five states the two handlers can render, in each
+        # of es, fr and ar.
+        #
+        # What is NOT here, deliberately, and why: see the "left in English on
+        # purpose" section of docs/I18N.md. The short version is that the
+        # attestation's own field values are data, and the canary's statement text
+        # is a legal instrument this project must not restate.
+        "proof_heading": _("Our promise, proven"),
+        "proof_claim": _(
+            "The claim 'contributor identities are never shown here' is not an honour-system promise — it is a test the software must pass on every build."
+        ),
+        "proof_identity_storage": _(
+            "A contributor's identity is stored only as an opaque token plus encrypted data in a separate vault. The record a page is built from has no place to put an identity, so there is nothing to leak."
+        ),
+        "proof_sentinel_audit": _(
+            "The project's audit ingests a sentinel identity and then checks that it appears on no page, in no data file, in no backup, and in no log — and that a sealed record cannot even be confirmed to exist by an outsider."
+        ),
+        "proof_chain_unpublished": _(
+            "Preservation and moderation events are hash-chained, so editing history after the fact changes the archive chain head. This archive has not published an attestation yet, so there is no chain head here to note — the value is not computed live for visitors, because a per-request value would date every deposit, including a sealed one."
+        ),
+        "proof_chain_published": _(
+            "Preservation and moderation events are hash-chained, so editing history after the fact changes the archive chain head. Anyone who previously noted the head published on {when} can confirm it only moved forward:"
+        ),
+        "proof_verify_heading": _("Verify it yourself"),
+        "proof_not_attested": _(
+            "No transparency attestation has been published yet. A steward publishes one, on a schedule, by running this command:"
+        ),
+        "proof_attested_ok": _(
+            "As of {when}, this archive passed its most recent fixity check, running ledger {version}."
+        ),
+        "proof_attested_failed": _(
+            "As of {when}, this archive did NOT pass its most recent fixity check — a steward has been notified. It is running ledger {version}."
+        ),
+        "proof_signature_signed": _("The attestation is signed. Signature format: {format}."),
+        "proof_signature_unsigned": _(
+            "The attestation is unsigned — this archive has not configured a signing key."
+        ),
+        "proof_physical_caveat": _(
+            "A fixity check covers files this archive stores. Records that describe a physical object the archive does not hold a copy of have no stored content to check, and no attestation — this one included — says anything about whether those objects are safe."
+        ),
+        "proof_machine_readable_at": _("The full, machine-readable attestation is at:"),
+        "proof_chain_head_field": _(
+            "This field changes the instant any record's or log's history anywhere in the archive is rewritten, so saving two dated copies over time and comparing them is enough to catch a rolled-back archive — without trusting this server or any steward."
+        ),
+        "proof_check_signature": _(
+            "How to check the signature is described in the ledger source, in this file:"
+        ),
+        "transparency_heading": _("Legal-process transparency"),
+        "transparency_intro": _(
+            "This page shows the archive's most recent, dated statement about legal demands received for records or contributor identities, re-attested on a schedule. A missing or stale attestation is itself meaningful — see 'How to read this page' below."
+        ),
+        "transparency_not_configured": _(
+            "This archive has not configured legal-process transparency attestations. It publishes no statement here, positive or negative — absence of the feature is not evidence of anything."
+        ),
+        "transparency_log_unverifiable": _(
+            "The configured transparency log could not be verified. Treat the legal-process statement as unavailable until a steward repairs it."
+        ),
+        "transparency_never_attested": _(
+            "This archive has enabled legal-process transparency but has not yet published a first attestation."
+        ),
+        "transparency_current_heading": _("Current statement (as of {date})"),
+        "transparency_date_invalid": _(
+            "The attestation date is invalid or in the future. Treat this statement as STALE, not current."
+        ),
+        "transparency_stale": _(
+            "Last attested {days} day(s) ago — this is beyond the archive's {cadence}-day re-attestation cadence. Treat this statement as STALE, not current."
+        ),
+        "transparency_fresh": _(
+            "Last attested {days} day(s) ago, within the archive's {cadence}-day cadence."
+        ),
+        # Shown to every reader, in every language, including English. The canary's
+        # operative sentence is the steward's own counsel-reviewed wording and this
+        # project never restates it; saying so once, in the reader's language, is
+        # what stops a translated page from implying the statement was translated
+        # too. Rendered unconditionally rather than only for non-English readers so
+        # the pseudolocale gate, which renders ?lang=en, can see it.
+        "transparency_statement_untranslated": _(
+            "The statement below is reproduced exactly as the stewards published it, in the language they wrote it in. Its wording is a legal instrument, so this project never translates it — a translation could change what it asserts. Everything else on this page is this project's own explanation, and is translated."
+        ),
+        "transparency_attested_by": _("Attested by: {who}."),
+        "transparency_counsel_reviewed": _(
+            "This statement's wording has been reviewed by counsel."
+        ),
+        "transparency_counsel_reviewed_note": _("The steward's note on that review:"),
+        "transparency_counsel_not_reviewed": _("This statement has not been reviewed by counsel."),
+        "transparency_counsel_not_reviewed_detail": _(
+            "Its wording is a placeholder and carries no asserted legal effect. See docs/TRANSPARENCY.md."
+        ),
+        "transparency_counts_caption": _("Legal demands received, by type, as of this attestation"),
+        "transparency_col_type": _("Type"),
+        "transparency_col_count": _("Count"),
+        # The same disclosure as the statement note, for the closed demand-type
+        # vocabulary (``transparency.DEMAND_TYPES``). "national security letter"
+        # names one specific US instrument; a Spanish, French or Arabic word for it
+        # would assert a legal equivalence that does not exist. The terms stay in
+        # the legal system's own words; this sentence, which is this project's
+        # words, says why.
+        "transparency_types_untranslated": _(
+            "The demand types below are named in the terms of the legal system the demand came from, and are not translated: an instrument named here may have no counterpart in the reader's own jurisdiction, and translating it would assert an equivalence this project cannot vouch for."
+        ),
+        "transparency_no_demands": _("No legal demands recorded as of this attestation."),
+        "transparency_verifying_heading": _("Verifying this page"),
+        "transparency_chain_ok": _(
+            "{count} attestation(s) on file; the hash chain verified intact."
+        ),
+        "transparency_chain_failed": _(
+            "{count} attestation(s) on file; the hash chain FAILED VERIFICATION — contact the stewards."
+        ),
+        "transparency_chain_explained": _(
+            "Each attestation is chained to the one before it by a SHA-256 digest, so an edited, reordered, or deleted past entry is detectable from the log file alone — see docs/TRANSPARENCY.md for how to check it yourself."
+        ),
+        "transparency_how_to_read_heading": _("How to read this page"),
+        "transparency_how_to_read": _(
+            "A stale or missing attestation is not proof of anything by itself, but it removes the reassurance a fresh one gives — a steward unable to re-attest (a gag order, a compromise, a lapse) and a steward with nothing to report look identical only until the date goes stale. Compare this page over time rather than trusting a single visit."
+        ),
         "skip_link": _("Skip to main content"),
         # Rendered on every page whose locale is TranslationReview.DRAFTED. The
         # string itself is in the same unreviewed catalogs it describes, which is
