@@ -13,11 +13,17 @@ actually reads:
   archive — the reader least equipped to notice a sentence is empty;
 * ``ledger handoff``'s summary line, read by the operator running the hand-off.
 
-**What is deliberately NOT here.** ``/healthz``'s ``all_verified`` and the
-manifest's ``all_fixity_ok`` are unchanged, and so is ``ledger handoff``'s exit
-code. Those are machine contracts a monitor alerts on and a versioned document a
-third party parses; changing them is the owner's call, recorded in #208 and #205.
-Every fix below is to a *sentence*, built from fields that were already published.
+**What is deliberately NOT here.** ``/healthz``'s ``all_verified`` and
+``ledger handoff``'s exit code are unchanged. Those are machine contracts a
+monitor alerts on, and the fixes below are to *sentences*, built from fields that
+were already published.
+
+``all_fixity_ok`` also keeps its exact meaning, but the manifest no longer leaves
+the honest verdict unpublished: closing #208 added ``fixity_status`` beside it at
+``HANDOFF_SCHEMA_VERSION`` 2. The reason that was safe here and is not safe for
+the signed public attestation (#205) is that this document already hands its
+reader ``total_records`` and the whole per-record inventory, so saying "there was
+nothing to check" discloses nothing it had not already disclosed.
 
 These also pin that the /status page goes through the gettext seam at all. Its
 sentences were English literals in ``server.py``, so an Arabic reader got an
@@ -245,14 +251,60 @@ def test_the_handoff_runbook_still_reports_intact_when_bags_were_checked(
     assert manifest.fixity_status is FixityStatus.VERIFIED
 
 
-def test_the_manifest_schema_version_does_not_move(
+def test_the_manifest_publishes_the_three_state_verdict_at_schema_2(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`fixity_status` is a property, not a field: the document is byte-compatible."""
+    """The document now says what its prose says, and the version moved to say it.
+
+    This replaces ``test_the_manifest_schema_version_does_not_move``, which pinned
+    schema 1 on purpose while the decision was open. It is now made: the reason
+    :mod:`ledger.attestation` holds the same line for the *public* attestation
+    (#205) is a disclosure — publishing "there was nothing to check" tells an
+    anonymous reader the archive is empty. This document hands its reader
+    ``total_records`` and the whole ``records`` array in the same file, so there
+    is no count here left to protect, and the reader paying the version cost is a
+    non-ops volunteer inheriting an archive.
+
+    The change is additive and the old key is untouched, which is the half that
+    matters to anyone who already parses this document.
+    """
     manifest = build_handoff(_archive(tmp_path, monkeypatch, records=1), now=_NOW)
     document = json.loads(manifest.to_json())
-    assert document["schema_version"] == 1
-    assert "fixity_status" not in document
+    assert document["schema_version"] == 2
+    assert document["fixity_status"] == "verified"
+    # `all_fixity_ok` keeps its v1 meaning exactly — `all(report.ok for ...)` —
+    # so a reader written against v1 is never silently handed a new meaning under
+    # an old key. That is what makes this additive rather than a redefinition.
+    assert document["all_fixity_ok"] is True
+    assert set(document) == {
+        "schema_version",
+        "archive_name",
+        "generated_at",
+        "successor",
+        "total_records",
+        "all_fixity_ok",
+        "fixity_status",
+        "records",
+        "vault",
+        "store_root",
+        "locations",
+        "runbook",
+    }, "schema 2 adds exactly one key; anything else here is an undeclared change"
+
+
+def test_the_empty_manifest_says_could_not_verify_where_the_boolean_says_true(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The defect, in the document rather than in the prose built from it (#208).
+
+    ``all_fixity_ok: true`` beside ``records: []`` is a contradiction the reader
+    has to resolve by knowing the fold is vacuous. ``fixity_status`` says it.
+    """
+    manifest = build_handoff(_archive(tmp_path, monkeypatch, records=0), now=_NOW)
+    document = json.loads(manifest.to_json())
+    assert document["total_records"] == 0
+    assert document["all_fixity_ok"] is True, "unchanged: this is the v1 fold, kept"
+    assert document["fixity_status"] == "could-not-verify"
 
 
 def test_ledger_handoff_does_not_print_all_bags_verified_over_no_bags(

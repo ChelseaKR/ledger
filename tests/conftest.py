@@ -165,7 +165,19 @@ def record_body_gate_census(
     )
 
 
+# The same shape for the fixity-claim census (#208). A hook defined in a test
+# module is not collected — only conftest.py and registered plugins supply hooks —
+# so the number would have been computed and never printed, which is the failure
+# this reporting shape exists to avoid.
+_FIXITY_CLAIM_CENSUS: dict[str, object] = {}
+
+
+def record_fixity_claim_census(*, backed: int, published: int, unbacked: list[str]) -> None:
+    _FIXITY_CLAIM_CENSUS.update(backed=backed, published=published, unbacked=unbacked)
+
+
 def pytest_terminal_summary(terminalreporter: pytest.TerminalReporter) -> None:
+    _report_fixity_claim_census(terminalreporter)
     if not _BODY_GATE_CENSUS:
         # Not "nothing to say": the census test did not run (a `-k` selection, a
         # collection error). Say which, rather than printing a reassuring silence.
@@ -188,4 +200,28 @@ def pytest_terminal_summary(terminalreporter: pytest.TerminalReporter) -> None:
         f"body; {c['branches']} branch(es) are judged, and every message key their "
         "handlers resolve is asserted reachable from one of them "
         "(see _STATEFUL_BODY_STATES)"
+    )
+
+
+def _report_fixity_claim_census(terminalreporter: pytest.TerminalReporter) -> None:
+    """Two numbers: fixity claims backed by a verification, of claims published.
+
+    "Not run" is reported as not run rather than as silence, for the same reason
+    the body-gate census above does: a census that did not happen must not be
+    indistinguishable from one that found nothing to say (#208).
+    """
+    if not _FIXITY_CLAIM_CENSUS:
+        terminalreporter.write_line(
+            "fixity claim census: NOT TAKEN in this run — "
+            "test_the_census_of_published_fixity_claims did not execute"
+        )
+        return
+    census = _FIXITY_CLAIM_CENSUS
+    unbacked = census["unbacked"]
+    assert isinstance(unbacked, list)
+    terminalreporter.write_line(
+        f"fixity claim census: {census['backed']} of {census['published']} published "
+        "fixity claim(s) are backed by a verification; an archive with nothing in it "
+        f"still reads as verified on {len(unbacked)} "
+        f"(declared in _UNBACKED_BY_DESIGN: {', '.join(unbacked)})"
     )

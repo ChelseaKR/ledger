@@ -1540,6 +1540,21 @@ def _cmd_export_drive(args: argparse.Namespace) -> int:
     that grant may see is re-bagged onto the package. Exits non-zero if any
     freshly written bag fails its own validation, so a bad package is never
     reported as ready to hand to a courier.
+
+    The summary line reports **two numbers** — bags verified of bags written —
+    and a three-state verdict, because one boolean could not tell a verified
+    package from an empty one. ``all_bags_valid`` is ``all(report.ok for ...)``
+    over the bags this build wrote, and that fold is vacuously true over no bags,
+    so a run whose viewer grant disclosed nothing printed *"0 record(s), 0
+    file(s) packaged ...; all bags verified"* and exited ``0`` — to the one
+    reader who is about to put the drive in someone's hand and send them away
+    with it (#208).
+
+    The **exit code does not move**: an empty package is not a corrupt one, and a
+    grant that legitimately discloses nothing (a sealed-only archive exported for
+    an anonymous viewer) must not turn a courier build into a cron failure. That
+    is the same split #208 took on ``ledger handoff`` — the sentence is the
+    claim, the exit code is the alarm, and only the claim was wrong.
     """
     archive = _open_archive(Path(args.root))
     grant = _grant_for(args.as_subject)
@@ -1552,10 +1567,18 @@ def _cmd_export_drive(args: argparse.Namespace) -> int:
         base_url=args.base_url or "",
         now=now,
     )
-    status = "all bags verified" if result.all_bags_valid else "BAG VALIDATION FAILED"
+    if result.status is FixityStatus.FAILED:
+        status = "BAG VALIDATION FAILED"
+    elif not result.bags_written:
+        status = "no bags to verify — this package contains no records"
+    elif result.status is FixityStatus.UNVERIFIED:
+        status = "some bags could not be verified"
+    else:
+        status = "all bags verified"
     print(
         f"export-drive: {result.records_packaged} record(s), {result.files_packaged} file(s) "
-        f"packaged to {result.out_dir} for viewer {grant.subject!r}; {status}"
+        f"packaged to {result.out_dir} for viewer {grant.subject!r}; "
+        f"{result.bags_verified} of {result.bags_written} bag(s) verified; {status}"
     )
     return 0 if result.all_bags_valid else 1
 
