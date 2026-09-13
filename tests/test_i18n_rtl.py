@@ -458,19 +458,19 @@ _BODY_GATE_UNJUDGED = {
     "/proof": (
         "112 un-seamed words. `_handle_proof` writes the whole body as English "
         "literals, including the hash-chain explanation and the sentinel-identity "
-        "audit description. Issue #222."
+        "audit description. Issue #225."
     ),
     "/transparency": (
         "55 un-seamed words. Same shape as /proof: the legal-process and "
-        "warrant-canary page is English literals. Issue #222."
+        "warrant-canary page is English literals. Issue #225."
     ),
     "/": (
         "3 un-seamed words: the `<h1>` is the literal 'Browse the archive'. The "
         "rest of the body is seam-routed, so an ar reader gets an English heading "
-        "over an Arabic page. Issue #222."
+        "over an Arabic page. Issue #225."
     ),
     "/search": (
-        "3 un-seamed words — the same literal `<h1>` as `/`, from the same handler. Issue #222."
+        "3 un-seamed words — the same literal `<h1>` as `/`, from the same handler. Issue #225."
     ),
 }
 
