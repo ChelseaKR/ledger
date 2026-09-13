@@ -16,6 +16,7 @@ These pin the newly closed i18n gates end to end:
 
 from __future__ import annotations
 
+import ast
 import re
 import threading
 import urllib.error
@@ -807,7 +808,10 @@ class _StateSetup:
     """What a state needs set up before the server starts."""
 
     #: `/proof`: publish a health attestation with these properties. None = publish none.
-    health: tuple[bool, bool] | None = None  # (fixity_ok, signed)
+    #: (disclosure, signed, schema_version). #205 made `/proof`'s health sentence a
+    #: function of the four-state `fixity` field rather than of `fixity_ok`, and a
+    #: schema-1 document is read as `unstated`, so the schema is part of the state.
+    health: tuple[str, bool, int] | None = None
     #: `/transparency`: point the config at a log file at all.
     configured: bool = False
     #: `/transparency`: write a log file that is not a valid log.
@@ -820,8 +824,18 @@ class _StateSetup:
 
 _STATE_SETUP: dict[tuple[str, str], _StateSetup] = {
     ("/proof", "no-attestation-published"): _StateSetup(),
-    ("/proof", "attested-healthy-and-signed"): _StateSetup(health=(True, True)),
-    ("/proof", "attested-failed-and-unsigned"): _StateSetup(health=(False, False)),
+    ("/proof", "attested-healthy-and-signed"): _StateSetup(health=("verified", True, 2)),
+    ("/proof", "attested-failed-and-unsigned"): _StateSetup(health=("failed", False, 2)),
+    # #205: the three sentences that did not exist while `fixity_ok` was the whole
+    # reading. The empty-archive one is the defect itself, and it is signed here
+    # because the defect was a *signed* document saying the archive had passed.
+    ("/proof", "attested-nothing-to-verify"): _StateSetup(health=("nothing-to-verify", True, 2)),
+    ("/proof", "attested-could-not-verify"): _StateSetup(health=("could-not-verify", False, 2)),
+    # What an older ledger published over an empty archive: schema 1 and
+    # `fixity_ok: true`. That is the document that must not render as a pass, so
+    # it is the fixture — a v1 `false` would render as `unstated` too and prove
+    # nothing about the dangerous case.
+    ("/proof", "attested-by-an-older-ledger"): _StateSetup(health=("unstated", True, 1)),
     ("/transparency", "not-configured"): _StateSetup(),
     ("/transparency", "log-unreadable"): _StateSetup(configured=True, corrupt=True),
     ("/transparency", "never-attested"): _StateSetup(configured=True),
@@ -886,6 +900,21 @@ _STATEFUL_BODY_STATES: dict[tuple[str, str], _BodyState] = {
         invariant=_PROOF_ATTESTED_INVARIANT,
         why_invariant="the same identifiers and digest as the healthy branch.",
     ),
+    ("/proof", "attested-nothing-to-verify"): _BodyState(
+        seam_strings=12,
+        invariant=_PROOF_ATTESTED_INVARIANT,
+        why_invariant="the same identifiers and digest as the healthy branch.",
+    ),
+    ("/proof", "attested-could-not-verify"): _BodyState(
+        seam_strings=12,
+        invariant=_PROOF_ATTESTED_INVARIANT,
+        why_invariant="the same identifiers and digest as the healthy branch.",
+    ),
+    ("/proof", "attested-by-an-older-ledger"): _BodyState(
+        seam_strings=12,
+        invariant=_PROOF_ATTESTED_INVARIANT,
+        why_invariant="the same identifiers and digest as the healthy branch.",
+    ),
     ("/transparency", "not-configured"): _BodyState(
         seam_strings=3,
         invariant=frozenset(),
@@ -925,18 +954,27 @@ _STATEFUL_BODY_STATES: dict[tuple[str, str], _BodyState] = {
 }
 
 
-def _publish_health_attestation(archive: Archive, *, fixity_ok: bool, signed: bool) -> None:
+def _publish_health_attestation(
+    archive: Archive, *, disclosure: str, signed: bool, schema_version: int
+) -> None:
     """Put `/proof` into one of its attested branches."""
-    from ledger.attestation import HealthAttestation, publish_attestation
+    from ledger.attestation import FixityDisclosure, HealthAttestation, publish_attestation
 
+    fixity = FixityDisclosure(disclosure)
     publish_attestation(
         archive,
         HealthAttestation(
-            schema_version=1,
+            schema_version=schema_version,
             archive_name="RTL Archive",
             generated_at="2026-09-01T00:00:00Z",
             software_version="0.1.0",
-            fixity_ok=fixity_ok,
+            # A schema-1 document's `fixity_ok: true` is what an older ledger wrote
+            # over an archive whether or not it held anything; it is the fixture
+            # for the "attested by an older ledger" branch for exactly that reason.
+            # A schema-1 document is written without a `fixity` key at all:
+            # `_unsigned_dict` emits it only from schema 2.
+            fixity_ok=fixity in {FixityDisclosure.VERIFIED, FixityDisclosure.UNSTATED},
+            fixity=fixity,
             chain_head_summary=_ATTESTATION_SENTINELS["chain_head"],
             # "ssh" is the only format `HealthAttestation.from_json` accepts, so it
             # is the only signed state a served page can ever be in — which is why
@@ -1000,8 +1038,10 @@ def _stateful_server(
     monkeypatch.setenv("LEDGER_VAULT_KEY", _VAULT_KEY)
     archive = Archive.init(config)
     if setup.health is not None:
-        fixity_ok, signed = setup.health
-        _publish_health_attestation(archive, fixity_ok=fixity_ok, signed=signed)
+        disclosure, signed, schema_version = setup.health
+        _publish_health_attestation(
+            archive, disclosure=disclosure, signed=signed, schema_version=schema_version
+        )
     if setup.corrupt:
         log_path.write_text("this is not a transparency log\n", encoding="utf-8")
     if setup.attest is not None:
@@ -1071,33 +1111,94 @@ _STATEFUL_ROUTE_SOURCES = {
 
 
 def _declared_seam_keys(route: str) -> set[str]:
-    """Every `i18n` message key named as a literal inside `route`'s handlers.
+    """Every `i18n` message key a handler for `route` can resolve.
 
     Matched against the seam's own key set rather than by looking for `i18n.t(`
-    call sites, because two of `_handle_proof`'s keys are chosen into a variable
-    first (`health_key`, `signature_key`) and a call-site scan would miss exactly
-    the branches most worth checking.
+    call sites, because several of `_handle_proof`'s keys are chosen into a
+    variable first (`health_key`, `signature_key`) and a call-site scan would miss
+    exactly the branches most worth checking.
+
+    **It follows one level of module-level indirection**, and that is load-bearing
+    rather than a convenience. A literals-only scan of the function body is a
+    denominator that anyone can shrink by refactoring. Measured on #205: moving
+    `_handle_proof`'s health keys out of an inline conditional and into the
+    module-level `_PROOF_HEALTH_KEYS` took a literals-only scan from **16 keys to
+    14**, and from **2 of 2 health keys to 0 of 5** — every health sentence `/proof`
+    can render, including the three #205 added, would have been unjudged by
+    :func:`test_every_branch_of_a_stateful_route_is_reached_by_some_state`, with
+    every gate green. Following the mapping, the same handler yields 19 keys and
+    all 5. A key reachable from the handler must stay countable however the
+    handler is written.
     """
-    import ast
     import importlib
     import inspect
 
     known = set(i18n._messages(i18n.get_translation("en")))
     found: set[str] = set()
     for module_name, func_name in _STATEFUL_ROUTE_SOURCES[route]:
-        module = importlib.import_module(module_name)
-        source = inspect.getsource(module)
-        tree = ast.parse(source)
+        tree = ast.parse(inspect.getsource(importlib.import_module(module_name)))
+        bindings = _module_level_bindings(tree)
         for node in ast.walk(tree):
-            if isinstance(node, ast.FunctionDef) and node.name == func_name:
-                found |= {
-                    child.value
-                    for child in ast.walk(node)
-                    if isinstance(child, ast.Constant)
-                    and isinstance(child.value, str)
-                    and child.value in known
-                }
+            if not isinstance(node, ast.FunctionDef) or node.name != func_name:
+                continue
+            found |= _message_literals(node, known)
+            # Every module-level name this function reads, resolved to the value
+            # it was bound to. One level only: a table of message keys is the
+            # shape being followed, not an arbitrary reference graph.
+            for child in ast.walk(node):
+                if isinstance(child, ast.Name) and child.id in bindings:
+                    found |= _message_literals(bindings[child.id], known)
     return found
+
+
+def _message_literals(node: ast.AST, known: set[str]) -> set[str]:
+    """String constants under `node` that are message keys the seam defines."""
+    return {
+        child.value
+        for child in ast.walk(node)
+        if isinstance(child, ast.Constant) and isinstance(child.value, str) and child.value in known
+    }
+
+
+def _module_level_bindings(tree: ast.Module) -> dict[str, ast.expr]:
+    """Module-level names mapped to the expression each was bound to.
+
+    Split out of `_declared_seam_keys` so each assignment shape is narrowed by its
+    own `isinstance`, which is what lets the value be typed without suppressing
+    the checker.
+    """
+    bindings: dict[str, ast.expr] = {}
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            targets, value = list(node.targets), node.value
+        elif isinstance(node, ast.AnnAssign) and node.value is not None:
+            targets, value = [node.target], node.value
+        else:
+            continue
+        for target in targets:
+            if isinstance(target, ast.Name):
+                bindings[target.id] = value
+    return bindings
+
+
+def test_the_seam_scan_sees_every_health_sentence_proof_can_render() -> None:
+    """The denominator of the reachability check, pinned to the table it must follow.
+
+    `_declared_seam_keys` follows module-level names because #205 moved `/proof`'s
+    health keys into `_PROOF_HEALTH_KEYS`, and a literals-only scan then found 0 of
+    the 5. Nothing asserted that the following happens: the negative control that
+    reverted the scan to literals-only ran this whole module and failed nothing,
+    because a scan that finds fewer keys finds fewer keys to call unreached. A
+    denominator has to be checked against something it cannot shrink.
+    """
+    from ledger.server import _PROOF_HEALTH_KEYS
+
+    declared = _declared_seam_keys("/proof")
+    missing = set(_PROOF_HEALTH_KEYS.values()) - declared
+    assert not missing, (
+        f"/proof can render {sorted(missing)} but the reachability check cannot see "
+        "them, so no state is required to reach them"
+    )
 
 
 @pytest.mark.parametrize(("route", "state"), sorted(_STATEFUL_BODY_STATES))

@@ -19,7 +19,7 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-from ledger.attestation import build_attestation
+from ledger.attestation import FixityDisclosure, build_attestation
 from ledger.config import Config
 from ledger.identity import ContributorIdentity
 from ledger.ingest import Archive
@@ -133,15 +133,25 @@ def test_build_attestation_fixity_ok_is_false_when_a_bag_is_missing(tmp_path: Pa
     attestation = build_attestation(archive, now=_NOW)
 
     assert attestation.fixity_ok is False
+    assert attestation.fixity is FixityDisclosure.FAILED
 
 
-def test_build_attestation_fixity_ok_is_true_for_a_genuinely_empty_archive(
+def test_build_attestation_says_nothing_to_verify_for_a_genuinely_empty_archive(
     tmp_path: Path,
 ) -> None:
     """The companion to the test above: an attestation over nothing is not the
-    same claim as an attestation over a corpus that used to have bags."""
+    same claim as an attestation over a corpus that used to have bags — and since
+    #205 it is not the same claim as a verified archive either.
+
+    This test used to assert ``fixity_ok is True`` here, on purpose, while #205
+    was open: it pinned option A so the vacuous pass could not change by accident.
+    The decision is now made, so it pins the decision instead. The missing-bag
+    case above is ``failed``; this one is ``nothing-to-verify``; and neither of
+    them is ``fixity_ok: true``.
+    """
     archive = Archive.init(Config.default("Attested Empty Archive", tmp_path / "archive"))
 
     attestation = build_attestation(archive, now=_NOW)
 
-    assert attestation.fixity_ok is True
+    assert attestation.fixity is FixityDisclosure.NOTHING_TO_VERIFY
+    assert attestation.fixity_ok is False

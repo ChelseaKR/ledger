@@ -9,6 +9,7 @@ published document never leaks a contributor identity or an absolute count
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -24,6 +25,7 @@ import pytest
 from ledger import cli
 from ledger.attestation import (
     ATTESTATION_SCHEMA_VERSION,
+    FixityDisclosure,
     HealthAttestation,
     build_attestation,
     chain_head_summary,
@@ -68,14 +70,40 @@ def _seed_archive(tmp_path: Path, *, name: str = "Attestation Test Archive") -> 
 # --- build_attestation / chain_head_summary ---------------------------------
 
 
-def test_empty_archive_attestation_is_healthy_and_deterministic(tmp_path: Path) -> None:
+def test_empty_archive_attestation_says_nothing_to_verify_and_is_deterministic(
+    tmp_path: Path,
+) -> None:
+    """#205: an archive with nothing in it does not attest that it passed.
+
+    This asserted ``fixity_ok is True`` with the comment "vacuously true: nothing
+    to fail", which was an accurate description of the defect.
+    """
     config = Config.default("Empty Archive", tmp_path / "arc")
     archive = Archive.init(config)
     a1 = build_attestation(archive, now=_NOW)
     a2 = build_attestation(archive, now=_NOW)
-    assert a1.fixity_ok is True  # vacuously true: nothing to fail
+    assert a1.fixity is FixityDisclosure.NOTHING_TO_VERIFY
+    assert a1.fixity_ok is False
     assert a1.chain_head_summary == a2.chain_head_summary  # reproducible
-    assert a1.schema_version == ATTESTATION_SCHEMA_VERSION
+    assert a1.schema_version == ATTESTATION_SCHEMA_VERSION == 2
+
+
+def test_the_empty_archive_chain_head_was_already_a_public_constant(tmp_path: Path) -> None:
+    """The measurement #205's decision rests on, kept as a test so it cannot rot.
+
+    #205 weighed saying "nothing to verify" against the no-outing rule's refusal
+    to publish absolute counts. This is why the weighing came out the way it did:
+    the attestation *already* told anyone that the archive was empty, because
+    ``chain_head_summary`` over no logs is ``sha256("[]")`` — the same digest for
+    every empty ledger archive, whatever it is called. ``fixity_ok: true`` was
+    therefore buying no privacy. If this ever stops holding, the reasoning in
+    ``build_attestation``'s docstring must be revisited, not merely this test.
+    """
+    heads = {
+        chain_head_summary(Archive.init(Config.default(name, tmp_path / f"arc{index}")))
+        for index, name in enumerate(("Empty Archive", "A Different Name", "z"))
+    }
+    assert heads == {hashlib.sha256(b"[]").hexdigest()}
 
 
 def test_chain_head_summary_changes_when_history_grows(tmp_path: Path) -> None:
@@ -126,14 +154,22 @@ def test_attestation_never_contains_identity_or_absolute_counts(tmp_path: Path) 
     # Deliberately narrow shape (see ledger.attestation module docstring): no bag
     # count, no per-bag/per-log breakdown, nothing that could be watched over time
     # to infer when a (possibly sealed) record was added.
+    #
+    # Schema 2 adds exactly one key, `fixity` (#205), and it is a word from a
+    # closed vocabulary of four, not a count. The one absolute fact it can state —
+    # `nothing-to-verify`, i.e. the archive is empty — was already published by
+    # `chain_head_summary`, which is `sha256("[]")` for every empty archive; see
+    # test_the_empty_archive_chain_head_was_already_a_public_constant.
     assert set(data.keys()) == {
         "schema_version",
         "archive_name",
         "generated_at",
         "software_version",
+        "fixity",
         "fixity_ok",
         "chain_head_summary",
     }
+    assert data["fixity"] in {"verified", "failed", "could-not-verify", "nothing-to-verify"}
 
 
 def test_fixity_ok_false_when_a_bag_is_corrupted(tmp_path: Path) -> None:
@@ -144,6 +180,81 @@ def test_fixity_ok_false_when_a_bag_is_corrupted(tmp_path: Path) -> None:
     payload_files[0].write_bytes(b"corrupted bytes")
     attestation = build_attestation(archive, now=_NOW)
     assert attestation.fixity_ok is False
+    assert attestation.fixity is FixityDisclosure.FAILED
+
+
+def test_a_seeded_healthy_archive_still_attests_verified(tmp_path: Path) -> None:
+    """The fix is to the empty case. A checked archive must not lose its pass."""
+    attestation = build_attestation(_seed_archive(tmp_path), now=_NOW)
+    assert attestation.fixity is FixityDisclosure.VERIFIED
+    assert attestation.fixity_ok is True
+
+
+def test_a_bag_that_declares_no_files_attests_could_not_verify(tmp_path: Path) -> None:
+    """Bags present, one uncheckable: not a pass, not a failure, not "empty"."""
+    archive = _seed_archive(tmp_path)
+    bag = next(p for p in archive.bags_dir.iterdir() if p.is_dir())
+    # The same hollowing `tests/test_nothing_verified.py` uses (#206). Truncating
+    # the payload manifests alone is not enough: the tag manifests still carry
+    # their old checksums, so the bag *fails* rather than proving nothing — which
+    # is what this test first did, and why it now removes all three.
+    for payload in sorted((bag / "data").rglob("*")):
+        if payload.is_file():
+            payload.unlink()
+    for manifest in sorted(bag.glob("manifest-*.txt")):
+        manifest.write_text("", encoding="utf-8")
+    for tagmanifest in sorted(bag.glob("tagmanifest-*.txt")):
+        tagmanifest.unlink()
+    attestation = build_attestation(archive, now=_NOW)
+    assert attestation.fixity is FixityDisclosure.COULD_NOT_VERIFY
+    assert attestation.fixity_ok is False
+
+
+# --- schema 1 documents already on disk --------------------------------------
+
+_V1_DOCUMENT = {
+    "schema_version": 1,
+    "archive_name": "Older Archive",
+    "generated_at": "2026-06-01T00:00:00Z",
+    "software_version": "0.1.0",
+    "fixity_ok": True,
+    "chain_head_summary": "a" * 64,
+}
+
+
+def test_a_schema_1_attestation_is_still_read_and_says_nothing_it_did_not(
+    tmp_path: Path,
+) -> None:
+    """A steward upgrades between two cron runs; `/proof` must not go blank.
+
+    And it must not be *upgraded by guesswork* either: v1's ``fixity_ok: true``
+    cannot tell a verified archive from an empty one, so it is read as
+    ``unstated`` rather than ``verified``.
+    """
+    restored = HealthAttestation.from_json(json.dumps(_V1_DOCUMENT))
+    assert restored.schema_version == 1
+    assert restored.fixity is FixityDisclosure.UNSTATED
+
+
+def test_a_schema_1_signature_still_covers_the_same_bytes() -> None:
+    """Adding a field must not invalidate every signature published before it.
+
+    A v1 document was signed over bytes with no ``fixity`` key. If reading it back
+    and re-deriving the payload emitted one, every previously published signature
+    would fail ``ssh-keygen -Y verify`` — tamper-evidence broken by an upgrade.
+    """
+    restored = HealthAttestation.from_json(json.dumps(_V1_DOCUMENT))
+    assert restored.signing_payload() == json.dumps(
+        _V1_DOCUMENT, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    assert b'fixity"' not in restored.signing_payload()
+    assert b'"fixity":' not in restored.signing_payload()
+
+
+def test_a_schema_2_signature_covers_the_disclosure(tmp_path: Path) -> None:
+    """The new field is signed. An unsigned verdict beside a signed one is forgeable."""
+    attestation = build_attestation(_seed_archive(tmp_path), now=_NOW)
+    assert b'"fixity":"verified"' in attestation.signing_payload()
 
 
 # --- HealthAttestation JSON round trip ---------------------------------------
@@ -160,8 +271,14 @@ def test_attestation_json_round_trip(tmp_path: Path) -> None:
     "field,value",
     [
         ("schema_version", "1"),
+        ("schema_version", 3),
         ("fixity_ok", "false"),
         ("chain_head_summary", "not-a-digest"),
+        # #205: a schema-2 document must state one of the four disclosures.
+        ("fixity", "all-good"),
+        ("fixity", True),
+        ("fixity", "unstated"),
+        ("fixity", None),
     ],
 )
 def test_attestation_json_rejects_mistyped_security_fields(
@@ -266,7 +383,11 @@ def test_cli_attest_health_publishes_unsigned_when_no_key(tmp_path: Path) -> Non
     published = root / "store" / "attestations" / "latest.json"
     assert published.exists()
     data = json.loads(published.read_text(encoding="utf-8"))
-    assert data["fixity_ok"] is True
+    # A freshly initialised archive holds nothing. #205: it publishes that, and
+    # the command still exits 0 above — an empty archive is not a fault, and the
+    # exit code is the alarm, not the statement.
+    assert data["fixity"] == "nothing-to-verify"
+    assert data["fixity_ok"] is False
     assert "signature" not in data
 
 
@@ -358,6 +479,7 @@ def test_proof_attestation_route_serves_published_attestation(tmp_path: Path) ->
             assert status == 200
             data = json.loads(body)
             assert data["fixity_ok"] is True
+            assert data["fixity"] == "verified"
             assert data["chain_head_summary"] == attestation.chain_head_summary
             assert _SENTINEL not in body
 
@@ -370,6 +492,63 @@ def test_proof_attestation_route_serves_published_attestation(tmp_path: Path) ->
             httpd.shutdown()
             thread.join(timeout=5)
             httpd.server_close()
+
+
+def _serve_proof(archive: Archive) -> str:
+    """The English body `/proof` renders for `archive`'s latest published attestation."""
+    httpd = make_server(archive, host="127.0.0.1", port=0)
+    base = f"http://127.0.0.1:{int(httpd.server_address[1])}"
+    sink = StringIO()
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    with redirect_stderr(sink), redirect_stdout(sink):
+        thread.start()
+        try:
+            status, body = _get(base, "/proof")
+        finally:
+            httpd.shutdown()
+            thread.join(timeout=5)
+            httpd.server_close()
+    assert status == 200
+    assert "/proof/attestation.json" in body, "no attested branch rendered; this proves nothing"
+    return body
+
+
+def test_proof_over_an_empty_archive_does_not_say_it_passed(tmp_path: Path) -> None:
+    """#205, end to end: the sentence an anonymous visitor reads, not the field.
+
+    Every other test here reads `fixity` or `fixity_ok` off the document. A `/proof`
+    that went back to choosing its sentence from `fixity_ok` alone — the two-branch
+    reading this issue replaced — kept every one of them green: the negative control
+    that reverted it ran 161 tests and failed none. This is the test that control
+    was missing.
+    """
+    os.environ["LEDGER_VAULT_KEY"] = _VAULT_KEY
+    try:
+        archive = Archive.init(Config.default("Empty Proof Archive", tmp_path / "arc"))
+        publish_attestation(archive, build_attestation(archive, now=_NOW))
+        body = _serve_proof(archive)
+    finally:
+        os.environ.pop("LEDGER_VAULT_KEY", None)
+    assert "passed its most recent fixity check" not in body
+    assert "did NOT pass" not in body, "an empty archive is not a damaged one either"
+    assert "held no records, so there was nothing to check" in body
+
+
+def test_proof_does_not_upgrade_an_older_ledgers_pass_by_guessing(tmp_path: Path) -> None:
+    """A schema-1 `fixity_ok: true` is what an older ledger wrote over an empty archive.
+
+    It cannot tell a checked archive from an empty one, so `/proof` must say that
+    rather than render it as the pass it looks like.
+    """
+    os.environ["LEDGER_VAULT_KEY"] = _VAULT_KEY
+    try:
+        archive = Archive.init(Config.default("Older Proof Archive", tmp_path / "arc"))
+        publish_attestation(archive, HealthAttestation.from_json(json.dumps(_V1_DOCUMENT)))
+        body = _serve_proof(archive)
+    finally:
+        os.environ.pop("LEDGER_VAULT_KEY", None)
+    assert "passed its most recent fixity check" not in body
+    assert "in an older format that could not say whether anything was actually checked" in body
 
 
 # --- an unreadable log must never be attested as an empty one ----------------
