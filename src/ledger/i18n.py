@@ -292,6 +292,24 @@ def _messages(translation: gettext.NullTranslations) -> dict[str, str]:
         "proof_attested_failed": _(
             "As of {when}, this archive did NOT pass its most recent fixity check — a steward has been notified. It is running ledger {version}."
         ),
+        # #205. `fixity_ok` alone could not tell "every bag passed" from "there
+        # was no bag to check", so an archive holding nothing published a signed
+        # document that read, to an anonymous visitor, as a passed integrity
+        # check. Four states need four sentences, and the one an empty archive
+        # gets must not sound like damage either — a new archive is not broken.
+        "proof_attested_nothing": _(
+            "As of {when}, this archive held no records, so there was nothing to check and no integrity check was run. This is not a fault: a new archive has nothing in it yet. It is running ledger {version}."
+        ),
+        "proof_attested_could_not_verify": _(
+            "As of {when}, at least one record package in this archive declared no files to verify, so it could not be checked — this is neither a pass nor a failure, and a steward has been notified. It is running ledger {version}."
+        ),
+        # An attestation published by an older ledger, before the field that
+        # distinguishes the four cases existed. Saying so is the honest reading:
+        # its `fixity_ok: true` meant "no stored payload failed", which is exactly
+        # the sentence that cannot tell a checked archive from an empty one.
+        "proof_attested_unstated": _(
+            "As of {when}, this archive published an attestation in an older format that could not say whether anything was actually checked. It is running ledger {version}; the next scheduled attestation will say."
+        ),
         "proof_signature_signed": _("The attestation is signed. Signature format: {format}."),
         "proof_signature_unsigned": _(
             "The attestation is unsigned — this archive has not configured a signing key."

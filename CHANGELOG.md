@@ -565,6 +565,33 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   to say about a prose summary elsewhere in the docs; the paragraph now names the
   rows that are actually partial and says which document is authoritative.
 
+### Changed
+- **A signed attestation over an archive with nothing in it no longer says the
+  archive passed (#205).** `ledger attest-health` published `fixity_ok: true` for an
+  archive holding no bags at all — `all(...)` over an empty sequence — and `/proof`
+  rendered it to an anonymous visitor as *"this archive passed its most recent
+  fixity check"*, on the page an at-risk contributor reads before deciding whether
+  to hand this archive their material.
+
+  `ATTESTATION_SCHEMA_VERSION` is now **2**. The attestation carries a signed
+  `fixity` field — `verified`, `failed`, `could-not-verify`, or `nothing-to-verify`
+  — and `fixity_ok` is `true` only for `verified`. `/proof` renders a sentence for
+  each, translated in `es`, `fr` and `ar`, plus a fifth for a schema-1 attestation
+  still on disk after an upgrade, which it reads as *unstated* rather than
+  upgrading to *verified* by guesswork. Schema-1 signatures still verify: their
+  signed bytes are never given a `fixity` key.
+
+  The objection recorded on #205 was that saying "nothing to check" publishes the
+  absolute fact that the archive is empty. **Measured, the attestation already
+  published it**: `chain_head_summary` over an archive with no logs is `sha256("[]")`
+  (`4f53cda1…202b945`), identical for every empty archive, so `fixity_ok: true`
+  bought no privacy — it only made a signed document false. Refusing to attest an
+  empty archive would disclose the same thing by the attestation's absence.
+
+  `ledger attest-health` exits `0` for `nothing-to-verify` and `1` for `failed` or
+  `could-not-verify`: the published field is the statement, the exit code is the
+  alarm, and a fresh install's cron does not go red for holding nothing.
+
 ## [0.1.0] — 2026-09-02
 
 > **Note (2026-09-01):** this is the content of the first release, gathered from the
