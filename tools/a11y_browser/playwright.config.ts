@@ -26,6 +26,15 @@ export default defineConfig({
   // One cheap retry absorbs a rare cold-start/port flake without masking a real
   // regression, which reproduces on the retry too.
   retries: 1,
+  // ...but only because the run FAILS when that retry was needed. Playwright
+  // reports a test that failed and then passed on a retry as `flaky` and exits
+  // 0 unless told otherwise, so without this line the retry above would not
+  // "absorb" a flake, it would hide one: an intermittent failure would read as
+  // a green check with nothing to show for it but a log line. The retry still
+  // runs and `trace: "on-first-retry"` still captures the failed attempt; the
+  // verdict is red. Set unconditionally because `retries` is unconditional —
+  // a local run gets the same answer CI does. See #223.
+  failOnFlakyTests: true,
   reporter: process.env.CI ? [["github"], ["list"]] : "list",
   use: {
     baseURL: BASE_URL,
