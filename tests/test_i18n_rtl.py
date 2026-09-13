@@ -33,6 +33,8 @@ from ledger.ingest import Archive
 from ledger.render import _esc, _nav_html, _page
 from ledger.server import make_server
 
+from .conftest import record_body_gate_census
+
 _VAULT_KEY = "0123456789abcdef0123456789abcdef0123456789a="
 
 
@@ -391,16 +393,99 @@ _CONFIG_SENTINELS = {
 }
 
 #: route -> the sentinels that must appear un-wrapped in its `<main>`, verbatim.
-#: `/how-it-works` renders no config text at all, so its body must leak nothing.
-_SAFETY_PAGE_CONFIG_TEXT = {
+#: A route with an empty tuple renders no steward-authored config text at all, so
+#: its body must leak nothing.
+#:
+#: Widened 2026-09-13 from the three safety pages to every served HTML route whose
+#: body the gate can already judge. `test_the_body_gate_says_how_many_routes_it_judges`
+#: below is what keeps this honest: the three-route version of this dict was judging
+#: **3 of 17** served HTML routes and nothing said so.
+_BODY_GATE_CONFIG_TEXT = {
     "/about": ("Zzqabouttext",),
+    "/consent-status": (),
     "/governance": ("Zzqvettingtext",),
     "/how-it-works": (),
+    "/overview": (),
+    "/places": (),
+    "/status": (),
+    "/timeline": (),
 }
 
 #: route -> how many seam-resolved strings its `<main>` must carry. A body that
 #: rendered nothing would satisfy the leak assertion over an empty set.
-_SAFETY_PAGE_SEAM_STRINGS = {"/about": 3, "/governance": 3, "/how-it-works": 5}
+_BODY_GATE_SEAM_STRINGS = {
+    "/about": 3,
+    "/consent-status": 4,
+    "/governance": 3,
+    "/how-it-works": 5,
+    "/overview": 3,
+    "/places": 3,
+    "/status": 4,
+    "/timeline": 3,
+}
+
+#: Routes in the server's GET tables that answer with something other than an HTML
+#: page body — feeds, APIs and health. They are outside a prose gate by nature, and
+#: `test_machine_feeds_do_not_vary_by_language` already holds them to not varying by
+#: language at all. Named here so the census denominator cannot shrink by a page
+#: being quietly reclassified: the census asserts this set against what the running
+#: server actually serves.
+_MACHINE_ROUTES = frozenset(
+    {
+        "/api/records",
+        "/api/search",
+        "/api/search.csv",
+        "/feed.atom",
+        "/healthz",
+        "/oai",
+        "/proof/attestation.json",
+        "/robots.txt",
+        "/sitemap.xml",
+    }
+)
+
+#: Served HTML routes the body gate does NOT judge, each with the reason, measured
+#: on 2026-09-13 against this fixture. Self-limiting in both directions, which is
+#: the whole point: `test_every_route_named_unjudged_still_needs_to_be`
+#: re-runs the gate's own predicate over each one and fails when an entry stops
+#: being necessary, and the census fails on an HTML route that is in neither this
+#: dict nor `_BODY_GATE_CONFIG_TEXT`. An exemption has to earn its place on every
+#: run, or it is a hole with a comment over it.
+#:
+#: These are findings, not decisions. Each leak count is English prose reaching a
+#: reader who asked for es, fr or ar.
+_BODY_GATE_UNJUDGED = {
+    "/proof": (
+        "112 un-seamed words. `_handle_proof` writes the whole body as English "
+        "literals, including the hash-chain explanation and the sentinel-identity "
+        "audit description. Issue #225."
+    ),
+    "/transparency": (
+        "55 un-seamed words. Same shape as /proof: the legal-process and "
+        "warrant-canary page is English literals. Issue #225."
+    ),
+    "/": (
+        "3 un-seamed words: the `<h1>` is the literal 'Browse the archive'. The "
+        "rest of the body is seam-routed, so an ar reader gets an English heading "
+        "over an Arabic page. Issue #225."
+    ),
+    "/search": (
+        "3 un-seamed words — the same literal `<h1>` as `/`, from the same handler. Issue #225."
+    ),
+}
+
+#: Served HTML routes this fixture cannot reach, so the gate cannot judge them
+#: here. All five answer the shared 404 body, which itself carries 19 un-seamed
+#: English words — that body is a surface no route-level gate covers either.
+#: Self-limiting: the test below fails if any of these starts answering 200 on this
+#: fixture, because then it is judgeable and belongs above.
+_BODY_GATE_UNREACHABLE_IN_FIXTURE = {
+    "/contribute": "needs allow_contributions=True, which this fixture does not set",
+    "/edit": "needs an existing record and an edit token",
+    "/steward": "needs steward credentials",
+    "/steward/audit": "needs steward credentials",
+    "/withdraw": "needs an existing record",
+}
 
 
 @pytest.fixture
@@ -418,7 +503,7 @@ def _main_section(page: str) -> str:
     return page[start : page.index("</main>", start)]
 
 
-@pytest.mark.parametrize("path", sorted(_SAFETY_PAGE_CONFIG_TEXT))
+@pytest.mark.parametrize("path", sorted(_BODY_GATE_CONFIG_TEXT))
 def test_no_prose_reaches_a_safety_page_body_without_going_through_the_seam(
     sentinel_base: str, monkeypatch: pytest.MonkeyPatch, path: str
 ) -> None:
@@ -426,7 +511,7 @@ def test_no_prose_reaches_a_safety_page_body_without_going_through_the_seam(
     _status, page, _headers = _request(f"{sentinel_base}{path}?lang=en")
     main = _main_section(page)
 
-    expected = set(_SAFETY_PAGE_CONFIG_TEXT[path])
+    expected = set(_BODY_GATE_CONFIG_TEXT[path])
     words = _visible_unwrapped_words(main)
     assert expected <= words, (
         f"{path} does not carry the config text it is supposed to: expected "
@@ -442,7 +527,7 @@ def test_no_prose_reaches_a_safety_page_body_without_going_through_the_seam(
     )
 
 
-@pytest.mark.parametrize("path", sorted(_SAFETY_PAGE_SEAM_STRINGS))
+@pytest.mark.parametrize("path", sorted(_BODY_GATE_SEAM_STRINGS))
 def test_the_safety_page_gate_is_looking_at_a_body_with_text_in_it(
     sentinel_base: str, monkeypatch: pytest.MonkeyPatch, path: str
 ) -> None:
@@ -451,7 +536,7 @@ def test_the_safety_page_gate_is_looking_at_a_body_with_text_in_it(
     _status, page, _headers = _request(f"{sentinel_base}{path}?lang=en")
     main = _main_section(page)
 
-    expected = _SAFETY_PAGE_SEAM_STRINGS[path]
+    expected = _BODY_GATE_SEAM_STRINGS[path]
     assert main.count(i18n.PSEUDO_PREFIX) == expected, (
         f"{path} rendered {main.count(i18n.PSEUDO_PREFIX)} seam-resolved strings in "
         f"<main>, expected {expected}"
@@ -489,3 +574,124 @@ def test_a_safety_page_is_answered_by_the_catalog_the_reader_asked_for(
         assert translated != english, f"{key!r} is not translated in the {lang} catalog"
         assert _esc(translated) in body, f"{key!r} was not served on the {lang} {path} page"
         assert _esc(english) not in body, f"{key!r} was served in English on a {lang} page"
+
+
+# --- the census: how much of the site does the body gate actually judge? -----
+
+
+def _served_html_routes(base: str) -> set[str]:
+    """The routes in the server's own GET tables that answer with an HTML body.
+
+    Read from the handler tables rather than listed here, so a page added to the
+    server lands in this census on the day it is routed rather than on the day
+    somebody remembers to add it to a test.
+    """
+    from ledger.server import ArchiveRequestHandler
+
+    routed = set(ArchiveRequestHandler._GET_PAGES) | set(ArchiveRequestHandler._GET_QUERY_PAGES)
+    html = set()
+    for route in routed:
+        _status, body, headers = _request(f"{base}{route}?lang=en")
+        if "text/html" in headers.get("Content-Type", "") and '<main id="main"' in body:
+            html.add(route)
+    return html
+
+
+def test_the_body_gate_says_how_many_routes_it_judges(sentinel_base: str) -> None:
+    """Every served HTML route is judged, or named as unjudged with a reason.
+
+    The gate this file added in #221 was a hand-written set of three routes. The
+    server serves seventeen HTML pages. Nothing in the suite compared those two
+    numbers, so `/proof` and `/transparency` -- the pages an at-risk contributor
+    reads before deciding whether to hand this archive their material -- sat
+    outside it, fully English in every locale, with every required check green.
+
+    This is not a relaxation of the rule. It is the denominator the rule was
+    missing: an HTML route that is neither judged nor named here fails, so the
+    next page cannot join them silently.
+    """
+    served = _served_html_routes(sentinel_base)
+    judged = set(_BODY_GATE_CONFIG_TEXT)
+    named = set(_BODY_GATE_UNJUDGED) | set(_BODY_GATE_UNREACHABLE_IN_FIXTURE)
+
+    # Recorded, not printed. `print` here would go into the fixture's
+    # `redirect_stdout` sink and then into pytest's capture, so the census would
+    # exist and nobody would ever see it -- which is the defect this test is about,
+    # one level up. `pytest_terminal_summary` in tests/conftest.py reads this and
+    # puts the two numbers in every run's summary, pass or fail.
+    record_body_gate_census(
+        judged=len(judged),
+        served=len(served),
+        leaking=len(_BODY_GATE_UNJUDGED),
+        unreachable=len(_BODY_GATE_UNREACHABLE_IN_FIXTURE),
+    )
+
+    assert judged <= served, f"judged routes the server does not serve: {sorted(judged - served)}"
+    assert named <= served, f"named routes the server does not serve: {sorted(named - served)}"
+    assert judged.isdisjoint(named), f"a route both judged and excused: {sorted(judged & named)}"
+    assert served - judged - named == set(), (
+        f"served HTML route(s) this gate neither judges nor accounts for: "
+        f"{sorted(served - judged - named)}. Add the route to _BODY_GATE_CONFIG_TEXT "
+        "and _BODY_GATE_SEAM_STRINGS if its body is seam-routed, or to "
+        "_BODY_GATE_UNJUDGED with what it leaks and the issue that will close it."
+    )
+    assert set(_BODY_GATE_CONFIG_TEXT) == set(_BODY_GATE_SEAM_STRINGS), (
+        "a judged route must declare both its allowed config text and its seam count"
+    )
+
+
+def test_the_machine_route_set_is_what_the_server_actually_serves(sentinel_base: str) -> None:
+    """Guard the census's denominator.
+
+    Every route the census subtracts as "not a prose surface" is listed by hand in
+    `_MACHINE_ROUTES`. If a page were added to that list by mistake, the census
+    would shrink and report a better ratio over a smaller site -- a coverage number
+    that improves by looking at less is the failure this file is about.
+    """
+    from ledger.server import ArchiveRequestHandler
+
+    routed = set(ArchiveRequestHandler._GET_PAGES) | set(ArchiveRequestHandler._GET_QUERY_PAGES)
+    assert routed >= _MACHINE_ROUTES, f"not routed at all: {sorted(_MACHINE_ROUTES - routed)}"
+    assert routed - _MACHINE_ROUTES == _served_html_routes(sentinel_base), (
+        "_MACHINE_ROUTES no longer partitions the GET tables into feeds and pages"
+    )
+
+
+@pytest.mark.parametrize("path", sorted(_BODY_GATE_UNJUDGED))
+def test_every_route_named_unjudged_still_needs_to_be(
+    sentinel_base: str, monkeypatch: pytest.MonkeyPatch, path: str
+) -> None:
+    """Self-limiting exemptions: an entry that has stopped being needed fails.
+
+    Deliberately not an assertion that the page is broken -- it is an assertion
+    that the excuse is still load-bearing. The day `/proof` is routed through the
+    seam, this fails and whoever did the work moves it into the judged set, which
+    is where the gate then holds it forever.
+    """
+    _install_pseudolocale(monkeypatch)
+    status, page, _headers = _request(f"{sentinel_base}{path}?lang=en")
+    assert status == 200, f"{path} no longer answers 200 on this fixture"
+    leaked = (
+        _visible_unwrapped_words(_main_section(page))
+        - _INVARIANT_IN_EVERY_LANGUAGE
+        - set(_CONFIG_SENTINELS.values())
+    )
+    assert leaked, (
+        f"{path} no longer leaks un-seamed prose, so its entry in "
+        "_BODY_GATE_UNJUDGED is obsolete. Delete it and add the route to "
+        "_BODY_GATE_CONFIG_TEXT and _BODY_GATE_SEAM_STRINGS."
+    )
+
+
+@pytest.mark.parametrize("path", sorted(_BODY_GATE_UNREACHABLE_IN_FIXTURE))
+def test_every_route_named_unreachable_still_is(sentinel_base: str, path: str) -> None:
+    """The other half of the same rule.
+
+    A route excused as unreachable that starts answering 200 here is judgeable,
+    and leaving it excused would hide it behind a stale reason.
+    """
+    status, _page, _headers = _request(f"{sentinel_base}{path}?lang=en")
+    assert status != 200, (
+        f"{path} now answers 200 on this fixture, so the gate can judge it. Delete "
+        "its _BODY_GATE_UNREACHABLE_IN_FIXTURE entry and judge it."
+    )
