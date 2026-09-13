@@ -172,8 +172,12 @@ def record_body_gate_census(
 _FIXITY_CLAIM_CENSUS: dict[str, object] = {}
 
 
-def record_fixity_claim_census(*, backed: int, published: int, unbacked: list[str]) -> None:
-    _FIXITY_CLAIM_CENSUS.update(backed=backed, published=published, unbacked=unbacked)
+def record_fixity_claim_census(
+    *, backed: int, published: int, declared: list[str], undeclared: list[str]
+) -> None:
+    _FIXITY_CLAIM_CENSUS.update(
+        backed=backed, published=published, declared=declared, undeclared=undeclared
+    )
 
 
 def pytest_terminal_summary(terminalreporter: pytest.TerminalReporter) -> None:
@@ -217,11 +221,26 @@ def _report_fixity_claim_census(terminalreporter: pytest.TerminalReporter) -> No
         )
         return
     census = _FIXITY_CLAIM_CENSUS
-    unbacked = census["unbacked"]
-    assert isinstance(unbacked, list)
+    declared = census["declared"]
+    undeclared = census["undeclared"]
+    assert isinstance(declared, list)
+    assert isinstance(undeclared, list)
+    # Declared and undeclared are reported apart. They were one list, printed
+    # under the heading "declared in _UNBACKED_BY_DESIGN", so on the very run
+    # this census exists to catch — a surface regressing to a vacuous pass — the
+    # summary named the regressed surface as a declared decision (#208).
+    unbacked = len(declared) + len(undeclared)
     terminalreporter.write_line(
         f"fixity claim census: {census['backed']} of {census['published']} published "
         "fixity claim(s) are backed by a verification; an archive with nothing in it "
-        f"still reads as verified on {len(unbacked)} "
-        f"(declared in _UNBACKED_BY_DESIGN: {', '.join(unbacked)})"
+        f"still reads as verified on {unbacked}"
     )
+    terminalreporter.write_line(
+        f"fixity claim census: declared in _UNBACKED_BY_DESIGN: {', '.join(declared) or 'none'}"
+    )
+    if undeclared:
+        terminalreporter.write_line(
+            "fixity claim census: UNDECLARED — reads as verified over nothing with no "
+            f"recorded decision: {', '.join(undeclared)}",
+            red=True,
+        )

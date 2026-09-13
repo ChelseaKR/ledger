@@ -291,9 +291,14 @@ def test_the_census_of_published_fixity_claims(census: dict[str, tuple[str, str]
     """
     unbacked = {label for label, (empty, healthy) in census.items() if empty == healthy}
     backed = len(census) - len(unbacked)
-    record_fixity_claim_census(backed=backed, published=len(census), unbacked=sorted(unbacked))
-
     undeclared = unbacked - set(_UNBACKED_BY_DESIGN)
+    record_fixity_claim_census(
+        backed=backed,
+        published=len(census),
+        declared=sorted(unbacked & set(_UNBACKED_BY_DESIGN)),
+        undeclared=sorted(undeclared),
+    )
+
     assert not undeclared, (
         "these surfaces render the same fixity verdict over an archive with nothing "
         "in it as over a verified one, and no decision records why: "
