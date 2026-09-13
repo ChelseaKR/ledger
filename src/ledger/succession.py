@@ -46,10 +46,11 @@ from ledger.models import canonical_json
 # archive with no bags and deliberately left this document's fields alone, because
 # moving a version is a different kind of change from rewording a paragraph. The
 # reason to move it now is that the argument for holding it — the one
-# :mod:`ledger.attestation` holds for the signed public attestation (#205) — does
+# :mod:`ledger.attestation` held for the signed public attestation until #205 — does
 # not apply here at all. That argument is a *disclosure*: publishing "there was
 # nothing to check" tells an anonymous reader the archive is empty, which is the
-# absolute count the no-outing rule keeps steward-only. This manifest already
+# absolute count the no-outing rule keeps steward-only. (#205 then measured that the
+# attestation's chain head had already published it.) This manifest already
 # hands its reader ``total_records`` and the whole per-record ``records`` array in
 # the same file. There is no count here left to protect, so the only cost of
 # saying the honest third thing is the version, and the reader paying it — a

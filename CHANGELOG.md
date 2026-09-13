@@ -32,6 +32,11 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   served to the steward or monitor grant that may hear it), and the signed
   attestation's `fixity_ok` (#205).
 
+  **Then 10 of 11**, once #205 landed (#230): the attestation now distinguishes an
+  empty archive from a verified one, so its exemption went stale and the
+  self-limiting check failed on the merged head until the entry was deleted.
+  `/healthz`'s anonymous `all_verified` is the one declared exception left.
+
   The number is now a gate rather than a finding. `tests/test_fixity_claim_census.py`
   walks the AST of `src/ledger` for every call to the five functions that can
   produce a fixity verdict and requires each call site to be mapped to a probed

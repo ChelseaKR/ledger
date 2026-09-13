@@ -20,10 +20,10 @@ were already published.
 
 ``all_fixity_ok`` also keeps its exact meaning, but the manifest no longer leaves
 the honest verdict unpublished: closing #208 added ``fixity_status`` beside it at
-``HANDOFF_SCHEMA_VERSION`` 2. The reason that was safe here and is not safe for
-the signed public attestation (#205) is that this document already hands its
-reader ``total_records`` and the whole per-record inventory, so saying "there was
-nothing to check" discloses nothing it had not already disclosed.
+``HANDOFF_SCHEMA_VERSION`` 2. That was safe here before #205 settled the same
+question for the signed public attestation, because this document already hands
+its reader ``total_records`` and the whole per-record inventory, so saying "there
+was nothing to check" discloses nothing it had not already disclosed.
 
 These also pin that the /status page goes through the gettext seam at all. Its
 sentences were English literals in ``server.py``, so an Arabic reader got an
@@ -258,8 +258,8 @@ def test_the_manifest_publishes_the_three_state_verdict_at_schema_2(
 
     This replaces ``test_the_manifest_schema_version_does_not_move``, which pinned
     schema 1 on purpose while the decision was open. It is now made: the reason
-    :mod:`ledger.attestation` holds the same line for the *public* attestation
-    (#205) is a disclosure — publishing "there was nothing to check" tells an
+    :mod:`ledger.attestation` held the same line for the *public* attestation until
+    #205 was a disclosure — publishing "there was nothing to check" tells an
     anonymous reader the archive is empty. This document hands its reader
     ``total_records`` and the whole ``records`` array in the same file, so there
     is no count here left to protect, and the reader paying the version cost is a

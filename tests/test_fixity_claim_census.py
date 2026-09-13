@@ -221,13 +221,6 @@ _UNBACKED_BY_DESIGN: dict[str, str] = {
         "entry's other half: the leak and the lie cannot both be closed here, and "
         "this repository closes the leak."
     ),
-    "attestation fixity_ok (published at /proof)": (
-        "Issue #205, and the same trade as the row above: saying 'there was "
-        "nothing to check' in a signed, public document states to anyone that the "
-        "archive holds zero records. It also needs ATTESTATION_SCHEMA_VERSION 2. "
-        "That is an owner's policy call about what ledger publishes about itself, "
-        "recorded at #205 and pinned by tests/test_audit_missing_bags.py."
-    ),
 }
 
 
