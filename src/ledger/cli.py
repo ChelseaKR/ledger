@@ -69,7 +69,12 @@ from ledger.ai.limits import (
     RateLimiter,
 )
 from ledger.ai.provenance import resolve_commit as resolve_ai_commit
-from ledger.attestation import build_attestation, publish_attestation, sign_attestation
+from ledger.attestation import (
+    FixityDisclosure,
+    build_attestation,
+    publish_attestation,
+    sign_attestation,
+)
 from ledger.backup import create_backup, prune_backups, restore_backup, verify_backup
 from ledger.config import Config, StorageLocation
 from ledger.errors import LedgerError
@@ -1716,6 +1721,23 @@ def _cmd_checkup(args: argparse.Namespace) -> int:
     return report.exit_code
 
 
+#: What ``attest-health`` prints for each published disclosure. "healthy" used to
+#: be printed for an archive with no bags at all, because it was read off
+#: ``fixity_ok``, which was the vacuous fold (#205).
+_ATTEST_HEALTH_SUMMARY: dict[FixityDisclosure, str] = {
+    FixityDisclosure.VERIFIED: "healthy",
+    FixityDisclosure.FAILED: "FIXITY ISSUES PRESENT",
+    FixityDisclosure.COULD_NOT_VERIFY: "SOME BAGS COULD NOT BE VERIFIED",
+    FixityDisclosure.NOTHING_TO_VERIFY: "nothing to verify — this archive holds no records",
+    FixityDisclosure.UNSTATED: "state not published by this attestation",
+}
+
+#: The disclosures a scheduled run must not alarm on. An empty archive is a
+#: legitimate state for a fresh install, not a fault; a bag that could not be
+#: verified is a fault even though it is not a failure.
+_ATTEST_HEALTH_QUIET = frozenset({FixityDisclosure.VERIFIED, FixityDisclosure.NOTHING_TO_VERIFY})
+
+
 def _cmd_attest_health(args: argparse.Namespace) -> int:
     """``attest-health`` — publish a signed, dated transparency attestation (EXP-01).
 
@@ -1730,6 +1752,17 @@ def _cmd_attest_health(args: argparse.Namespace) -> int:
     alerts a steward the same way ``ledger audit`` does — an unsigned or unhealthy
     attestation is still published (a health problem should be visible, not
     hidden by a failed publish step).
+
+    **An archive with nothing in it is not a problem, and does not alarm.** Since
+    #205 an empty archive publishes ``fixity: "nothing-to-verify"`` and therefore
+    ``fixity_ok: false``, so the old ``0 if attestation.fixity_ok else 1`` would
+    have turned every freshly installed archive's nightly cron red until its first
+    record landed. The exit code is an *alarm* and the published field is a
+    *statement*: they are allowed to differ, and here they must. ``verified`` and
+    ``nothing-to-verify`` exit ``0``; ``failed`` and ``could-not-verify`` exit
+    ``1``, the two cases where bytes this archive holds are not accounted for.
+    That split is what makes saying the honest thing affordable — it is the cost
+    #205 recorded against refusing to attest at all, removed rather than paid.
     """
     archive = _open_archive(Path(args.root))
     now = args.now if args.now else now_iso()
@@ -1742,10 +1775,10 @@ def _cmd_attest_health(args: argparse.Namespace) -> int:
             print(f"attest-health: signing failed: {exc}", file=sys.stderr)
             return 1
     out_path = publish_attestation(archive, attestation)
-    status = "healthy" if attestation.fixity_ok else "FIXITY ISSUES PRESENT"
+    status = _ATTEST_HEALTH_SUMMARY[attestation.fixity]
     signed = "signed" if attestation.signature else "UNSIGNED"
     print(f"attest-health: {status}, {signed}, published to {out_path}", file=sys.stderr)
-    return 0 if attestation.fixity_ok else 1
+    return 0 if attestation.fixity in _ATTEST_HEALTH_QUIET else 1
 
 
 def _cmd_demo(args: argparse.Namespace) -> int:

@@ -71,7 +71,7 @@ from ledger import (
 )
 from ledger.access import anonymous, disclose, is_listable
 from ledger.access.grants import load_grants, load_revocations, verify_grant_token
-from ledger.attestation import HealthAttestation, latest_attestation_path
+from ledger.attestation import FixityDisclosure, HealthAttestation, latest_attestation_path
 from ledger.errors import (
     AccessDenied,
     LedgerError,
@@ -298,6 +298,20 @@ _STATIC_FILES: dict[str, Path] = _load_static_files()
 # and the contributor status page so a steward can tell a subject's objection from a
 # contributor's own request at a glance (user research B3).
 # --- the request handler ----------------------------------------------------
+
+
+#: Which sentence ``/proof`` renders for each published fixity disclosure (#205).
+#: A mapping rather than a chain of conditionals so that adding a state to
+#: :class:`ledger.attestation.FixityDisclosure` without deciding what to *say*
+#: about it fails at the lookup, loudly, instead of silently falling through to
+#: the reassuring branch.
+_PROOF_HEALTH_KEYS: dict[FixityDisclosure, str] = {
+    FixityDisclosure.VERIFIED: "proof_attested_ok",
+    FixityDisclosure.FAILED: "proof_attested_failed",
+    FixityDisclosure.COULD_NOT_VERIFY: "proof_attested_could_not_verify",
+    FixityDisclosure.NOTHING_TO_VERIFY: "proof_attested_nothing",
+    FixityDisclosure.UNSTATED: "proof_attested_unstated",
+}
 
 
 class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
@@ -2531,7 +2545,13 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
                 "<code>ledger attest-health</code></p>"
             )
         else:
-            health_key = "proof_attested_ok" if attestation.fixity_ok else "proof_attested_failed"
+            # Four published states plus "an older ledger wrote this", not two.
+            # `fixity_ok` was the whole reading until #205, and it is the fold that
+            # is vacuously true over an archive with no bags — so this page told an
+            # anonymous visitor that an archive holding nothing had "passed every
+            # integrity check". It is the page an at-risk contributor reads before
+            # deciding whether to hand this archive their material.
+            health_key = _PROOF_HEALTH_KEYS[attestation.fixity]
             # Two branches, not three: `HealthAttestation.from_json` — the only
             # way an attestation reaches this handler — rejects any signature
             # whose format is not "ssh", so a signed attestation always has a

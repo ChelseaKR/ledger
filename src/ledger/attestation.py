@@ -41,6 +41,7 @@ import shutil
 import subprocess
 import tempfile
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 
 from ledger import __version__ as _LEDGER_VERSION
@@ -53,6 +54,7 @@ from ledger.models import PremisEvent, canonical_json
 __all__ = [
     "ATTESTATION_SCHEMA_VERSION",
     "SIGNATURE_NAMESPACE",
+    "FixityDisclosure",
     "HealthAttestation",
     "build_attestation",
     "chain_head_summary",
@@ -61,7 +63,45 @@ __all__ = [
 
 # Bumped whenever the published shape changes, so a third party's verifier can tell
 # which fields to expect (evolvability, the same convention as Config/HandoffManifest).
-ATTESTATION_SCHEMA_VERSION: int = 1
+#
+# **2 adds ``fixity`` and redefines ``fixity_ok``** (#205). See
+# :class:`FixityDisclosure` for what is now said, and
+# ``docs/VERIFYING-ATTESTATIONS.md`` for what a verifier written against 1 should do.
+ATTESTATION_SCHEMA_VERSION: int = 2
+
+
+class FixityDisclosure(StrEnum):
+    """What a published attestation says about the archive's integrity.
+
+    Four words, because a reader needs four. :class:`ledger.fixity.FixityStatus`
+    is right to hold three states, and ``/status`` already found that an archive
+    with no bags and an archive with one unverifiable bag are both ``UNVERIFIED``
+    and are not the same sentence: the first has nothing to check, the second has
+    something it could not check. This is the same split, in a published
+    vocabulary.
+
+    Until schema 2 an attestation said one thing, ``fixity_ok``, and over an
+    archive holding **no bags at all** it said :data:`True` — vacuously, since
+    ``all(...)`` is true over an empty sequence — which ``/proof`` rendered to an
+    anonymous visitor as *"this archive passed every integrity check"* (#205).
+    """
+
+    #: At least one bag was checked, and every checked bag passed.
+    VERIFIED = "verified"
+    #: At least one bag failed its checksums.
+    FAILED = "failed"
+    #: Bags exist, and at least one declared no files to check, so it could not be
+    #: verified. Not a failure and not a pass — the state #206 added the vocabulary
+    #: for, and the state an emptied manifest produces.
+    COULD_NOT_VERIFY = "could-not-verify"
+    #: The archive holds no bags at all. There was nothing to check, so nothing was
+    #: checked, and this attestation makes no claim about any stored byte.
+    NOTHING_TO_VERIFY = "nothing-to-verify"
+    #: Read back from a schema-1 document, which had no field that could say which
+    #: of the four this was. Never produced by :func:`build_attestation`; see
+    #: :meth:`HealthAttestation.from_json`.
+    UNSTATED = "unstated"
+
 
 # The ``-n`` namespace ``ssh-keygen -Y sign``/``verify`` is scoped to. Binding it
 # stops a health-attestation signature from being replayed as, say, a git commit
@@ -207,12 +247,20 @@ class HealthAttestation:
     software_version: str
     fixity_ok: bool
     chain_head_summary: str
+    fixity: FixityDisclosure = FixityDisclosure.UNSTATED
     signature: str | None = None
     signature_format: str | None = None
 
     def _unsigned_dict(self) -> dict[str, object]:
-        """The fields a signature covers — everything except the signature itself."""
-        return {
+        """The fields a signature covers — everything except the signature itself.
+
+        ``fixity`` appears only at schema 2 and above. This is not a style choice:
+        a schema-1 attestation read back off disk was signed over bytes that had
+        no such key, so emitting one here would change the payload and make every
+        previously published signature fail to verify. The version decides the
+        shape, and the shape decides the bytes.
+        """
+        body: dict[str, object] = {
             "schema_version": self.schema_version,
             "archive_name": self.archive_name,
             "generated_at": self.generated_at,
@@ -220,6 +268,9 @@ class HealthAttestation:
             "fixity_ok": self.fixity_ok,
             "chain_head_summary": self.chain_head_summary,
         }
+        if self.schema_version >= 2:
+            body["fixity"] = str(self.fixity)
+        return body
 
     def signing_payload(self) -> bytes:
         """The exact bytes a signature is computed over (canonical JSON, UTF-8).
@@ -249,23 +300,52 @@ class HealthAttestation:
             software_version=self.software_version,
             fixity_ok=self.fixity_ok,
             chain_head_summary=self.chain_head_summary,
+            fixity=self.fixity,
             signature=signature,
             signature_format=signature_format,
         )
 
     @classmethod
     def from_json(cls, text: str) -> HealthAttestation:
-        """Reconstruct an attestation from :meth:`to_json` output."""
+        """Reconstruct an attestation from :meth:`to_json` output.
+
+        **Both published schema versions are accepted**, and the reason is not
+        politeness to old files. A steward upgrades ledger between two runs of the
+        ``ledger attest-health`` cron, so the attestation on disk is schema 1 for
+        as long as that cadence lasts. Rejecting it would make ``/proof`` say *"not
+        yet attested"* about an archive that has published an attestation — a
+        second false statement, introduced by the change meant to remove one, on
+        the page an at-risk contributor reads before deciding.
+
+        A schema-1 document carries no field that can say which of
+        :class:`FixityDisclosure`'s four cases it was, so it is read as
+        :data:`FixityDisclosure.UNSTATED` rather than being upgraded by guesswork.
+        ``fixity_ok: true`` in a v1 document means "no stored payload failed",
+        which is exactly the sentence that cannot tell a verified archive from an
+        empty one; inventing ``verified`` from it here would launder the vacuity
+        this version exists to end.
+        """
         data = json.loads(text)
         if not isinstance(data, dict):
             raise ValueError("attestation JSON must be an object")
-        if type(data.get("schema_version")) is not int or data["schema_version"] != 1:
+        if type(data.get("schema_version")) is not int or data["schema_version"] not in (1, 2):
             raise ValueError("unsupported attestation schema_version")
         if type(data.get("fixity_ok")) is not bool:
             raise ValueError("attestation field 'fixity_ok' must be a boolean")
         chain_head = _required_string(data, "chain_head_summary")
         if len(chain_head) != 64 or any(c not in "0123456789abcdef" for c in chain_head):
             raise ValueError("attestation chain_head_summary must be a SHA-256 hex digest")
+        fixity = FixityDisclosure.UNSTATED
+        if data["schema_version"] >= 2:
+            raw = data.get("fixity")
+            # An unknown word is refused rather than degraded to UNSTATED: a schema
+            # this build does not understand must not be rendered as though it had
+            # merely omitted the field.
+            if not isinstance(raw, str) or raw not in tuple(FixityDisclosure):
+                raise ValueError("attestation field 'fixity' must be a known disclosure")
+            fixity = FixityDisclosure(raw)
+            if fixity is FixityDisclosure.UNSTATED:
+                raise ValueError("schema 2 attestations must state a fixity disclosure")
         signature, signature_format = _parse_signature(data.get("signature"))
         return cls(
             schema_version=data["schema_version"],
@@ -274,6 +354,7 @@ class HealthAttestation:
             software_version=_required_string(data, "software_version"),
             fixity_ok=data["fixity_ok"],
             chain_head_summary=chain_head,
+            fixity=fixity,
             signature=signature,
             signature_format=signature_format,
         )
@@ -286,36 +367,54 @@ def build_attestation(archive: Archive, *, now: str) -> HealthAttestation:
     ``ledger audit`` — this re-hashes every stored payload and is meant to be run
     on a schedule, not per HTTP request (see the module docstring).
 
-    ``fixity_ok`` is now computed from :class:`ledger.fixity.FixityStatus` rather than
-    ``all(report.ok for ...)``. The change that matters is at the *bag* level: a bag
-    that survived structural validation while declaring **no files to check** used to
-    fold into the `all(...)` as a pass, so an archive whose manifests had been emptied
-    could still be signed and published as ``fixity_ok: true``. Such a bag is now
-    ``UNVERIFIED`` and this refuses to call it healthy.
+    **An archive with nothing in it no longer attests that it passed (#205).**
+    ``fixity`` is the four-state :class:`FixityDisclosure`, and ``fixity_ok`` is
+    now ``fixity is VERIFIED`` — so an archive holding no bags publishes
+    ``nothing-to-verify`` with ``fixity_ok: false``, rather than the ``true`` that
+    ``all(...)`` returns over an empty sequence and ``/proof`` rendered as *"this
+    archive passed every integrity check"*.
 
-    **The genuinely-empty archive is deliberately left alone here, and it is an open
-    question.** An archive that holds no bags at all still publishes
-    ``fixity_ok: true``, which is vacuously true and reads on ``/proof`` as "this
-    archive passed every integrity check". Saying the honest third thing ("there was
-    nothing to check") would mean a new field, and therefore
-    :data:`ATTESTATION_SCHEMA_VERSION` 2 and a break for every third-party verifier —
-    and it would publish, to anyone, the absolute fact that the archive is empty,
-    which is the anti-enumeration line this module's docstring exists to hold. That
-    trade is the owner's to make, not this function's; it is recorded at issue #205
-    and ``tests/test_audit_missing_bags.py`` pins the current behaviour on purpose.
+    The objection this overturns was a disclosure, not a contract: saying "there
+    was nothing to check" states that the archive holds zero records, and absolute
+    counts are steward-only (P2-2) because a public counter dates each deposit.
+    **This document already gives that away.** ``chain_head_summary`` over an
+    archive with no logs is the SHA-256 of ``[]`` —
+    ``4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`` — an
+    identical constant for every empty archive, in an attestation that is
+    published to anyone and signed. Anyone who can read this open-source
+    repository can already compute it and compare. ``fixity_ok: true`` therefore
+    bought no privacy at all; it only cost a false statement in a signed document,
+    on the page an at-risk contributor reads before deciding whether to hand this
+    archive their material.
+
+    Refusing to attest an empty archive (the third option weighed on #205) does
+    not avoid the disclosure either: an archive that publishes no attestation
+    until its first record has dated that record to the attestation cadence by
+    the attestation's *absence*, exactly as precisely, while also handing a fresh
+    install a failing cron job.
     """
     statuses = [report.status for _name, report in archive.audit_fixity()]
-    # `all(...)` is True over an empty list. That vacuity is now confined to exactly
-    # one case — an archive with no bags whatsoever — because every OTHER way of
-    # reaching a report that checked nothing (an emptied manifest, a bag deleted from
-    # under `records/`) is a non-VERIFIED status that this rejects.
-    fixity_ok = all(status is FixityStatus.VERIFIED for status in statuses)
+    if not statuses:
+        fixity = FixityDisclosure.NOTHING_TO_VERIFY
+    elif any(status is FixityStatus.FAILED for status in statuses):
+        fixity = FixityDisclosure.FAILED
+    elif all(status is FixityStatus.VERIFIED for status in statuses):
+        fixity = FixityDisclosure.VERIFIED
+    else:
+        fixity = FixityDisclosure.COULD_NOT_VERIFY
     return HealthAttestation(
         schema_version=ATTESTATION_SCHEMA_VERSION,
         archive_name=archive.config.archive_name,
         generated_at=now,
         software_version=_LEDGER_VERSION,
-        fixity_ok=fixity_ok,
+        # Redefined at schema 2, deliberately and under a moved version: in schema
+        # 1 this was `all(status is VERIFIED for ...)`, which is the fold that is
+        # vacuously true over no bags. A verifier written against schema 1 that
+        # ignores `schema_version` now reads `false` over an empty archive and may
+        # alarm. That is the correct direction to be wrong: alarming that nothing
+        # was verified is safe, and reassuring someone that everything was is not.
+        fixity_ok=fixity is FixityDisclosure.VERIFIED,
+        fixity=fixity,
         chain_head_summary=chain_head_summary(archive),
     )
 
