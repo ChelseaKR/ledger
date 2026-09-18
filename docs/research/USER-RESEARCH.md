@@ -42,7 +42,7 @@ experience does not yet let the people that promise is for actually use it.**
   failures cluster precisely on two gaps: **you can't retrieve the content**, and
   **contributors have no agency** (no contribute path, no way to withdraw consent).
 - **Two genuine integrity/honesty failures** (not polish) were found:
-  1. A record labelled **"sealed until 2030" is served in full to stewards in 2026** with no
+  1. A record labeled **"sealed until 2030" is served in full to stewards in 2026** with no
      enforcement, notice, or logging — caught independently by Aisha, Sam, and Riley. *(Fixed
      in this cycle — see §9.)*
   2. The documented **"revocable consent" promise has no mechanism on the site at all.**
@@ -139,12 +139,12 @@ explicit, logged break-glass exception and an on-screen "sealed until \<date\>" 
 
 ### C4 — Records cannot be retrieved: you can read the label but not open the can
 *(Lupe, Eleanor — the two lowest, both failed)*
-The catalogue entry shows, but the **actual file content cannot be opened, viewed, or
+The catalog entry shows, but the **actual file content cannot be opened, viewed, or
 downloaded**; the filename is an inert false affordance. Lupe: *"I tapped the filename.
 Nothing. That's a design lie."* Eleanor: *"It dangled the flyer in front of me and then
 wouldn't let me have it."*
 → **Provide a real download/inline-render link for permitted content (with a fixity-ok badge);
-where an original artifact exists, surface the scan with the transcription clearly labelled.**
+where an original artifact exists, surface the scan with the transcription clearly labeled.**
 
 ---
 
@@ -173,7 +173,7 @@ where an original artifact exists, surface the scan with the transcription clear
 *(strong for screen-reader/keyboard; failing for linguistic access and content retrieval)*
 
 **Genuinely strong (Jordan, 4/5):** first-focusable skip link to `#main`; `lang`; unique
-titles; proper landmarks; one `h1` with clean heading order; labelled search; captioned table
+titles; proper landmarks; one `h1` with clean heading order; labeled search; captioned table
 with `scope`; descriptive links; no positive `tabindex`; strong `:focus-visible`;
 reduced-motion; **zero JavaScript** — *"the calmest thing a screen-reader user can be handed."*
 
@@ -245,7 +245,7 @@ slightly chatty about what you deposited."*
 | Pri | Effort | Recommendation |
 |---|---|---|
 | **P0** | medium | **Enforce temporal seals** for all tiers until the date passes, with logged break-glass + on-screen notice. *(✅ done — §9)* |
-| **P0** | large | **Contributor agency**: per-record "manage/withdraw consent" request flow with claim-token verification, acknowledgement, response-time + emergency path. |
+| **P0** | large | **Contributor agency**: per-record "manage/withdraw consent" request flow with claim-token verification, acknowledgment, response-time + emergency path. |
 | **P0** | medium | **Make content retrievable**: real download/inline-render for permitted files + fixity badge; surface originals where they exist. |
 | **P0** | medium | **Web-visible safety surface**: plain-language "how this protects you / how to contribute" + About/Governance naming operators; disclose that stewards can read sealed *content*; web no-outing proof. |
 | **P1** | small | Replace raw-JSON "Status" with an accessible HTML health page; per-record fixity/"last verified" badge; keep JSON at `/healthz`. |
@@ -297,7 +297,7 @@ The three items previously deferred are done:
   closed: the absolute counts (which include sealed records) are gated to a steward grant; outsiders
   get only `status` + `all_verified`.
 - **WCAG 2.2 AA contrast.** No longer "owed" — `accessibility_check.audit_css_contrast` measures
-  every CSS colour pair against AA (4.5:1 text, 3:1 UI) and **fails the gate on any regression**.
+  every CSS color pair against AA (4.5:1 text, 3:1 UI) and **fails the gate on any regression**.
   All pairs pass with margin; the ACR's 1.4.3 / 1.4.11 / 302.2 rows are now "Supports" (45 Supports,
   7 Partially, 0 Does-Not, all genuinely pre-1.0 items).
 - **Separately-encrypted payload tier.** Absolute-`SEALED` **payload files** are now encrypted at

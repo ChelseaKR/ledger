@@ -68,7 +68,7 @@ to PR-merge rather than commit-to-deploy.
 | Deployment Frequency | ≥ weekly per active repo | **13 merges to `main` in 17 days** (~5.4/week) — above floor | health signal |
 | Change Lead Time (PR open → merge) | P90 < 1 day | **All PRs: P90 ≈ 327 h** (13.6 d), pulled up entirely by 2 Dependabot PRs (#1, #3) that sat unmerged for ~13.6 days before being batched-merged with other work, not by review friction. **Excluding Dependabot bumps (10 authored PRs): P90 ≈ 23.2 h, median ≈ 0.7 h** — inside the floor. | health signal — see note below |
 | Change Fail Rate | < 15% (alert > 10%) | **N/A** — no deploy/release events to compute a failure rate against (see "unusual shape" above); 0 revert commits and 0 GitHub issues opened against `main` in this window is the closest proxy, and it is clean, but it is not the metric | health signal, N/A pending REL-08 |
-| Failed-Deployment Recovery Time | < 1 day (alert if any incident > 4h) | **N/A** — no incidents recorded (no GitHub issues labelled `incident`, none opened at all in this window); no release to recover from a bad state of | health signal, N/A pending REL-08 |
+| Failed-Deployment Recovery Time | < 1 day (alert if any incident > 4h) | **N/A** — no incidents recorded (no GitHub issues labeled `incident`, none opened at all in this window); no release to recover from a bad state of | health signal, N/A pending REL-08 |
 | Deployment Rework Rate *(2024 metric)* | < 10% (alert > 5%) | **N/A** — no deploy-tracking to classify a merge as planned vs. unplanned-fix against | health signal, N/A pending REL-08 |
 
 **Note on the Dependabot outlier.** #1 and #3 (`actions/upload-artifact`,

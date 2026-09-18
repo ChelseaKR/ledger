@@ -1,7 +1,7 @@
 """Tests for the collection overview (``/overview``).
 
 An at-a-glance finding aid: the total number of *public* records, the top subjects/
-types/languages as browse links, and the date span. It must summarise only what is
+types/languages as browse links, and the date span. It must summarize only what is
 publicly visible, so a sealed record never adds to a count (no-outing rule / P2-2).
 """
 
@@ -77,7 +77,7 @@ def _get(base: str, path: str) -> str:
         return resp.read().decode("utf-8")
 
 
-def test_overview_summarises_only_public_records(server_base: str) -> None:
+def test_overview_summarizes_only_public_records(server_base: str) -> None:
     body = _get(server_base, "/overview")
     # Three public records, the date span across them, and facet browse links.
     assert "3 public record(s)." in body

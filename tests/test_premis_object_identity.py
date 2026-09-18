@@ -321,7 +321,7 @@ def test_object_identifier_type_is_explicit_or_safely_inferred() -> None:
 # --- the on-disk shape existing logs hash-chain over is unchanged -------------------
 
 
-def test_an_untyped_event_serialises_exactly_as_before_so_old_chains_still_verify() -> None:
+def test_an_untyped_event_serializes_exactly_as_before_so_old_chains_still_verify() -> None:
     event = PremisEvent(
         event_type=PremisEventType.FIXITY_CHECK,
         agent="ledger",

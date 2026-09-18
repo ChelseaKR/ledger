@@ -7,7 +7,7 @@
 > exists to pressure-test ledger from every stakeholder angle at once; it is **not**
 > evidence of demand, adoption, or safety, and it does **not** substitute for real
 > discovery with the people the archive is for. Treat every "quote" as a hypothesis
-> to validate, not a finding. The synthetic personas are labelled exactly the way
+> to validate, not a finding. The synthetic personas are labeled exactly the way
 > ledger labels its synthetic test fixtures and sentinel identities
 > (`tests/fixtures/`, `tests/test_no_outing.py`) — a fiction used to exercise a real
 > system so that a test for a leak can never itself become a leak.
@@ -410,7 +410,7 @@ Each card is the simulated interview compressed to five lines: **Goal · Values 
 - **Goal.** Browse, search, and read a record non-visually, and *trust* the
   content-warning before the material renders.
 - **Values today.** Genuinely strong: skip link, clean landmarks and heading order, one
-  `h1`, labelled search, a captioned data-table equivalent with `<th scope>`, descriptive
+  `h1`, labeled search, a captioned data-table equivalent with `<th scope>`, descriptive
   links, no positive `tabindex`, strong focus-visible, reduced-motion, zero JavaScript —
   the calmest thing a screen-reader user can be handed. The CW interstitial is
   `role="alert"` with the warning as the page `h1`, announced on load. WCAG 2.2 AA is a

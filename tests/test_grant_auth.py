@@ -306,7 +306,7 @@ def test_no_secret_configured_rejects_every_token(
 def test_grant_use_is_audited_without_the_token(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """An honoured grant use is logged with the subject + route class, never the token."""
+    """An honored grant use is logged with the subject + route class, never the token."""
     monkeypatch.setenv("LEDGER_GRANT_SECRET", _SECRET.decode())
     archive, rid = _build_archive(tmp_path)
     httpd = make_server(archive, host="127.0.0.1", port=0, grants_path=_write_grants(tmp_path))

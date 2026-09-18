@@ -4,7 +4,7 @@ Every other proof in this repository runs on fixtures ledger wrote itself. That 
 closed loop: the fixtures encode the same assumptions as the code, so they can only
 ever confirm them. `make demo` is honest about being synthetic, but "synthetic and
 honest about it" still leaves the central preservation claim untested against the
-thing it exists for — real files, which arrive wrapped, truncated, mislabelled,
+thing it exists for — real files, which arrive wrapped, truncated, mislabeled,
 obsolete, and named by someone who was not thinking about BagIt.
 
 This is the write-up of running the whole ingest pipeline over a real corpus.
@@ -42,7 +42,7 @@ failed to understand.
 | | |
 | --- | --- |
 | **Source** | [Open Preservation Foundation `format-corpus`](https://github.com/openpreserve/format-corpus) |
-| **Licence** | CC0 unless otherwise stated (per the corpus README) |
+| **License** | CC0 unless otherwise stated (per the corpus README) |
 | **Pinned at** | commit `366f068cec399d0cdfd61fa473de3ab6dc858098` |
 | **Sample** | 679 files, 302 MB (every file ≤ 5 MB; the full corpus is ~800 MB) |
 | **Provenance** | every file verified against its git blob SHA-1 at fetch |
@@ -100,7 +100,7 @@ material than it caught.
 
 This is structural, not a missing table row: `at_risk` is a property of a *known*
 registry entry, and the registry deliberately reserves the flag for formats it
-recognises. An obsolete format the registry has never heard of therefore lands in the
+recognizes. An obsolete format the registry has never heard of therefore lands in the
 one bucket that is explicitly *not* at-risk. The formats most likely to be obsolete
 are exactly the formats a small curated registry is least likely to know.
 
@@ -135,18 +135,18 @@ run, so a regression shows up as a falling count rather than as silence.
 18 files. JP2, JPX, JPM, MJ2, and bare codestreams were all recorded as
 `application/octet-stream`, basis `unknown`.
 
-This is the format most library and museum digitisation programmes write their
+This is the format most library and museum digitization programs write their
 *preservation masters* in. A digital-preservation tool that cannot name it is blind
 to the files an archive most cares about keeping. `file(1)` identifies them without
 difficulty ("JPEG 2000 Part 1 (JP2)").
 
-The cause: all four container flavours open with the same signature box and differ
+The cause: all four container flavors open with the same signature box and differ
 only in the `ftyp` brand at offset 20, so identifying them means reading *past* the
 magic number — which the fixed-offset signature table could not express.
 
 **Fixed.** All five now identified by signature, with PUIDs verified against the
 DROID signature file (V120): `x-fmt/392`, `fmt/151`, `fmt/463`, `fmt/337`,
-`fmt/1794`. An unrecognised brand degrades to JP2 rather than to `unknown`.
+`fmt/1794`. An unrecognized brand degrades to JP2 rather than to `unknown`.
 
 ### 4. Twenty real PDFs were unidentified because their header was not at byte 0
 
@@ -308,7 +308,7 @@ the three escapes the RFC defines and leaves every other `%` alone, so a bag wri
 before this change keeps validating untouched. A general percent-decoder would have
 turned a pre-migration payload named `%41` into a lookup for `A` — corrupting the read
 of every existing bag in order to fix the write of new ones. For an archive that wants
-unambiguous manifests, `bag.migrate_manifest_encoding(bag_dir)` re-serialises the
+unambiguous manifests, `bag.migrate_manifest_encoding(bag_dir)` re-serializes the
 payload manifests and reseals the tag manifests through the same path a lawful metadata
 revision takes; it is idempotent, returns whether anything changed, and only an archive
 holding `%`, CR, or LF in a payload name needs it at all. The one case that cannot be
@@ -335,19 +335,19 @@ the *preservation log* says was never identified:
 
 Fixes 3 and 4 removed the two largest groups by making identification actually
 succeed, but the underlying asymmetry remains: a curated `_EXTENSION_MAP` result is
-also discarded in favour of stdlib `mimetypes`, so a `.doc` is recorded as
+also discarded in favor of stdlib `mimetypes`, so a `.doc` is recorded as
 `application/msword` in the record while PREMIS calls it at-risk OLE2.
 
 **Resolved** by [ADR 0010](adr/0010-identification-governs-what-a-record-asserts.md)
 ([#144](https://github.com/ChelseaKR/ledger/issues/144)). `mimetypes.guess_type` is
 removed from the ingest path: the record's media type is the identifier's verdict,
 always, except for a type the caller *declared* — a human assertion rather than a
-guess, and labelled as such.
+guess, and labeled as such.
 
 The objection to preferring the identifier was that it degrades the browse UI to
 `application/octet-stream` for 17% of files. Widening the registry (defect 2) cut that
 to **4.9%**, and for those files `application/octet-stream` is not a degradation: it is
-the correct IANA type for an unrecognised byte stream, and it warns a reader that the
+the correct IANA type for an unrecognized byte stream, and it warns a reader that the
 damaged PDF they are about to download will not open. `PayloadFile.media_type_basis`
 now travels with the type in the record and the API, so a consumer that sees
 `application/pdf` can tell whether the bytes said so or the filename did.

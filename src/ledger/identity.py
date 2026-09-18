@@ -16,7 +16,7 @@ Design choices and the quality attributes they serve:
   record leaks no identifying signal even if its ref is observed -> unlinkability.
 * Authenticated encryption (Fernet) detects tampering on read -> integrity.
 * :meth:`IdentityVault.revoke` deletes a mapping, so consent is revocable and a
-  takedown is honoured at the storage layer -> autonomy, consent.
+  takedown is honored at the storage layer -> autonomy, consent.
 * ``__repr__``/``__str__`` of both the identity and the vault are redacted, and no
   identity, sealed value, or ciphertext is ever logged or placed in an exception
   message -> the no-outing rule.
@@ -266,7 +266,7 @@ class IdentityVault:
         """Remove the mapping for *ref*, persisting atomically.
 
         Idempotent: revoking an absent ref is a no-op so a takedown can be retried
-        safely. Honours consent revocation / takedown -> autonomy, consent.
+        safely. Honors consent revocation / takedown -> autonomy, consent.
 
         Locked like :meth:`add` so a concurrent takedown and ingest never race on
         the same temp file (see :meth:`add`'s docstring).

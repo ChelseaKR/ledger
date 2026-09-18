@@ -38,7 +38,7 @@ _WAV = b"RIFF\x24\x00\x00\x00WAVEfmt " + b"\x00" * 8
         (_WAV, "audio/wav"),
     ],
 )
-def test_sniff_recognises_allowlisted_types(data: bytes, expected: str) -> None:
+def test_sniff_recognizes_allowlisted_types(data: bytes, expected: str) -> None:
     """Each allowlisted format is identified from its leading bytes."""
     assert upload.sniff_media_type(data) == expected
 
@@ -66,10 +66,10 @@ def test_allowed_types_is_sorted_and_covers_the_signatures() -> None:
     assert "application/pdf" in upload.ALLOWED_TYPES
 
 
-# --- filename sanitisation (security review hardening) ----------------------
+# --- filename sanitization (security review hardening) ----------------------
 
 
-def test_safe_filename_neutralises_traversal_and_dot_names() -> None:
+def test_safe_filename_neutralizes_traversal_and_dot_names() -> None:
     """A crafted upload filename never yields a path component that escapes or is a dir."""
     from ledger.server import _safe_filename
 

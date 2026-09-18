@@ -1,6 +1,6 @@
 """Shared, typed value objects — the contract every layer agrees on.
 
-This module is deliberately behaviour-free: it defines *what* a record, a policy, a
+This module is deliberately behavior-free: it defines *what* a record, a policy, a
 grant, a fixity result, and a preservation event are, so that ingest, storage,
 disclosure, identity, replication, and the browse server can each depend on one
 stable shape (modularity, orthogonality, interchangeability).
@@ -224,7 +224,7 @@ class PremisEvent:
     is later revised, without making the address the object's *identity*.
 
     Both new fields are omitted from :meth:`to_dict` when unset, so an event written
-    before they existed serialises — and therefore hash-chains — byte-for-byte as it
+    before they existed serializes — and therefore hash-chains — byte-for-byte as it
     always did (chain stability is the reason; see :mod:`ledger.chain`).
     """
 
@@ -292,7 +292,7 @@ class PremisRights:
     * ``rights_basis`` — the PREMIS ``rightsBasis`` vocabulary value
       (``"license"``, ``"statute"``, ``"copyright"``, ``"other"``, …).
     * ``rights_note`` — a free-text ``rightsBasis``/``copyrightNote`` style
-      description of the terms (e.g. a licence name), never an identity.
+      description of the terms (e.g. a license name), never an identity.
     * ``granted_acts`` — the PREMIS ``act`` values that ARE permitted
       (``"disseminate"``, ``"replicate"``, ``"migrate"``, …).
     * ``restrictions`` — the PREMIS ``restriction`` values that constrain each

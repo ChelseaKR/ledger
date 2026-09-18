@@ -271,7 +271,7 @@ def validate_session_manifest(manifest: SessionManifest) -> None:
     Every segment whose policy will ever disclose something to someone
     (:attr:`SessionSegment.ever_discloses`) must carry a non-empty
     ``spoken_consent_at``. A ``sealed-conditional`` segment must also name its
-    ``unseal_condition`` (otherwise there is no way to ever honour it), and a
+    ``unseal_condition`` (otherwise there is no way to ever honor it), and a
     date-bound ``sealed-until`` segment must name its ``unseal_at``. Raises
     :class:`~ledger.errors.LedgerError` naming the offending ``segment_id`` — never
     the segment's label, transcript, or consent note (no-outing-adjacent: an error
@@ -300,7 +300,7 @@ def validate_session_manifest(manifest: SessionManifest) -> None:
 
 
 # Field-name prefixes for the per-segment scaffolding this module writes onto a
-# record. Kept as module constants so a caller (or a test) can recognise/filter
+# record. Kept as module constants so a caller (or a test) can recognize/filter
 # session-kit fields without restating the format.
 SEGMENT_FIELD_PREFIX = "segment:"
 CONSENT_FIELD_SUFFIX = ":consent"
@@ -321,7 +321,7 @@ def apply_session_manifest(record: Record, manifest: SessionManifest) -> Record:
       ``f"segment:{segment_id}:consent"`` recording *when* spoken consent for that
       policy was captured and the facilitator's paraphrase — never public, so the
       proof of consent is itself available only to the people accountable for
-      honouring it, while still being provable on demand (the ideation
+      honoring it, while still being provable on demand (the ideation
       "Excellent" bar: a segment's policy provably matches its spoken-consent
       timestamp).
 

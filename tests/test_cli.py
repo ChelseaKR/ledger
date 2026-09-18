@@ -4,7 +4,7 @@ These exercise the CLI exactly as a steward or a script would: through
 ``cli.main([...])`` with a temporary ``--root``, asserting on the process exit
 code and on captured stdout/stderr. The happy path walks the real lifecycle —
 ``init`` then ``ingest`` then ``show``/``browse`` then ``audit`` — over the
-synthetic fixtures, and two safety-critical behaviours get their own tests:
+synthetic fixtures, and two safety-critical behaviors get their own tests:
 
 * ``audit`` returns a non-zero exit code when a stored object is corrupted, so a
   CI or cron gate can branch on it (operability, failure transparency);
@@ -750,7 +750,7 @@ def test_ingest_refuses_payloads_that_share_a_filename(
     logged "ingested 1 payload file(s)", and `ledger audit` passed, because the
     bag was internally consistent. Nothing anywhere said a file the steward
     handed the archive was gone. Found by ingesting a directory tree whose
-    per-directory pages share names, which is ordinary for a digitisation
+    per-directory pages share names, which is ordinary for a digitization
     package.
     """
     root = tmp_path / "arc"

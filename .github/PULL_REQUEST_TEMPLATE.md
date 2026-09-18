@@ -24,12 +24,12 @@ under docs/adr/ and link it here. -->
 - [ ] **Redaction-safe:** no real sealed content or real personal identity appears
       in the diff, tests, or this PR description. New tests use the synthetic
       fixtures in `tests/fixtures/` (with sentinel values where a leak is checked).
-- [ ] Tests added or updated for the behaviour changed.
+- [ ] Tests added or updated for the behavior changed.
 - [ ] Observability was updated for new failure modes, or this change adds no new
       observable operation/failure mode.
 - [ ] If a read surface changed: the accessibility gate
       (`make accessibility`) is green, and the change keeps the list/table
-      equivalent and content-warning behaviour intact.
+      equivalent and content-warning behavior intact.
 - [ ] If a custom interactive component changed: keyboard and screen-reader
       evidence is linked and its ARIA pattern was reviewed.
 - [ ] If a preservation format changed: bags remain deterministic and
@@ -39,7 +39,7 @@ under docs/adr/ and link it here. -->
 - [ ] If a runtime dependency was added: its purpose and supply-chain/size impact
       are justified in this PR.
 - [ ] Rollback is described above, or “no state/deploy effect” is stated.
-- [ ] Docs updated (README / docs/) where behaviour or operation changed.
+- [ ] Docs updated (README / docs/) where behavior or operation changed.
 - [ ] `CHANGELOG.md` updated under **Unreleased**.
 
 ## Notes for reviewers

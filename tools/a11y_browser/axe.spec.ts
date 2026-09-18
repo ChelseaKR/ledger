@@ -15,8 +15,8 @@ import { assertRenderedDirection } from "./direction";
 /**
  * Browser-real axe pass over ledger's canonical served pages.
  *
- * For each page we run axe-core under BOTH the light and dark colour schemes
- * (ledger honours `prefers-color-scheme`, so contrast must hold either way) and
+ * For each page we run axe-core under BOTH the light and dark color schemes
+ * (ledger honors `prefers-color-scheme`, so contrast must hold either way) and
  * assert there are **no WCAG-tagged violations**, regardless of axe's impact
  * label. Impact is triage metadata, not permission to merge an AA violation.
  *
@@ -51,7 +51,7 @@ async function recordIds(
 }
 
 /**
- * Navigate to `path`, then run axe under each colour scheme and assert no
+ * Navigate to `path`, then run axe under each color scheme and assert no
  * WCAG-tagged violations. `label` names the page in failure output.
  */
 async function auditPage(

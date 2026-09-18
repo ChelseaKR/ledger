@@ -222,7 +222,7 @@ msgstr ""
 msgid "By year (table view)"
 msgstr ""
 
-msgid "Catalogue metadata"
+msgid "Catalog metadata"
 msgstr ""
 
 msgid ""
@@ -912,7 +912,7 @@ msgid ""
 msgstr ""
 
 msgid ""
-"The claim 'contributor identities are never shown here' is not an honour-"
+"The claim 'contributor identities are never shown here' is not an honor-"
 "system promise — it is a test the software must pass on every build."
 msgstr ""
 

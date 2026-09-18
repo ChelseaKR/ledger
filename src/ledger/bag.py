@@ -384,7 +384,7 @@ def migrate_manifest_encoding(bag_dir: Path) -> bool:
     Rewriting a payload manifest changes bytes the *tag* manifests cover, so the bag
     is resealed through :func:`refresh_tag_manifests` — the same route a lawful
     post-ingest metadata change takes. The payload digests themselves are copied
-    across untouched: this re-serialises how paths are spelled, and must never be
+    across untouched: this re-serializes how paths are spelled, and must never be
     able to paper over content rot.
 
     Idempotent, and returns whether anything changed, so running it across a whole

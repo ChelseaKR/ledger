@@ -223,7 +223,7 @@ def test_full_lifecycle_ingest_disclose_replicate_consent(tmp_path: Path) -> Non
     assert any(is_pid(v) for v in dc.identifier)
 
     # RM5: the PREMIS log carries a rights statement (basis + granted acts), and it
-    # survives the on-disk round trip. The record declared no licence, so it falls back
+    # survives the on-disk round trip. The record declared no license, so it falls back
     # to the honest default basis.
     assert premis.rights is not None
     assert premis.rights.rights_basis == "other"
@@ -320,8 +320,8 @@ def test_full_lifecycle_ingest_disclose_replicate_consent(tmp_path: Path) -> Non
     assert anon_denied, "anonymous disclose must be denied after tightening consent"
 
 
-def test_declared_licence_becomes_a_license_basis_rights_statement(tmp_path: Path) -> None:
-    """A record declaring a Dublin Core licence yields a ``license``-basis rights entity.
+def test_declared_license_becomes_a_license_basis_rights_statement(tmp_path: Path) -> None:
+    """A record declaring a Dublin Core license yields a ``license``-basis rights entity.
 
     The declared rights value is lifted into the PREMIS rights statement's note, so the
     reuse terms travel with the preservation log rather than living only in the
@@ -329,7 +329,7 @@ def test_declared_licence_becomes_a_license_basis_rights_statement(tmp_path: Pat
     """
     from ledger.metadata.premis import PremisLog as _PremisLog
 
-    config = Config.default("Licence Archive", tmp_path / "arc")
+    config = Config.default("License Archive", tmp_path / "arc")
     archive = Archive.init(config)
     record = Record(
         title="A CC-licensed zine",

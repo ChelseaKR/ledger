@@ -209,7 +209,7 @@ def test_sniff_caption_format_ignores_bom() -> None:
     assert sniff_caption_format("﻿WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nhi\n") == "vtt"
 
 
-def test_sniff_caption_format_unrecognised_returns_none() -> None:
+def test_sniff_caption_format_unrecognized_returns_none() -> None:
     assert sniff_caption_format("just some prose, not a caption file\n") is None
 
 
@@ -220,8 +220,8 @@ def test_parse_captions_dispatches_by_content_not_extension() -> None:
     assert [c.text for c in parse_captions(_SRT)] == [c.text for c in parse_srt(_SRT)]
 
 
-def test_parse_captions_rejects_unrecognised_format() -> None:
-    with pytest.raises(CaptionParseError, match="not a recognised caption file"):
+def test_parse_captions_rejects_unrecognized_format() -> None:
+    with pytest.raises(CaptionParseError, match="not a recognized caption file"):
         parse_captions("Dear diary, today I...")
 
 
@@ -261,7 +261,7 @@ def test_cues_to_plain_text_joins_with_speaker_prefix() -> None:
 def test_transcript_cue_is_immutable() -> None:
     cue = TranscriptCue(start="00:00:01.000", end="00:00:02.000", text="hi", speaker=None)
     with pytest.raises(AttributeError):
-        # Assigning to a frozen field is the behaviour under test: mypy correctly rejects
+        # Assigning to a frozen field is the behavior under test: mypy correctly rejects
         # it, and pytest asserts the assignment raises at runtime.
         cue.text = "changed"  # type: ignore[misc]
 

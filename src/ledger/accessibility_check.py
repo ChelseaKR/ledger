@@ -41,8 +41,8 @@ from dataclasses import dataclass
 from html.parser import HTMLParser
 from pathlib import Path
 
-# --- colour contrast (WCAG 2.2 1.4.3 / 1.4.11) ------------------------------
-# The contrast audit measures the CSS colour tokens against the AA thresholds and
+# --- color contrast (WCAG 2.2 1.4.3 / 1.4.11) ------------------------------
+# The contrast audit measures the CSS color tokens against the AA thresholds and
 # fails the gate if any pair regresses, so the conformance the ACR claims is
 # *verified on every build* rather than an owed external audit (user research
 # residual item). Pairs reference the design tokens declared in app.css.
@@ -63,7 +63,7 @@ _CONTRAST_PAIRS: tuple[tuple[str, str, float, str], ...] = (
 
 
 def _relative_luminance(hex_color: str) -> float:
-    """WCAG relative luminance of an sRGB hex colour (``#rgb`` or ``#rrggbb``)."""
+    """WCAG relative luminance of an sRGB hex color (``#rgb`` or ``#rrggbb``)."""
     h = hex_color.lstrip("#")
     if len(h) == 3:
         h = "".join(c * 2 for c in h)
@@ -76,19 +76,19 @@ def _relative_luminance(hex_color: str) -> float:
 
 
 def contrast_ratio(fg: str, bg: str) -> float:
-    """The WCAG contrast ratio between two hex colours (1.0 to 21.0)."""
+    """The WCAG contrast ratio between two hex colors (1.0 to 21.0)."""
     a, b = _relative_luminance(fg), _relative_luminance(bg)
     hi, lo = max(a, b), min(a, b)
     return (hi + 0.05) / (lo + 0.05)
 
 
 def _root_tokens(block_text: str) -> dict[str, str]:
-    """The ``--token: #hex`` colour map declared in one ``:root { … }`` block."""
+    """The ``--token: #hex`` color map declared in one ``:root { … }`` block."""
     return dict(re.findall(r"--([a-z0-9-]+):\s*(#[0-9a-fA-F]{3,6})\b", block_text))
 
 
 def audit_css_contrast(css_text: str, *, label: str) -> list[str]:
-    """Check the ``--token: #hex`` colour pairs in ``css_text`` against WCAG AA.
+    """Check the ``--token: #hex`` color pairs in ``css_text`` against WCAG AA.
 
     Returns a problem for any declared pair below its threshold (4.5:1 for text,
     3:1 for UI components). A token referenced by a pair but missing from the base
@@ -97,7 +97,7 @@ def audit_css_contrast(css_text: str, *, label: str) -> list[str]:
     Multiple ``:root`` blocks are each a *theme*: the first is the base palette and
     every later one (e.g. a ``@media (prefers-color-scheme: dark)`` override) is the
     base updated with its overrides. Every theme is audited, so a dark mode cannot
-    ship a colour pair that fails AA — the gate covers what a reader can actually see,
+    ship a color pair that fails AA — the gate covers what a reader can actually see,
     not just the default theme."""
     roots = re.findall(r":root\s*\{([^}]*)\}", css_text)
     base = _root_tokens(roots[0]) if roots else {}
@@ -108,7 +108,7 @@ def audit_css_contrast(css_text: str, *, label: str) -> list[str]:
     problems: list[str] = []
     for fg, bg, threshold, desc in _CONTRAST_PAIRS:
         if fg not in base or bg not in base:
-            problems.append(f"{label}: contrast pair {desc!r} references a missing colour token")
+            problems.append(f"{label}: contrast pair {desc!r} references a missing color token")
             continue
         for theme_name, tokens in themes:
             ratio = contrast_ratio(tokens[fg], tokens[bg])
@@ -214,7 +214,7 @@ class _Accessibility(HTMLParser):
     """
 
     def __init__(self) -> None:
-        """Initialise the parser and the per-document accounting state."""
+        """Initialize the parser and the per-document accounting state."""
         super().__init__(convert_charrefs=True)
         self.html_lang: str | None = None
         self.saw_html: bool = False
@@ -305,7 +305,7 @@ class _Accessibility(HTMLParser):
     def _track_live_region(self, tag: str, attr: dict[str, str]) -> None:
         """Record this element's 4.1.3 facts and push it onto the nesting stack.
 
-        Two defects are recognised, and they pull in opposite directions — which is
+        Two defects are recognized, and they pull in opposite directions — which is
         why one check cannot stand without the other. A status message *outside*
         every live region is never spoken. A live region drawn *around* page
         structure speaks everything, every time, until the reader stops listening.
@@ -419,9 +419,9 @@ def check_html(markup: str, *, label: str) -> list[str]:  # noqa: C901 - a flat 
             f"{scanner.inputs_without_id} <input>(s) have no id, so no <label for> "
             "can be associated (WCAG 1.3.1)"
         )
-    unlabelled = scanner.input_ids - scanner.label_targets
-    if unlabelled:
-        fail(f"{len(unlabelled)} <input>(s) have no associated <label for> (WCAG 1.3.1, 4.1.2)")
+    unlabeled = scanner.input_ids - scanner.label_targets
+    if unlabeled:
+        fail(f"{len(unlabeled)} <input>(s) have no associated <label for> (WCAG 1.3.1, 4.1.2)")
 
     if scanner.tables_missing_caption:
         fail(f"{scanner.tables_missing_caption} <table>(s) lack a <caption> (WCAG 1.3.1)")
@@ -618,7 +618,7 @@ def check_dir(path: Path) -> AccessibilityReport:
             markup = html_file.read_text(encoding="utf-8", errors="replace")
             problems.extend(check_html(markup, label=str(html_file)))
             html_documents.append(str(html_file))
-        # Colour-contrast audit over every stylesheet found (WCAG 1.4.3 / 1.4.11).
+        # Color-contrast audit over every stylesheet found (WCAG 1.4.3 / 1.4.11).
         for css_file in sorted(path.rglob("*.css")):
             css = css_file.read_text(encoding="utf-8", errors="replace")
             problems.extend(audit_css_contrast(css, label=str(css_file)))

@@ -268,7 +268,7 @@ def _messages(translation: gettext.NullTranslations) -> dict[str, str]:
         # is a legal instrument this project must not restate.
         "proof_heading": _("Our promise, proven"),
         "proof_claim": _(
-            "The claim 'contributor identities are never shown here' is not an honour-system promise — it is a test the software must pass on every build."
+            "The claim 'contributor identities are never shown here' is not an honor-system promise — it is a test the software must pass on every build."
         ),
         "proof_identity_storage": _(
             "A contributor's identity is stored only as an opaque token plus encrypted data in a separate vault. The record a page is built from has no place to put an identity, so there is nothing to leak."
@@ -565,7 +565,7 @@ def _messages(translation: gettext.NullTranslations) -> dict[str, str]:
         "rec_cw_note": _("Content warnings:"),
         "rec_content_sr": _("Record content."),
         "rec_fields_heading": _("Details"),
-        "rec_catalogue_heading": _("Catalogue metadata"),
+        "rec_catalog_heading": _("Catalog metadata"),
         "rec_files_heading": _("Files"),
         "rec_withheld_heading": _("Withheld"),
         "rec_withheld_insider": _(

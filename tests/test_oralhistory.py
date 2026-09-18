@@ -315,7 +315,7 @@ def test_apply_segment_without_payload_filename_adds_no_payload() -> None:
 
 def test_session_manifest_ingests_through_the_one_ingest_path(tmp_path: Path) -> None:
     """A validated manifest, applied to a record, ingests cleanly and the per-
-    segment policies are honoured on disclosure — public segment visible to an
+    segment policies are honored on disclosure — public segment visible to an
     anonymous grant, community segment only to a community grant, sealed segment
     to neither.
     """

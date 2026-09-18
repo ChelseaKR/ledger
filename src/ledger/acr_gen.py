@@ -52,7 +52,7 @@ class Criterion:
 
     ``ident`` is the criterion number/name, ``level`` is one of the four standard
     conformance terms, and ``remarks`` is the candid, specific note explaining the
-    judgement (credibility — every non-"Supports" row earns its remark).
+    judgment (credibility — every non-"Supports" row earns its remark).
     """
 
     ident: str
@@ -269,7 +269,7 @@ _WCAG_AA: tuple[Criterion, ...] = (
         "1.4.3",
         "Contrast (Minimum)",
         _SUPPORTS,
-        "Every text colour pair in the stylesheet is measured against the AA "
+        "Every text color pair in the stylesheet is measured against the AA "
         "4.5:1 threshold by an automated audit (ledger.accessibility_check."
         "audit_css_contrast) that runs in the accessibility gate on every build "
         "and fails on any regression; all pairs pass with margin (body 17.4:1, "
@@ -352,7 +352,7 @@ _WCAG_AA: tuple[Criterion, ...] = (
         "3.2.4",
         "Consistent Identification",
         _SUPPORTS,
-        "Components with the same function are labelled identically across pages.",
+        "Components with the same function are labeled identically across pages.",
     ),
     Criterion(
         "3.3.3",
@@ -451,7 +451,7 @@ _CH5: tuple[Criterion, ...] = (
         _SUPPORTS,
         "The browse application uses native controls with correct names, "
         "roles, and values; user preferences (zoom, reduced motion) are "
-        "honoured.",
+        "honored.",
     ),
     Criterion(
         "503.4",
@@ -508,7 +508,7 @@ _FPC: tuple[Criterion, ...] = (
         "302.1",
         "Without Vision",
         _SUPPORTS,
-        "Semantic landmarks, headings, a skip link, labelled controls, and a "
+        "Semantic landmarks, headings, a skip link, labeled controls, and a "
         "captioned/scoped data table give a complete screen-reader path; the "
         "list and table views are equivalent.",
     ),
@@ -516,7 +516,7 @@ _FPC: tuple[Criterion, ...] = (
         "302.2",
         "With Limited Vision",
         _SUPPORTS,
-        "Text resizes and reflows to 200%/320px, and every colour pair is "
+        "Text resizes and reflows to 200%/320px, and every color pair is "
         "measured at WCAG AA by the automated contrast audit enforced in the "
         "gate (see 1.4.3/1.4.11).",
     ),
@@ -658,7 +658,7 @@ def render() -> str:
         "- **Automated.** The stdlib static gate "
         + "(`python -m ledger.accessibility_check web`) runs on every commit, and a "
         + "browser-real **axe-core** job (the `accessibility-browser` CI job) drives "
-        + "the served site in a headless Chromium under both the light and dark colour "
+        + "the served site in a headless Chromium under both the light and dark color "
         + "schemes, asserting no WCAG-tagged axe violations. The same job runs a "
         + "**320 CSS px reflow** pass (SC 1.4.10), which axe cannot perform: axe "
         + "judges the DOM it is handed and has no opinion about the viewport that "

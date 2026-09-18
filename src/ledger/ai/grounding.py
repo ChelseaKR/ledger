@@ -18,7 +18,7 @@ narrow, deterministic backstop that refuses a claim whose *language* reads as
 an identity guess even when it cites real evidence — because a person can be
 named correctly in a public field and a claim can still cross the line by
 speculating about who they "really" are. The guarantee is architecture
-(mission requirement) plus behaviour (the system prompts in
+(mission requirement) plus behavior (the system prompts in
 :mod:`ledger.ai.prompts`), each proven by ``tests/test_ai_outing_refusal.py``
 — this regex is a cheap backstop, not the guarantee itself, the same honesty
 :mod:`ledger.redact_suggest` states about its own pattern matching.

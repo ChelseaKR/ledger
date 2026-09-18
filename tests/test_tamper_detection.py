@@ -56,7 +56,7 @@ _FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
 # The embargoed plaintext. It sits in the manifest in the clear (unlike an
 # absolute-SEALED value, which ingest encrypts into the vault), gated only by its
-# field policy — so a policy the audit does not protect is the whole defence.
+# field policy — so a policy the audit does not protect is the whole defense.
 _EMBARGOED = "the names of everyone in the safehouse network"
 _RECORD_ID = "rec-embargo"
 

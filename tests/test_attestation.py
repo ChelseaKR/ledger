@@ -383,7 +383,7 @@ def test_cli_attest_health_publishes_unsigned_when_no_key(tmp_path: Path) -> Non
     published = root / "store" / "attestations" / "latest.json"
     assert published.exists()
     data = json.loads(published.read_text(encoding="utf-8"))
-    # A freshly initialised archive holds nothing. #205: it publishes that, and
+    # A freshly initialized archive holds nothing. #205: it publishes that, and
     # the command still exits 0 above — an empty archive is not a fault, and the
     # exit code is the alarm, not the statement.
     assert data["fixity"] == "nothing-to-verify"

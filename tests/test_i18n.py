@@ -1,6 +1,6 @@
 """Tests for :mod:`ledger.i18n` — the gettext localization seam (user research P2-1 / T9).
 
-These cover the safety-critical behaviours after the migration from the bespoke
+These cover the safety-critical behaviors after the migration from the bespoke
 ``_CATALOG``/``_CW_GLOSSES`` dicts to GNU gettext catalogs
 (INTERNATIONALIZATION-STANDARD §3): ``Accept-Language`` negotiation (exact match,
 q-value ordering, primary-subtag fall-down, wildcard, unknown and ``None`` headers

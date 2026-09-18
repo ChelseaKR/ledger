@@ -144,7 +144,7 @@ def _read_or_refuse(log_path: Path) -> list[PremisEvent]:
     The strict counterpart to :meth:`~ledger.ingest.Archive.record_events`. That reader
     is deliberately lenient because it feeds a browse surface where one damaged bag must
     not blank the page; this one feeds a signed public claim, where a damaged bag must
-    not be summarised at all.
+    not be summarized at all.
     """
     try:
         return list(PremisLog.read(log_path).events)

@@ -5,7 +5,7 @@ pushed there and then, so a tombstone remembers it: when the mirror reattaches, 
 replication sweep deletes the stale copy it still holds, writes a per-location PREMIS
 ``TAKEDOWN`` receipt, and marks that location confirmed — and healing must never
 re-copy a taken-down bag back. These tests pin that end-to-end "excellent" scenario
-plus the store's unit behaviour and the honest, never-overstated ``/consent-status``
+plus the store's unit behavior and the honest, never-overstated ``/consent-status``
 rendering.
 
 No-outing: the fixtures carry only collection-level Dublin Core and opaque ids, so a

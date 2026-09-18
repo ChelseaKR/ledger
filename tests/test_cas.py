@@ -2,7 +2,7 @@
 
 Covers the round-trip (bytes in, same bytes out at the derived address), dedupe
 (identical bytes map to one address and a single on-disk object), idempotent and
-atomic puts, the absence behaviour of ``get_path``/``read_bytes``, and the integrity
+atomic puts, the absence behavior of ``get_path``/``read_bytes``, and the integrity
 guarantee that ``verify`` re-proves the stored bytes still hash to their own name —
 and detects a flipped byte.
 """

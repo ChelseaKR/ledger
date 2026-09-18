@@ -4,7 +4,7 @@
 `dualcontrol.py` at 95% with one pooled `coverage report --include=... --fail-under`.
 That flag gates the report's TOTAL row, not each module in it, so the line passed at
 95% while `grants.py` sat at 92% and `consent.py` at 91%: two modules were below the
-floor their own gate advertised, held up by neighbours at 100%.
+floor their own gate advertised, held up by neighbors at 100%.
 
 The fix has two halves, and this file is the first. Rather than lower the published
 figure to match reality, it covers the paths that were missing so the 95% claim
@@ -80,7 +80,7 @@ def test_a_malformed_grant_token_is_refused_not_raised(token: str, why: str) -> 
 
 
 def test_a_grant_token_with_an_unparseable_expiry_is_refused() -> None:
-    """A token whose expiry is not an ISO timestamp is refused, not honoured.
+    """A token whose expiry is not an ISO timestamp is refused, not honored.
 
     The expiry is inside the MAC, so reaching this branch means the holder of the
     secret minted it. Refusing anyway is the fail-closed reading: an expiry that

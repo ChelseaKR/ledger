@@ -15,7 +15,7 @@ released", which would be an absence rendered as a value.
 Two states are distinguished, and only one is a defect:
 
 * **No tags at all** -- where this repository stands. It passes, but only if the repository
-  still says so where a reader looks, and only if the artefacts that make "prepared, not
+  still says so where a reader looks, and only if the artifacts that make "prepared, not
   published" a checkable claim are present: the dated `## [0.1.0]` CHANGELOG heading must
   still carry its prepared-not-published note, and `docs/RELEASE-0.1.0.md` must exist for
   the version being declared.

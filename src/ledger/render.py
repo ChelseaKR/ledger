@@ -60,7 +60,7 @@ def _status_region(message_html: str) -> str:
     must reach a screen reader *without* moving focus to it, which means it has to
     sit in an ARIA live region. ``role="status"`` carries an implicit
     ``aria-live="polite"``; both are stated because some assistive technology has
-    historically honoured one and not the other.
+    historically honored one and not the other.
 
     The single argument is the whole point of the helper. An over-broad live region
     is worse than no live region at all: everything inside one is re-announced on
@@ -94,7 +94,7 @@ def _page(title: str, *, lang: str, main_html: str, nav_html: str = "") -> str:
     target the skip link jumps to. ``title`` is escaped because record titles flow
     into it (security).
 
-    Colour is never the sole signal anywhere in the shell, and no positive
+    Color is never the sole signal anywhere in the shell, and no positive
     ``tabindex`` is used, so keyboard focus order follows source order
     (accessibility).
 
@@ -255,8 +255,8 @@ def _records_table_html(
     The table carries a ``<caption>`` describing its purpose and ``<th scope>`` on
     every header so assistive technology can associate each cell with its column
     (accessibility). The content-warning column uses the literal word, never a
-    colour or icon alone, so the signal survives for colour-blind and
-    text-only users (accessibility — colour is not the only signal). When ``query``
+    color or icon alone, so the signal survives for color-blind and
+    text-only users (accessibility — color is not the only signal). When ``query``
     is set the summary cell shows the same highlighted match snippet as the list, so
     the two views stay equivalent (user research E3). Caption, headers, and the
     yes/no signal are localized. All cells are escaped (security).
@@ -360,7 +360,7 @@ def _facets_html(
 def _overview_main_html(records: list[DisclosedRecord], *, lang: str = "en") -> str:
     """An at-a-glance overview of a collection: total, top facets, and date span.
 
-    A finding-aid landing page (user research P2-3): it summarises *only* the records
+    A finding-aid landing page (user research P2-3): it summarizes *only* the records
     passed in — the caller hands the anonymous-public set, so the totals and the date
     span describe what is publicly visible and never leak the existence or count of
     sealed records (P2-2). Each facet value links into the faceted browse, every value
@@ -542,7 +542,7 @@ def _pager_html(
 ) -> str:
     """An accessible Previous/Next pager that preserves the current query.
 
-    Rendered as a labelled ``<nav>`` so assistive tech announces it as a distinct
+    Rendered as a labeled ``<nav>`` so assistive tech announces it as a distinct
     navigation landmark, with a plain "Page X of Y" so a reader always knows where
     they are. Each link reuses the current path and query (facet, search term,
     language) with only ``page`` swapped, so paging never drops a filter. The label
@@ -582,7 +582,7 @@ def _pager_html(
 def _sort_html(current_path: str, *, query: str, sort: str, lang: str) -> str:
     """A small sort control: order results by relevance (search only), newest, oldest.
 
-    Rendered as a labelled group of links built from the current path (preserving the
+    Rendered as a labeled group of links built from the current path (preserving the
     query and facets, dropping ``page``), so changing the order never drops a filter —
     sort composes with search and facets like every other control. The active order is
     plain ``aria-current`` text, not a link. "Relevance" appears only with a query (it
@@ -628,7 +628,7 @@ def _date_range_form(
 
     Posts (GET) to the current path with ``from``/``to``, carrying the query, active
     facets, and sort as hidden inputs so applying a range never drops another filter.
-    Both inputs are labelled (accessibility) and prefilled with the active range; every
+    Both inputs are labeled (accessibility) and prefilled with the active range; every
     value is escaped (security)."""
     split = urlsplit(current_path)
     hidden_parts = [("q", query)] if query else []
@@ -967,7 +967,7 @@ def _record_main_html(
     proceed (``proceed`` is false), only the title and a *text* interstitial are
     rendered: the warnings are listed as words, headed "Content warnings", with a
     link to proceed to the content (accessibility — the warning is programmatic and
-    textual, never colour- or icon-only; safety — warnings surface before any
+    textual, never color- or icon-only; safety — warnings surface before any
     render of the underlying material).
 
     Once proceeding (or when there are no warnings) the disclosed fields, payload
@@ -1034,7 +1034,7 @@ def _record_main_html(
     # facetable elements (subject/type/language) each value is a link into the faceted
     # browse, so a reader on one record can discover related records by topic, kind, or
     # language — connecting a contributor's descriptive metadata to discovery (P1-4).
-    # ``relation`` is deliberately excluded from the raw catalogue: it is presented,
+    # ``relation`` is deliberately excluded from the raw catalog: it is presented,
     # resolved and access-checked, in the dedicated "Linked records" section instead.
     # Printing its raw values here would echo a bare record id, which for a relation to
     # a *sealed* record would leak that record's id (and thus its existence) as plain
@@ -1048,7 +1048,7 @@ def _record_main_html(
     if dc_rows:
         parts.append(
             '    <section aria-labelledby="meta-heading">\n'
-            f'      <h2 id="meta-heading">{_esc(i18n.t(lang, "rec_catalogue_heading"))}</h2>\n'
+            f'      <h2 id="meta-heading">{_esc(i18n.t(lang, "rec_catalog_heading"))}</h2>\n'
             "      <dl>\n" + "\n".join(dc_rows) + "\n      </dl>\n"
             "    </section>"
         )

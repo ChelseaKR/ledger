@@ -10,7 +10,7 @@ outright.
 Design:
 
 * **Allowlist, not blocklist.** Only the handful of formats below are accepted; an
-  unrecognised or disallowed file is refused, never stored "just in case".
+  unrecognized or disallowed file is refused, never stored "just in case".
 * **Magic bytes, not metadata.** The type is read from the content, so a `.pdf`
   extension on an executable, or a forged ``Content-Type``, cannot smuggle a type in.
 * **Bounded.** ``MAX_UPLOAD_BYTES`` caps the size before anything is stored, so an

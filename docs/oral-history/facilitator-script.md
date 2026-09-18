@@ -68,7 +68,7 @@ For **each** segment, once the narrator has said what they want to say:
       segment entry per marked segment, with its `policy`,
       `spoken_consent_at`, and `consent_note` from your notes.
 - [ ] Give the narrator a copy of what you wrote down for each segment before
-      you ingest anything — they should recognise every policy you're about to
+      you ingest anything — they should recognize every policy you're about to
       apply.
 - [ ] A steward reviews the manifest and runs `ledger session ingest` to apply
       it. Ledger refuses to ingest any segment marked to ever be shown to

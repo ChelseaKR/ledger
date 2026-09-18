@@ -73,7 +73,7 @@ def test_ingested_transcript_is_stored_and_rendered(tmp_path: Path) -> None:
     """A transcript given at ingest is stored on the A/V payload and shown on the page."""
     archive, rid = _ingest_audio(tmp_path, transcript=_TRANSCRIPT)
     payload = archive.get(rid).payloads[0]
-    assert payload.media_type.startswith("audio/")  # recognised as audio
+    assert payload.media_type.startswith("audio/")  # recognized as audio
     assert payload.transcript == _TRANSCRIPT
 
     disclosed = archive.disclose(rid, anonymous(), now="2026-01-02T00:00:00Z")

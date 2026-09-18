@@ -78,6 +78,7 @@ def test_evidence_is_for_the_pinned_corpus(evidence: dict[str, Any]) -> None:
     assert evidence["schema"] == EVIDENCE_SCHEMA
     assert evidence["corpus"]["commit"] == CORPUS_COMMIT
     assert EVIDENCE_PATH.name == f"opf-format-corpus-{CORPUS_COMMIT[:8]}.json"
+    # "licence" is the committed evidence file's key; its spelling is kept.
     assert "CC0" in evidence["corpus"]["licence"]
 
 

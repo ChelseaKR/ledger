@@ -96,7 +96,7 @@ def oai_response(
     request_attr = _request_attrs(verb, params)
 
     if verb not in _SUPPORTED_VERBS:
-        # An empty/missing verb and an unrecognised verb are both ``badVerb`` per the
+        # An empty/missing verb and an unrecognized verb are both ``badVerb`` per the
         # OAI-PMH spec; the request element omits the verb attribute in this case.
         return _error_response(
             base_url,
@@ -200,7 +200,7 @@ def atom_feed_xml(
 ) -> str:
     """Render an Atom 1.0 feed of the most recent public records.
 
-    A feed lets a researcher or partner organisation *follow* a collection as it
+    A feed lets a researcher or partner organization *follow* a collection as it
     grows, instead of re-checking the browse page. Like the OAI provider and the
     sitemap, it re-serializes only the ``DisclosedRecord`` set the caller already
     disclosed to the anonymous public, so it can never surface sealed material or a
@@ -489,7 +489,7 @@ def _request_attrs(verb: str | None, params: dict[str, str]) -> str:
     """Build the attribute string for the ``<request>`` element.
 
     OAI-PMH echoes the request's arguments as attributes on ``<request>``. The verb
-    is included only when it is one this provider recognises (a ``badVerb`` response
+    is included only when it is one this provider recognizes (a ``badVerb`` response
     must not echo the bad verb as a valid attribute). Attribute order is sorted for
     deterministic output. All attribute values are XML-escaped.
     """

@@ -309,7 +309,7 @@ def test_every_record_can_still_quote_its_own_disclosed_evidence(seeded, grant_f
 
 
 def test_outing_refusal_rules_are_present_in_the_system_prompt() -> None:
-    """The behavioural layer (not just the deterministic backstop) is wired
+    """The behavioral layer (not just the deterministic backstop) is wired
     in: the shipped system prompt actually states the refusal rule."""
     from ledger.ai.prompts import ASK_SYSTEM_PROMPT, DESCRIBE_SYSTEM_PROMPT
 

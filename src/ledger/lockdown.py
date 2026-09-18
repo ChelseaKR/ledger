@@ -225,7 +225,7 @@ def verify_backup_location(backup: Path) -> BackupVerification:
     worst possible place for a vacuous truth: this is the gate
     :func:`execute_lockdown` consults before it *irreversibly shreds the local
     identity vault*, so a partial rsync, an emptied replica disk, or a copy that
-    stopped after the metadata read as "your archive survived" and authorised the
+    stopped after the metadata read as "your archive survived" and authorized the
     destruction of the only real copy. It is also what ``ledger verify-backup``
     reports to a steward whose entire question is whether the backup is good.
 
@@ -384,7 +384,7 @@ def _clean_replicas(
 
     ``r.ok`` is now false for a replica that was readable but proved nothing (see
     :func:`verify_backup_location`), so an empty location can no longer be counted
-    toward ``min_verified_replicas`` and can no longer authorise a shred.
+    toward ``min_verified_replicas`` and can no longer authorize a shred.
     """
     return [r for r in results if r.ok and (r.has_vault or not need_vault)]
 

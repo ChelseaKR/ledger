@@ -177,7 +177,7 @@ def test_malformed_fernet_key_raises_vault_error(tmp_path: Path) -> None:
 
 
 def test_revoke_removes_mapping(tmp_path: Path) -> None:
-    """After revoke, the ref no longer resolves (takedown honoured at the vault)."""
+    """After revoke, the ref no longer resolves (takedown honored at the vault)."""
     vault = _new_vault(tmp_path)
     ref = vault.add(_identity())
     assert vault.contains(ref) is True

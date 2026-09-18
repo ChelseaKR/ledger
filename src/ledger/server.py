@@ -33,7 +33,7 @@ is (a) not on the revocation list and (b) pre-provisioned in the grants file. A
 missing header, a missing secret, a forged/expired token, a revoked subject, or an
 unprovisioned subject all fall back to the same anonymous grant, so the header is
 never trusted beyond authenticating a lookup into an existing grant, and a bearer
-token by itself confers nothing (least privilege, securability). Each honoured
+token by itself confers nothing (least privilege, securability). Each honored
 grant use is recorded in a scrubbed audit line — subject and route class only,
 never the token (no-outing rule).
 """
@@ -770,7 +770,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         function fuzzed independently of this handler in
         ``tests/test_parsing_fuzz.py``. Each text part becomes a ``fields`` entry;
         the first part carrying a filename becomes the single ``upload``. The
-        filename is kept only to suggest a stored name and is sanitised elsewhere;
+        filename is kept only to suggest a stored name and is sanitized elsewhere;
         the bytes are never trusted on type until sniffed."""
         raw = self.rfile.read(length)
         return parse_multipart(raw, content_type)
@@ -1916,8 +1916,8 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
 
         The bytes are the only thing trusted: the file is refused if it is larger than
         :data:`upload.MAX_UPLOAD_BYTES` or if :func:`upload.sniff_media_type` does not
-        recognise it as one of the allowlisted types. On success the bytes are written
-        under ``tmpdir`` with a sanitised filename and a :class:`PayloadFile` is
+        recognize it as one of the allowlisted types. On success the bytes are written
+        under ``tmpdir`` with a sanitized filename and a :class:`PayloadFile` is
         pre-declared on ``record`` so the one ingest path stores it with the
         *server-sniffed* media type and the record's sealed-pending policy — never a
         type taken from the client. The returned error names no submitted value
@@ -2855,7 +2855,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
     def _handle_overview(self) -> None:
         """``GET /overview`` — an at-a-glance summary of the public collection.
 
-        Summarises only the anonymous-public set, so the totals, top facets, and date
+        Summarizes only the anonymous-public set, so the totals, top facets, and date
         span describe what is publicly visible and never reveal the existence or count
         of sealed records (no-outing rule / P2-2). Each facet links into the faceted
         browse, turning the overview into a finding aid (P2-3)."""

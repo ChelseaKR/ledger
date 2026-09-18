@@ -124,7 +124,7 @@ def test_dbtextworks_component_is_named_by_its_own_header() -> None:
 
 
 def test_dbtextworks_shape_check_does_not_claim_ordinary_text() -> None:
-    """A text file opening with a component tag is not a catalogue index.
+    """A text file opening with a component tag is not a catalog index.
 
     The header is a *shape* — three letters, space, three digits, space, MM/DD/YY —
     not a four-byte prefix, so this stays plain text.
@@ -243,7 +243,7 @@ def test_registry_media_type_beats_the_stdlib_guess(tmp_path: Path) -> None:
 
 
 def test_declared_media_type_wins_and_says_so(tmp_path: Path) -> None:
-    """A steward's declaration is a human assertion, not a guess — but it is labelled."""
+    """A steward's declaration is a human assertion, not a guess — but it is labeled."""
     archive = Archive.init(Config.default("A", tmp_path / "arc"))
     source = tmp_path / "scan.png"
     source.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 16)

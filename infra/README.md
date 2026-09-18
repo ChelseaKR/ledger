@@ -449,7 +449,7 @@ ledger proposals --root /data                                # list open proposa
 To require two stewards for every takedown, identity-unseal, and publish-to-public,
 set `"dual_control_threshold": 2` in the archive config. A first steward's `takedown`
 (or `propose`) then only *proposes* the action; it runs once a second, distinct
-steward `approve`s it. The default of `1` keeps single-steward behaviour.
+steward `approve`s it. The default of `1` keeps single-steward behavior.
 
 `docker compose down -v` would delete the volume and the entire archive with it.
 There is no `-v` in any command above on purpose.

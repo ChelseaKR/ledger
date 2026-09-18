@@ -3,7 +3,7 @@
 These pin the engine-side primitives behind the ``ledger seal`` workflow: applying a
 disclosure policy (a visibility level, a temporal embargo, a conditional or absolute
 seal) to one already-archived field or payload. Each is a *recorded transform* in the
-mould of :func:`ledger.moderate.change_consent` — it returns a lossy copy, a PREMIS
+mold of :func:`ledger.moderate.change_consent` — it returns a lossy copy, a PREMIS
 event, and an accountable action, leaves the original untouched, requires a rationale,
 and crucially never names the withheld value (auditability, autonomy, the no-outing
 rule).

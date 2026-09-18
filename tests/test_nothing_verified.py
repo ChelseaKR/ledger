@@ -8,7 +8,7 @@ consequence was in :mod:`ledger.lockdown`: ``verify_backup_location`` ended in
 content** came back ``ok=True`` with an empty ``reason`` — and that is the gate
 :func:`ledger.lockdown.execute_lockdown` consults before it irreversibly shreds
 the local identity vault. A partial rsync or an emptied replica disk read as
-"your archive survived" and authorised destroying the only real copy.
+"your archive survived" and authorized destroying the only real copy.
 
 The same shape sat in ``ledger verify-backup`` (``PASS: 0 bag(s) verified, 0
 failed`` on a content-free backup, exit 0, so a cron job whose whole job is to
@@ -271,7 +271,7 @@ def test_lockdown_will_not_shred_the_vault_for_a_replica_that_proved_nothing(
     The local identity vault is destroyed irreversibly, and the only thing
     standing between a duress trigger and that destruction is
     ``verify_backup_location``. A replica with no content in it must not be able
-    to authorise it.
+    to authorize it.
     """
     root = tmp_path / "arc"
     replica = tmp_path / "replica"
@@ -284,7 +284,7 @@ def test_lockdown_will_not_shred_the_vault_for_a_replica_that_proved_nothing(
         execute_lockdown(archive, actor="steward-2", now=_NOW)
 
     # The vault survived, and the refusal names WHY in a no-outing-safe code.
-    assert archive.vault_path.exists(), "an empty replica authorised an irreversible shred"
+    assert archive.vault_path.exists(), "an empty replica authorized an irreversible shred"
     assert "nothing-verified" in str(excinfo.value)
     # Disclosure is still frozen: refusing the shred must not undo the cheap,
     # reversible half of the duress posture.
