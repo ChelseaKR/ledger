@@ -69,7 +69,19 @@ _SOURCE_ROOT = Path(__file__).resolve().parents[1] / "src" / "ledger"
 #: state that bytes were checked without going through one of them, so a call to
 #: one is the definition of a verdict-producing site.
 _VERDICT_PRODUCERS = frozenset(
-    {"audit_fixity", "validate_bag", "audit_log_chains", "verify_backup", "overall_status"}
+    {
+        "audit_fixity",
+        "validate_bag",
+        "audit_log_chains",
+        "verify_backup",
+        "overall_status",
+        # #188: the holding-aware sweep and verdicts. A caller that moved from
+        # `audit_fixity` to `audit_holdings` still makes the same claim, and has to
+        # stay in this census when it does.
+        "audit_holdings",
+        "holding_status",
+        "overall_holding_status",
+    }
 )
 
 
@@ -358,28 +370,39 @@ _VERDICT_CALL_SITES: dict[tuple[str, str, str], str] = {
     ("attestation.py", "build_attestation", "audit_fixity"): (
         "attestation fixity_ok (published at /proof)"
     ),
-    ("backup.py", "verify_backup", "audit_fixity"): "verify_backup report",
+    ("backup.py", "verify_backup", "audit_holdings"): "verify_backup report",
     ("backup.py", "restore_backup", "verify_backup"): "verify_backup report",
-    ("cli.py", "_cmd_audit", "audit_fixity"): "ledger audit summary",
+    ("cli.py", "_cmd_audit", "audit_holdings"): "ledger audit summary",
     ("cli.py", "_cmd_audit", "audit_log_chains"): "ledger audit summary",
+    ("cli.py", "_cmd_audit", "holding_status"): "ledger audit summary",
+    ("cli.py", "_cmd_audit", "overall_holding_status"): "ledger audit summary",
     ("cli.py", "_cmd_verify_backup", "verify_backup"): "verify_backup report",
     ("export_drive.py", "build_export_drive", "validate_bag"): "ledger export-drive summary",
     ("export_drive.py", "build_export_drive", "overall_status"): "ledger export-drive summary",
     ("lockdown.py", "verify_backup_location", "audit_fixity"): "lockdown replica verification",
-    ("server.py", "_handle_healthz", "audit_fixity"): "GET /healthz (anonymous)",
-    ("server.py", "_handle_healthz", "overall_status"): "GET /healthz (steward)",
-    ("server.py", "_handle_status", "audit_fixity"): "GET /status (anonymous)",
-    ("server.py", "_handle_status", "overall_status"): "GET /status (steward)",
-    ("succession.py", "build_handoff", "audit_fixity"): "hand-off manifest fixity fields",
+    ("server.py", "_handle_healthz", "audit_holdings"): "GET /healthz (anonymous)",
+    ("server.py", "_handle_healthz", "holding_status"): "GET /healthz (steward)",
+    ("server.py", "_handle_healthz", "overall_holding_status"): "GET /healthz (steward)",
+    ("server.py", "_handle_status", "audit_holdings"): "GET /status (anonymous)",
+    ("server.py", "_handle_status", "overall_status"): "GET /status (anonymous)",
+    ("server.py", "_handle_status", "holding_status"): "GET /status (steward)",
+    ("server.py", "_handle_status", "overall_holding_status"): "GET /status (steward)",
+    ("succession.py", "build_handoff", "audit_holdings"): "hand-off manifest fixity fields",
     # Single-bag checks. Each judges one named bag that the caller already holds,
     # so there is no sequence to fold and no empty case to be vacuously true
     # about: the answer is about that bag or it raises.
     ("drill.py", "_source_bag_still_validates", "validate_bag"): _NOT_A_CLAIM,
-    ("ingest.py", "audit_fixity", "validate_bag"): _NOT_A_CLAIM,
     ("replicate.py", "replicate_bag", "validate_bag"): _NOT_A_CLAIM,
     ("replicate.py", "verify_replicas", "validate_bag"): _NOT_A_CLAIM,
     ("replicate.py", "heal", "validate_bag"): _NOT_A_CLAIM,
     ("replicate.py", "recover_sealed_bag", "validate_bag"): _NOT_A_CLAIM,
+    # The per-bag sweep and its views. `audit_fixity` delegates to `audit_holdings`
+    # since #188, so the `validate_bag` call moved there, and neither folds its
+    # reports into a verdict: the callers mapped above do. `overall_holding_status`
+    # calls `holding_status` once per element as the fold's own step.
+    ("ingest.py", "audit_holdings", "validate_bag"): _NOT_A_CLAIM,
+    ("ingest.py", "audit_fixity", "audit_holdings"): _NOT_A_CLAIM,
+    ("fixity.py", "overall_holding_status", "holding_status"): _NOT_A_CLAIM,
 }
 
 
