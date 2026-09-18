@@ -449,9 +449,14 @@ def test_the_record_schema_declares_every_key_a_record_manifest_can_carry(
     )
     assert "placement" in stored
     assert set(stored) <= set(schema["properties"])
-    # `placement` is the one property that is optional rather than required,
-    # because a record written before #202 does not carry it.
-    assert set(schema["properties"]) - set(schema["required"]) == {"placement"}
+    # The optional properties are exactly the ones a record written before the
+    # feature that added them does not carry: `placement` (#202), and
+    # `holding_kind` and `physical` (#188).
+    assert set(schema["properties"]) - set(schema["required"]) == {
+        "placement",
+        "holding_kind",
+        "physical",
+    }
 
 
 def test_an_unarranged_record_manifest_is_byte_identical_to_the_pre_202_bytes(

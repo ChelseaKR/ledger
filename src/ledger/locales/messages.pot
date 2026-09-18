@@ -130,6 +130,9 @@ msgstr ""
 msgid "Are you the contributor? Manage or withdraw your consent"
 msgstr ""
 
+msgid "Artwork"
+msgstr ""
+
 #, python-brace-format
 msgid ""
 "As of {when}, at least one record package in this archive declared no "
@@ -176,6 +179,9 @@ msgstr ""
 msgid "Attested by: {who}."
 msgstr ""
 
+msgid "Audio cassette"
+msgstr ""
+
 msgid "Audit log"
 msgstr ""
 
@@ -194,7 +200,13 @@ msgstr ""
 msgid "Back to the steward console"
 msgstr ""
 
+msgid "Banner"
+msgstr ""
+
 msgid "Before you act"
+msgstr ""
+
+msgid "Book"
 msgstr ""
 
 msgid "Browse"
@@ -214,6 +226,9 @@ msgstr ""
 msgid ""
 "Browse the archive by year. Each year links to the records from that "
 "period."
+msgstr ""
+
+msgid "Button or badge"
 msgstr ""
 
 msgid "By year (list view)"
@@ -269,6 +284,9 @@ msgstr ""
 msgid "Comparing the current record with an earlier saved version. Record {id}."
 msgstr ""
 
+msgid "Condition"
+msgstr ""
+
 #, python-brace-format
 msgid "Consent and takedown requests: {window}"
 msgstr ""
@@ -316,6 +334,9 @@ msgid ""
 "withholding holds it for revision. Every choice is recorded."
 msgstr ""
 
+msgid "Correspondence"
+msgstr ""
+
 msgid "Count"
 msgstr ""
 
@@ -324,6 +345,9 @@ msgstr ""
 
 #, python-brace-format
 msgid "Current statement (as of {date})"
+msgstr ""
+
+msgid "Custody"
 msgstr ""
 
 msgid "Date"
@@ -390,6 +414,9 @@ msgid ""
 "takedown request to see whether a steward has acted on it."
 msgstr ""
 
+msgid "Ephemera"
+msgstr ""
+
 msgid "Event"
 msgstr ""
 
@@ -398,6 +425,13 @@ msgid ""
 "did it, why, and to which record. Unlike the events above, the reason "
 "here is written by the acting steward, so this section is shown to "
 "stewards only."
+msgstr ""
+
+msgid ""
+"Every record here describes a physical object that has not been "
+"digitized, so there are no stored files to check. Nothing is wrong; "
+"nothing has been proved either. The objects are only as safe as the "
+"people keeping them."
 msgstr ""
 
 msgid ""
@@ -433,7 +467,16 @@ msgstr ""
 msgid "Files"
 msgstr ""
 
+msgid "Film reel"
+msgstr ""
+
 msgid "Finding aid (EAD XML)"
+msgstr ""
+
+msgid "Flyer"
+msgstr ""
+
+msgid "Format"
 msgstr ""
 
 msgid "From"
@@ -585,6 +628,12 @@ msgstr ""
 msgid "No open requests."
 msgstr ""
 
+msgid ""
+"No record here is visible to you, so there is nothing for this page to "
+"report. Whether the archive holds records you cannot see, and whether "
+"they passed their integrity checks, is shown only to its stewards."
+msgstr ""
+
 msgid "No recorded events yet."
 msgstr ""
 
@@ -614,6 +663,18 @@ msgid ""
 "one, on a schedule, by running this command:"
 msgstr ""
 
+msgid "Not recorded — nobody has written down who is keeping this."
+msgstr ""
+
+msgid "Not shown publicly."
+msgstr ""
+
+msgid "Notebook"
+msgstr ""
+
+msgid "Nothing public to report on."
+msgstr ""
+
 msgid "Object"
 msgstr ""
 
@@ -638,6 +699,9 @@ msgid "Open consent & takedown requests"
 msgstr ""
 
 msgid "Open the record to read it before deciding."
+msgstr ""
+
+msgid "Other"
 msgstr ""
 
 msgid "Our promise, proven"
@@ -667,10 +731,28 @@ msgid ""
 "steward. You are seeing everything you are allowed to see."
 msgstr ""
 
+msgid "Periodical"
+msgstr ""
+
 msgid "Permanent link"
 msgstr ""
 
 msgid "Persistent identifier"
+msgstr ""
+
+msgid "Photograph"
+msgstr ""
+
+msgid "Photographic negative"
+msgstr ""
+
+msgid "Physical holding"
+msgstr ""
+
+msgid "Physical · not digitized"
+msgstr ""
+
+msgid "Physical · partial scan"
 msgstr ""
 
 msgid "Places"
@@ -698,6 +780,9 @@ msgid "Possible name"
 msgstr ""
 
 msgid "Possible phone number"
+msgstr ""
+
+msgid "Poster"
 msgstr ""
 
 #, python-brace-format
@@ -749,6 +834,12 @@ msgid "Record content."
 msgstr ""
 
 msgid "Recorded actions, newest first"
+msgstr ""
+
+msgid "Recorded and shown below."
+msgstr ""
+
+msgid "Recorded. Not shown at your level of access."
 msgstr ""
 
 msgid "Records (list view)"
@@ -855,6 +946,9 @@ msgstr ""
 msgid "Skip to main content"
 msgstr ""
 
+msgid "Slide"
+msgstr ""
+
 msgid "Some parts of this record are not available under your current access:"
 msgstr ""
 
@@ -920,6 +1014,9 @@ msgid "Summary (optional)"
 msgstr ""
 
 msgid "Take down"
+msgstr ""
+
+msgid "Textile"
 msgstr ""
 
 msgid "Thank you — your contribution was received"
@@ -997,6 +1094,11 @@ msgid ""
 msgstr ""
 
 msgid ""
+"The scan below is checked for integrity like any other file. The object "
+"it was made from is not, and a checked scan is not a checked object."
+msgstr ""
+
+msgid ""
 "The statement below is reproduced exactly as the stewards published it, "
 "in the language they wrote it in. Its wording is a legal instrument, so "
 "this project never translates it — a translation could change what it "
@@ -1033,6 +1135,9 @@ msgid ""
 msgstr ""
 
 msgid "This archive holds nothing yet."
+msgstr ""
+
+msgid "This archive is a catalog, not a copy."
 msgstr ""
 
 msgid ""
@@ -1120,7 +1225,13 @@ msgstr ""
 msgid "Version history"
 msgstr ""
 
+msgid "Video cassette"
+msgstr ""
+
 msgid "View the audit log"
+msgstr ""
+
+msgid "Vinyl record"
 msgstr ""
 
 msgid "Violence — describes physical harm or attack"
@@ -1263,6 +1374,9 @@ msgstr ""
 msgid "Your submission was withdrawn"
 msgstr ""
 
+msgid "Zine"
+msgstr ""
+
 msgid "and enter both."
 msgstr ""
 
@@ -1279,6 +1393,12 @@ msgid "community members only"
 msgstr ""
 
 msgid "correct the record"
+msgstr ""
+
+msgid ""
+"ledger holds no copy of this object, so it cannot check whether it is "
+"intact. Its condition is whatever the last person to look at it wrote "
+"down."
 msgstr ""
 
 msgid "no one yet"
@@ -1334,6 +1454,12 @@ msgstr[1] ""
 
 #, python-brace-format
 msgid "{count} found"
+msgstr ""
+
+#, python-brace-format
+msgid ""
+"{count} of them describe physical objects that have not been digitized, "
+"so there is nothing stored for those to check."
 msgstr ""
 
 #, python-brace-format

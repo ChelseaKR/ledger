@@ -20,6 +20,7 @@ from datetime import UTC
 from ledger.arrangement import Arrangement
 from ledger.errors import AccessDenied
 from ledger.models import (
+    CUSTODY_FIELDS,
     PUBLIC_GRANT,
     AccessPolicy,
     ArchivalContainer,
@@ -336,6 +337,33 @@ def disclose_container(
     )
 
 
+def is_insider(grant: Grant) -> bool:
+    """Whether a viewer is a trusted insider: a steward, or a community member.
+
+    An insider is shown *why* each part is withheld (honesty, P1-3) and which of
+    the three custody states a physical holding is in. An outsider gets a count of
+    withheld parts and one neutral custody word, so neither the redaction reasons
+    nor the custody state can be read as targeting metadata about what a record
+    hides (P2-2; #188, owner decision 2026-09-18).
+    """
+    return grant.is_steward or AccessPolicy.COMMUNITY in grant.levels
+
+
+def _field_redactions_for(grant: Grant, redactions: list[Redaction]) -> list[Redaction]:
+    """The field redactions ``grant`` is told about.
+
+    An insider is told about every one. An outsider is not told that a custody
+    field was withheld: that would say "somebody is keeping this", and the count
+    of withheld parts would say it too. The record page says "Custody: Not shown
+    publicly." in its place, which is true whether or not custody was recorded, so
+    the outsider's view of a record with sealed custody and of one with none is
+    the same view (:attr:`~ledger.models.DisclosedRecord.custody_state`).
+    """
+    if is_insider(grant):
+        return redactions
+    return [r for r in redactions if r.name not in CUSTODY_FIELDS]
+
+
 def is_listable(
     record: Record,
     grant: Grant,
@@ -428,6 +456,8 @@ def disclose(
                 )
             )
 
+    withheld = _field_redactions_for(grant, withheld)
+
     payloads: list[PayloadFile] = []
     for payload in record.payloads:
         if is_visible(payload.policy, grant, now, conditions_met=conditions_met):
@@ -441,6 +471,16 @@ def disclose(
 
     # `dublin_core` is collection-level descriptive metadata; pass it through but
     # never add identity (no-outing rule). `to_dict` already drops empty elements.
+    #
+    # `holding_kind` and `physical` travel with it, for the same reason and under
+    # the same rule: what an object *is* — a zine, twelve cassettes, one box — is
+    # collection-level description, and a reader has to be able to learn that the
+    # thing exists before they can ask to see it (#188). The protected half of a
+    # physical holding is NOT here: custody is carried as ordinary sealed
+    # `custody.*` fields and has already been through the field loop above, which
+    # is the whole reason there is no second disclosure branch to audit. What an
+    # outsider is told ABOUT custody is decided by the same grant, here:
+    # `_field_redactions_for` above and `outsider` below.
     return DisclosedRecord(
         record_id=record.record_id,
         title=record.title,
@@ -449,6 +489,9 @@ def disclose(
         payloads=tuple(payloads),
         content_warnings=tuple(record.content_warnings),
         withheld=tuple(withheld),
+        holding_kind=record.holding_kind,
+        physical=record.physical,
+        outsider=not is_insider(grant),
         placement=visible_placement(
             record.placement,
             grant,
