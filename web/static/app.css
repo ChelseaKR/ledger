@@ -3,14 +3,14 @@
  * Design goals, each tied to a quality attribute:
  *   - mobile-first, fluid layout            -> mobility / ubiquity (works on a
  *                                              cheap phone, scales up to desktop)
- *   - high contrast, colour never the only
+ *   - high contrast, color never the only
  *     signal                                -> accessibility (WCAG 2.2 AA)
  *   - strong :focus-visible indicator,
  *     visible skip link                     -> keyboard accessibility
- *   - prefers-reduced-motion honoured       -> accessibility (vestibular safety)
+ *   - prefers-reduced-motion honored       -> accessibility (vestibular safety)
  *   - no web fonts, no JS, no images needed -> affordability / portability
  *
- * Colour tokens & contrast (documented for the AA contrast requirement, 4.5:1
+ * Color tokens & contrast (documented for the AA contrast requirement, 4.5:1
  * for normal text, 3:1 for large text and UI components, against #ffffff):
  *   --ink       #1a1a1a on --bg #ffffff   = 16.1:1  (body text)
  *   --muted     #595959 on --bg #ffffff   =  7.0:1  (secondary text)
@@ -39,7 +39,7 @@
   --space: 1rem;
 }
 
-/* Dark theme: honour the reader's OS preference. Every colour pair below is held
+/* Dark theme: honor the reader's OS preference. Every color pair below is held
  * to the same WCAG AA contrast as the light theme, verified for BOTH themes by the
  * contrast audit (accessibility — the gate covers what a reader actually sees). */
 @media (prefers-color-scheme: dark) {
@@ -205,7 +205,7 @@ p {
   font-size: 0.95rem;
 }
 
-/* --- links: descriptive, underlined (colour is not the only signal) ----- */
+/* --- links: descriptive, underlined (color is not the only signal) ----- */
 a {
   color: var(--link);
   text-decoration: underline;
@@ -236,7 +236,7 @@ a:hover {
   margin: 1.5rem 0;
 }
 
-/* --- facets: an active filter is emphasised; clear-filters is obvious ---- */
+/* --- facets: an active filter is emphasized; clear-filters is obvious ---- */
 .facets [aria-current="true"] {
   font-weight: 600;
 }
@@ -272,7 +272,7 @@ a:hover {
 }
 
 /* --- search match highlight --------------------------------------------- */
-/* The matched term in a result snippet, marked with <mark>. Colour is not the
+/* The matched term in a result snippet, marked with <mark>. Color is not the
  * only signal: <mark> is a semantic element a screen reader can expose, and the
  * highlight keeps a high contrast (verified by the contrast audit). */
 mark {
@@ -354,7 +354,7 @@ button:hover {
   border-bottom: 1px solid var(--border);
 }
 
-/* --- content-warning badge: text label, not colour/icon alone ---------- */
+/* --- content-warning badge: text label, not color/icon alone ---------- */
 .badge {
   display: inline-block;
   margin-left: 0.5rem;
@@ -431,7 +431,7 @@ dl {
 
 /* --- content-warning interstitial (programmatic + textual) ------------- */
 /* The interstitial reads as text first; the border/background only reinforce a
- * signal that is already conveyed in words (colour is not the only signal). */
+ * signal that is already conveyed in words (color is not the only signal). */
 .interstitial,
 .cw-note {
   background: var(--warn-bg);

@@ -357,7 +357,7 @@ def _highlight_runs(text: str, terms: Sequence[str]) -> list[tuple[str, bool]]:
 def snippet(record: DisclosedRecord, query: str, *, width: int = 160) -> Snippet | None:
     """Return an excerpt of ``record`` around the first query match, or ``None``.
 
-    The excerpt is a window of about ``width`` characters centred a little after the
+    The excerpt is a window of about ``width`` characters centered a little after the
     earliest matching term, trimmed back to whole words and bracketed with an
     ellipsis when text is dropped at either end. Every occurrence of any term within
     the window is flagged as a matched run (see :class:`Snippet`) so a UI can show a

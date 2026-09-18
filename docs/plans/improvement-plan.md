@@ -98,7 +98,7 @@ remembered to add is uncovered and green.
 Two findings make the green hollow rather than merely thin:
 
 1. `tests/test_security_critical_paths.py::test_corrupt_proposal_file_reads_as_empty`
-   **asserted the #154 defect as intended behaviour.** CI was green *because* a
+   **asserted the #154 defect as intended behavior.** CI was green *because* a
    test pinned the silent-data-loss path as correct. (In flight, PR #160/#162.)
 2. `tests/test_audit_chain.py::test_audit_log_chains_covers_archive_level_logs`
    calls `log_takedown` **sequentially, twice**, then asserts the chain verifies
@@ -198,7 +198,7 @@ Fail-before: 1 failed / 17 passed. Pass-after: 18 passed.
 | `src/ledger/bag.py` | `atomic_write_text` random temp suffix and temp cleanup on failure |
 | `src/ledger/demo.py` | hand-rolled read-record-write replaced with `append_event` |
 | `src/ledger/attestation.py` | `_read_or_refuse`; `_every_log_head` fails closed on a present-but-unreadable log |
-| `tests/test_audit_log_concurrency.py` | **new**, 6 behavioural tests |
+| `tests/test_audit_log_concurrency.py` | **new**, 6 behavioral tests |
 | `tests/test_no_unlocked_log_rewrites.py` | **new**, the AST gate plus 8 tests of its own teeth |
 | `tests/test_attestation.py` | 2 tests: refusal on a damaged log, clean attestation on a legitimately empty bag |
 | `docs/adr/0018-...md` | **new**, the decision (0014-0017 are claimed by the in-flight stack) |
@@ -219,7 +219,7 @@ Fail-before: 1 failed / 17 passed. Pass-after: 18 passed.
 - **#83, #155, #154, and the pooled coverage floor.** In flight on PRs #160/#161/#162.
   Not duplicated.
 - **Surfacing skipped logs on the steward audit page.** `Archive.audit_events` silently
-  `continue`s past an unreadable log, while its neighbour `audit_fixity` turns the same
+  `continue`s past an unreadable log, while its neighbor `audit_fixity` turns the same
   failure into a visible failing result. Making that visible needs a new user-facing
   string in `en`/`es`/`fr`/`ar` (the i18n gate enforces completeness parity across all
   four). Machine-fabricating a safety-critical warning in three languages the author
@@ -230,7 +230,7 @@ Fail-before: 1 failed / 17 passed. Pass-after: 18 passed.
 
 `make verify < /dev/null; echo "EXIT=$?"` -> **`verify: all gates green`, `EXIT=0`**,
 **1273 tests passed, 0 failed**. Baseline at `HEAD` was 1257; this pass adds 16 tests
-(6 behavioural, 8 for the structural gate and its own teeth, 2 for the attestation
+(6 behavioral, 8 for the structural gate and its own teeth, 2 for the attestation
 refusal). `make demo` also re-run end to end: `EXIT=0`, no-outing proof intact,
 `PREMIS now contains a CONSENT_CHANGE event: True`.
 

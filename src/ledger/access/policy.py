@@ -385,7 +385,7 @@ def disclose(
     structurally: the result type has no ``identity_ref``, and this function never
     copies identity into ``dublin_core`` or ``fields``.
 
-    Behaviour:
+    Behavior:
 
     * If the record is not listable for this grant, raise
       :class:`~ledger.errors.AccessDenied` naming only the record id -- the viewer

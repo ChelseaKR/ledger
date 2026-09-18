@@ -139,7 +139,7 @@ def _identification_key(event: PremisEvent) -> tuple[str | None, str | None]:
     The object identifier and the bytes examined, together. Two events about one
     payload whose bytes differ (a revised deposit) are about different things and
     may legitimately disagree; two about the same payload and the same bytes may not
-    (ADR 0012). Events written before the address travelled separately carry the
+    (ADR 0012). Events written before the address traveled separately carry the
     address *as* the identifier and ``None`` here, so legacy events group by address
     — exactly the keying under which #149 was observed, and therefore the keying
     under which a legacy log's contradiction must still be reportable.

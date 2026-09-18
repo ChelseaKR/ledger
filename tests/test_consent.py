@@ -379,7 +379,7 @@ def test_resolve_stamps_resolved_at(tmp_path: Path) -> None:
 
 
 def test_acknowledge_does_not_claim_request_was_resolved(tmp_path: Path) -> None:
-    """Acknowledgement records lifecycle state without inventing a completed response."""
+    """Acknowledgment records lifecycle state without inventing a completed response."""
     store = ConsentRequestStore(tmp_path / "consent.json")
     store.add(
         ConsentRequest(

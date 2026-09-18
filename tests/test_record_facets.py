@@ -176,5 +176,5 @@ def test_record_page_is_localized() -> None:
     assert "Retenido" in html  # the withheld section heading
     assert "consentimiento" in html  # the contributor consent link
     # The English equivalents are gone.
-    assert "Catalogue metadata" not in html
+    assert "Catalog metadata" not in html
     assert "Withheld" not in html

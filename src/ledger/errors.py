@@ -8,7 +8,7 @@ the hierarchy and are part of ledger's threat model:
    Messages name the *object* (a content address, a record id, a bag path) and the
    *condition*, never the protected content. This is asserted by the no-outing audit.
 2. **Failures are surfaced, never swallowed.** A fixity mismatch or an unreachable
-   replica raises (or is recorded as a labelled preservation event); it is never
+   replica raises (or is recorded as a labeled preservation event); it is never
    silently treated as success (failure transparency).
 """
 
@@ -108,7 +108,7 @@ class IdentityVaultError(LedgerError):
 
 
 class ConsentError(LedgerError):
-    """A consent or takedown request could not be honoured as stated."""
+    """A consent or takedown request could not be honored as stated."""
 
 
 class ModerationError(LedgerError):

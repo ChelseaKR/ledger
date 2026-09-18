@@ -69,7 +69,12 @@ from ledger.ai.limits import (
     RateLimiter,
 )
 from ledger.ai.provenance import resolve_commit as resolve_ai_commit
-from ledger.attestation import build_attestation, publish_attestation, sign_attestation
+from ledger.attestation import (
+    FixityDisclosure,
+    build_attestation,
+    publish_attestation,
+    sign_attestation,
+)
 from ledger.backup import create_backup, prune_backups, restore_backup, verify_backup
 from ledger.config import Config, StorageLocation
 from ledger.errors import LedgerError, ObjectNotFound
@@ -229,7 +234,7 @@ def _cmd_ingest(args: argparse.Namespace) -> int:  # noqa: C901 - argparse optio
     # A bag's payload is keyed by filename, so two sources sharing a basename would
     # collapse to one entry and the second would silently replace the first: an
     # archive that reported success, recorded one payload, and passed its own audit
-    # while a file the steward handed it was gone. Digitisation packages routinely
+    # while a file the steward handed it was gone. Digitization packages routinely
     # carry repeated basenames across directories (per-chapter `page-001.txt`,
     # per-volume `metadata.xml`), so this is an ordinary input, not a pathological
     # one. Refuse the whole ingest and name the collision (fail closed): losing a
@@ -256,7 +261,7 @@ def _cmd_ingest(args: argparse.Namespace) -> int:  # noqa: C901 - argparse optio
     # A transcript/caption makes audio or video accessible to a Deaf or hard-of-
     # hearing reader (user research H3). Pre-declare the payload carrying it so the
     # one ingest path preserves the transcript (it recomputes the address/size). The
-    # media type is guessed so an audio/video file is recognised as such.
+    # media type is guessed so an audio/video file is recognized as such.
     import mimetypes
 
     predeclared: dict[str, PayloadFile] = {}
@@ -556,7 +561,7 @@ def _cmd_grant_issue(args: argparse.Namespace) -> int:
     The token is the *only* thing printed: it is a sealed bearer value, so the
     signing secret is never echoed and nothing else is written to stdout (the
     no-outing rule's no-secret-outing corollary). The subject must already have a
-    provisioned grant in the grants file for the token to authorise anything at the
+    provisioned grant in the grants file for the token to authorize anything at the
     server; issuing a token for an unprovisioned subject is harmless (it resolves to
     anonymous), so this command does not require the grants file. ``--expires-at``
     bounds the token to an ISO-8601 instant; omitted, the token does not expire."""
@@ -838,7 +843,7 @@ def _print_verify_report(report: backup_mod.VerifyReport, location: Path) -> int
     The ``COULD NOT VERIFY`` verdict exists because ``PASS: 0 bag(s) verified, 0
     failed`` is what this used to print for a backup that held none of the archive's
     content — a cron job whose whole purpose is to alarm on a bad backup exiting 0 on
-    an empty one. An empty backup is not corruption, so it is not labelled ``FAIL``;
+    an empty one. An empty backup is not corruption, so it is not labeled ``FAIL``;
     it is ``COULD NOT VERIFY``, and it is still a non-zero exit, because nothing about
     the archive was proven and that is precisely what this command is asked.
     """
@@ -1650,6 +1655,21 @@ def _cmd_export_drive(args: argparse.Namespace) -> int:
     that grant may see is re-bagged onto the package. Exits non-zero if any
     freshly written bag fails its own validation, so a bad package is never
     reported as ready to hand to a courier.
+
+    The summary line reports **two numbers** — bags verified of bags written —
+    and a three-state verdict, because one boolean could not tell a verified
+    package from an empty one. ``all_bags_valid`` is ``all(report.ok for ...)``
+    over the bags this build wrote, and that fold is vacuously true over no bags,
+    so a run whose viewer grant disclosed nothing printed *"0 record(s), 0
+    file(s) packaged ...; all bags verified"* and exited ``0`` — to the one
+    reader who is about to put the drive in someone's hand and send them away
+    with it (#208).
+
+    The **exit code does not move**: an empty package is not a corrupt one, and a
+    grant that legitimately discloses nothing (a sealed-only archive exported for
+    an anonymous viewer) must not turn a courier build into a cron failure. That
+    is the same split #208 took on ``ledger handoff`` — the sentence is the
+    claim, the exit code is the alarm, and only the claim was wrong.
     """
     archive = _open_archive(Path(args.root))
     grant = _grant_for(args.as_subject)
@@ -1662,10 +1682,18 @@ def _cmd_export_drive(args: argparse.Namespace) -> int:
         base_url=args.base_url or "",
         now=now,
     )
-    status = "all bags verified" if result.all_bags_valid else "BAG VALIDATION FAILED"
+    if result.status is FixityStatus.FAILED:
+        status = "BAG VALIDATION FAILED"
+    elif not result.bags_written:
+        status = "no bags to verify — this package contains no records"
+    elif result.status is FixityStatus.UNVERIFIED:
+        status = "some bags could not be verified"
+    else:
+        status = "all bags verified"
     print(
         f"export-drive: {result.records_packaged} record(s), {result.files_packaged} file(s) "
-        f"packaged to {result.out_dir} for viewer {grant.subject!r}; {status}"
+        f"packaged to {result.out_dir} for viewer {grant.subject!r}; "
+        f"{result.bags_verified} of {result.bags_written} bag(s) verified; {status}"
     )
     return 0 if result.all_bags_valid else 1
 
@@ -1826,6 +1854,23 @@ def _cmd_checkup(args: argparse.Namespace) -> int:
     return report.exit_code
 
 
+#: What ``attest-health`` prints for each published disclosure. "healthy" used to
+#: be printed for an archive with no bags at all, because it was read off
+#: ``fixity_ok``, which was the vacuous fold (#205).
+_ATTEST_HEALTH_SUMMARY: dict[FixityDisclosure, str] = {
+    FixityDisclosure.VERIFIED: "healthy",
+    FixityDisclosure.FAILED: "FIXITY ISSUES PRESENT",
+    FixityDisclosure.COULD_NOT_VERIFY: "SOME BAGS COULD NOT BE VERIFIED",
+    FixityDisclosure.NOTHING_TO_VERIFY: "nothing to verify — this archive holds no records",
+    FixityDisclosure.UNSTATED: "state not published by this attestation",
+}
+
+#: The disclosures a scheduled run must not alarm on. An empty archive is a
+#: legitimate state for a fresh install, not a fault; a bag that could not be
+#: verified is a fault even though it is not a failure.
+_ATTEST_HEALTH_QUIET = frozenset({FixityDisclosure.VERIFIED, FixityDisclosure.NOTHING_TO_VERIFY})
+
+
 def _cmd_attest_health(args: argparse.Namespace) -> int:
     """``attest-health`` — publish a signed, dated transparency attestation (EXP-01).
 
@@ -1840,6 +1885,17 @@ def _cmd_attest_health(args: argparse.Namespace) -> int:
     alerts a steward the same way ``ledger audit`` does — an unsigned or unhealthy
     attestation is still published (a health problem should be visible, not
     hidden by a failed publish step).
+
+    **An archive with nothing in it is not a problem, and does not alarm.** Since
+    #205 an empty archive publishes ``fixity: "nothing-to-verify"`` and therefore
+    ``fixity_ok: false``, so the old ``0 if attestation.fixity_ok else 1`` would
+    have turned every freshly installed archive's nightly cron red until its first
+    record landed. The exit code is an *alarm* and the published field is a
+    *statement*: they are allowed to differ, and here they must. ``verified`` and
+    ``nothing-to-verify`` exit ``0``; ``failed`` and ``could-not-verify`` exit
+    ``1``, the two cases where bytes this archive holds are not accounted for.
+    That split is what makes saying the honest thing affordable — it is the cost
+    #205 recorded against refusing to attest at all, removed rather than paid.
     """
     archive = _open_archive(Path(args.root))
     now = args.now if args.now else now_iso()
@@ -1852,10 +1908,10 @@ def _cmd_attest_health(args: argparse.Namespace) -> int:
             print(f"attest-health: signing failed: {exc}", file=sys.stderr)
             return 1
     out_path = publish_attestation(archive, attestation)
-    status = "healthy" if attestation.fixity_ok else "FIXITY ISSUES PRESENT"
+    status = _ATTEST_HEALTH_SUMMARY[attestation.fixity]
     signed = "signed" if attestation.signature else "UNSIGNED"
     print(f"attest-health: {status}, {signed}, published to {out_path}", file=sys.stderr)
-    return 0 if attestation.fixity_ok else 1
+    return 0 if attestation.fixity in _ATTEST_HEALTH_QUIET else 1
 
 
 def _cmd_demo(args: argparse.Namespace) -> int:

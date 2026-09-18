@@ -117,7 +117,7 @@ def test_sealed_until_visible_exactly_at_date() -> None:
 def test_temporal_seal_binds_even_a_steward_before_date() -> None:
     """A dated SEALED_UNTIL is a temporal embargo that binds EVERY tier until the date.
 
-    Regression (user research C3): a record labelled "sealed until <date>" must not be
+    Regression (user research C3): a record labeled "sealed until <date>" must not be
     silently readable by a steward before that date — an embargo is a promise to time,
     not an access level. An *undated* seal remains a steward-readable access-level seal,
     and once the date passes the embargo opens to everyone."""

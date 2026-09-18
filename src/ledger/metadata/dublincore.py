@@ -10,7 +10,7 @@ Quality attributes:
 * **Standards-compliance.** JSON keys are the canonical DC element names; the XML
   is the ``oai_dc:dc`` profile with ``dc:`` elements in the DCMI namespace.
 * **Discoverability.** Stable, well-known element names let general-purpose
-  catalogues and search tools index the collection without bespoke mapping.
+  catalogs and search tools index the collection without bespoke mapping.
 * **Interoperability.** OAI-PMH-style ``oai_dc`` XML is harvestable by any
   conforming aggregator.
 
@@ -18,7 +18,7 @@ No-outing rule: ``dc.creator`` and ``dc.contributor`` describe the *collection*
 or *community* that holds an item — never a closeted individual who contributed
 it. Identity lives only in the encrypted vault (:mod:`ledger.identity`) behind an
 explicit grant; it is never written to a discoverable sidecar or XML record. This
-module trusts that the values handed to it already honour that rule and adds no
+module trusts that the values handed to it already honor that rule and adds no
 identity of its own.
 """
 

@@ -3,7 +3,7 @@
 These cover the P1-4 fix (subject/description are searchable, not just the title),
 multi-term AND matching, faceted counts and their deterministic ordering, facet
 click-through filtering, the non-Latin query hint, and the empty-query browse-all
-behaviour. Every test builds plain :class:`~ledger.models.DisclosedRecord` objects —
+behavior. Every test builds plain :class:`~ledger.models.DisclosedRecord` objects —
 the only shape a read path emits — so the suite never touches sealed values or any
 identity, mirroring the access boundary search relies on.
 """
@@ -289,7 +289,7 @@ def test_snippet_highlights_multiple_terms() -> None:
     record = _disclosed(
         "rec",
         title="winter mutual aid drive",
-        dublin_core={"description": ["A winter mutual aid drive for the neighbourhood."]},
+        dublin_core={"description": ["A winter mutual aid drive for the neighborhood."]},
     )
     snip = snippet(record, "winter aid")
     assert snip is not None

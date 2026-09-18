@@ -136,7 +136,7 @@ def test_consent_status_unknown_reference_is_neutral(server: tuple[Archive, str,
 
 @pytest.mark.accessibility
 def test_consent_status_form_is_accessible(server: tuple[Archive, str, str]) -> None:
-    """The lookup form is labelled and the page has the accessible shell."""
+    """The lookup form is labeled and the page has the accessible shell."""
     _archive, base, _rid = server
     status, body = _get(base, "/consent-status")
     assert status == 200

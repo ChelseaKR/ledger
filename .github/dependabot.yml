@@ -28,3 +28,64 @@ updates:
       codeql-action:
         patterns:
           - github/codeql-action*
+
+  # The entries below cover what only Renovate's default managers tracked until
+  # Renovate was disabled here (#233).
+
+  # infra/Dockerfile: the digest-pinned `python:3.12-slim` base of the
+  # self-hostable image. The tag and the digest move together.
+  - package-ecosystem: docker
+    directory: "/infra"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels: ["dependencies"]
+    commit-message:
+      prefix: "build"
+
+  # infra/aws/docker-compose.deploy.yml: the `caddy` TLS front end of the AWS
+  # demo stack.
+  - package-ecosystem: docker-compose
+    directory: "/infra/aws"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels: ["dependencies"]
+    commit-message:
+      prefix: "build"
+    # `ledger:demo` is built from infra/Dockerfile by the `build:` block beside
+    # it, never pulled. Dependabot's compose parser does not skip built
+    # services, so without this it would look `ledger` up on Docker Hub, where
+    # no such image exists, and fail the run.
+    ignore:
+      - dependency-name: ledger
+
+  # infra/aws/terraform: the AWS provider constraint and its committed
+  # .terraform.lock.hcl.
+  - package-ecosystem: terraform
+    directory: "/infra/aws/terraform"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels: ["dependencies"]
+    commit-message:
+      prefix: "build"
+
+  # tools/a11y_browser: the CI-only Playwright + axe accessibility harness,
+  # installed with `npm ci` from its committed lockfile.
+  - package-ecosystem: npm
+    directory: "/tools/a11y_browser"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels: ["dependencies"]
+    commit-message:
+      prefix: "build"
+
+# Not covered by any entry above, because Dependabot has no ecosystem for these
+# pins. Renovate's default `pyenv` and `github-actions` managers proposed bumps to
+# them until it was disabled (#233). They are now a manual check:
+#   - `.python-version` (the local / uv interpreter), when adopting a new Python
+#     minor
+#   - the `python-version:` and `node-version:` inputs to actions/setup-python and
+#     actions/setup-node in .github/workflows/

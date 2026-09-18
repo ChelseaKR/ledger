@@ -19,7 +19,7 @@ concurrency:
   # A concurrency group holds one running run and one pending run. A third run
   # joining the group cancels the pending one before it dispatches a single job,
   # so that commit ends `cancelled` with zero jobs and no verdict; with
-  # `cancel-in-progress: true` the running run is cancelled part-way through
+  # `cancel-in-progress: true` the running run is canceled part-way through
   # instead — also no verdict. A group keyed only on `github.ref` therefore makes
   # every push to `main` contend with the merge before it, and a burst of merges
   # loses the middle ones.
@@ -80,7 +80,7 @@ jobs:
       # (`--locked` fails the build rather than silently re-resolving) instead of
       # an unpinned `pip install -e ".[dev]"` against version ranges — the same
       # exact dependency graph on every contributor's machine and in CI.
-      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d  # v10.0.1
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4  # v10.1.0
         with:
           python-version: ${{ matrix.python }}
           enable-cache: true
@@ -154,7 +154,7 @@ jobs:
       # non-pip scanner. babel/pybabel come from the locked `dev` group below.
       - name: Install gettext (msgfmt)
         run: sudo apt-get update && sudo apt-get install -y gettext
-      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d  # v10.0.1
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4  # v10.1.0
         with:
           python-version: "3.12"
           enable-cache: true
@@ -191,7 +191,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d  # v10.0.1
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4  # v10.1.0
         with:
           python-version: "3.12"
           enable-cache: true
@@ -227,7 +227,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d  # v10.0.1
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4  # v10.1.0
         with:
           python-version: "3.12"
           enable-cache: true
@@ -243,7 +243,7 @@ jobs:
     runs-on: ubuntu-latest
     # Engine-backed depth ON TOP OF the static `accessibility` gate (FIX-12): a real
     # headless Chromium drives the served demo and runs axe-core, catching what a
-    # stdlib HTML scan cannot (rendered contrast in both colour schemes, focus
+    # stdlib HTML scan cannot (rendered contrast in both color schemes, focus
     # order, computed labels). It runs in PARALLEL and needs no other job. This is
     # deliberately CI/dev-only — Playwright, Node, and the browser never enter the
     # ledger runtime, so the stdlib-only promise (the "one cheap box" constraint)
@@ -351,7 +351,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d  # v10.0.1
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4  # v10.1.0
         with:
           python-version: "3.12"
           enable-cache: true
@@ -392,7 +392,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d  # v10.0.1
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4  # v10.1.0
         with:
           python-version: "3.12"
           enable-cache: true
@@ -406,7 +406,7 @@ jobs:
       - name: Secret scan (gitleaks)
         # Run the pinned gitleaks binary directly. The gitleaks-action v2 crashes
         # on pull_request events (internal GitHub API RequestError) before it ever
-        # scans; the binary is deterministic and honours .gitleaks.toml.
+        # scans; the binary is deterministic and honors .gitleaks.toml.
         run: |
           GL=8.30.1
           curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GL}/gitleaks_${GL}_linux_x64.tar.gz" | tar -xz -C /tmp gitleaks
@@ -443,7 +443,7 @@ jobs:
       # other. Fail-closed: any known vulnerability in the locked graph fails
       # this job; no muted gate (the standard forbids `|| true`-ing it away).
       - name: OSV-Scanner over the locked dependency graph
-        uses: google/osv-scanner-action/osv-scanner-action@6e4298ebc4db23e847df9b2e2de2939d6f066c67  # v2.5.1
+        uses: google/osv-scanner-action/osv-scanner-action@a345acffa64b0eaede81a3d9aae6141214d9c8fc  # v2.6.0
         with:
           scan-args: |-
             --lockfile=./uv.lock
@@ -476,7 +476,7 @@ jobs:
           persist-credentials: false
       # SEC-13/CQ-09: install from the committed, hash-locked `uv.lock` like every
       # other dep-installing job (see the gate job's comment).
-      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d  # v10.0.1
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4  # v10.1.0
         with:
           python-version: "3.12"
           enable-cache: true

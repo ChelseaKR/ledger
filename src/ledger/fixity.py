@@ -200,7 +200,7 @@ def overall_status(reports: Iterable[AuditReport]) -> FixityStatus:
 
     :class:`AuditReport` closes the vacuous-pass hole for the files inside *one*
     bag. This closes it for the *set* of bags, which is a separate hole with the
-    same shape: every caller that summarised a sweep wrote ``all(report.ok ...)``
+    same shape: every caller that summarized a sweep wrote ``all(report.ok ...)``
     or ``failed == 0``, and both are vacuously true over an empty sequence -- so an
     archive nobody looked at rendered as an archive that passed.
 

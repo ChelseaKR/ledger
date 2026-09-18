@@ -17,7 +17,7 @@ ledger targets **WCAG 2.2 Level AA** and conformance with the **Revised Section 
 Standards** (36 CFR Part 1194). The Revised 508 standards incorporate WCAG 2.0
 Level A and AA by reference for web content and add the **Functional Performance
 Criteria** of Chapter 3 (use without vision, with limited vision, without
-perception of colour, without hearing, with limited hearing, without speech, with
+perception of color, without hearing, with limited hearing, without speech, with
 limited manipulation, with limited reach and strength, and with limited language,
 cognitive, and learning abilities), the software requirements of Chapter 5, and the
 support-documentation requirements of Chapter 6.
@@ -42,11 +42,11 @@ here. Building to it anyway is deliberate.
 - **The contributor with the most to lose is often the one with the most barriers.**
   Safety and access are not separable concerns. The same person who needs the
   no-outing guarantee may also need a screen reader; a content warning that is
-  conveyed by colour alone fails exactly the reader it is meant to protect.
+  conveyed by color alone fails exactly the reader it is meant to protect.
 - **Meeting the standard institutions audit to gives a partnering library or campus
   a clean, public artifact to point at.** A small collective that wants to deposit
   its archive with a university or apply for a grant can hand over a committed ACR
-  on the recognised VPAT template instead of an informal assurance. Building to the
+  on the recognized VPAT template instead of an informal assurance. Building to the
   institutional bar is what lets an unfunded project interoperate with funded ones
   on the funded ones' terms — without becoming dependent on them.
 - **It costs least when it is structural.** The surface is plain semantic HTML with
@@ -76,11 +76,11 @@ sight or a pointer.
 ## Content warnings as programmatic text
 
 Content warnings are structured metadata on the record (`Record.content_warnings`),
-not styling. They are surfaced as **programmatic text**, never as colour or an icon
+not styling. They are surfaced as **programmatic text**, never as color or an icon
 alone:
 
 - In the table view, the content-warning column holds the literal word `Yes` or
-  `No`, so the signal survives for colour-blind and text-only readers.
+  `No`, so the signal survives for color-blind and text-only readers.
 - In the list view, a record with warnings carries a textual `Content warning`
   badge in its heading.
 - On a single record that carries warnings, the viewer first sees a **text
@@ -90,7 +90,7 @@ alone:
 - After proceeding, the warnings are **restated as text** above the content, so the
   signal is never lost on the way to the material.
 
-This serves both accessibility (the warning is perceivable without colour, sound,
+This serves both accessibility (the warning is perceivable without color, sound,
 or vision) and safety (the warning surfaces before any render of the underlying
 material).
 
@@ -144,9 +144,9 @@ the build. The gate has two parts.
    static floor. The `accessibility-browser` job in `.github/workflows/ci.yml`
    seeds a throwaway demo archive, serves it with `ledger serve`, and drives the
    canonical pages in a headless Chromium running **axe-core** — under **both** the
-   light and dark colour schemes — asserting no WCAG-tagged axe violations, plus
+   light and dark color schemes — asserting no WCAG-tagged axe violations, plus
    a keyboard-only traversal of the contribute form. This catches what a
-   standard-library HTML scan cannot: rendered colour contrast in each theme,
+   standard-library HTML scan cannot: rendered color contrast in each theme,
    computed accessible names, and focus order. It is **CI/dev-only** — Playwright,
    Node, and the browser live under `tools/a11y_browser/` and never enter the
    `ledger` runtime, so the stdlib-only, one-cheap-box promise still holds.
@@ -328,6 +328,6 @@ right-to-left pass green having audited a second English run.
 `make accessibility` is the same command CI runs, so green locally means green in
 CI. The full picture is: the static gate proves the structural floor on every
 commit; the browser job adds rendered-contrast and focus-order depth in both
-colour schemes, a 320px reflow check, and both text directions; the committed
+color schemes, a 320px reflow check, and both text directions; the committed
 NVDA/VoiceOver cadence covers what no machine can judge; and the ACR records the
 candid, end-to-end conformance result for anyone who needs it.

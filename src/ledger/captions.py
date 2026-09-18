@@ -213,12 +213,12 @@ def sniff_caption_format(text: str) -> str | None:
     """Return ``"vtt"``, ``"srt"``, or ``None`` — decided from content, not a filename.
 
     Mirrors :func:`ledger.upload.sniff_media_type`'s "the bytes decide, not the
-    declared type" rule: a WebVTT file is recognised by its mandatory ``WEBVTT``
-    signature (optionally after a BOM); an SRT file is recognised by its
+    declared type" rule: a WebVTT file is recognized by its mandatory ``WEBVTT``
+    signature (optionally after a BOM); an SRT file is recognized by its
     characteristic shape — a leading sequence-number line followed by a
     ``-->`` timings line, or (tolerating the sequence number some tools omit) a
     timings line using SRT's comma millisecond separator as the very first
-    non-blank line. Anything else is unrecognised.
+    non-blank line. Anything else is unrecognized.
     """
     body = _normalize_newlines(text).lstrip()
     if _has_webvtt_signature(body):
@@ -347,7 +347,7 @@ def parse_srt(text: str) -> list[TranscriptCue]:
 
 
 def parse_captions(text: str) -> list[TranscriptCue]:
-    """Sniff ``text``'s format and parse it, or raise if neither format is recognised.
+    """Sniff ``text``'s format and parse it, or raise if neither format is recognized.
 
     The one entry point a caller (the ``ingest`` CLI, a future contribute-form
     upload) needs: format detection and parsing in one step, content-sniffed per
@@ -359,7 +359,7 @@ def parse_captions(text: str) -> list[TranscriptCue]:
     if fmt == "srt":
         return parse_srt(text)
     raise CaptionParseError(
-        "not a recognised caption file: expected a WebVTT ('WEBVTT' signature) "
+        "not a recognized caption file: expected a WebVTT ('WEBVTT' signature) "
         "or SRT (numbered, timed blocks) file"
     )
 

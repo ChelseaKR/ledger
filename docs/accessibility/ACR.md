@@ -30,7 +30,7 @@ The automated accessibility gate (`ledger.accessibility_check`) enforces the str
 
 This report rests on two committed, recurring sources of evidence — neither adds a runtime dependency, both run against the same canonical pages:
 
-- **Automated.** The stdlib static gate (`python -m ledger.accessibility_check web`) runs on every commit, and a browser-real **axe-core** job (the `accessibility-browser` CI job) drives the served site in a headless Chromium under both the light and dark colour schemes, asserting no WCAG-tagged axe violations. The same job runs a **320 CSS px reflow** pass (SC 1.4.10), which axe cannot perform: axe judges the DOM it is handed and has no opinion about the viewport that DOM was laid out in. The static gate additionally enforces **4.1.3 Status Messages** in both directions — no status message outside a live region, no live region scoped wider than its message — which axe cannot judge either, because nothing in the markup says which paragraph is *about* an outcome.
+- **Automated.** The stdlib static gate (`python -m ledger.accessibility_check web`) runs on every commit, and a browser-real **axe-core** job (the `accessibility-browser` CI job) drives the served site in a headless Chromium under both the light and dark color schemes, asserting no WCAG-tagged axe violations. The same job runs a **320 CSS px reflow** pass (SC 1.4.10), which axe cannot perform: axe judges the DOM it is handed and has no opinion about the viewport that DOM was laid out in. The static gate additionally enforces **4.1.3 Status Messages** in both directions — no status message outside a live region, no live region scoped wider than its message — which axe cannot judge either, because nothing in the markup says which paragraph is *about* an outcome.
 - **Manual.** A committed quarterly (and pre-release) **NVDA and VoiceOver** review covers what no scan can judge — reading order, content-warning announcement, `aria-live` status, and spoken form errors. Its cadence, checklist, and results log live in [`MANUAL-REVIEW-CADENCE.md`](./MANUAL-REVIEW-CADENCE.md); manual findings are reflected back into the remarks below.
 
 ## Tables
@@ -82,7 +82,7 @@ Success criteria at conformance Level AA.
 | 1.2.5 Audio Description (Prerecorded) | Not Applicable | No prerecorded video. |
 | 1.3.4 Orientation | Supports | The layout is responsive and locks to no orientation. |
 | 1.3.5 Identify Input Purpose | Partially Supports | The single search field is not a personal-data field, so autocomplete tokens do not apply; broader input-purpose support is untested because there are no such fields yet. |
-| 1.4.3 Contrast (Minimum) | Supports | Every text colour pair in the stylesheet is measured against the AA 4.5:1 threshold by an automated audit (ledger.accessibility_check.audit_css_contrast) that runs in the accessibility gate on every build and fails on any regression; all pairs pass with margin (body 17.4:1, links 6.7:1, content-warning text 9.7:1). |
+| 1.4.3 Contrast (Minimum) | Supports | Every text color pair in the stylesheet is measured against the AA 4.5:1 threshold by an automated audit (ledger.accessibility_check.audit_css_contrast) that runs in the accessibility gate on every build and fails on any regression; all pairs pass with margin (body 17.4:1, links 6.7:1, content-warning text 9.7:1). |
 | 1.4.4 Resize Text | Supports | Type scales in rem/ch units and reflows to 200% zoom without loss. |
 | 1.4.5 Images of Text | Supports | All text is real text; the site uses no images of text. |
 | 1.4.10 Reflow | Supports | Mobile-first, fluid layout; content reflows to a single column and the record table scrolls inside its own box rather than widening the page at 320 CSS px. Enforced, not asserted: `reflow.spec.ts` in the `accessibility-browser` CI job loads every canonical page at 320x256 (1280x1024 at 400% zoom) and fails on any horizontal page scroll or any element whose content spills past the viewport. |
@@ -94,7 +94,7 @@ Success criteria at conformance Level AA.
 | 2.4.7 Focus Visible | Supports | A strong :focus-visible outline marks the focused control on every page. |
 | 3.1.2 Language of Parts | Not Applicable | Content is single-language per the configured page language; no inline language changes are produced by the renderer. |
 | 3.2.3 Consistent Navigation | Supports | The same nav (Browse / Search / Status) appears in the same order on every page. |
-| 3.2.4 Consistent Identification | Supports | Components with the same function are labelled identically across pages. |
+| 3.2.4 Consistent Identification | Supports | Components with the same function are labeled identically across pages. |
 | 3.3.3 Error Suggestion | Partially Supports | As with 3.3.1, the lone search field offers little to suggest; richer error suggestion is untested for want of a rich form. |
 | 3.3.4 Error Prevention (Legal, Financial, Data) | Not Applicable | The public surface is read-only; it commits no legal, financial, or data transactions. |
 | 4.1.3 Status Messages | Supports | Every status message the site renders — the browse/search result count and empty state, the /overview total, the /places and /timeline empty states, and the steward console's empty submission and request queues — sits inside a polite live region (role="status", aria-live="polite"), so a screen reader announces the outcome of a search, a filter, or a page load without a change of focus. A rejected form submission and an unreadable steward queue use the assertive register (role="alert") instead, and the content-warning interstitial is itself an alert whose h1 is the warning. The rule is enforced, not asserted: the stdlib gate (`python -m ledger.accessibility_check`) fails the build on a status message rendered outside a live region *and* on a live region scoped wider than the message it carries, since an over-broad region re-announces page structure until a reader learns to ignore it. `tests/test_aria_live_status.py` drives every dynamic state — populated and empty, clean and rejected, plus the two console surfaces that only exist behind a live server — and carries negative controls proving the checker still fails when the live region is removed or widened. Whether the announcement is *heard* remains a manual-review question (NVDA/VoiceOver). |
@@ -118,7 +118,7 @@ Criteria introduced in WCAG 2.2 at Levels A and AA.
 | --- | --- | --- |
 | 502 Interoperability with Assistive Technology | Supports | The public surface is standards-based HTML rendered in a browser, so it inherits the platform accessibility services AT relies on; ledger ships no custom GUI toolkit. |
 | 502.2.1 User Control of Accessibility Features | Not Applicable | ledger is not a platform and disables no platform accessibility feature. |
-| 503 Applications | Supports | The browse application uses native controls with correct names, roles, and values; user preferences (zoom, reduced motion) are honoured. |
+| 503 Applications | Supports | The browse application uses native controls with correct names, roles, and values; user preferences (zoom, reduced motion) are honored. |
 | 503.4 User Controls for Captions and Audio Description | Not Applicable | No media player is provided. |
 | 504 Authoring Tools | Partially Supports | The ingest CLI is the authoring path. It accepts structured, accessible metadata (titles, Dublin Core, content warnings) and the renderer produces conformant markup, but the CLI does not yet actively prompt an author to supply accessibility information (e.g. alt text for a future image payload), so authoring-tool support is partial. |
 
@@ -134,8 +134,8 @@ Criteria introduced in WCAG 2.2 at Levels A and AA.
 
 | Criterion | Conformance Level | Remarks and Explanations |
 | --- | --- | --- |
-| 302.1 Without Vision | Supports | Semantic landmarks, headings, a skip link, labelled controls, and a captioned/scoped data table give a complete screen-reader path; the list and table views are equivalent. |
-| 302.2 With Limited Vision | Supports | Text resizes and reflows to 200%/320px, and every colour pair is measured at WCAG AA by the automated contrast audit enforced in the gate (see 1.4.3/1.4.11). |
+| 302.1 Without Vision | Supports | Semantic landmarks, headings, a skip link, labeled controls, and a captioned/scoped data table give a complete screen-reader path; the list and table views are equivalent. |
+| 302.2 With Limited Vision | Supports | Text resizes and reflows to 200%/320px, and every color pair is measured at WCAG AA by the automated contrast audit enforced in the gate (see 1.4.3/1.4.11). |
 | 302.3 Without Perception of Color | Supports | Color is never the sole signal; the content-warning state is always conveyed as text. |
 | 302.4 Without Hearing | Supports | The site conveys no information by sound. |
 | 302.5 With Limited Hearing | Supports | No audio is used, so limited hearing imposes no barrier. |

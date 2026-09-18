@@ -1,6 +1,6 @@
 """Tests for CSV export of disclosed records (``ledger.export``).
 
-The export serialises only the safe ``DisclosedRecord`` shape (no identity), and it
+The export serializes only the safe ``DisclosedRecord`` shape (no identity), and it
 defuses spreadsheet formula injection — a value starting with ``=``/``+``/``-``/``@``
 is imported as text, never run.
 """

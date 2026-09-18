@@ -114,7 +114,7 @@ def test_objection_is_queued_for_a_steward_and_status_checkable(
     assert reqs[0].kind == "object"
     ref = reqs[0].request_id
 
-    # The steward console surfaces it, labelled, without echoing the message.
+    # The steward console surfaces it, labeled, without echoing the message.
     status, console = _req(base, "/steward", steward=True)
     assert status == 200
     assert rid in console

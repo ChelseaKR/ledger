@@ -203,7 +203,7 @@ review queue in four languages rather than rendering it as an empty one. Recorde
 
 Measured before the change, three trials of 40 concurrent takedowns: **1 of 40**
 tombstones survived each time, 34 to 37 writers raising. After: 40 of 40, no writer
-raising. A `disclosure`-marked test asserting the old empty-read behaviour was replaced
+raising. A `disclosure`-marked test asserting the old empty-read behavior was replaced
 by its inverse.
 
 **MP-04 shipped here too.** The pooled
@@ -222,7 +222,7 @@ and 8 modules each against a floor of its own with no pooled figure remaining.
 **MP-08's first half shipped here.** Eighteen PREMIS writers across six modules named
 an object without saying what kind of identifier it was, so every consent change,
 takedown, redaction, replication, quarantine, correction and reading-room query
-serialised as the uninformative `local` in XML. ADR 0012 recorded typing them as a
+serialized as the uninformative `local` in XML. ADR 0012 recorded typing them as a
 follow-up; this is it. The vocabulary gains `ledger-bag` and `ledger-proposal`, and a
 structural test over the package refuses the next untyped writer by file and line.
 Recorded as [ADR 0017](adr/0017-every-premis-event-is-typed.md). No event already on

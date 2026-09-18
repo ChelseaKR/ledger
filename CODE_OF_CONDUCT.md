@@ -16,14 +16,14 @@ and healthy community.
 
 ## Our standards
 
-Behaviour that helps the community thrive includes: showing empathy and kindness;
+Behavior that helps the community thrive includes: showing empathy and kindness;
 respecting differing opinions and experiences; giving and gracefully accepting
-constructive feedback; taking responsibility, apologising to those affected by our
+constructive feedback; taking responsibility, apologizing to those affected by our
 mistakes, and learning from them; and focusing on what is best for the community as a
 whole.
 
-Behaviour that is not acceptable includes: harassment of any kind, public or private;
-sexualised language or attention; trolling, insulting or derogatory comments, and
+Behavior that is not acceptable includes: harassment of any kind, public or private;
+sexualized language or attention; trolling, insulting or derogatory comments, and
 personal or political attacks; publishing others' private information without explicit
 permission; and other conduct that could reasonably be considered inappropriate in a
 professional setting.
@@ -40,7 +40,7 @@ the software. Reports of this kind receive the highest priority.
 ## Enforcement responsibilities
 
 Community leaders are responsible for clarifying and enforcing these standards and
-will take appropriate and fair corrective action in response to any behaviour they
+will take appropriate and fair corrective action in response to any behavior they
 deem inappropriate, threatening, offensive, or harmful. They have the right to remove,
 edit, or reject contributions that are not aligned with this Code of Conduct, and will
 communicate reasons for moderation decisions when appropriate.
@@ -52,7 +52,7 @@ individual is officially representing the community in public spaces.
 
 ## Reporting and enforcement
 
-Instances of abusive, harassing, or otherwise unacceptable behaviour may be reported
+Instances of abusive, harassing, or otherwise unacceptable behavior may be reported
 privately to the project maintainer through GitHub's private vulnerability reporting
 (see `SECURITY.md`) or, as a fallback, by email to **ckellyreif@gmail.com**. All
 complaints will be reviewed and investigated promptly and fairly. Community leaders are
@@ -65,7 +65,7 @@ for any action they deem in violation of this Code of Conduct:
 
 1. **Correction** — a private, written warning and clarity about the violation, with a
    public apology requested where appropriate.
-2. **Warning** — a warning with consequences for continued behaviour, including a
+2. **Warning** — a warning with consequences for continued behavior, including a
    period of no interaction with the people involved.
 3. **Temporary ban** — a temporary ban from any interaction or public communication
    with the community.

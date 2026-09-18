@@ -322,14 +322,14 @@ def rights_for_record(record: Record) -> PremisRights:
     """Derive a PREMIS rights statement from a record's declared rights/license.
 
     The archive already carries reuse terms in Dublin Core ``rights`` (the standard
-    home for a licence or rights statement). This lifts that collection-level value
+    home for a license or rights statement). This lifts that collection-level value
     into a first-class PREMIS :class:`~ledger.models.PremisRights` entity so the
     terms are legible to a preservation system, not only a human reader
     (standards-compliance, interoperability).
 
-    When the record declares a licence, the basis is ``"license"`` and the note is
+    When the record declares a license, the basis is ``"license"`` and the note is
     the declared value. ledger does not infer PREMIS granted acts from free text: a
-    downstream repository must evaluate the actual licence instead of being told it
+    downstream repository must evaluate the actual license instead of being told it
     may disseminate or replicate when those permissions were never recorded. With no
     declaration, the statement explicitly says that rights are undetermined.
 
@@ -345,7 +345,7 @@ def rights_for_record(record: Record) -> PremisRights:
         )
     return PremisRights(
         rights_basis="other",
-        rights_note="rights undetermined; no licence or permission was declared",
+        rights_note="rights undetermined; no license or permission was declared",
         linked_object=record.record_id,
     )
 
@@ -497,7 +497,7 @@ def ingest_sip(  # noqa: C901 - the SIP pipeline's stages, in order (#83)
             # fall back to ``application/octet-stream``. Widening the registry cut the
             # unidentified share to 4.9%, and for a file nothing could identify,
             # ``application/octet-stream`` is not a degradation — it is the accurate
-            # IANA type for an unrecognised byte stream, and it warns the reader that
+            # IANA type for an unrecognized byte stream, and it warns the reader that
             # the deliberately-damaged PDF they are about to download will not open.
             media_type = fmt.media_type
             media_type_basis = fmt.basis
@@ -613,7 +613,7 @@ def ingest_sip(  # noqa: C901 - the SIP pipeline's stages, in order (#83)
         if year:
             record.dublin_core.date = [year.group(1)]
     # Backfill dc:format with the identified IANA media types when none was given, so
-    # the format is discoverable in the catalogue and the preservation risk is legible
+    # the format is discoverable in the catalog and the preservation risk is legible
     # (RM4; Dublin Core `format` is the standard home for the media type). Sorted +
     # de-duplicated for a deterministic sidecar.
     if not record.dublin_core.format and identified_media_types:
@@ -679,7 +679,7 @@ def ingest_sip(  # noqa: C901 - the SIP pipeline's stages, in order (#83)
         for event in format_events:
             premis.record(event)
         # Attach a PREMIS rights statement derived from the record's declared
-        # rights/licence, so the terms of reuse travel with the preservation log as a
+        # rights/license, so the terms of reuse travel with the preservation log as a
         # first-class entity (RM5; PREMIS v3 rights). It is collection-level and
         # identity-free, and is still re-scanned below like every other artifact.
         premis.set_rights(rights_for_record(record))
@@ -739,7 +739,7 @@ class Archive:
     server never has to assemble the content store, vault, bagger, and access layer
     by hand (usability, learnability). Every method that needs a timestamp accepts
     an injectable ``now`` and defaults to :func:`~ledger.models.now_iso`, keeping
-    behaviour reproducible where it must be (determinism).
+    behavior reproducible where it must be (determinism).
     """
 
     def __init__(self, config: Config) -> None:

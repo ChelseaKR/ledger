@@ -45,6 +45,41 @@ msgid "(change access),"
 msgstr "(cambiar acceso),"
 
 msgid ""
+"A contributor's identity is stored only as an opaque token plus encrypted"
+" data in a separate vault. The record a page is built from has no place "
+"to put an identity, so there is nothing to leak."
+msgstr ""
+"La identidad de quien contribuye se almacena únicamente como un testigo "
+"opaco más datos cifrados en una bóveda aparte. El registro con el que se "
+"construye una página no tiene dónde poner una identidad, así que no hay "
+"nada que filtrar."
+
+msgid ""
+"A fixity check covers files this archive stores. Records that describe a "
+"physical object the archive does not hold a copy of have no stored "
+"content to check, and no attestation — this one included — says anything "
+"about whether those objects are safe."
+msgstr ""
+"Una comprobación de integridad abarca los archivos que este acervo "
+"almacena. Los registros que describen un objeto físico del que el acervo "
+"no conserva copia no tienen contenido almacenado que comprobar, y ninguna"
+" atestación —tampoco esta— dice nada sobre si esos objetos están a salvo."
+
+msgid ""
+"A stale or missing attestation is not proof of anything by itself, but it"
+" removes the reassurance a fresh one gives — a steward unable to re-"
+"attest (a gag order, a compromise, a lapse) and a steward with nothing to"
+" report look identical only until the date goes stale. Compare this page "
+"over time rather than trusting a single visit."
+msgstr ""
+"Una atestación caducada o ausente no prueba nada por sí sola, pero retira"
+" la tranquilidad que da una reciente: una persona custodia que no puede "
+"volver a atestar (una orden de silencio, un compromiso de seguridad, un "
+"descuido) y otra que no tiene nada que informar se ven idénticas solo "
+"hasta que la fecha caduca. Compare esta página a lo largo del tiempo en "
+"lugar de confiar en una sola visita."
+
+msgid ""
 "A steward reviews every submission before anything becomes visible — "
 "nothing is published automatically."
 msgstr ""
@@ -126,6 +161,57 @@ msgstr ""
 msgid "Are you the contributor? Manage or withdraw your consent"
 msgstr "¿Es usted el colaborador? Gestione o retire su consentimiento"
 
+#, python-brace-format
+msgid ""
+"As of {when}, at least one record package in this archive declared no "
+"files to verify, so it could not be checked — this is neither a pass nor "
+"a failure, and a steward has been notified. It is running ledger "
+"{version}."
+msgstr ""
+"A fecha de {when}, al menos un paquete de registro de este acervo no "
+"declaraba ningún archivo que verificar, por lo que no se pudo comprobar: "
+"esto no es ni un aprobado ni un fallo, y se ha avisado a una persona "
+"responsable de la custodia. Está ejecutando ledger {version}."
+
+#, python-brace-format
+msgid ""
+"As of {when}, this archive did NOT pass its most recent fixity check — a "
+"steward has been notified. It is running ledger {version}."
+msgstr ""
+"A fecha de {when}, este acervo NO superó su comprobación de integridad "
+"más reciente; se ha avisado a una persona custodia. Ejecuta ledger "
+"{version}."
+
+#, python-brace-format
+msgid ""
+"As of {when}, this archive held no records, so there was nothing to check "
+"and no integrity check was run. This is not a fault: a new archive has "
+"nothing in it yet. It is running ledger {version}."
+msgstr ""
+"A fecha de {when}, este acervo no contenía ningún registro, así que no "
+"había nada que comprobar y no se realizó ninguna comprobación de "
+"integridad. Esto no es un fallo: un acervo nuevo aún no contiene nada. "
+"Está ejecutando ledger {version}."
+
+#, python-brace-format
+msgid ""
+"As of {when}, this archive passed its most recent fixity check, running "
+"ledger {version}."
+msgstr ""
+"A fecha de {when}, este acervo superó su comprobación de integridad más "
+"reciente, ejecutando ledger {version}."
+
+#, python-brace-format
+msgid ""
+"As of {when}, this archive published an attestation in an older format "
+"that could not say whether anything was actually checked. It is running "
+"ledger {version}; the next scheduled attestation will say."
+msgstr ""
+"A fecha de {when}, este acervo publicó una atestación en un formato "
+"anterior que no podía indicar si realmente se comprobó algo. Está "
+"ejecutando ledger {version}; la próxima atestación programada sí lo "
+"indicará."
+
 msgid ""
 "At least one record package declares no files to verify, so it could not "
 "be checked. That is not a failure, and it is not a pass either."
@@ -136,6 +222,10 @@ msgstr ""
 
 msgid "Attach a file (optional)"
 msgstr "Adjuntar un archivo (opcional)"
+
+#, python-brace-format
+msgid "Attested by: {who}."
+msgstr "Atestado por: {who}."
 
 msgid "Audit log"
 msgstr "Registro de auditoría"
@@ -184,7 +274,7 @@ msgstr "Por año (vista de lista)"
 msgid "By year (table view)"
 msgstr "Por año (vista de tabla)"
 
-msgid "Catalogue metadata"
+msgid "Catalog metadata"
 msgstr "Metadatos de catálogo"
 
 msgid "Chain verification FAILED: a recorded decision was altered or removed after the fact. Compare this log against an off-box replica."
@@ -261,6 +351,13 @@ msgstr ""
 "colaborador; retenerlo lo guarda para revisión. Cada decisión se "
 "registra."
 
+msgid "Count"
+msgstr "Recuento"
+
+#, python-brace-format
+msgid "Current statement (as of {date})"
+msgstr "Declaración actual (a fecha de {date})"
+
 msgid "Date"
 msgstr "Fecha"
 
@@ -298,6 +395,16 @@ msgstr "Descargar metadatos (JSON)"
 
 msgid "Download results (CSV)"
 msgstr "Descargar resultados (CSV)"
+
+msgid ""
+"Each attestation is chained to the one before it by a SHA-256 digest, so "
+"an edited, reordered, or deleted past entry is detectable from the log "
+"file alone — see docs/TRANSPARENCY.md for how to check it yourself."
+msgstr ""
+"Cada atestación se encadena con la anterior mediante un resumen SHA-256, "
+"de modo que una entrada pasada editada, reordenada o eliminada es "
+"detectable a partir del propio archivo de registro; consulte "
+"docs/TRANSPARENCY.md para saber cómo comprobarlo por su cuenta."
 
 msgid "Edit a pending submission"
 msgstr "Editar un envío pendiente"
@@ -367,12 +474,22 @@ msgstr "¿Cómo debería compartirse esto?"
 msgid "How this protects you, and how to contribute"
 msgstr "Cómo le protege esto y cómo contribuir"
 
+msgid ""
+"How to check the signature is described in the ledger source, in this "
+"file:"
+msgstr ""
+"Cómo comprobar la firma se describe en el código fuente de ledger, en "
+"este archivo:"
+
 #, python-brace-format
 msgid "How to reach us: {contact}"
 msgstr "Cómo comunicarse con nosotros: {contact}"
 
 msgid "How to reach you"
 msgstr "Cómo localizarle"
+
+msgid "How to read this page"
+msgstr "Cómo leer esta página"
 
 msgid "If a steward publishes this, a stranger who is not signed in would see:"
 msgstr ""
@@ -424,6 +541,13 @@ msgstr ""
 " de lo que envió es público todavía, y cualquier dato de contacto que "
 "haya proporcionado está cifrado y nunca se mostrará."
 
+msgid ""
+"Its wording is a placeholder and carries no asserted legal effect. See "
+"docs/TRANSPARENCY.md."
+msgstr ""
+"Su redacción es un texto provisional y no afirma ningún efecto jurídico. "
+"Consulte docs/TRANSPARENCY.md."
+
 msgid "Keep this if you might change your mind"
 msgstr "Guarde esto por si cambia de opinión"
 
@@ -432,6 +556,30 @@ msgstr "Idioma"
 
 msgid "Languages"
 msgstr "Idiomas"
+
+#, python-brace-format
+msgid ""
+"Last attested {days} day(s) ago — this is beyond the archive's "
+"{cadence}-day re-attestation cadence. Treat this statement as STALE, not "
+"current."
+msgstr ""
+"Última atestación hace {days} día(s): eso supera la cadencia de "
+"reatestación de {cadence} día(s) del acervo. Trate esta declaración como "
+"CADUCADA, no como vigente."
+
+#, python-brace-format
+msgid ""
+"Last attested {days} day(s) ago, within the archive's {cadence}-day "
+"cadence."
+msgstr ""
+"Última atestación hace {days} día(s), dentro de la cadencia de {cadence} "
+"día(s) del acervo."
+
+msgid "Legal demands received, by type, as of this attestation"
+msgstr "Requerimientos legales recibidos, por tipo, a fecha de esta atestación"
+
+msgid "Legal-process transparency"
+msgstr "Transparencia sobre requerimientos legales"
 
 msgid "Linked records"
 msgstr "Registros vinculados"
@@ -466,6 +614,9 @@ msgstr "Siguiente"
 msgid "No"
 msgstr "No"
 
+msgid "No legal demands recorded as of this attestation."
+msgstr "No consta ningún requerimiento legal a fecha de esta atestación."
+
 msgid "No moderation decisions recorded yet."
 msgstr "Aún no se ha registrado ninguna decisión de moderación."
 
@@ -492,6 +643,13 @@ msgstr "No hay envíos a la espera de revisión."
 
 msgid "No transcript provided for this audio/video."
 msgstr "No se proporcionó transcripción para este audio/vídeo."
+
+msgid ""
+"No transparency attestation has been published yet. A steward publishes "
+"one, on a schedule, by running this command:"
+msgstr ""
+"Todavía no se ha publicado ninguna atestación de transparencia. Una "
+"persona custodia publica una, de forma periódica, ejecutando esta orden:"
 
 msgid "Object"
 msgstr "Objeto"
@@ -523,6 +681,9 @@ msgstr "Solicitudes abiertas de consentimiento y retirada"
 
 msgid "Open the record to read it before deciding."
 msgstr "Abra el registro para leerlo antes de decidir."
+
+msgid "Our promise, proven"
+msgstr "Nuestra promesa, demostrada"
 
 msgid "Outcome"
 msgstr "Resultado"
@@ -579,6 +740,31 @@ msgstr "Posible nombre"
 
 msgid "Possible phone number"
 msgstr "Posible número de teléfono"
+
+#, python-brace-format
+msgid ""
+"Preservation and moderation events are hash-chained, so editing history "
+"after the fact changes the archive chain head. Anyone who previously "
+"noted the head published on {when} can confirm it only moved forward:"
+msgstr ""
+"Los eventos de preservación y moderación están encadenados por hash, de "
+"modo que editar el historial a posteriori cambia la cabeza de cadena del "
+"acervo. Quien haya anotado antes la cabeza publicada el {when} puede "
+"confirmar que solo ha avanzado:"
+
+msgid ""
+"Preservation and moderation events are hash-chained, so editing history "
+"after the fact changes the archive chain head. This archive has not "
+"published an attestation yet, so there is no chain head here to note — "
+"the value is not computed live for visitors, because a per-request value "
+"would date every deposit, including a sealed one."
+msgstr ""
+"Los eventos de preservación y moderación están encadenados por hash, de "
+"modo que editar el historial a posteriori cambia la cabeza de cadena del "
+"acervo. Este acervo aún no ha publicado ninguna atestación, así que aquí "
+"no hay ninguna cabeza de cadena que anotar: el valor no se calcula en "
+"vivo para las visitas, porque un valor por petición fecharía cada "
+"depósito, incluidos los sellados."
 
 msgid "Preview what a stranger sees"
 msgstr "Previsualizar lo que ve un desconocido"
@@ -782,14 +968,91 @@ msgstr "Ese tipo de archivo no se acepta. Tipos permitidos: {types}."
 msgid "That submission is too long."
 msgstr "Ese envío es demasiado largo."
 
+msgid ""
+"The attestation date is invalid or in the future. Treat this statement as"
+" STALE, not current."
+msgstr ""
+"La fecha de la atestación no es válida o está en el futuro. Trate esta "
+"declaración como CADUCADA, no como vigente."
+
+#, python-brace-format
+msgid "The attestation is signed. Signature format: {format}."
+msgstr "La atestación está firmada. Formato de firma: {format}."
+
+msgid ""
+"The attestation is unsigned — this archive has not configured a signing "
+"key."
+msgstr ""
+"La atestación no está firmada: este acervo no ha configurado ninguna "
+"clave de firma."
+
+msgid ""
+"The claim 'contributor identities are never shown here' is not an honor-"
+"system promise — it is a test the software must pass on every build."
+msgstr ""
+"La afirmación «las identidades de quienes contribuyen nunca se muestran "
+"aquí» no es una promesa de buena fe: es una prueba que el software debe "
+"superar en cada compilación."
+
+msgid ""
+"The configured transparency log could not be verified. Treat the legal-"
+"process statement as unavailable until a steward repairs it."
+msgstr ""
+"No se ha podido verificar el registro de transparencia configurado. "
+"Considere que la declaración sobre requerimientos legales no está "
+"disponible hasta que una persona custodia lo repare."
+
+msgid ""
+"The demand types below are named in the terms of the legal system the "
+"demand came from, and are not translated: an instrument named here may "
+"have no counterpart in the reader's own jurisdiction, and translating it "
+"would assert an equivalence this project cannot vouch for."
+msgstr ""
+"Los tipos de requerimiento que figuran abajo se nombran con los términos "
+"del ordenamiento jurídico del que proceden, y no se traducen: un "
+"instrumento aquí nombrado puede no tener equivalente en la jurisdicción "
+"de quien lee, y traducirlo afirmaría una equivalencia de la que este "
+"proyecto no puede responder."
+
+msgid "The full, machine-readable attestation is at:"
+msgstr "La atestación completa, legible por máquina, está en:"
+
 msgid "The language of the material, e.g. English or Spanish."
 msgstr "El idioma del material, p. ej. inglés o español."
 
 msgid "The moderation log could not be read. It is not empty — it is unreadable, and that needs looking into before any further moderation decision is taken."
 msgstr "No se pudo leer el registro de moderación. No está vacío: es ilegible, y eso debe investigarse antes de tomar cualquier otra decisión de moderación."
 
+msgid ""
+"The project's audit ingests a sentinel identity and then checks that it "
+"appears on no page, in no data file, in no backup, and in no log — and "
+"that a sealed record cannot even be confirmed to exist by an outsider."
+msgstr ""
+"La auditoría del proyecto ingresa una identidad centinela y después "
+"comprueba que no aparece en ninguna página, ni en ningún archivo de "
+"datos, ni en ninguna copia de seguridad, ni en ningún registro, y que "
+"alguien de fuera no puede ni siquiera confirmar que existe un registro "
+"sellado."
+
 msgid "The review queue could not be read. It is not empty — it is unreadable, so submissions may be waiting that this page cannot show. Look into it before deciding anything here."
 msgstr "No se pudo leer la cola de revisión. No está vacía: es ilegible, por lo que puede haber envíos esperando que esta página no puede mostrar. Investíguelo antes de decidir nada aquí."
+
+msgid ""
+"The statement below is reproduced exactly as the stewards published it, "
+"in the language they wrote it in. Its wording is a legal instrument, so "
+"this project never translates it — a translation could change what it "
+"asserts. Everything else on this page is this project's own explanation, "
+"and is translated."
+msgstr ""
+"La declaración que figura abajo se reproduce exactamente como la "
+"publicaron las personas custodias, en el idioma en que la escribieron. Su"
+" redacción es un instrumento jurídico, así que este proyecto nunca la "
+"traduce: una traducción podría cambiar lo que afirma. Todo lo demás en "
+"esta página es la explicación propia de este proyecto, y sí está "
+"traducido."
+
+msgid "The steward's note on that review:"
+msgstr "Nota de la persona custodia sobre esa revisión:"
 
 msgid "The takedown is confirmed at every storage location."
 msgstr "La retirada está confirmada en todas las ubicaciones de almacenamiento."
@@ -805,6 +1068,22 @@ msgstr ""
 "ejecutado ninguna comprobación de integridad. Un archivo vacío no es un "
 "archivo verificado."
 
+msgid ""
+"This archive has enabled legal-process transparency but has not yet "
+"published a first attestation."
+msgstr ""
+"Este acervo ha activado la transparencia sobre requerimientos legales, "
+"pero todavía no ha publicado una primera atestación."
+
+msgid ""
+"This archive has not configured legal-process transparency attestations. "
+"It publishes no statement here, positive or negative — absence of the "
+"feature is not evidence of anything."
+msgstr ""
+"Este acervo no ha configurado atestaciones de transparencia sobre "
+"requerimientos legales. Aquí no publica ninguna declaración, ni positiva "
+"ni negativa: la ausencia de la función no es prueba de nada."
+
 msgid "This archive holds nothing yet."
 msgstr "Este archivo todavía no contiene nada."
 
@@ -818,6 +1097,30 @@ msgstr ""
 "mismo/a antes de compartirlo."
 
 msgid ""
+"This field changes the instant any record's or log's history anywhere in "
+"the archive is rewritten, so saving two dated copies over time and "
+"comparing them is enough to catch a rolled-back archive — without "
+"trusting this server or any steward."
+msgstr ""
+"Este campo cambia en el instante en que se reescribe el historial de "
+"cualquier registro o bitácora en cualquier punto del acervo, así que "
+"guardar dos copias fechadas a lo largo del tiempo y compararlas basta "
+"para detectar un acervo revertido, sin confiar en este servidor ni en "
+"ninguna persona custodia."
+
+msgid ""
+"This page shows the archive's most recent, dated statement about legal "
+"demands received for records or contributor identities, re-attested on a "
+"schedule. A missing or stale attestation is itself meaningful — see 'How "
+"to read this page' below."
+msgstr ""
+"Esta página muestra la declaración fechada más reciente del acervo sobre "
+"requerimientos legales recibidos por registros o por identidades de "
+"quienes contribuyen, reatestada de forma periódica. Una atestación "
+"ausente o caducada significa algo por sí misma: consulte «Cómo leer esta "
+"página», más abajo."
+
+msgid ""
 "This record carries the following content warnings. Review them before "
 "continuing."
 msgstr ""
@@ -829,6 +1132,12 @@ msgstr "Este registro tiene restricciones de acceso."
 
 msgid "This record links to"
 msgstr "Este registro enlaza con"
+
+msgid "This statement has not been reviewed by counsel."
+msgstr "Esta declaración no ha sido revisada por asesoría jurídica."
+
+msgid "This statement's wording has been reviewed by counsel."
+msgstr "La redacción de esta declaración ha sido revisada por asesoría jurídica."
 
 msgid ""
 "This translation was drafted by the project and has not been reviewed by "
@@ -870,6 +1179,12 @@ msgstr "Tipo"
 
 msgid "Types"
 msgstr "Tipos"
+
+msgid "Verify it yourself"
+msgstr "Compruébelo usted"
+
+msgid "Verifying this page"
+msgstr "Cómo verificar esta página"
 
 msgid "View the audit log"
 msgstr "Ver el registro de auditoría"
@@ -1066,6 +1381,20 @@ msgstr "restringir el acceso"
 
 msgid "withdraw / take down"
 msgstr "retirar / dar de baja"
+
+#, python-brace-format
+msgid ""
+"{count} attestation(s) on file; the hash chain FAILED VERIFICATION — "
+"contact the stewards."
+msgstr ""
+"{count} atestación(es) registrada(s); la cadena de hash NO SUPERÓ LA "
+"VERIFICACIÓN: contacte con las personas custodias."
+
+#, python-brace-format
+msgid "{count} attestation(s) on file; the hash chain verified intact."
+msgstr ""
+"{count} atestación(es) registrada(s); la cadena de hash se verificó "
+"intacta."
 
 #, python-brace-format
 msgid ""

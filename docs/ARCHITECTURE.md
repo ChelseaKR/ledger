@@ -1,7 +1,7 @@
 # ledger — Architecture
 
 This document describes how ledger is built and, more importantly, *why* it is built
-that way. The central design claim is simple to state and hard to honour: a community
+that way. The central design claim is simple to state and hard to honor: a community
 can keep rigorous, durable preservation of its records and, at the same time, a
 structural guarantee that holding a record can never out the person who contributed
 it. Most preservation tooling treats contributor safety as policy bolted onto a
@@ -17,7 +17,7 @@ quality-attribute argument. This document is the layered design and the data flo
 
 ledger is a small set of layers, each depending only on the ones beneath it. The
 dependency direction is deliberate: the lower a layer sits, the less it knows about
-disclosure, and the *contract* layer at the bottom knows nothing about behaviour at
+disclosure, and the *contract* layer at the bottom knows nothing about behavior at
 all. Identity is not a layer in this stack — it is a sealed sidecar that the ingest
 layer writes to and the disclosure layer (transitively) reads from, never inline with
 a record. That separation is the subject of section 3.
@@ -43,12 +43,12 @@ a record. That separation is the subject of section 3.
                       └──────┬───────┘
                              ▼
                 config.py             models.py / errors.py
-                config-as-data        the shared contract (no behaviour)
+                config-as-data        the shared contract (no behavior)
 ```
 
 ### 1.1 The contract: `models.py` and `errors.py`
 
-`ledger.models` is deliberately behaviour-free. It defines the value objects every
+`ledger.models` is deliberately behavior-free. It defines the value objects every
 other layer agrees on — `Record`, `Field`, `PayloadFile`, `DisclosedRecord`, `Grant`,
 `ContentAddress`, `FixityResult`, `DublinCore`, `PremisEvent`, and the enums
 `AccessPolicy`, `HashAlgo`, `PremisEventType` — so that ingest, storage, disclosure,
@@ -144,7 +144,7 @@ names write two contradictory verdicts against one identifier (#149). `PremisLog
 now refuses a second, different verdict for the same object and bytes
 (`PremisContradictionError`), and `PremisLog.contradictions()` reports any a pre-ADR,
 address-keyed log already carries instead of surfacing whichever was written last. Both
-new keys are omitted when unset, so every log written before the ADR serialises — and
+new keys are omitted when unset, so every log written before the ADR serializes — and
 hash-chains — exactly as it did.
 
 `metadata/dublincore.py` serializes a `DublinCore` (the fifteen ISO 15836 elements)
@@ -270,7 +270,7 @@ choices, each tied to a property:
   so the decision does not depend on whether the ref exists, and raises `AccessDenied`
   otherwise (least privilege).
 - Fernet authentication detects tampering on read (integrity); `revoke` deletes a
-  mapping so consent revocation and takedown are honoured at the storage layer.
+  mapping so consent revocation and takedown are honored at the storage layer.
 - `__repr__`/`__str__` of both the identity and the vault are redacted, and no
   identity, ciphertext, or key is ever logged or placed in an exception message.
 
@@ -428,8 +428,9 @@ content-warning interstitial before the content, and a missing record and a
 not-permitted record render the *same* neutral 404, so the response never reveals
 whether a sealed record exists. `/healthz` answers an anonymous request with `status`,
 `all_verified`, and `ready` only (plus a generic `reason` code when the readiness probe
-fails); the absolute counts — bags audited, passed, failed, files checked — and the live
-`chain_head` commitment are both gated to a steward grant. The counts include sealed and
+fails); the absolute counts — bags audited, passed, failed, files checked — the
+three-state `fixity.status`, and the live
+`chain_head` commitment are all gated to a steward grant. The counts include sealed and
 community records, so they would let an outsider learn the archive's size and poll for
 the moment a sealed record is added (P2-2). The live commitment carries no count, but it
 moves the instant any record is written, so polling it while the sitemap, feed, and
@@ -742,7 +743,7 @@ function that realizes it. This is a sample; the README works through the full l
 | **Recoverability**           | `replicate.heal` (rebuild only from a just-validated replica), reachable as `ledger heal`, and `replicate._quarantine` |
 | **Failure transparency**     | `replicate.verify_replicas` (degrade, never raise); `QUARANTINE` event attached to `ReplicationError`; `errors.py` (failures surfaced, never swallowed) |
 | **Auditability / Provability** | `metadata.premis.PremisLog` (append-only); `moderate.ModerationLog` (justified, attributed, contestable) |
-| **Autonomy / Consent**       | `moderate.change_consent`; `identity.IdentityVault.revoke` (takedown honoured at storage) |
+| **Autonomy / Consent**       | `moderate.change_consent`; `identity.IdentityVault.revoke` (takedown honored at storage) |
 | **Determinism / Reproducibility** | `models.canonical_json`/`now_iso`; `bag.write_bag` (sorted manifests, byte-identical bags); injected `now` throughout |
 | **Standards compliance**     | `bag.py` (RFC 8493 BagIt); `metadata.premis.to_premis_xml` (PREMIS v3); `metadata.dublincore.to_oai_dc_xml` (ISO 15836 / `oai_dc`); `oais.py` (ISO 14721 SIP/AIP/DIP) |
 | **Interoperability / Portability** | `bag.validate_bag` (any RFC 8493 tool can read a bag); `metadata` XML exporters; `config.load` (JSON *or* TOML) |

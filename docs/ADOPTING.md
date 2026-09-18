@@ -65,7 +65,7 @@ model §4.4, §4.5; user research §7). The final item makes this explicit.
       defense is redundancy, not preventing one host from leaving (threat model §4.5).
 - [ ] **Scheduled fixity audits across every location.** Run the recurring audit so bit
       rot and tampering are caught before they spread; a divergent copy is quarantined and
-      a labelled preservation event is raised, never hidden (threat model §4.5; README).
+      a labeled preservation event is raised, never hidden (threat model §4.5; README).
 - [ ] **Back up `store/`, `bags/`, and the vault.** The vault backup is useless without
       its key (that is by design), so it is safe to replicate the ciphertext — but treat
       the *key* as the crown jewel and back it up separately and securely (threat model

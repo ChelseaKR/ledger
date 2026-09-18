@@ -4,7 +4,7 @@ Language used to be chosen *only* from the browser's ``Accept-Language`` header,
 which a reader on a shared or mislocalized machine cannot change. These tests pin the
 follow-on: a visible picker that (1) renders the supported languages with the active
 one marked ``aria-current`` and the others as ``?lang=`` links that keep the reader on
-the current page, (2) honours an explicit ``?lang=`` and remembers it in a cookie, and
+the current page, (2) honors an explicit ``?lang=`` and remembers it in a cookie, and
 (3) falls back safely on an unknown value — never to a blank page. The cookie carries
 only a UI language code, never an identity (no-outing rule).
 """
@@ -38,7 +38,7 @@ def test_switch_marks_active_language_and_links_the_others() -> None:
     assert 'href="/search?q=mutual+aid&amp;lang=es"' in html
     assert 'hreflang="es"' in html
     assert "Español" in html
-    # The group is labelled for assistive tech.
+    # The group is labeled for assistive tech.
     assert 'aria-label="Language"' in html
 
 
@@ -64,7 +64,7 @@ def test_nav_includes_the_language_switch() -> None:
     assert 'href="/about?lang=es"' in nav
 
 
-# --- integration: the server honours the choice ----------------------------
+# --- integration: the server honors the choice ----------------------------
 
 _VAULT_KEY = "0123456789abcdef0123456789abcdef0123456789a="
 
@@ -116,7 +116,7 @@ def test_explicit_lang_query_switches_and_sets_a_cookie(base: str) -> None:
     assert "SameSite=Lax" in set_cookie and "HttpOnly" in set_cookie
 
 
-def test_lang_cookie_is_honoured_without_a_query(base: str) -> None:
+def test_lang_cookie_is_honored_without_a_query(base: str) -> None:
     """A remembered ``lang`` cookie selects Spanish even when the header says English."""
     status, body, _headers = _request(f"{base}/", accept_language="en", cookie="lang=es")
     assert status == 200

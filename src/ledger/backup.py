@@ -329,7 +329,7 @@ def _safe_extract(tar: tarfile.TarFile, target_dir: Path) -> None:
     A backup archive is trusted (this project made it), but an attacker who can
     substitute a tampered ``.tar.fernet`` cannot forge a Fernet tag without the key,
     so a decrypt that succeeds already authenticates the bytes. This path-traversal
-    guard is defence in depth: a member whose resolved path leaves *target_dir* is
+    guard is defense in depth: a member whose resolved path leaves *target_dir* is
     rejected rather than allowed to write outside the restore tree (integrity).
     """
     target = target_dir.resolve()
@@ -338,7 +338,7 @@ def _safe_extract(tar: tarfile.TarFile, target_dir: Path) -> None:
         if destination != target and target not in destination.parents:
             raise BackupError(f"refusing to extract a member outside the target: {member.name}")
     # The stdlib ``data`` filter (Python 3.12; backported to 3.11.4) is the second
-    # line of defence: it rejects absolute paths and traversal and strips setuid/dev
+    # line of defense: it rejects absolute paths and traversal and strips setuid/dev
     # nodes, so even a member we failed to reason about cannot write outside the tree.
     tar.extractall(target_dir, filter="data")
 

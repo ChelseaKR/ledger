@@ -2,7 +2,7 @@
 
 The browse page used to render every listable record at once, which does not scale
 and makes one unwieldy page for assistive tech and slow links. These tests pin the
-paging maths — clamping out-of-range pages instead of erroring, correct windows and
+paging math — clamping out-of-range pages instead of erroring, correct windows and
 1-based "showing X-Y of N" indices — and that the rendered page shows only the
 current slice with a query-preserving pager.
 """
@@ -41,7 +41,7 @@ def _records(n: int) -> list[DisclosedRecord]:
     ]
 
 
-# --- the pure paging maths -------------------------------------------------
+# --- the pure paging math -------------------------------------------------
 
 
 def test_paginate_windows_the_first_page() -> None:

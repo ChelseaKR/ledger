@@ -33,7 +33,7 @@ is (a) not on the revocation list and (b) pre-provisioned in the grants file. A
 missing header, a missing secret, a forged/expired token, a revoked subject, or an
 unprovisioned subject all fall back to the same anonymous grant, so the header is
 never trusted beyond authenticating a lookup into an existing grant, and a bearer
-token by itself confers nothing (least privilege, securability). Each honoured
+token by itself confers nothing (least privilege, securability). Each honored
 grant use is recorded in a scrubbed audit line — subject and route class only,
 never the token (no-outing rule).
 """
@@ -71,7 +71,7 @@ from ledger import (
 )
 from ledger.access import anonymous, disclose, is_listable
 from ledger.access.grants import load_grants, load_revocations, verify_grant_token
-from ledger.attestation import HealthAttestation, latest_attestation_path
+from ledger.attestation import FixityDisclosure, HealthAttestation, latest_attestation_path
 from ledger.errors import (
     AccessDenied,
     LedgerError,
@@ -302,6 +302,20 @@ _STATIC_FILES: dict[str, Path] = _load_static_files()
 # and the contributor status page so a steward can tell a subject's objection from a
 # contributor's own request at a glance (user research B3).
 # --- the request handler ----------------------------------------------------
+
+
+#: Which sentence ``/proof`` renders for each published fixity disclosure (#205).
+#: A mapping rather than a chain of conditionals so that adding a state to
+#: :class:`ledger.attestation.FixityDisclosure` without deciding what to *say*
+#: about it fails at the lookup, loudly, instead of silently falling through to
+#: the reassuring branch.
+_PROOF_HEALTH_KEYS: dict[FixityDisclosure, str] = {
+    FixityDisclosure.VERIFIED: "proof_attested_ok",
+    FixityDisclosure.FAILED: "proof_attested_failed",
+    FixityDisclosure.COULD_NOT_VERIFY: "proof_attested_could_not_verify",
+    FixityDisclosure.NOTHING_TO_VERIFY: "proof_attested_nothing",
+    FixityDisclosure.UNSTATED: "proof_attested_unstated",
+}
 
 
 class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
@@ -770,7 +784,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         function fuzzed independently of this handler in
         ``tests/test_parsing_fuzz.py``. Each text part becomes a ``fields`` entry;
         the first part carrying a filename becomes the single ``upload``. The
-        filename is kept only to suggest a stored name and is sanitised elsewhere;
+        filename is kept only to suggest a stored name and is sanitized elsewhere;
         the bytes are never trusted on type until sniffed."""
         raw = self.rfile.read(length)
         return parse_multipart(raw, content_type)
@@ -1927,8 +1941,8 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
 
         The bytes are the only thing trusted: the file is refused if it is larger than
         :data:`upload.MAX_UPLOAD_BYTES` or if :func:`upload.sniff_media_type` does not
-        recognise it as one of the allowlisted types. On success the bytes are written
-        under ``tmpdir`` with a sanitised filename and a :class:`PayloadFile` is
+        recognize it as one of the allowlisted types. On success the bytes are written
+        under ``tmpdir`` with a sanitized filename and a :class:`PayloadFile` is
         pre-declared on ``record`` so the one ingest path stores it with the
         *server-sniffed* media type and the record's sealed-pending policy — never a
         type taken from the client. The returned error names no submitted value
@@ -2549,67 +2563,79 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         lang = self._lang()
         attestation = self._load_latest_attestation()
         if attestation is None:
-            chain_html = (
-                "    <p>Preservation and moderation events are hash-chained, so editing "
-                "history after the fact changes the archive chain head. This archive has "
-                "not published an attestation yet, so there is no chain head here to note "
-                "— the value is not computed live for visitors, because a per-request "
-                "value would date every deposit, including a sealed one.</p>\n"
-            )
+            chain_html = f"    <p>{_esc(i18n.t(lang, 'proof_chain_unpublished'))}</p>\n"
             attestation_html = (
-                "    <h2>Verify it yourself</h2>\n"
-                "    <p>No transparency attestation has been published yet. A steward "
-                "publishes one, on a schedule, by running "
-                "<code>ledger attest-health</code>.</p>"
+                f"    <h2>{_esc(i18n.t(lang, 'proof_verify_heading'))}</h2>\n"
+                f"    <p>{_esc(i18n.t(lang, 'proof_not_attested'))} "
+                "<code>ledger attest-health</code></p>"
             )
         else:
-            health = (
-                "passed its most recent fixity check"
-                if attestation.fixity_ok
-                else "did NOT pass its most recent fixity check — a steward has been notified"
-            )
-            signed = (
-                f"signed (format: {_esc(attestation.signature_format or 'unknown')})"
-                if attestation.signature
-                else "unsigned — this archive has not configured a signing key"
+            # Four published states plus "an older ledger wrote this", not two.
+            # `fixity_ok` was the whole reading until #205, and it is the fold that
+            # is vacuously true over an archive with no bags — so this page told an
+            # anonymous visitor that an archive holding nothing had "passed every
+            # integrity check". It is the page an at-risk contributor reads before
+            # deciding whether to hand this archive their material.
+            health_key = _PROOF_HEALTH_KEYS[attestation.fixity]
+            # Two branches, not three: `HealthAttestation.from_json` — the only
+            # way an attestation reaches this handler — rejects any signature
+            # whose format is not "ssh", so a signed attestation always has a
+            # format and the old `signature_format or "unknown"` was dead.
+            signature_key = (
+                "proof_signature_signed" if attestation.signature else "proof_signature_unsigned"
             )
             chain_html = (
-                "    <p>Preservation and moderation events are hash-chained, so editing "
-                "history after the fact changes the archive chain head. Anyone who "
-                "previously noted the head published on "
-                f"{_esc(attestation.generated_at)} can confirm it only moved forward: "
-                f"<code>{_esc(attestation.chain_head_summary)}</code>.</p>\n"
+                "    <p>"
+                + _esc(i18n.t(lang, "proof_chain_published", when=attestation.generated_at))
+                + f" <code>{_esc(attestation.chain_head_summary)}</code></p>\n"
             )
             attestation_html = (
-                "    <h2>Verify it yourself</h2>\n"
-                f"    <p>As of {_esc(attestation.generated_at)}, this archive {_esc(health)}, "
-                f"running ledger {_esc(attestation.software_version)}. The attestation is "
-                f"{_esc(signed)}.</p>\n"
-                "    <p>The full, machine-readable attestation is at "
-                '<a href="/proof/attestation.json">/proof/attestation.json</a>. Its '
-                "<code>chain_head_summary</code> field changes the instant any record's or "
-                "log's history anywhere in the archive is rewritten, so saving two dated "
-                "copies over time and comparing them is enough to catch a rolled-back archive "
-                "— without trusting this server or any steward. See "
-                "<code>docs/VERIFYING-ATTESTATIONS.md</code> in the ledger source for how to "
-                "check the signature.</p>"
+                f"    <h2>{_esc(i18n.t(lang, 'proof_verify_heading'))}</h2>\n"
+                "    <p>"
+                + _esc(
+                    i18n.t(
+                        lang,
+                        health_key,
+                        when=attestation.generated_at,
+                        version=attestation.software_version,
+                    )
+                )
+                + " "
+                + _esc(i18n.t(lang, signature_key, format=attestation.signature_format or ""))
+                + "</p>\n"
+                # #188. A fixity check is a statement about files this archive
+                # stores. Some records here may describe a physical object it does
+                # not store — a box of flyers in somebody's flat — and no check,
+                # signed or otherwise, can say anything about those. Said as a
+                # property of the attestation rather than as a count, because a
+                # count of physical holdings would tell an anonymous visitor part
+                # of the archive's size, which is the line /healthz's gated block
+                # exists to hold.
+                + f"    <p>{_esc(i18n.t(lang, 'proof_physical_caveat'))}</p>\n"
+                + f"    <p>{_esc(i18n.t(lang, 'proof_machine_readable_at'))} "
+                '<a href="/proof/attestation.json">/proof/attestation.json</a></p>\n'
+                + "    <p><code>chain_head_summary</code> — "
+                + _esc(i18n.t(lang, "proof_chain_head_field"))
+                + "</p>\n"
+                + f"    <p>{_esc(i18n.t(lang, 'proof_check_signature'))} "
+                "<code>docs/VERIFYING-ATTESTATIONS.md</code></p>"
             )
         main_html = (
-            "    <h1>Our promise, proven</h1>\n"
-            "    <p>The claim 'contributor identities are never shown here' is not an "
-            "honour-system promise — it is a test the software must pass on every build.</p>\n"
-            "    <p>A contributor's identity is stored only as an opaque token plus encrypted "
-            "data in a separate vault. The record a page is built from has no place to put an "
-            "identity, so there is nothing to leak.</p>\n"
-            "    <p>The project's audit ingests a sentinel identity and then checks that it "
-            "appears on no page, in no data file, in no backup, and in no log — and that a "
-            "sealed record cannot even be confirmed to exist by an outsider.</p>\n"
+            f"    <h1>{_esc(i18n.t(lang, 'proof_heading'))}</h1>\n"
+            f"    <p>{_esc(i18n.t(lang, 'proof_claim'))}</p>\n"
+            f"    <p>{_esc(i18n.t(lang, 'proof_identity_storage'))}</p>\n"
+            f"    <p>{_esc(i18n.t(lang, 'proof_sentinel_audit'))}</p>\n"
             f"{chain_html}"
             f"{attestation_html}"
         )
         self._send_html(
             200,
-            _page("Our promise, proven", lang=lang, main_html=main_html, nav_html=self._nav()),
+            _page(
+                i18n.t(lang, "proof_heading"),
+                lang=lang,
+                main_html=main_html,
+                nav_html=self._nav(),
+            ),
         )
 
     def _handle_proof_attestation(self) -> None:
@@ -2653,14 +2679,11 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         """
         lang = self._lang()
         cfg = self._archive().config
-        heading = "Legal-process transparency"
+        heading = i18n.t(lang, "transparency_heading")
         log_path = cfg.transparency_log_path.strip()
         if not log_path:
             main_html = transparency_unattested_main_html(
-                heading,
-                "This archive has not configured legal-process transparency "
-                "attestations. It publishes no statement here, positive or negative — "
-                "absence of the feature is not evidence of anything.",
+                heading, i18n.t(lang, "transparency_not_configured"), lang=lang
             )
             self._send_html(
                 200, _page(heading, lang=lang, main_html=main_html, nav_html=self._nav())
@@ -2672,9 +2695,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             entries = log.all()
         except LedgerError:
             main_html = transparency_unattested_main_html(
-                heading,
-                "The configured transparency log could not be verified. Treat the "
-                "legal-process statement as unavailable until a steward repairs it.",
+                heading, i18n.t(lang, "transparency_log_unverifiable"), lang=lang
             )
             self._send_html(
                 200, _page(heading, lang=lang, main_html=main_html, nav_html=self._nav())
@@ -2683,9 +2704,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         latest = entries[-1] if entries else None
         if latest is None:
             main_html = transparency_unattested_main_html(
-                heading,
-                "This archive has enabled legal-process transparency but has not yet "
-                "published a first attestation.",
+                heading, i18n.t(lang, "transparency_never_attested"), lang=lang
             )
             self._send_html(
                 200, _page(heading, lang=lang, main_html=main_html, nav_html=self._nav())
@@ -2697,6 +2716,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             latest=latest,
             entries=entries,
             cadence_days=cfg.transparency_cadence_days,
+            lang=lang,
         )
         self._send_html(200, _page(heading, lang=lang, main_html=main_html, nav_html=self._nav()))
 
@@ -2960,7 +2980,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
     def _handle_overview(self) -> None:
         """``GET /overview`` — an at-a-glance summary of the public collection.
 
-        Summarises only the anonymous-public set, so the totals, top facets, and date
+        Summarizes only the anonymous-public set, so the totals, top facets, and date
         span describe what is publicly visible and never reveal the existence or count
         of sealed records (no-outing rule / P2-2). Each facet links into the faceted
         browse, turning the overview into a finding aid (P2-3)."""

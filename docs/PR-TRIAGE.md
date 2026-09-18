@@ -1,7 +1,7 @@
 # Pull request triage, 2026-08-29
 
 A read-only pass over the open pull request queue. Nothing in this document was
-merged, closed, commented on, labelled, re-run, or approved; no repository setting
+merged, closed, commented on, labeled, re-run, or approved; no repository setting
 and no ruleset was changed. The only write this pass made to the repository is the
 file you are reading.
 
@@ -257,7 +257,7 @@ invariant structurally rather than by sweep: it parses every module under `src/l
 and fails on any `PremisEvent(...)` that sets a non-`None` `linked_object` without a
 `linked_object_type`, naming file and line. It carries
 `test_there_are_premis_writers_to_check`, asserting at least 15 constructions found, so
-it cannot pass vacuously. `test_an_untyped_event_serialises_exactly_as_it_always_did`
+it cannot pass vacuously. `test_an_untyped_event_serializes_exactly_as_it_always_did`
 pins chain stability, which is the right thing to worry about when adding a field to a
 hash-chained record.
 
@@ -334,11 +334,11 @@ contexts never ran.
 **Correctness: correct, and it is a fix for exactly the defect class this triage was
 told to hunt.** The old gate was structurally incapable of reporting what it appeared
 to report: `--fail-under` gates a report's TOTAL row, so the line passed at 95 percent
-while `grants.py` sat at 92 and `consent.py` at 91, carried by three neighbours at 100.
+while `grants.py` sat at 92 and `consent.py` at 91, carried by three neighbors at 100.
 
 The replacement is checked properly. `check()` is pure and
 `tests/test_coverage_floors_gate.py` exercises each of its four rules in both
-directions, including `test_a_high_neighbour_cannot_lift_a_low_module`, which states
+directions, including `test_a_high_neighbor_cannot_lift_a_low_module`, which states
 the removed defect as a test. It carries `test_an_empty_floor_table_fails`, so deleting
 the floors is a failure rather than a vacuous pass, and two tests that hold the *real*
 committed `pyproject.toml` to the rule rather than a fixture. The comparison delegates
@@ -377,7 +377,7 @@ queue.** `tests/test_silent_loss_stores.py` asserts counts under a common barrie
 just integrity, in the same correct shape as #164.
 
 **The finding: `main` currently carries a merge-blocking test that pins the defect as
-correct behaviour.** `tests/test_security_critical_paths.py:178` on `origin/main` is:
+correct behavior.** `tests/test_security_critical_paths.py:178` on `origin/main` is:
 
 ```python
 @pytest.mark.disclosure
@@ -388,7 +388,7 @@ def test_corrupt_proposal_file_reads_as_empty(tmp_path: Path) -> None:
 ```
 
 `disclosure` is one of the two gates `CONTRIBUTING.md` calls out as protecting the
-project's core promises. So the behaviour where a damaged dual-control proposal store
+project's core promises. So the behavior where a damaged dual-control proposal store
 reads as "no proposals were ever filed", which the next `add` then writes back and
 makes true, was not merely untested: it was **held in place by a safety-marked,
 merge-blocking test**. #160 replaces it with its inverse. This is on `main` right now
@@ -628,7 +628,7 @@ entries were not altered while being blind to entries never written.
 - **#152** adds a large new subsystem but does **not** repeat this shape: nothing in
   `src/ledger/ai/` imports `ledger.chain`, `ledger.attestation` or
   `ledger.metadata.premis`, and its one persistent write, `RateLimiter._check_daily_cap`,
-  holds `file_lock` across the whole read-check-write. It does carry the *neighbouring*
+  holds `file_lock` across the whole read-check-write. It does carry the *neighboring*
   shape twice over, in a worse place: two merge-gate tests that cannot fail, guarding
   the no-outing guarantee. See #152.
 
@@ -640,7 +640,7 @@ path, and `apply_update` takes a different lock from `append_event`.
 
 Every PR needs a branch update before it can merge, because
 `strict_required_status_checks_policy: true` requires an up-to-date branch. The order
-below minimises the number of times that has to happen and puts the conflict on the
+below minimizes the number of times that has to happen and puts the conflict on the
 branch that has to be pushed anyway.
 
 1. **#165.** CLEAN, all checks green, no interaction with anything else. Merge it
@@ -724,7 +724,7 @@ branch that has to be pushed anyway.
   `make cov`; doing so would write to the working tree. That the floors are met rests
   on #161's `lint / type / test` job passing, which does run the new gate.
 - **All measured concurrency figures** ("1, 2 and 1 of 40 survived", "39 of 40 lost",
-  "40 of 40 now survive"). The tests that assert the fixed behaviour were read and are
+  "40 of 40 now survive"). The tests that assert the fixed behavior were read and are
   sound; the before-numbers are the authors' measurements on the unfixed tree.
 - **The "proof each new test can fail" transcripts** quoted in the #160 and #163 bodies.
   I read the tests and judged them capable of failing, but did not re-run them against
