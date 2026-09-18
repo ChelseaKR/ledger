@@ -152,12 +152,12 @@ that. They are commitments to *acknowledge and act*, not guarantees of an instan
 | Stage | Target |
 | --- | --- |
 | **Acknowledge receipt** | within a few days (typically 72 hours) |
-| **Initial severity assessment** | within 7 days of acknowledgement |
+| **Initial severity assessment** | within 7 days of acknowledgment |
 | **Status updates to the reporter** | at least every 14 days while the report is open |
 | **Fix for a no-outing or sealed-disclosure flaw** | highest priority; worked ahead of all other changes |
 | **Fix for other security classes** | prioritized by severity and exploitability |
 
-If a report sits without acknowledgement past the window, it is reasonable to re-send via
+If a report sits without acknowledgment past the window, it is reasonable to re-send via
 the fallback channel. A second maintainer (§3) directly reduces the chance a report
 languishes — which is precisely the bus-factor concern.
 

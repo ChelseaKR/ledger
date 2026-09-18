@@ -24,7 +24,7 @@ No-outing rule, enforced here by construction:
 * The contributor-supplied ``message`` is *content*, not identity, but it is still
   private: it is persisted to the store, yet it is never written to a log or echoed
   in an error. Malformed-input errors name the offending *field*, never its value.
-* A claim token is a sealed value (it authorises action on a record), so it is
+* A claim token is a sealed value (it authorizes action on a record), so it is
   never logged or placed in an error message either.
 
 Determinism: callers that need reproducible output (golden fixtures, tests) pass an
@@ -81,7 +81,7 @@ VALID_KINDS: frozenset[str] = frozenset(
 _OPEN: str = "open"
 VALID_STATUSES: frozenset[str] = frozenset({_OPEN, "acknowledged", "resolved"})
 
-# The prefix that marks a claim token, so a token is recognisable and cannot be
+# The prefix that marks a claim token, so a token is recognizable and cannot be
 # confused with another opaque string. The body is a hex HMAC-SHA256 digest.
 _CLAIM_PREFIX: str = "claim:"
 
@@ -243,7 +243,7 @@ class ConsentRequestStore:
         not identity) so a typo fails loudly rather than silently no-op'ing.
 
         RM12: a completed response is *recorded* — ``resolved_at`` is stamped only
-        when the request reaches ``resolved``. Acknowledgement alone preserves an
+        when the request reaches ``resolved``. Acknowledgment alone preserves an
         existing stamp (normally empty), so the archive does not misstate receipt as
         a completed answer.
         """
@@ -320,7 +320,7 @@ def issue_claim_token(record_id: str, secret: bytes) -> str:
     Stateless by design: the token is an HMAC-SHA256 over the public ``record_id``
     under the server ``secret``, so no per-contributor account or stored token table
     is needed (affordability, unlinkability). The token is a *sealed* value — it
-    authorises action on a record — so it is never logged or placed in an error.
+    authorizes action on a record — so it is never logged or placed in an error.
     """
     digest = hmac.new(secret, record_id.encode("utf-8"), sha256).hexdigest()
     return f"{_CLAIM_PREFIX}{digest}"
@@ -347,7 +347,7 @@ def issue_subject_token(record_id: str, subject_index: int, secret: bytes) -> st
     objection later. Like the contributor claim token this is stateless — an
     HMAC-SHA256 over the public ``f"{record_id}:subject:{subject_index}"`` under the
     server ``secret`` — so no per-person account or identity is stored. The token is
-    a *sealed* value (it authorises a verified objection), so it is never logged or
+    a *sealed* value (it authorizes a verified objection), so it is never logged or
     placed in an error; only a SHA-256 hash of it is ever persisted
     (:func:`subject_token_hash`).
     """

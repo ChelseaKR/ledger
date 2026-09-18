@@ -3,7 +3,7 @@
 These fixtures give every preservation test the same three primitives — a fresh
 on-disk :class:`~ledger.cas.ContentStore`, a deterministic block of sample bytes,
 and a builder for a small :class:`~ledger.models.Record` — so the tests describe
-*behaviour* rather than rebuilding scaffolding (modularity, reproducibility).
+*behavior* rather than rebuilding scaffolding (modularity, reproducibility).
 
 Determinism: the record builder accepts an explicit ``record_id`` and ``created_at``
 default so a built record is byte-stable across runs, and never consults the wall

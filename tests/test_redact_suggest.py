@@ -151,7 +151,7 @@ def test_measured_recall_on_synthetic_corpus() -> None:
 
     A regex/wordlist tier is expected to miss some cases (an uncommon name, an
     unusual address format); this asserts a floor well below 100% so the test
-    documents real, measured behaviour rather than a fabricated guarantee.
+    documents real, measured behavior rather than a fabricated guarantee.
     """
     hits_by_kind = 0
     for sentence, expected_kind in _SYNTHETIC_CORPUS:

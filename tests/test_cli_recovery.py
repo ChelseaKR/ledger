@@ -8,9 +8,9 @@ replica", `docs/ARCHITECTURE.md` maps Recoverability straight at `replicate.heal
 `docs/MUTUAL-AID.md` is written as a five-step operator runbook whose steps 3-5 were
 Python function calls. For the audience this project names — community archivists and
 mutual-aid organizers, explicitly not developers — a documented runbook that cannot be
-followed is a claim the interface does not honour.
+followed is a claim the interface does not honor.
 
-So these tests are about *reachability* first and behaviour second:
+So these tests are about *reachability* first and behavior second:
 
 * the documented capability answers to a command, asserted through the same surface an
   operator uses (`ledger heal --help` exits 0 or the command does not exist);

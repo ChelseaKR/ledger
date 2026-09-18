@@ -254,8 +254,8 @@ msgstr "By year (list view)"
 msgid "By year (table view)"
 msgstr "By year (table view)"
 
-msgid "Catalogue metadata"
-msgstr "Catalogue metadata"
+msgid "Catalog metadata"
+msgstr "Catalog metadata"
 
 msgid "Chain verification FAILED: a recorded decision was altered or removed after the fact. Compare this log against an off-box replica."
 msgstr "Chain verification FAILED: a recorded decision was altered or removed after the fact. Compare this log against an off-box replica."
@@ -948,10 +948,10 @@ msgstr ""
 "key."
 
 msgid ""
-"The claim 'contributor identities are never shown here' is not an honour-"
+"The claim 'contributor identities are never shown here' is not an honor-"
 "system promise — it is a test the software must pass on every build."
 msgstr ""
-"The claim 'contributor identities are never shown here' is not an honour-"
+"The claim 'contributor identities are never shown here' is not an honor-"
 "system promise — it is a test the software must pass on every build."
 
 msgid ""

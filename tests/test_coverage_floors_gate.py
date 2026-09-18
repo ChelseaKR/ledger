@@ -5,7 +5,7 @@ incapable of reporting what it appears to report is worse than no gate: it spend
 reviewer's trust without earning it. That is precisely what the pooled
 `coverage report --include=<four modules> --fail-under=95` was. `--fail-under` gates
 the report's TOTAL row, so the line passed at 95% while `grants.py` sat at 92% and
-`consent.py` at 91%, carried by three neighbours at 100%.
+`consent.py` at 91%, carried by three neighbors at 100%.
 
 `tools/check_coverage_floors.py` replaces it. This file holds that replacement to the
 standard the old line failed: every rule it claims to enforce is shown failing here on
@@ -72,7 +72,7 @@ def test_a_module_below_its_floor_fails() -> None:
     assert "91.00% is below its floor of 95%" in failures[0]
 
 
-def test_a_high_neighbour_cannot_lift_a_low_module() -> None:
+def test_a_high_neighbor_cannot_lift_a_low_module() -> None:
     """The defect this gate exists to remove, stated as a test.
 
     Under the pooled report these two averaged to 96% and the scope passed at 95%.
@@ -136,7 +136,7 @@ def test_a_security_core_module_with_no_floor_fails() -> None:
     """Adding a safety-critical module and forgetting to floor it is now a failure.
 
     Under the pooled `--include` this was invisible; worse, appending the module to
-    that list would have bought it a passing grade from its neighbours.
+    that list would have bought it a passing grade from its neighbors.
     """
     failures = gate.check(
         {"floored.py": 90},

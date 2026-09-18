@@ -10,7 +10,7 @@ either one. It exists so that gap is a stated, dated fact instead of a silent on
 [`STATEMENT.md`](STATEMENT.md) applies to untested WCAG criteria, applied here to
 untested *routes*.
 
-This is a route inventory, not a conformance judgement. A route missing from both
+This is a route inventory, not a conformance judgment. A route missing from both
 engines is not known to be inaccessible — it is **not automatically checked**, which
 is a different and narrower claim. See [`STATEMENT.md`](STATEMENT.md) for what "not
 tested" means for the honest conformance picture.

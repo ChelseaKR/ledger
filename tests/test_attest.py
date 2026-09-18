@@ -39,7 +39,7 @@ def _seed_archive(tmp_path: Path) -> tuple[Archive, str]:
     """Stand up an archive with one record whose ``real_name`` is sealed on a condition.
 
     The record's default policy is PUBLIC so a stranger may *list* it; the sealed
-    field is what waits on the attested condition, isolating exactly the behaviour
+    field is what waits on the attested condition, isolating exactly the behavior
     under test.
     """
     config = Config.default("Test Archive", tmp_path / "arc")

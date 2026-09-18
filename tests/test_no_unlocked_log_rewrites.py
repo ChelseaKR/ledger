@@ -11,10 +11,10 @@ seventh store, or a PREMIS log with the identical read-modify-write shape, was c
 by nothing and reported green. #155 sat open against a passing suite for exactly that
 reason.
 
-A per-site behavioural test (``tests/test_audit_log_concurrency.py``) proves the sites
+A per-site behavioral test (``tests/test_audit_log_concurrency.py``) proves the sites
 that exist today are safe. This one proves the *class* stays closed: it fails on a
 newly-written appender nobody thought to add a concurrency test for, which is the case
-the behavioural tests structurally cannot cover.
+the behavioral tests structurally cannot cover.
 
 The shape it refuses, inside one function:
 

@@ -84,7 +84,7 @@ def parse_multipart(
     ``Content-Type`` as a MIME header — no third-party multipart library. Each
     text part becomes a ``fields`` entry; the first part carrying a filename
     becomes the single ``upload``. The filename is kept only to suggest a
-    stored name and is sanitised elsewhere (:func:`safe_filename`); the bytes
+    stored name and is sanitized elsewhere (:func:`safe_filename`); the bytes
     are never trusted on type until sniffed by the caller.
 
     Bounding the size of ``raw`` before calling this is the caller's job (it is

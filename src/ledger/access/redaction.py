@@ -40,7 +40,7 @@ def redact_field(
     returned :class:`~ledger.models.PremisEvent` records the redaction against the
     record id so the change is provable after the fact (auditability).
 
-    The event detail names only the *field*, never its withheld value, honouring
+    The event detail names only the *field*, never its withheld value, honoring
     the no-outing rule even in the audit trail (confidentiality).
     """
     redacted = with_redaction(record, field_name)

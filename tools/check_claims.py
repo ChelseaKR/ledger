@@ -984,7 +984,7 @@ CLAIMS: tuple[Claim, ...] = (
         "docs/ARCHITECTURE.md",
         "gated to a steward grant",
         "the architecture doc must say the /healthz counts are steward-gated, not merely "
-        "stop saying the opposite (the live behaviour is asserted in "
+        "stop saying the opposite (the live behavior is asserted in "
         "tests/test_server_remediation.py).",
     ),
     # SEC-04's rollout ratio, in both documents that state it. See EgressPolicyRatio:
@@ -1327,7 +1327,7 @@ UNCOVERED: tuple[Uncovered, ...] = (
 #: The one claim kind deliberately absent from :data:`_KIND_LABEL`: a
 #: ``ReferenceExists`` sweep is reported by how many pointers it resolved, not by how
 #: many sweeps there are, so the summary handles it on its own line below. Named here
-#: so the "every kind is labelled" guard has an exception it can see rather than a
+#: so the "every kind is labeled" guard has an exception it can see rather than a
 #: hole it cannot.
 _REPORTED_SEPARATELY = frozenset({"ReferenceExists"})
 
@@ -1386,10 +1386,10 @@ class _Tally:
         # without a label is still checked, but the gate's own passing line stops
         # naming it -- the output would understate what it verified, which is the
         # reporting version of the defect this whole file exists to catch.
-        unlabelled = sorted(set(self.counts) - set(_KIND_LABEL) - _REPORTED_SEPARATELY)
-        if unlabelled:
+        unlabeled = sorted(set(self.counts) - set(_KIND_LABEL) - _REPORTED_SEPARATELY)
+        if unlabeled:
             raise AssertionError(
-                f"_KIND_LABEL has no entry for {', '.join(unlabelled)}; the summary would "
+                f"_KIND_LABEL has no entry for {', '.join(unlabeled)}; the summary would "
                 "silently omit claims it verified"
             )
         parts = []

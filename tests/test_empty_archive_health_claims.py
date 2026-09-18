@@ -1,7 +1,7 @@
 """An archive with nothing in it must not read as an archive that passed (#208).
 
 ``all(report.ok for _name, report in reports)`` and ``failed == 0`` are both
-vacuously true over an empty sweep, so every surface that summarised a fixity
+vacuously true over an empty sweep, so every surface that summarized a fixity
 audit told its reader that everything was fine when nothing had been looked at.
 :class:`ledger.fixity.FixityStatus` closed that hole for the files inside one bag
 in #206; these pin it closed for the *set* of bags, on the three surfaces a person

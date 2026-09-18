@@ -82,7 +82,7 @@ from ledger.preservation import identify_file
 #: is a deliberate edit with a re-run, never a floating "latest".
 CORPUS_REPO = "openpreserve/format-corpus"
 CORPUS_COMMIT = "366f068cec399d0cdfd61fa473de3ab6dc858098"
-CORPUS_LICENCE = "CC0 unless otherwise stated (see the corpus README)"
+CORPUS_LICENSE = "CC0 unless otherwise stated (see the corpus README)"
 
 #: Default per-file ceiling. The corpus holds ~800 MB in full, most of it a
 #: handful of large video files that exercise nothing the smaller ones do not.
@@ -116,7 +116,7 @@ EVIDENCE_SCHEMA = "ledger-real-corpus-evidence/1"
 #: The corpus files that are in unambiguously obsolete formats, by extension — the
 #: ground truth for the at-risk advisory's *recall*. This is a property of the OPF
 #: corpus, not of ledger: these are dead 1990s desktop applications (Lotus 1-2-3,
-#: Quattro Pro, Access, Windows Write), a discontinued proprietary catalogue system
+#: Quattro Pro, Access, Windows Write), a discontinued proprietary catalog system
 #: (Inmagic DB/TextWorks), and ebook formats whose readers no longer exist. Written
 #: down so recall is a number this harness reports on every run rather than a claim,
 #: and so a regression in identification shows up as a falling count instead of as
@@ -131,7 +131,7 @@ OBSOLETE_EXTENSIONS = frozenset(
         "mdb",
         # Windows Write
         "wri",
-        # Inmagic DB/TextWorks catalogue components
+        # Inmagic DB/TextWorks catalog components
         "acf", "btx", "dbo", "dbr", "dbs", "ixl", "occ", "sdo", "tba", "tbu",
         # Discontinued ebook formats
         "lit", "mobi", "azw3", "lrf", "pdb", "rb", "snb",
@@ -204,7 +204,7 @@ def fetch(dest_root: Path, max_file_bytes: int) -> list[CorpusFile]:
         f"corpus {CORPUS_REPO}@{CORPUS_COMMIT[:12]} — "
         f"{len(entries)} files, {total / 1e6:.1f} MB (<= {max_file_bytes / 1e6:.1f} MB each)"
     )
-    print(f"licence: {CORPUS_LICENCE}")
+    print(f"license: {CORPUS_LICENSE}")
     dest_root.mkdir(parents=True, exist_ok=True)
     outcomes: collections.Counter[str] = collections.Counter()
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
@@ -653,7 +653,7 @@ def _report(
     # the record's media type is the identifier's verdict; a file nothing could
     # identify is never a success; one object carries one verdict; and every
     # payload's event is about that payload. Failing the run on any hit is what
-    # stops the old behaviour creeping back in through a new code path.
+    # stops the old behavior creeping back in through a new code path.
     broken = bool(
         failures
         or bags["invalid_bags"]
@@ -669,7 +669,8 @@ def _report(
         "corpus": {
             "repo": CORPUS_REPO,
             "commit": CORPUS_COMMIT,
-            "licence": CORPUS_LICENCE,
+            # Key spelling kept: it is a field of the committed evidence JSON.
+            "licence": CORPUS_LICENSE,
         },
         "aggregates": aggregate(rows),
         "bags": bags,
@@ -773,7 +774,7 @@ def check_evidence(evidence: dict[str, Any], path: Path) -> list[str]:
             continue
         if committed.get(key) != evidence.get(key):
             drift.append(f"section {key!r} differs from the committed evidence")
-    return drift or ["evidence differs in a way the section comparison could not localise"]
+    return drift or ["evidence differs in a way the section comparison could not localize"]
 
 
 def main(argv: list[str] | None = None) -> int:

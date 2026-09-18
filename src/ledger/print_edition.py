@@ -12,7 +12,7 @@ that:
   ideation item itself names: print output must pass the same content-warning
   and disclosure rules as every other read path);
 * renders every content warning **before** the record's content, as visible,
-  plain-language text — never colour- or icon-only — so the booklet's HTML form
+  plain-language text — never color- or icon-only — so the booklet's HTML form
   passes the same structural accessibility gate
   (:mod:`ledger.accessibility_check`, FIX-12) as the live site;
 * prints one **fixity digest** per record as visible text (a SHA-256 over the
@@ -28,7 +28,7 @@ Scope note: this renders **HTML only**, not a bespoke PDF. A genuinely
 accessible (tagged) PDF is its own hard, separate problem — the ideation item
 that specifies this feature (``docs/ideation/03-expansions.md``, EXP-08) names
 that risk explicitly and asks to scope to tagged HTML first. The HTML carries a
-print stylesheet (page-break rules per record, print-safe colours) so a reader
+print stylesheet (page-break rules per record, print-safe colors) so a reader
 can produce a paper or PDF copy with any browser's built-in "Print" / "Print to
 PDF" — which is the honest, already-accessible path, rather than a hand-rolled
 PDF writer that would silently drop tag structure a screen reader depends on.
@@ -91,7 +91,7 @@ def _fixity_verify_string(record: DisclosedRecord, *, base_url: str) -> str:
 def _qr_svg(data: str, *, label: str) -> str:
     """An inline, accessible SVG QR code for ``data``, or ``""`` if segno is absent.
 
-    The SVG itself is marked ``aria-hidden`` and wrapped in a labelled ``<span
+    The SVG itself is marked ``aria-hidden`` and wrapped in a labeled ``<span
     role="img">`` — a screen reader announces ``label`` once rather than trying to
     describe QR module geometry; the visible fixity-digest text next to every QR
     (rendered by the caller, not here) is the real accessible equivalent.

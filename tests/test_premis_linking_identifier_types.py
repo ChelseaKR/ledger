@@ -75,7 +75,7 @@ def test_every_writer_that_names_an_object_says_what_kind_it_is() -> None:
             untyped.append(f"{path.relative_to(_SRC.parent.parent)}:{node.lineno}")
     assert untyped == [], (
         "PREMIS writers name an object without saying what kind of identifier it is; "
-        "they would serialise as the uninformative `local` (ADR 0012):\n  " + "\n  ".join(untyped)
+        "they would serialize as the uninformative `local` (ADR 0012):\n  " + "\n  ".join(untyped)
     )
 
 
@@ -158,7 +158,7 @@ def test_a_content_address_is_still_inferred() -> None:
     assert event.object_identifier_type == OBJECT_TYPE_CONTENT_ADDRESS
 
 
-def test_an_untyped_event_serialises_exactly_as_it_always_did() -> None:
+def test_an_untyped_event_serializes_exactly_as_it_always_did() -> None:
     """Chain stability: adding the vocabulary must not change an old event's bytes."""
     event = PremisEvent(
         event_type=PremisEventType.TAKEDOWN,

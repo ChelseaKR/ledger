@@ -98,9 +98,9 @@ unsealed material.
 - The search field has a real `<label for="q">` tied to the input's `id`, so its
   purpose is announced. The form is wrapped in `role="search"`.
 
-**Colour & signals**
+**Color & signals**
 
-- Colour is **never the only signal**. A record with content warnings shows the
+- Color is **never the only signal**. A record with content warnings shows the
   literal word "Content warning" as a text badge in the list, a "Yes/No" text
   column in the table, and a full text interstitial on the record page.
 - Documented contrast tokens (all AA-passing against white) are listed at the top
@@ -140,7 +140,7 @@ The table is fully marked up for assistive technology:
 - every header cell uses `<th scope="col">`, associating each data cell with its
   column;
 - the "Content warning" column carries the literal text "Yes"/"No" (no
-  colour/icon dependency).
+  color/icon dependency).
 
 ## The content-warning interstitial
 
@@ -148,7 +148,7 @@ On `GET /record/{id}`, if the record carries any content warnings, the page firs
 shows **only the title and a textual interstitial**: a region headed "Content
 warnings", the warnings listed as words, and a link "Proceed to the content"
 (`?proceed=1`). The signal is therefore **programmatic and textual**, not
-conveyed by colour or an icon alone (the warning border/background only reinforce
+conveyed by color or an icon alone (the warning border/background only reinforce
 the words). The underlying content is not rendered until the viewer chooses to
 proceed; even after proceeding, the warnings are restated as text above the
 content so the signal is never lost.

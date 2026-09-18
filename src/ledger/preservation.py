@@ -48,7 +48,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-# How many leading bytes are enough to recognise every signature in the registry
+# How many leading bytes are enough to recognize every signature in the registry
 # and to make a confident UTF-8 text decision, without reading a whole large file
 # into memory (efficiency, minimal computing).
 _HEAD_BYTES = 65536
@@ -139,7 +139,7 @@ class FormatId:
         if self.header_offset:
             # Say so explicitly: this is a preservation-planning signal in its own
             # right, because a strict identifier (DROID, veraPDF) anchors the header
-            # at byte 0 and will not recognise the file at all.
+            # at byte 0 and will not recognize the file at all.
             line += (
                 f"; header at byte {self.header_offset}, not 0 — a wrapper or preamble "
                 "precedes it, and strict validators will not identify this file"
@@ -202,9 +202,9 @@ _RTF = FormatInfo(
 )
 
 # JPEG 2000 family. This is the preservation *master* format for most library and
-# museum digitisation programmes (a scanned zine page, a photographed banner), so a
+# museum digitization programs (a scanned zine page, a photographed banner), so a
 # preservation tool that cannot name it is blind to exactly the files an archive
-# most cares about keeping. All four container flavours share one signature box and
+# most cares about keeping. All four container flavors share one signature box and
 # are told apart by the brand at offset 20; the raw codestream has its own marker.
 _JP2 = FormatInfo("JP2 (JPEG 2000 part 1)", "image/jp2", "x-fmt/392", False, "")
 _JPX = FormatInfo("JPX (JPEG 2000 part 2)", "image/jpx", "fmt/151", False, "")
@@ -451,24 +451,24 @@ _INDESIGN = FormatInfo(
     None,
     True,
     "Proprietary and version-locked — InDesign will not open a document more than a "
-    "few major versions old. Export IDML plus a PDF/A rendering while a licence "
+    "few major versions old. Export IDML plus a PDF/A rendering while a license "
     "that can still open it exists.",
 )
-# Inmagic DB/TextWorks: a proprietary library/museum catalogue whose database is
+# Inmagic DB/TextWorks: a proprietary library/museum catalog whose database is
 # split across ten single-purpose files. PRONOM has no entry for any of them, which
-# matters — this is a *cataloguing* system, so losing it loses the finding aid rather
+# matters — this is a *cataloging* system, so losing it loses the finding aid rather
 # than one record. Named as a family; the three-letter tag says which component.
 _DBTEXTWORKS_TAGS = frozenset(
     {"ACF", "BTX", "DBO", "DBR", "DBS", "IXL", "OCC", "SDO", "TBA", "TBU"}
 )
 _DBTEXTWORKS_RECOMMENDATION = (
-    "A component of an Inmagic DB/TextWorks catalogue — proprietary, discontinued, "
+    "A component of an Inmagic DB/TextWorks catalog — proprietary, discontinued, "
     "and only meaningful alongside the other files of the same database. Export the "
-    "catalogue to a delimited text or XML dump before the software is unavailable, "
+    "catalog to a delimited text or XML dump before the software is unavailable, "
     "and keep the whole file set together."
 )
 
-# Unidentified content. Recorded honestly (an unrecognised format is itself a
+# Unidentified content. Recorded honestly (an unrecognized format is itself a
 # preservation-planning signal) and NOT flagged at_risk, which stays reserved for
 # *known* obsolescent formats so the at-risk advisory keeps its precision. The
 # honesty now lives in a signal of its own — :attr:`FormatId.unassessable` — instead
@@ -478,7 +478,7 @@ _UNKNOWN = FormatInfo(
     "application/octet-stream",
     None,
     False,
-    "Unrecognised format — identify and document it before relying on it.",
+    "Unrecognized format — identify and document it before relying on it.",
 )
 
 # A zero-byte file is not unidentifiable, it is *empty*, and saying "Unidentified"
@@ -564,7 +564,7 @@ _SIGNATURES: tuple[tuple[int, bytes, FormatInfo], ...] = (
 _OLE2_MAGIC = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
 
 #: The JPEG 2000 signature box that opens every JP2-family container (ISO/IEC
-#: 15444-1 Annex I). The flavour is then read from the ``ftyp`` brand at offset 20.
+#: 15444-1 Annex I). The flavor is then read from the ``ftyp`` brand at offset 20.
 _JP2_SIGNATURE_BOX = b"\x00\x00\x00\x0cjP  \r\n\x87\n"
 _JP2_BRANDS: dict[bytes, FormatInfo] = {
     b"jp2 ": _JP2,
@@ -603,7 +603,7 @@ _EXTENSION_MAP: dict[str, FormatInfo] = {
     # WordPerfect or IBM DisplayWrite documents, and not one was Microsoft anything.
     # PRONOM itself lists ".doc" under WordPerfect (x-fmt/44) as well as under Word.
     # Losing the row costs nothing real and those files are now honestly unassessable
-    # (ADR 0010) instead of confidently mislabelled.
+    # (ADR 0010) instead of confidently mislabeled.
     "wpd": _WORDPERFECT,
     "rm": _REALMEDIA,
     "ram": _REALMEDIA,
@@ -619,10 +619,10 @@ def _match_dbtextworks(data: bytes) -> FormatInfo | None:
     component tag, a space, a three-digit format version, a space, and the version's
     release date as ``MM/DD/YY``. Checking that *shape* — rather than listing ten
     four-byte prefixes — is what keeps a plain-text file that happens to begin
-    ``OCC `` from being claimed as a catalogue index.
+    ``OCC `` from being claimed as a catalog index.
 
     PRONOM has no PUID for any of these at V120, so the family is named from its own
-    header and carries no identifier it cannot honour.
+    header and carries no identifier it cannot honor.
     """
     if len(data) < 16:
         return None
@@ -652,7 +652,7 @@ _AVI = FormatInfo(
     "video/x-msvideo",
     "fmt/5",
     False,
-    "Ageing container; consider Matroska/FFV1 or MP4 for access.",
+    "Aging container; consider Matroska/FFV1 or MP4 for access.",
 )
 
 #: RIFF is a container, not a format: WAVE, WebP, and AVI all open with ``RIFF`` and
@@ -678,7 +678,7 @@ def _match_signature(data: bytes) -> FormatInfo | None:
         return _OLE2_OFFICE
     if data.startswith(_JP2_SIGNATURE_BOX):
         # Every JP2-family file opens with the same signature box; the brand in the
-        # following ``ftyp`` box says which one. An unrecognised brand still means
+        # following ``ftyp`` box says which one. An unrecognized brand still means
         # "some JPEG 2000 container", so fall back to JP2 rather than to unknown.
         return _JP2_BRANDS.get(data[20:24], _JP2)
     riff = _match_riff(data)

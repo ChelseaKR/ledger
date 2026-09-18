@@ -10,7 +10,7 @@ rules, each tied to a named quality attribute:
   write time rather than discovered years later when it is needed.
 * **Quarantine-and-heal** -> recoverability / resilience / fault-tolerance: a copy
   that fails validation is moved aside into a sibling ``quarantine/`` directory and
-  the failure is recorded as a labelled preservation event; a later :func:`heal`
+  the failure is recorded as a labeled preservation event; a later :func:`heal`
   rebuilds any failing or missing replica from a copy that still validates.
 * **Never trust a divergent copy** -> integrity: healing only ever copies *from* a
   replica that has just passed full RFC 8493 validation, and :func:`heal` refuses
@@ -186,7 +186,7 @@ def _rejected(message: str, event: PremisEvent) -> ReplicationError:
 
     Failure transparency: the ``QUARANTINE`` preservation event is attached to the
     raised error — both as ``error.quarantine_event`` for direct access and as the
-    second positional ``arg`` — so the caller can log the labelled event rather than
+    second positional ``arg`` — so the caller can log the labeled event rather than
     re-deriving why the replica was rejected. The message itself names only the bag
     and location, never any payload content (no-outing).
     """

@@ -72,7 +72,7 @@ def test_signature_identification_beats_extension() -> None:
     ],
 )
 def test_open_formats_identified_and_not_at_risk(data: bytes, media_type: str) -> None:
-    """Common open/well-supported formats are recognised and not flagged at-risk."""
+    """Common open/well-supported formats are recognized and not flagged at-risk."""
     fmt = identify_format(data, filename="payload.bin")
     assert fmt.media_type == media_type
     assert fmt.basis == "signature"
@@ -92,7 +92,7 @@ def test_obsolescent_formats_flagged_at_risk_with_recommendation(data: bytes) ->
 
 
 def test_plain_text_identified_by_decode() -> None:
-    """Text with no signature and no helpful extension is recognised as plain text."""
+    """Text with no signature and no helpful extension is recognized as plain text."""
     fmt = identify_format("a synthetic story\nwith unicode: café\n".encode(), filename="x")
     assert fmt.media_type == "text/plain"
     assert fmt.basis == "text"
@@ -124,7 +124,7 @@ def test_a_real_ole2_file_is_still_flagged_at_risk() -> None:
 
 
 def test_unidentified_binary_is_honest_not_at_risk() -> None:
-    """Unrecognised binary is octet-stream, basis 'unknown', not falsely 'at-risk'."""
+    """Unrecognized binary is octet-stream, basis 'unknown', not falsely 'at-risk'."""
     fmt = identify_format(b"\x00\x01\x02\x03\xff\xfe\x05", filename="mystery")
     assert fmt.media_type == "application/octet-stream"
     assert fmt.basis == "unknown"
@@ -137,7 +137,7 @@ def test_identification_is_deterministic() -> None:
 
 
 def test_identify_file_reads_only_head(tmp_path: Path) -> None:
-    """identify_file recognises a format without depending on the whole large file."""
+    """identify_file recognizes a format without depending on the whole large file."""
     big = tmp_path / "scan.png"
     big.write_bytes(_PNG + b"\x00" * (5 * 1024 * 1024))
     assert identify_file(big).media_type == "image/png"
@@ -156,9 +156,9 @@ def test_identify_file_reads_only_head(tmp_path: Path) -> None:
 def test_jpeg_2000_family_identified_by_signature(
     data: bytes, name: str, media_type: str, puid: str
 ) -> None:
-    """JPEG 2000 — the preservation master format of most digitisation programmes.
+    """JPEG 2000 — the preservation master format of most digitization programs.
 
-    All four container flavours share one signature box and differ only in the
+    All four container flavors share one signature box and differ only in the
     ``ftyp`` brand at offset 20, so identifying them means reading past the magic
     number. Every one of these was ``Unidentified`` until a real corpus said so.
     """
@@ -170,7 +170,7 @@ def test_jpeg_2000_family_identified_by_signature(
 
 
 def test_unknown_jpeg_2000_brand_still_identified_as_jpeg_2000() -> None:
-    """An unrecognised JP2 brand degrades to JP2, never to ``unknown``."""
+    """An unrecognized JP2 brand degrades to JP2, never to ``unknown``."""
     fmt = identify_format(
         b"\x00\x00\x00\x0cjP  \r\n\x87\n\x00\x00\x00\x14ftypXXXX" + b"\x00" * 8,
         filename="mystery",
@@ -370,8 +370,8 @@ def test_xml_is_identified_by_its_declaration_without_an_extension() -> None:
     assert no_name.basis == "xml-declaration"
 
     # A wrong extension must not win over the declaration either.
-    mislabelled = identify_format(premis, filename="scan.png")
-    assert mislabelled.media_type == "application/xml"
+    mislabeled = identify_format(premis, filename="scan.png")
+    assert mislabeled.media_type == "application/xml"
 
 
 def test_xml_declaration_is_found_behind_a_byte_order_mark() -> None:

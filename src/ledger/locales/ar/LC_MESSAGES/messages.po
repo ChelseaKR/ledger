@@ -271,7 +271,7 @@ msgstr "حسب السنة (عرض القائمة)"
 msgid "By year (table view)"
 msgstr "حسب السنة (عرض الجدول)"
 
-msgid "Catalogue metadata"
+msgid "Catalog metadata"
 msgstr "بيانات الفهرسة الوصفية"
 
 msgid "Chain verification FAILED: a recorded decision was altered or removed after the fact. Compare this log against an off-box replica."
@@ -1006,7 +1006,7 @@ msgid ""
 msgstr "الشهادة غير موقَّعة — لم يُهيّئ هذا الأرشيف مفتاح توقيع."
 
 msgid ""
-"The claim 'contributor identities are never shown here' is not an honour-"
+"The claim 'contributor identities are never shown here' is not an honor-"
 "system promise — it is a test the software must pass on every build."
 msgstr ""
 "العبارة «لا تُعرَض هويات المساهمين هنا أبدًا» ليست وعدًا على سبيل الأمانة"

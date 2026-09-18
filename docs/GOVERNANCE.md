@@ -121,7 +121,7 @@ contestable**. This is not a matter of steward etiquette; it is enforced by
   `ledger propose`) and runs only once that many **distinct** stewards approve it
   (`ledger approve`), so no single compromised or coerced steward can erase a record,
   out a contributor, or expose a sealed-pending submission alone. At the default
-  threshold of 1 the behaviour is unchanged. An approved *unseal* records the
+  threshold of 1 the behavior is unchanged. An approved *unseal* records the
   authorization but the CLI never prints an identity — retrieval stays the audited
   `identity_unseal` grant path.
 - **Consent changes** tighten or alter a record's default policy. A contributor's own
@@ -187,7 +187,7 @@ stewards acting at once cannot lose one another's entry. Each entry is chained t
 one before it, so an edit anywhere in history moves the head — `ledger moderation
 verify` exits non-zero when it does, and `/steward/audit` says so on the page.
 
-Until this was wired in, `ModerationLog` was a type the system modelled but never used:
+Until this was wired in, `ModerationLog` was a type the system modeled but never used:
 the `reason` was validated at the boundary and then discarded, and the PREMIS event
 kept beside it carries only the *what* (`"record taken down"`), never the rationale. A
 steward acting for a pretextual reason left a trace that *an* action happened, but not
@@ -290,7 +290,7 @@ Consent is revocable and recorded, and a downstream mirror may not lawfully igno
 - **A mirror cannot be allowed to be stale silently.** Replication re-verifies bags on
   arrival, and fixity audits run on a schedule across every location
   (`src/ledger/replicate.py`, `src/ledger/fixity.py`); an unreachable or divergent
-  replica is surfaced as a labelled preservation event, not hidden. Propagation of a
+  replica is surfaced as a labeled preservation event, not hidden. Propagation of a
   consent change or takedown to a location that was offline is retried until the location
   reflects the change, and the gap is visible in the meantime rather than silently
   ignored.

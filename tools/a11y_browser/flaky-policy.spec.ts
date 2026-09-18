@@ -10,7 +10,7 @@
 // log line. See #223.
 //
 // This IMPORTS the config the way Playwright reads it rather than matching its
-// text, so a key that is commented out, misspelt, or set to `false` cannot
+// text, so a key that is commented out, misspelled, or set to `false` cannot
 // satisfy it. It runs inside the harness, where the Playwright dependency that
 // resolves the config already exists — a check that lived in the Python suite
 // would have no way to load a TypeScript config.

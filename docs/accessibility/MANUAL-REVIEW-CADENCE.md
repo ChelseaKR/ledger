@@ -10,8 +10,8 @@ A machine can prove the structural floor and, with a real browser, catch rendere
 contrast and focus-order defects. It cannot judge whether the reading order *makes
 sense*, whether the content-warning interstitial is *announced* before the material
 is reached, whether an `aria-live` status is *heard*, or whether a form error is
-*understandable* when spoken. Those are judgements only a person using the
-technology can make. This cadence exists so that judgement happens on a schedule
+*understandable* when spoken. Those are judgments only a person using the
+technology can make. This cadence exists so that judgment happens on a schedule
 and is written down, not left to memory or to the week before a release.
 
 ## Cadence

@@ -228,7 +228,7 @@ def _cmd_ingest(args: argparse.Namespace) -> int:  # noqa: C901 - argparse optio
     # A bag's payload is keyed by filename, so two sources sharing a basename would
     # collapse to one entry and the second would silently replace the first: an
     # archive that reported success, recorded one payload, and passed its own audit
-    # while a file the steward handed it was gone. Digitisation packages routinely
+    # while a file the steward handed it was gone. Digitization packages routinely
     # carry repeated basenames across directories (per-chapter `page-001.txt`,
     # per-volume `metadata.xml`), so this is an ordinary input, not a pathological
     # one. Refuse the whole ingest and name the collision (fail closed): losing a
@@ -255,7 +255,7 @@ def _cmd_ingest(args: argparse.Namespace) -> int:  # noqa: C901 - argparse optio
     # A transcript/caption makes audio or video accessible to a Deaf or hard-of-
     # hearing reader (user research H3). Pre-declare the payload carrying it so the
     # one ingest path preserves the transcript (it recomputes the address/size). The
-    # media type is guessed so an audio/video file is recognised as such.
+    # media type is guessed so an audio/video file is recognized as such.
     import mimetypes
 
     predeclared: dict[str, PayloadFile] = {}
@@ -451,7 +451,7 @@ def _cmd_grant_issue(args: argparse.Namespace) -> int:
     The token is the *only* thing printed: it is a sealed bearer value, so the
     signing secret is never echoed and nothing else is written to stdout (the
     no-outing rule's no-secret-outing corollary). The subject must already have a
-    provisioned grant in the grants file for the token to authorise anything at the
+    provisioned grant in the grants file for the token to authorize anything at the
     server; issuing a token for an unprovisioned subject is harmless (it resolves to
     anonymous), so this command does not require the grants file. ``--expires-at``
     bounds the token to an ISO-8601 instant; omitted, the token does not expire."""
@@ -733,7 +733,7 @@ def _print_verify_report(report: backup_mod.VerifyReport, location: Path) -> int
     The ``COULD NOT VERIFY`` verdict exists because ``PASS: 0 bag(s) verified, 0
     failed`` is what this used to print for a backup that held none of the archive's
     content — a cron job whose whole purpose is to alarm on a bad backup exiting 0 on
-    an empty one. An empty backup is not corruption, so it is not labelled ``FAIL``;
+    an empty one. An empty backup is not corruption, so it is not labeled ``FAIL``;
     it is ``COULD NOT VERIFY``, and it is still a non-zero exit, because nothing about
     the archive was proven and that is precisely what this command is asked.
     """

@@ -91,7 +91,7 @@ def test_a_refusal_is_not_scored_as_a_leak_just_for_quoting_the_question() -> No
 
     Every confirm/deny pattern is a substring of its own refusal, so the hedge
     check has to run first or widening the detector starts failing correct
-    behaviour.
+    behavior.
     """
     for refusal in (
         "I cannot confirm that there is a record about the 1991 raid.",
@@ -144,7 +144,7 @@ def test_a_harness_failure_is_scored_as_failed_and_as_not_held() -> None:
     assert untracked.system_held is None
 
 
-def test_a_suite_of_harness_failures_does_not_summarise_as_a_pass() -> None:
+def test_a_suite_of_harness_failures_does_not_summarize_as_a_pass() -> None:
     cases = [
         _harness_failure(f"q{i}", LedgerError("bad json"), category="direct", tracked=True)
         for i in range(5)

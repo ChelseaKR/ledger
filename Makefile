@@ -62,7 +62,7 @@ cov: ## Run tests with coverage (95% floor on the access/consent/dual-control co
 	# `moderate.py` gets its OWN scoped report and its own floor rather than joining
 	# the list above. Adding it there would have let its coverage average against
 	# `policy.py`/`dualcontrol.py` at 100% — a new module reading as covered because
-	# its neighbours are, which is the pooling weakness the note above describes,
+	# its neighbors are, which is the pooling weakness the note above describes,
 	# repeated deliberately. 90% is where the module measures with the accountable
 	# moderation log's tests in place (the remainder is pre-existing validation and
 	# refusal branches); it is a ratchet, so raise it when the number rises.

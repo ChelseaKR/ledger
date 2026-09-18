@@ -277,7 +277,7 @@ def test_the_ask_prefilter_is_an_and_over_terms_so_a_prose_question_matches_noth
     words to appear in one record and in practice matches nothing. That is what
     made the tier test above vacuous. Widening retrieval changes what reaches a
     paid model on the outing-refusal path and deserves its own review, so the
-    behaviour is pinned here and tracked, rather than being rediscovered as a
+    behavior is pinned here and tracked, rather than being rediscovered as a
     surprise by the next person who writes a test with a prose question.
     """
     root, _ids = archive_root

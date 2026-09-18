@@ -19,7 +19,7 @@ concurrency:
   # A concurrency group holds one running run and one pending run. A third run
   # joining the group cancels the pending one before it dispatches a single job,
   # so that commit ends `cancelled` with zero jobs and no verdict; with
-  # `cancel-in-progress: true` the running run is cancelled part-way through
+  # `cancel-in-progress: true` the running run is canceled part-way through
   # instead — also no verdict. A group keyed only on `github.ref` therefore makes
   # every push to `main` contend with the merge before it, and a burst of merges
   # loses the middle ones.
@@ -243,7 +243,7 @@ jobs:
     runs-on: ubuntu-latest
     # Engine-backed depth ON TOP OF the static `accessibility` gate (FIX-12): a real
     # headless Chromium drives the served demo and runs axe-core, catching what a
-    # stdlib HTML scan cannot (rendered contrast in both colour schemes, focus
+    # stdlib HTML scan cannot (rendered contrast in both color schemes, focus
     # order, computed labels). It runs in PARALLEL and needs no other job. This is
     # deliberately CI/dev-only — Playwright, Node, and the browser never enter the
     # ledger runtime, so the stdlib-only promise (the "one cheap box" constraint)
@@ -406,7 +406,7 @@ jobs:
       - name: Secret scan (gitleaks)
         # Run the pinned gitleaks binary directly. The gitleaks-action v2 crashes
         # on pull_request events (internal GitHub API RequestError) before it ever
-        # scans; the binary is deterministic and honours .gitleaks.toml.
+        # scans; the binary is deterministic and honors .gitleaks.toml.
         run: |
           GL=8.30.1
           curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GL}/gitleaks_${GL}_linux_x64.tar.gz" | tar -xz -C /tmp gitleaks

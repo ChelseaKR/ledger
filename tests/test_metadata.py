@@ -1,6 +1,6 @@
 """Tests for :mod:`ledger.metadata` — PREMIS event log and Dublin Core.
 
-Covers the PREMIS log JSON round-trip, its append-only / tamper-evident behaviour,
+Covers the PREMIS log JSON round-trip, its append-only / tamper-evident behavior,
 deterministic serialization and on-disk read/write, minimal PREMIS XML emission, and
 the Dublin Core JSON and ``oai_dc`` XML round-trips. The deterministic checks lean on
 ``canonical_json`` so a record's metadata hashes the same on every machine.
@@ -261,7 +261,7 @@ def test_dublin_core_from_json_rejects_non_list_element() -> None:
 
 
 def _sample_rights() -> PremisRights:
-    """A licence-basis rights statement with granted acts and a restriction."""
+    """A license-basis rights statement with granted acts and a restriction."""
     return PremisRights(
         rights_basis="license",
         rights_note="CC-BY-SA-4.0",

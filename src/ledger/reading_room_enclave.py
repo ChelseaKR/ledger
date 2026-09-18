@@ -242,7 +242,7 @@ def _evaluate(
 ) -> tuple[dict[str, set[str]], set[str]]:
     """Return ``(bucket label -> matching record ids, all matching record ids)``.
 
-    Pure, steward-side-only maths: operates on raw :class:`Record` objects
+    Pure, steward-side-only math: operates on raw :class:`Record` objects
     (including records no ordinary grant may even list) and returns record ids
     only for this module's own suppression and differencing-guard logic. Nothing
     that calls this may forward a record id, or any bucket built from it, to a

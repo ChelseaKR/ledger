@@ -78,7 +78,7 @@ jurisdictions that may not exist, so the terms stay in the legal system's own wo
 with a translated sentence saying why.
 
 A steward who serves a non-English readership should write the statement in the
-language that readership reads, with counsel who practises there — the page will
+language that readership reads, with counsel who practices there — the page will
 reproduce whatever they publish. `tests/test_i18n_rtl.py` holds this line from the
 other side: the statement text and the demand-type keys are the only things allowed to
 survive un-seamed in that page's body, and each is named there with this reason.

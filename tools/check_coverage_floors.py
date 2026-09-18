@@ -5,7 +5,7 @@
 in it. That is the whole defect this gate exists to remove. The ``Makefile`` scoped
 one report over ``access/*`` + ``consent.py`` + ``dualcontrol.py`` and gated it at
 95%, and the line passed -- while ``grants.py`` sat at 92% and ``consent.py`` at 91%,
-carried by three neighbours at 100%. Two modules were below the floor their own gate
+carried by three neighbors at 100%. Two modules were below the floor their own gate
 advertised, and the gate was structurally incapable of saying so.
 
 A pooled figure fails in one direction and hides in three. This gate checks each of
@@ -21,7 +21,7 @@ them:
    ``[tool.ledger.coverage_floors]`` fails the build. Adding a safety-critical module
    and forgetting to floor it was previously invisible -- worse than invisible, since
    appending it to the pooled ``--include`` would have bought it a passing grade from
-   its neighbours.
+   its neighbors.
 4. **No floor names a module that does not exist.** A dead config key is a floor
    nobody is meeting, reading as a floor somebody is.
 
@@ -159,7 +159,7 @@ def main() -> int:
         for line in failures:
             print(line)
         print(
-            "\nEach module is measured on its own: a floor is never met by a neighbour's\n"
+            "\nEach module is measured on its own: a floor is never met by a neighbor's\n"
             "score. Raise coverage, or lower a floor only with the reason recorded."
         )
         return 1

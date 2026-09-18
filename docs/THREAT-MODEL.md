@@ -284,7 +284,7 @@ compromised, or actively malicious — corrupting, truncating, or substituting b
   `manifest-blake2b.txt` (`src/ledger/bag.py`), so a single weakened or backdoored
   algorithm cannot mask tampering — an independent digest must also agree. On
   replication a bag is re-validated *at the destination*; a copy that arrives torn or
-  drifted is moved into a sibling `quarantine/` directory and a labelled `QUARANTINE`
+  drifted is moved into a sibling `quarantine/` directory and a labeled `QUARANTINE`
   PREMIS event is raised, never hidden (`src/ledger/replicate.py`). Healing only ever
   copies *from* a replica that just passed full RFC 8493 validation, and `heal` refuses
   to act when no replica validates — there is nothing trustworthy to copy from, so a
@@ -351,7 +351,7 @@ This is the subtle one, and it is treated as a first-class leak in `SECURITY.md`
 - **Residual risk.** **Some inference channels are inherent or out of scope.** A field's
   *name* appearing in the "Withheld" list does tell a permitted viewer that a field by
   that name exists and is sealed — this is a deliberate honesty/inference tradeoff
-  (the partial view is labelled as partial), not an accidental leak, but it is
+  (the partial view is labeled as partial), not an accidental leak, but it is
   information. **Timing side-channels are not fully closed:** the grant check in
   `IdentityVault.resolve` runs before any lookup so identity-unseal does not leak ref
   existence by timing, and the access decision in `is_visible` is a pure function of its
