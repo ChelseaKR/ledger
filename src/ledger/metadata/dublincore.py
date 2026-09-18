@@ -26,10 +26,11 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Sequence
 from pathlib import Path
 from xml.sax.saxutils import escape as _sax_escape
 
-from ledger.models import DC_ELEMENTS, DublinCore, canonical_json
+from ledger.models import DC_ELEMENTS, DisclosedRecord, DublinCore, canonical_json
 
 
 # Characters XML 1.0 forbids even when escaped (most C0 control codes). An archive
@@ -55,6 +56,7 @@ def escape(value: str) -> str:
 
 __all__ = [
     "from_json",
+    "is_part_of",
     "read_sidecar",
     "to_json",
     "to_oai_dc_xml",
@@ -93,13 +95,42 @@ def from_json(text: str) -> DublinCore:
     return DublinCore.from_dict(data)
 
 
-def to_oai_dc_xml(dc: DublinCore) -> str:
+def is_part_of(record: DisclosedRecord, *, base_url: str = "") -> list[str]:
+    """DCMI ``isPartOf`` values for ``record``'s arrangement, outermost first.
+
+    #202. A record filed in a collection (and a series inside it) *is part of*
+    them, which DCMI expresses as a refinement of ``relation``. The value is the
+    container's public URL when the caller knows the archive's base URL, and its
+    bare id otherwise — the same choice :func:`ledger.metadata.ead._unit_id`
+    already makes for a record's ``unitid``.
+
+    Read from :attr:`~ledger.models.DisclosedRecord.placement`, which the
+    disclosure layer has already trimmed to the containers this viewer may
+    describe. A record filed in a container the viewer may not see returns ``[]``
+    and is therefore indistinguishable from an unarranged one (no-outing rule:
+    a container's title can out a depositor by aggregation).
+    """
+    root = base_url.rstrip("/")
+    return [
+        f"{root}/collection/{step.container_id}" if root else step.container_id
+        for step in record.placement
+    ]
+
+
+def to_oai_dc_xml(dc: DublinCore, *, part_of: Sequence[str] = ()) -> str:
     """Render ``dc`` as a standard ``oai_dc:dc`` XML record.
 
     Interoperability/standards-compliance: emits one ``dc:<element>`` per value in
     the DCMI element namespace, all values XML-escaped, in the canonical element
     order so the output is deterministic. The values are taken verbatim from the
     (collection-level) Dublin Core; no identity is introduced here.
+
+    ``part_of`` (from :func:`is_part_of`) is appended as additional
+    ``dc:relation`` values, which is how the fifteen-element DCMI set expresses
+    membership — ``isPartOf`` is a DCMI *Terms* refinement of ``relation`` and
+    has no element of its own in ``oai_dc``. Empty by default, so a caller that
+    knows nothing about arrangement emits byte-identical XML to the pre-#202
+    form.
     """
     parts: dict[str, list[str]] = dc.to_dict()
     lines = ['<?xml version="1.0" encoding="UTF-8"?>']
@@ -113,6 +144,11 @@ def to_oai_dc_xml(dc: DublinCore) -> str:
     for element in DC_ELEMENTS:
         for value in parts.get(element, []):
             lines.append(f"  <dc:{element}>{escape(value)}</dc:{element}>")
+        if element == "relation":
+            # Emitted inside the `relation` slot rather than appended at the end,
+            # so the canonical element order this function promises still holds.
+            for value in part_of:
+                lines.append(f"  <dc:relation>{escape(value)}</dc:relation>")
     lines.append("</oai_dc:dc>")
     return "\n".join(lines)
 

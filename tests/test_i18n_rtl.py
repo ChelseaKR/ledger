@@ -424,6 +424,7 @@ _CONFIG_SENTINELS = {
 #: covered" -- the same defect as #226's, one level further in.
 _BODY_GATE_CONFIG_TEXT = {
     "/about": ("Zzqabouttext",),
+    "/collections": (),
     "/consent-status": (),
     "/governance": ("Zzqvettingtext",),
     "/how-it-works": (),
@@ -439,6 +440,10 @@ _BODY_GATE_CONFIG_TEXT = {
 #: rendered nothing would satisfy the leak assertion over an empty set.
 _BODY_GATE_SEAM_STRINGS = {
     "/about": 3,
+    # The branch this fixture reaches: an archive with no arrangement described. A
+    # populated page adds container titles and scope notes, which are steward-authored
+    # text in the archive's own words, like `Config.about` above.
+    "/collections": 11,
     "/consent-status": 4,
     "/governance": 3,
     "/how-it-works": 5,

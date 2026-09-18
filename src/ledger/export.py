@@ -25,7 +25,21 @@ from collections.abc import Sequence
 
 from ledger.models import DisclosedRecord
 
-_HEADER = ("record_id", "title", "date", "subjects", "types", "languages", "url")
+_HEADER = (
+    "record_id",
+    "title",
+    "date",
+    "subjects",
+    "types",
+    "languages",
+    "url",
+    # #202, appended rather than inserted: a consumer reading this file by
+    # column position keeps working, and one reading it by header name gains a
+    # column. The value is the deepest container of the record's DISCLOSED
+    # placement chain, so a record filed somewhere this viewer may not see
+    # exports an empty cell — the same cell an unarranged record exports.
+    "collection",
+)
 
 # Leading characters a spreadsheet may interpret as the start of a formula.
 _FORMULA_LEADERS = ("=", "+", "-", "@")
@@ -40,9 +54,11 @@ def records_csv(records: Sequence[DisclosedRecord], *, base_url: str) -> str:
     """Render ``records`` as CSV with a header row, one record per line.
 
     Columns: ``record_id``, ``title``, the first Dublin Core ``date``, ``subjects`` /
-    ``types`` / ``languages`` (semicolon-joined), and the record's public ``url``. The
-    standard library's :mod:`csv` writer handles quoting, and :func:`_csv_safe` guards
-    each text cell against formula injection. Deterministic for given input."""
+    ``types`` / ``languages`` (semicolon-joined), the record's public ``url``, and the
+    ``collection`` it is filed in (#202 — the deepest container this viewer may see,
+    empty when there is none). The standard library's :mod:`csv` writer handles
+    quoting, and :func:`_csv_safe` guards each text cell against formula injection.
+    Deterministic for given input."""
     root = base_url.rstrip("/")
     out = io.StringIO()
     writer = csv.writer(out)
@@ -58,6 +74,7 @@ def records_csv(records: Sequence[DisclosedRecord], *, base_url: str) -> str:
                 _csv_safe("; ".join(dc.get("type") or [])),
                 _csv_safe("; ".join(dc.get("language") or [])),
                 _csv_safe(f"{root}/record/{record.record_id}"),
+                _csv_safe(record.placement[-1].title if record.placement else ""),
             ]
         )
     return out.getvalue()

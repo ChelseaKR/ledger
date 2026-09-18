@@ -70,6 +70,10 @@
       "type": "string",
       "format": "date-time",
       "description": "UTC ISO-8601 creation timestamp."
+    },
+    "placement": {
+      "type": ["string", "null"],
+      "description": "#202: the id of the one collection or series this record is filed in, or null/absent for an unarranged record. A record has exactly one place. The container's own description and policy live in the separate container manifest (container.schema.json), never here: this property says only WHERE the record is filed, so a record manifest can be read by something that may not know what that place is called. Absent on every record written before #202 (unarranged), which is why it is not required."
     }
   },
   "$defs": {

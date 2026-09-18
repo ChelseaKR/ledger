@@ -202,7 +202,7 @@ def test_web_has_no_static_html_so_the_gate_rests_on_rendered_samples() -> None:
     assert list(web_root.rglob("*.html")) == []
 
 
-def test_render_sample_pages_returns_the_nine_documented_routes() -> None:
+def test_render_sample_pages_returns_the_eleven_documented_routes() -> None:
     """The exact set of routes the static gate's rendered-sample coverage reaches.
 
     Pinned so a change here is a conscious, reviewed edit (e.g. adding coverage
@@ -219,6 +219,8 @@ def test_render_sample_pages_returns_the_nine_documented_routes() -> None:
         "rendered:/overview",
         "rendered:/withdraw",
         "rendered:/edit",
+        "rendered:/collections",
+        "rendered:/collection/{id}",
     }
 
 
@@ -346,8 +348,8 @@ def test_main_reports_document_count_and_names_on_a_pass(
     out = capsys.readouterr().out
     assert exit_code == 0
     assert "passed" in out
-    # Nine rendered samples plus the one static file just written.
-    assert "10 HTML document(s)" in out
+    # Eleven rendered samples plus the one static file just written.
+    assert "12 HTML document(s)" in out
     assert str(tmp_path / "index.html") in out
     assert "rendered:/contribute" in out
 

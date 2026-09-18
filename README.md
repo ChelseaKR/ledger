@@ -93,6 +93,12 @@ first-class preservation requirement, equal to bit-integrity. ledger treats it t
   community-only, restricted to named stewards, or sealed until a date or a condition. A contributor
   can publish a story while keeping the names, the location, and their own identity sealed. The
   browse and search surfaces only show a viewer what their grant allows.
+- **Arranges what it holds.** A deposit is a collection, a run of material inside it is a series,
+  and a record has one place in them — with a scope-and-content note, extent, dates, and its own
+  disclosure. Description and policy flow downward and can only ever **narrow**: filing a record in
+  a container can hide it and can never reveal it. A container's *existence* is sealed separately
+  from what it holds, because a collection titled after the event its records document outs its
+  depositor even when every record inside it is sealed (ADR 0020).
 - **Protects contributors.** Redaction is a built-in step, not an afterthought; minimal-disclosure
   defaults mean a record reveals as little as it can while still being useful; and there is no
   feature anywhere that surfaces "who contributed this" to someone without an explicit grant.
@@ -151,6 +157,7 @@ ledger/
 │   ├── transparency.py / attest.py / attestation.py   # transparency log + 2-of-N sealed-conditional attestation
 │   ├── succession.py / tombstones.py # group hand-off continuity; durable takedown propagation
 │   ├── reading_room_enclave.py / lockdown.py  # supervised aggregate research access; duress mode
+│   ├── arrangement.py                # collections and series: the graph, its shape rules, its store
 │   ├── search.py / catalog_index.py / pagination.py / parsing.py / render.py  # browse/search server internals
 │   ├── i18n.py                       # gettext localization seam for the browse/contribute UI
 │   ├── accessibility_check.py / acr_gen.py  # WCAG CI gate + Accessibility Conformance Report generator

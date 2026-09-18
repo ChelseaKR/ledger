@@ -77,6 +77,13 @@ class Facet:
     field: str
     value: str
     count: int
+    #: What to show a reader when the machine-readable ``value`` is an
+    #: identifier rather than prose. Empty for every Dublin Core facet, where
+    #: the value *is* the label; set for the arrangement facet (#202), whose
+    #: value is a container id and whose label is the container's title. A
+    #: renderer shows ``label or value``, so nothing that predates this field
+    #: changes.
+    label: str = ""
 
 
 def index_text(record: DisclosedRecord) -> str:
@@ -162,6 +169,42 @@ def facets(records: Sequence[DisclosedRecord], field: str) -> list[Facet]:
     ]
 
 
+#: The facet field name the arrangement browse uses. Not a Dublin Core
+#: element: a record's place in the archive is structural, not descriptive, so
+#: it is counted from the disclosed placement chain rather than from
+#: ``dublin_core``. Named here because :func:`filter_by_facet` and the browse
+#: page both have to agree on the string.
+COLLECTION_FACET = "collection"
+
+
+def facet_by_collection(records: Sequence[DisclosedRecord]) -> list[Facet]:
+    """Count the containers ``records`` are filed in, at every visible level.
+
+    One :class:`Facet` per container that appears anywhere in a record's
+    disclosed placement chain, so a collection's count includes the records
+    filed in its series (selecting it browses everything under it) and a
+    series' count is its own. ``value`` is the container id, which is what a
+    ``?collection=`` query carries; ``label`` is its title, which is what a
+    reader reads.
+
+    Counted from :attr:`~ledger.models.DisclosedRecord.placement`, which
+    :func:`ledger.access.policy.disclose` has already trimmed to the containers
+    this viewer may describe — so a container the reader may not know about
+    contributes no facet, no count, and no row, exactly as if it did not exist
+    (#202). Sorted count-descending then id-ascending, like every other facet.
+    """
+    counter: Counter[str] = Counter()
+    labels: dict[str, str] = {}
+    for record in records:
+        for step in {s.container_id: s for s in record.placement}.values():
+            counter[step.container_id] += 1
+            labels[step.container_id] = step.title
+    return [
+        Facet(field=COLLECTION_FACET, value=value, count=count, label=labels[value])
+        for value, count in sorted(counter.items(), key=lambda item: (-item[1], item[0]))
+    ]
+
+
 def facet_by_coverage(records: Sequence[DisclosedRecord]) -> list[Facet]:
     """Count the distinct Dublin Core ``coverage`` (place) values across ``records``.
 
@@ -228,7 +271,20 @@ def filter_by_facet(
     narrows the result set to records carrying that exact subject value. Matching is
     exact (not substring) on the disclosed Dublin Core values, and input order is
     preserved so the narrowed list keeps the caller's ordering.
+
+    ``collection`` is the one field that is not Dublin Core (#202): it matches
+    against the record's disclosed placement chain, so selecting a collection
+    narrows to everything filed under it *including its series*, and selecting
+    a series narrows to that series. It is handled here rather than at the call
+    sites, so the browse page, the JSON search API and the CSV export cannot
+    disagree about what a filter means.
     """
+    if field == COLLECTION_FACET:
+        return [
+            record
+            for record in records
+            if any(step.container_id == value for step in record.placement)
+        ]
     return [record for record in records if value in record.dublin_core.get(field, ())]
 
 
