@@ -1593,8 +1593,8 @@ msgstr "Textile"
 msgid "The scan below is checked for integrity like any other file. The object it was made from is not, and a checked scan is not a checked object."
 msgstr "The scan below is checked for integrity like any other file. The object it was made from is not, and a checked scan is not a checked object."
 
-msgid "This archive is a catalogue, not a copy."
-msgstr "This archive is a catalogue, not a copy."
+msgid "This archive is a catalog, not a copy."
+msgstr "This archive is a catalog, not a copy."
 
 msgid "Video cassette"
 msgstr "Video cassette"

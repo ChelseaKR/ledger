@@ -1,8 +1,8 @@
-"""Physical holdings: a catalogue entry for something the archive does not hold (#188).
+"""Physical holdings: a catalog entry for something the archive does not hold (#188).
 
 The README's shoebox under someone's bed is full of zines, flyers, buttons and
 cassettes, and ledger can only *preserve* those once they are digitized. What a
-community needs first is a catalogue: what exists, where it is, who has it. This
+community needs first is a catalog: what exists, where it is, who has it. This
 module pins the whole of that feature, and it is one module rather than five
 because #188 is a schema change across four surfaces that have to agree —
 **ingest, access policy, fixity, and the no-outing path** — and a partial
@@ -18,7 +18,7 @@ Three properties carry most of the weight here.
    :func:`~ledger.fixity.overall_holding_status` can return.
 2. **A failure always dominates the kind.** ``not_applicable`` must never become a
    place to hide damage: a physical record whose manifest was altered is a
-   failure, and a digital record relabelled ``physical`` by somebody with disk
+   failure, and a digital record relabeled ``physical`` by somebody with disk
    access still fails on the payload it continues to declare.
 3. **Custody is on the no-outing path.** Where the object is and who keeps it are
    ordinary sealed ``custody.*`` fields, so they go through the one disclosure
@@ -103,7 +103,7 @@ _SENTINEL_LOCATION = "LOCATION-SENTINEL-4c7b02"
 
 
 def _physical_record(
-    title: str = "Four boxes from the 1994 clinic defence",
+    title: str = "Four boxes from the 1994 clinic defense",
     *,
     record_id: str | None = None,
     custody: bool = True,
@@ -317,7 +317,7 @@ def test_holding_status_is_a_function_of_the_report_and_the_kind(
         pytest.param(
             [(HoldingKind.PHYSICAL, _report()), (HoldingKind.PHYSICAL, _report())],
             FixityStatus.NOT_APPLICABLE,
-            id="a-shoebox-catalogue",
+            id="a-shoebox-catalog",
         ),
         pytest.param(
             [(HoldingKind.PHYSICAL, _report()), (HoldingKind.DIGITAL, _report())],
@@ -442,7 +442,7 @@ def test_a_tampered_physical_record_fails_rather_than_reading_as_not_applicable(
     assert holding_status(kind, report) is FixityStatus.FAILED
 
 
-def test_relabelling_a_rotted_digital_record_as_physical_does_not_silence_it(
+def test_relabeling_a_rotted_digital_record_as_physical_does_not_silence_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The attack the fourth state invites, and why it does not work.
@@ -464,7 +464,7 @@ def test_relabelling_a_rotted_digital_record_as_physical_does_not_silence_it(
     manifest.write_text(json.dumps(payload, sort_keys=True, separators=(",", ":")), "utf-8")
 
     _name, kind, report = archive.audit_holdings()[0]
-    assert kind is HoldingKind.PHYSICAL, "the relabelling did take effect"
+    assert kind is HoldingKind.PHYSICAL, "the relabeling did take effect"
     assert holding_status(kind, report) is FixityStatus.FAILED
 
 
@@ -870,7 +870,7 @@ def test_a_steward_reading_healthz_over_a_digital_archive_still_sees_a_verified_
     assert fixity_block["bags_not_applicable"] == 0
 
 
-def test_a_steward_reading_status_is_told_the_archive_is_a_catalogue(physical_site: str) -> None:
+def test_a_steward_reading_status_is_told_the_archive_is_a_catalog(physical_site: str) -> None:
     _code, body = _get(physical_site, "/status", steward_token=True)
     assert i18n.t("en", "status_headline_not_applicable") in body
     assert i18n.t("en", "status_headline_verified") not in body
@@ -882,7 +882,7 @@ def test_the_anonymous_status_page_is_identical_for_a_physical_and_a_digital_arc
     """The same line /healthz holds, held on the human-readable page.
 
     The /status verdict is a claim about the WHOLE archive, sealed records
-    included. Telling an outsider "this archive is a catalogue, not a copy" tells
+    included. Telling an outsider "this archive is a catalog, not a copy" tells
     them that the records they cannot see describe physical objects in somebody's
     keeping, which points an adversary at the custodians #188 exists to protect.
     Measured before the gate: an all-sealed physical archive said exactly that to
@@ -922,7 +922,7 @@ def test_browse_carries_the_holding_kind_through_the_catalog_index(
     assert browsed[record.record_id].physical.extent == "1 box, ~380 flyers"
 
 
-def test_the_cli_catalogues_a_shoebox_audits_it_and_attaches_a_scan(
+def test_the_cli_catalogs_a_shoebox_audits_it_and_attaches_a_scan(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Done-when 1, 2 and 3 through the surface a community archivist actually uses.
@@ -945,7 +945,7 @@ def test_the_cli_catalogues_a_shoebox_audits_it_and_attaches_a_scan(
                 "--root",
                 str(root),
                 "--title",
-                "Four boxes, 1994 clinic defence",
+                "Four boxes, 1994 clinic defense",
                 "--description",
                 "Leaflets and a newsletter run.",
                 "--physical",

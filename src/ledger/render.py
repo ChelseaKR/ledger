@@ -253,7 +253,7 @@ def _custody_sentence(record: DisclosedRecord, *, lang: str) -> str:
     field values and are disclosed, if at all, by the field loop in
     :func:`ledger.access.policy.disclose` like any other sealed field. This says
     only *whether* somebody wrote the fact down, which is the part a reader needs
-    in order to know whether the catalogue is complete.
+    in order to know whether the catalog is complete.
     """
     return {
         CustodyState.DISCLOSED: i18n.t(lang, "custody_disclosed"),
@@ -321,7 +321,7 @@ def _records_list_html(
         warn = f' <span class="badge">{badge}</span>' if record.content_warnings else ""
         # #188: whether the archive holds a copy of the thing is scannable from the
         # list, beside the content-warning badge and in the same textual form —
-        # never colour or an icon alone (accessibility).
+        # never color or an icon alone (accessibility).
         holding = _holding_badge_html(record, lang=lang)
         summary_html = f'<p class="result-detail">{detail}</p>' if detail else ""
         items.append(

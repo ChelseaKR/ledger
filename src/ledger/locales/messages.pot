@@ -1125,7 +1125,7 @@ msgstr ""
 msgid "This archive holds nothing yet."
 msgstr ""
 
-msgid "This archive is a catalogue, not a copy."
+msgid "This archive is a catalog, not a copy."
 msgstr ""
 
 msgid ""

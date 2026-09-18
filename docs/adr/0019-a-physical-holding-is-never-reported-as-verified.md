@@ -12,7 +12,7 @@ the pipeline actually had.
 
 The README's case is a shoebox under someone's bed full of zines, flyers, buttons,
 photographs and cassettes. ledger could not take it. Every path assumed a payload, so
-the only way to catalogue an undigitized collection was to ingest records with no
+the only way to catalog an undigitized collection was to ingest records with no
 files — and that is where the trouble starts, because **a record with no payload is
 exactly what a failed ingest also looks like.**
 
@@ -64,7 +64,7 @@ defaulted — ADR 0018's rule, one layer down.
 **Fixity gets a fourth state, and only two functions may return it.**
 `FixityStatus.NOT_APPLICABLE` means "there was nothing to check, by declaration",
 which is a different fact from `UNVERIFIED` ("nothing was checked"): the second is an
-alarm a steward must act on, the first is the healthy resting state of a catalogue
+alarm a steward must act on, the first is the healthy resting state of a catalog
 entry. Folding them together would either alarm on every shoebox forever — which
 retires the alarm — or silence it where it matters.
 
@@ -79,7 +79,7 @@ state. A test asserts that separation rather than describing it.
 it looks at the kind. Otherwise `not_applicable` becomes a place to hide damage: a
 physical record whose `record.json` was altered would read as "nothing to check", and
 an attacker with disk access could relabel a rotted digital record as `physical`. The
-relabelling attack fails for a second reason too, and it is worth stating: the bag
+relabeling attack fails for a second reason too, and it is worth stating: the bag
 still *declares* the payload in its payload manifest, so `validate_bag` still fails on
 it.
 
@@ -114,7 +114,7 @@ object verified"* is the single inference this whole feature exists to refuse.
 `query` are already local: `custody transfer`, `condition check` and `digitization`.
 `condition check` is deliberately not spelled `fixity check` — a person's eyes are
 not a digest, and a consumer filtering for fixity checks must not pick up a human
-judgement. Conversely, the standing statement that a record's fixity is not
+judgment. Conversely, the standing statement that a record's fixity is not
 applicable **is** a `fixity check` event, with outcome `not-applicable`, written once
 per physical record at ingest to the bag's log and to a new archive-level
 `logs/holdings.premis.json`. A consumer filtering the log for fixity checks has to
@@ -135,7 +135,7 @@ identical to anything counting successes, and only one of them is a statement.
   one — which gains `bags_verified` and `bags_not_applicable`.
 - `/status` applies the **same line** to its headline, and this was caught on
   review of this change rather than designed in. The page's verdict is a claim about
-  the whole archive, sealed records included, so "this archive is a catalogue, not a
+  the whole archive, sealed records included, so "this archive is a catalog, not a
   copy" shown to an outsider who can list nothing told them that hidden records exist
   and that they describe physical objects in people's keeping — measured: an
   all-sealed physical archive said exactly that to an anonymous request. That points
@@ -146,12 +146,12 @@ identical to anything counting successes, and only one of them is a statement.
   physical holdings, and the runbook a non-ops volunteer reads names the count of
   records nothing can verify. `all_fixity_ok` and `HANDOFF_SCHEMA_VERSION` are
   untouched: the boolean still means "did the stored bytes verify", which for a
-  catalogue entry is true and narrow, and a hand-off document for a digital-only
+  catalog entry is true and narrow, and a hand-off document for a digital-only
   archive is byte-identical to the one this code produced before.
 - **`attestation.build_attestation` is deliberately unchanged**, and this is the
   residual. `fixity_ok` is computed from `AuditReport.status`, so a physical holding
   folds in as verified and `/proof` will say the archive "passed its most recent
-  fixity check" over a shoebox catalogue. Changing it means either
+  fixity check" over a shoebox catalog. Changing it means either
   `ATTESTATION_SCHEMA_VERSION` 2 — breaking every third-party verifier — or redefining
   a published, signed field, and that trade is recorded as the owner's at #205. What
   this ADR does instead is state the *scope* of the claim on `/proof`, qualitatively
@@ -160,7 +160,7 @@ identical to anything counting successes, and only one of them is a statement.
   objects it does not.
 - `lockdown` is unchanged, on purpose. Its shred gate requires a verified replica
   before destroying the local vault; for a physical holding the replica holds the
-  catalogue entry, which is everything ledger ever had for that record, so nothing is
+  catalog entry, which is everything ledger ever had for that record, so nothing is
   lost that the gate was protecting.
 - `ledger replicas`, `ledger heal` and `ledger verify-backup` keep their booleans —
   the replica or backup of a physical record's bag really is complete — and each

@@ -1684,7 +1684,7 @@ msgstr "Textile"
 msgid "The scan below is checked for integrity like any other file. The object it was made from is not, and a checked scan is not a checked object."
 msgstr "La numérisation ci-dessous est vérifiée comme n'importe quel autre fichier. L'objet dont elle provient ne l'est pas, et une copie vérifiée n'est pas un objet vérifié."
 
-msgid "This archive is a catalogue, not a copy."
+msgid "This archive is a catalog, not a copy."
 msgstr "Ce fonds est un catalogue, pas une copie."
 
 msgid "Video cassette"

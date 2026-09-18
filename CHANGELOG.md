@@ -7,13 +7,13 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
-- **Physical-holding records, so a shoebox archive can be catalogued undigitized
+- **Physical-holding records, so a shoebox archive can be cataloged undigitized
   (#188, ADR 0019).** ledger can only *preserve* what has been digitized, and most
   community collections never get that far. A record may now declare
   `holding_kind: digital | physical | physical_with_surrogate` and carry a
   `PhysicalHolding` — a controlled `PhysicalFormat`, an extent, a condition note —
   describing an object the archive does not hold the bytes of. `ledger ingest
-  --physical FORMAT` catalogues one; `ledger surrogate` attaches a scan or a phone
+  --physical FORMAT` catalogs one; `ledger surrogate` attaches a scan or a phone
   photo to it later.
 
   **The load-bearing part is that such a record is never reported as passing
@@ -34,7 +34,7 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `/healthz`'s steward block gains `bags_verified` and `bags_not_applicable` and the
   holding-aware verdict (the **anonymous** payload is unchanged, deliberately —
   making it honest would turn it into a second emptiness oracle); `/status` gains a
-  headline that calls a catalogue a catalogue — for a steward only, because the
+  headline that calls a catalog a catalog — for a steward only, because the
   same sentence to an outsider would say that the records they cannot see are
   physical objects in people's keeping; the hand-off runbook will not tell a
   volunteer inheriting the archive that "all bags verified intact" over records

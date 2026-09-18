@@ -102,7 +102,7 @@
     },
     "physicalFormat": {
       "type": "string",
-      "description": "The controlled physical-format vocabulary. Closed on purpose: two volunteers cataloguing the same box must not produce three spellings of `cassette`. `other` is the honest answer for anything not listed, and is better than a near-miss.",
+      "description": "The controlled physical-format vocabulary. Closed on purpose: two volunteers cataloging the same box must not produce three spellings of `cassette`. `other` is the honest answer for anything not listed, and is better than a near-miss.",
       "enum": [
         "zine",
         "flyer",
@@ -138,7 +138,7 @@
         },
         "condition": {
           "type": "string",
-          "description": "The object's condition in the cataloguer's own words. Free text, not a vocabulary: condition reporting is a judgement, and a closed list would push a volunteer into picking a word that is wrong rather than describing what they see. Omitted when empty."
+          "description": "The object's condition in the cataloger's own words. Free text, not a vocabulary: condition reporting is a judgment, and a closed list would push a volunteer into picking a word that is wrong rather than describing what they see. Omitted when empty."
         }
       }
     },

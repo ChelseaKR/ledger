@@ -221,7 +221,7 @@ def _cmd_ingest(args: argparse.Namespace) -> int:  # noqa: C901 - argparse optio
         fields.append(Field(name=name, value=value, policy=AccessPolicy.SEALED_UNTIL))
 
     # #188. The kind is declared by `--physical`, never inferred from an empty
-    # `--file` list: a caller who forgot their files and a caller cataloguing a
+    # `--file` list: a caller who forgot their files and a caller cataloging a
     # shoebox produce the same argv otherwise, and the archive would go on to
     # publish a holding kind nobody chose.
     physical: PhysicalHolding | None = None
@@ -414,7 +414,7 @@ def _cmd_ingest(args: argparse.Namespace) -> int:  # noqa: C901 - argparse optio
             file=sys.stderr,
         )
     if record.holding_kind.is_physical:
-        # Said at the moment of cataloguing, in the same breath as the record id,
+        # Said at the moment of cataloging, in the same breath as the record id,
         # so the steward is never surprised later by an `audit` row that does not
         # say PASS. It is the correct row; this is where they learn why.
         print(
@@ -425,7 +425,7 @@ def _cmd_ingest(args: argparse.Namespace) -> int:  # noqa: C901 - argparse optio
         )
         if not record.has_custody():
             print(
-                "note: no custodian or location was recorded, so the catalogue does not "
+                "note: no custodian or location was recorded, so the catalog does not "
                 "say who is keeping this object. Add --custodian/--custody-location (both "
                 "sealed) if somebody knows.",
                 file=sys.stderr,
@@ -739,7 +739,7 @@ def _cmd_audit(args: argparse.Namespace) -> int:
         # nothing was demonstrated, and both halves of that have to be said: PASS
         # would be the vacuous claim the three-state verdicts exist to refuse, and
         # FAIL would send a steward looking for damage in an archive doing exactly
-        # what a catalogue is for.
+        # what a catalog is for.
         summary = "NOTHING TO VERIFY"
     elif holdings:
         summary = "PASS"
@@ -988,12 +988,12 @@ def _print_verify_report(report: backup_mod.VerifyReport, location: Path) -> int
     )
     if report.physical_bags:
         # PASS here is true and narrow: the backup holds an intact copy of every
-        # byte the archive has. For a physical holding those bytes are a catalogue
+        # byte the archive has. For a physical holding those bytes are a catalog
         # entry, and a steward who reads PASS as "my zines are backed up" has read
         # a sentence this command never said (#188).
         print(
             f"note: {report.physical_bags} of these bag(s) are physical holdings — a "
-            "catalogue entry for an object the archive has no copy of. Backing up the "
+            "catalog entry for an object the archive has no copy of. Backing up the "
             "entry does not back up the object.",
             file=sys.stderr,
         )
@@ -1520,7 +1520,7 @@ def _cmd_replicas(args: argparse.Namespace) -> int:
         # rows would otherwise conclude their zine is in three places (#188).
         print(
             f"note: record {args.id} is a {kind.value} holding. What is replicated above is "
-            "its catalogue entry, not the object — replicating a description three times "
+            "its catalog entry, not the object — replicating a description three times "
             "does not make the thing it describes any safer.",
             file=sys.stderr,
         )
@@ -1557,13 +1557,13 @@ def _cmd_heal(args: argparse.Namespace) -> int:
         tombstones=TombstoneStore(archive.logs_dir),
     )
     if kind.is_physical:
-        # Healing a physical holding restores its catalogue entry. That is a real
+        # Healing a physical holding restores its catalog entry. That is a real
         # and worthwhile repair — losing the description loses the archive's only
         # knowledge of the object — but it is not the recovery a steward pictures
         # when they run a command called `heal`, and the difference has to be said
         # out loud rather than left for them to infer from a green line (#188).
         print(
-            f"note: record {args.id} is a {kind.value} holding. heal restores its catalogue "
+            f"note: record {args.id} is a {kind.value} holding. heal restores its catalog "
             "entry, which is all ledger has ever held for it. The object itself cannot be "
             "healed from here by anyone.",
             file=sys.stderr,
@@ -2360,7 +2360,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p_ingest.add_argument("--contributor-name", help="sealed into the vault; never printed back")
     p_ingest.add_argument("--contributor-contact", help="sealed into the vault")
     # --- physical holdings (#188) -----------------------------------------
-    # `--physical FORMAT` is the switch that turns an ingest into a catalogue
+    # `--physical FORMAT` is the switch that turns an ingest into a catalog
     # entry for something the archive does not hold: it declares the kind rather
     # than letting an empty --file list imply it, because "no payload" is equally
     # what a mistake looks like.
@@ -2369,7 +2369,7 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="FORMAT",
         choices=[f.value for f in PhysicalFormat],
         help=(
-            "catalogue an object the archive does NOT hold a copy of (a zine, a box "
+            "catalog an object the archive does NOT hold a copy of (a zine, a box "
             "of flyers, a cassette). Takes a controlled format; see --help for the "
             "list. Fixity is reported as not-applicable for such a record, never as "
             "passing."

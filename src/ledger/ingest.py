@@ -212,7 +212,7 @@ def serialize_record(record: Record) -> str:
 #: on a schedule; making it append an event per physical record per run would turn
 #: a read into a write and grow the log without bound, and the fact being recorded
 #: — that this record has no content to verify — is settled the moment it is
-#: catalogued, not re-discovered nightly.
+#: cataloged, not re-discovered nightly.
 HOLDINGS_LOG_FILENAME = "holdings.premis.json"
 
 
@@ -271,7 +271,7 @@ def validate_holding(record: Record) -> None:
 
     Raises :class:`~ledger.errors.LedgerError` naming the disagreement. Called from
     :func:`serialize_record`, so no incoherent manifest can reach disk by any path
-    — the same defence-in-depth placement as the identity refusal above it.
+    — the same defense-in-depth placement as the identity refusal above it.
     """
     kind = record.holding_kind
     if kind is HoldingKind.DIGITAL:
@@ -827,7 +827,7 @@ def ingest_sip(  # noqa: C901 - the SIP pipeline's stages, in order (#83)
             )
         )
         if record.holding_kind.is_physical:
-            # The record's own log states, from the moment it is catalogued, that
+            # The record's own log states, from the moment it is cataloged, that
             # its content fixity is not applicable — so a reader of this bag learns
             # it here rather than having to know that an empty `data/` means
             # something (#188). The same event is written to the archive-level
@@ -2195,7 +2195,7 @@ class Archive:
         own failing result (:meth:`_fast_lookup_divergence`).
 
         An absent or unreadable manifest degrades to
-        :data:`~ledger.models.HoldingKind.DIGITAL`, which is pre-#188 behaviour and
+        :data:`~ledger.models.HoldingKind.DIGITAL`, which is pre-#188 behavior and
         loses nothing: a bag with no readable record manifest either is not a ledger
         record bag at all, or is one whose ``record.json`` no longer matches its tag
         manifest — and that is already a failing result, which dominates the kind.

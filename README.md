@@ -86,7 +86,7 @@ first-class preservation requirement, equal to bit-integrity. ledger treats it t
 - **Ingests** a record (audio, image, PDF, video, text, or a folder of them) into a content-addressed
   store, computes fixity, writes a BagIt bag, and generates preservation metadata (PREMIS events and
   fixity) and descriptive metadata (Dublin Core), so the item is documented the moment it lands.
-- **Catalogues what has not been digitized yet.** `ledger ingest --physical zine` records an object
+- **Catalogs what has not been digitized yet.** `ledger ingest --physical zine` records an object
   the archive does *not* hold a copy of — the shoebox above, before anyone has scanned it — with its
   format, its extent, its condition, and a **sealed** note of who is keeping it. Such a record is
   reported as `not applicable` by every fixity surface, never as passing: an undigitized box must not

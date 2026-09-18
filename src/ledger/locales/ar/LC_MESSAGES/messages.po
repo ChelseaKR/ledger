@@ -1590,7 +1590,7 @@ msgstr "منسوجات"
 msgid "The scan below is checked for integrity like any other file. The object it was made from is not, and a checked scan is not a checked object."
 msgstr "يُتحقق من سلامة النسخة الممسوحة أدناه كأي ملف آخر. أما الشيء الذي أُخذت عنه فلا، ونسخة مُتحقَّق منها ليست شيئًا مُتحقَّقًا منه."
 
-msgid "This archive is a catalogue, not a copy."
+msgid "This archive is a catalog, not a copy."
 msgstr "هذا الأرشيف فهرس، وليس نسخة."
 
 msgid "Video cassette"

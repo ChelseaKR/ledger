@@ -166,7 +166,7 @@ def _holding_html(record: DisclosedRecord) -> str:
     """The physical-holding block for a printed entry, or ``""`` if digital (#188).
 
     A booklet is the surface where getting this wrong lasts longest: paper cannot
-    be corrected, and a reader holding a printed catalogue two years from now has
+    be corrected, and a reader holding a printed catalog two years from now has
     no way to check anything against the live site. So the entry states, in words
     on the page, that this is an object the archive does not hold a copy of, what
     it is, how much there is, and whether anyone recorded who is keeping it.

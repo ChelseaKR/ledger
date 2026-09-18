@@ -34,7 +34,7 @@ sentinel tests are the enforcement of that classification at output boundaries.
 
 ### Custody of a physical holding (#188, ADR 0019)
 
-A physical-holding record catalogues an object the archive does **not** hold a copy
+A physical-holding record catalogs an object the archive does **not** hold a copy
 of — a box of flyers in somebody's flat. The person keeping it is often the most
 exposed person in the chain, and this is the one place the no-outing rule extends
 from *authorship* to *possession*.

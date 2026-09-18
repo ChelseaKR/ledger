@@ -216,12 +216,12 @@ def _messages(translation: gettext.NullTranslations) -> dict[str, str]:
         "status_detail_counts": _(
             "{passed} of {total} record package(s) passed every integrity check ({files} file checksum(s) verified)."
         ),
-        # #188. An archive of catalogued-but-undigitized material is healthy and
+        # #188. An archive of cataloged-but-undigitized material is healthy and
         # has demonstrated nothing, and both halves have to be in the sentence: a
         # reader who is told "everything is healthy" will believe their zines are
         # backed up, and a reader who is told "could not be checked" will go
         # looking for damage that is not there.
-        "status_headline_not_applicable": _("This archive is a catalogue, not a copy."),
+        "status_headline_not_applicable": _("This archive is a catalog, not a copy."),
         "status_detail_not_applicable": _(
             "Every record here describes a physical object that has not been digitized, so there are no stored files to check. Nothing is wrong; nothing has been proved either. The objects are only as safe as the people keeping them."
         ),
@@ -615,7 +615,7 @@ def _messages(translation: gettext.NullTranslations) -> dict[str, str]:
         # carry the whole idea in four words, and it says two things a reader needs
         # in the order they need them: this is a real object, and the archive does
         # not have a copy of it. It must never read as a failure — an undigitized
-        # zine is a catalogue entry doing its job, not a broken record.
+        # zine is a catalog entry doing its job, not a broken record.
         "holding_physical_badge": _("Physical · not digitized"),
         "holding_surrogate_badge": _("Physical · partial scan"),
         "holding_heading": _("Physical holding"),
@@ -641,7 +641,7 @@ def _messages(translation: gettext.NullTranslations) -> dict[str, str]:
         # they can be translated — leaving them English would put "audio-cassette"
         # in the middle of an Arabic page, which is the defect #217 closed one
         # route earlier. An unknown slug falls back to the slug itself rather
-        # than to a wrong near-neighbour (see `physical_format_label`).
+        # than to a wrong near-neighbor (see `physical_format_label`).
         "holding_format_zine": _("Zine"),
         "holding_format_flyer": _("Flyer"),
         "holding_format_poster": _("Poster"),
@@ -1010,7 +1010,7 @@ def physical_format_label(lang: str, value: str) -> str:
     ``"audio-cassette"`` -> ``"Audio cassette"`` / ``"Cassette audio"``. A value the
     catalog has never seen falls back to a *humanized form of the value itself*
     (``_humanize``), exactly as :func:`gloss_cw` does for an unseen content-warning
-    tag — never to the label of some other format. A record catalogued by a newer
+    tag — never to the label of some other format. A record cataloged by a newer
     ledger whose vocabulary has grown must read as the thing it is in an
     untranslated form, not as the wrong thing in a translated one.
     """

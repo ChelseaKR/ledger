@@ -81,7 +81,7 @@ class RecordInventory:
         out: dict[str, object] = {
             "record_id": self.record_id,
             # NOTE (#188): this stays "did this record's stored bytes verify". For a
-            # physical holding those bytes are its catalogue entry, so `true` here
+            # physical holding those bytes are its catalog entry, so `true` here
             # is true and says nothing about the object. `holding_kind` beside it is
             # what tells the two apart, and `fixity_status` is the verdict a human
             # should read.
@@ -138,7 +138,7 @@ class HandoffManifest:
         if any(r.files_checked == 0 for r in self.records):
             return FixityStatus.UNVERIFIED
         # #188. A physical holding's bag is metadata that verifies, so before this
-        # branch a hand-off of forty catalogued-but-undigitized zines told the
+        # branch a hand-off of forty cataloged-but-undigitized zines told the
         # volunteer inheriting it "All bags verified intact at hand-off time" —
         # about forty objects nothing had ever checked and nothing ever could.
         # `VERIFIED` therefore now requires that at least one record actually held

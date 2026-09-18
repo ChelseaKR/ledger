@@ -118,7 +118,7 @@ class VerifyReport:
     failures: int
     status: FixityStatus = FixityStatus.FAILED
     #: How many of ``bag_results`` describe a PHYSICAL holding (#188). Those bags
-    #: hold a catalogue entry and no content, so their ``ok`` is a statement about
+    #: hold a catalog entry and no content, so their ``ok`` is a statement about
     #: the entry: a backup of forty undigitized zines is a complete backup of
     #: everything ledger ever had, and it is not a backup of the zines. Defaulted so
     #: every existing construction site keeps working and keeps meaning what it did.

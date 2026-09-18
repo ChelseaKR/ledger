@@ -130,7 +130,7 @@ class FixityStatus(StrEnum):
     #: content is a box in somebody's flat and whose bytes ledger has never had
     #: (#188). Distinct from :data:`UNVERIFIED`, and the distinction is the whole
     #: point: "nothing was checked" is an alarm a steward must act on, and "there is
-    #: nothing here to check" is the expected, healthy state of a catalogue entry.
+    #: nothing here to check" is the expected, healthy state of a catalog entry.
     #: Folding them together would either alarm on every shoebox forever, which
     #: retires the alarm, or silence the alarm where it matters.
     #:
@@ -289,7 +289,7 @@ def overall_holding_status(pairs: Iterable[tuple[HoldingKind, AuditReport]]) -> 
       checked, as before.
     * a **failure dominates**: damage is what a reader must act on first.
     * an **unverifiable** record beats a verified one: a bag that proved nothing
-      is not made healthy by a neighbour that did.
+      is not made healthy by a neighbor that did.
     * if anything was actually verified, and nothing failed or went unverified,
       the archive is :data:`FixityStatus.VERIFIED`. Physical records do not drag
       that down — there was never anything of theirs to verify, and an archive of
@@ -297,7 +297,7 @@ def overall_holding_status(pairs: Iterable[tuple[HoldingKind, AuditReport]]) -> 
       in it.
     * an archive where **every** record is a physical holding is
       :data:`FixityStatus.NOT_APPLICABLE`. That is the honest word for a shoebox
-      catalogue: nothing is broken and nothing was demonstrated. Reporting it as
+      catalog: nothing is broken and nothing was demonstrated. Reporting it as
       ``VERIFIED`` is the vacuous pass this project keeps finding; reporting it as
       ``UNVERIFIED`` would tell a steward to go and repair something that is
       working exactly as designed.

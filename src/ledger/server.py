@@ -2358,7 +2358,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             # is in people's keeping — which points an adversary at custodians, the
             # person #188 exists to protect. Measured before this gate: an
             # all-sealed physical archive answered an anonymous request with "This
-            # archive is a catalogue, not a copy." So a non-steward is served
+            # archive is a catalog, not a copy." So a non-steward is served
             # exactly the verdict this page served before #188 (the byte verdict),
             # and only a steward — who already sees the counts — gets the
             # holding-aware one. The per-record truth still reaches every reader

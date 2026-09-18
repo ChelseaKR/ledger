@@ -165,7 +165,7 @@ class PremisEventType(StrEnum):
     # ``CONDITION_CHECK`` — somebody looked at the object and wrote down what state
     # it is in. This is the physical analogue of a fixity check and is deliberately
     # NOT spelled ``fixity check``: a person's eyes are not a digest, and a reader
-    # filtering the log by ``fixity check`` must not pick up a human judgement.
+    # filtering the log by ``fixity check`` must not pick up a human judgment.
     CONDITION_CHECK = "condition check"
     # ``DIGITIZATION`` — a surrogate (a phone photo, a scan of one page) was
     # attached to a physical record. It links the record to the bytes of its
@@ -418,12 +418,12 @@ class DublinCore:
         return cls(**known)
 
 
-# --- physical holdings (a catalogue entry for something not digitized) ------
+# --- physical holdings (a catalog entry for something not digitized) ------
 #
 # The README's shoebox under someone's bed is full of zines, flyers, buttons,
 # photographs and cassettes, and ledger can only *preserve* them once they are
-# digitized. What a community needs first is a catalogue of what exists — and a
-# catalogue entry is a record whose payload is absent **by declaration**, which is
+# digitized. What a community needs first is a catalog of what exists — and a
+# catalog entry is a record whose payload is absent **by declaration**, which is
 # a different fact from a payload that was lost, never written, or could not be
 # read. Every surface in this package that answers "is this safe?" has to be able
 # to tell those apart, which is why the kind is a declared field and never
@@ -468,10 +468,10 @@ class PhysicalFormat(StrEnum):
     """A controlled vocabulary for what the physical thing *is*.
 
     Controlled rather than free text so browse can facet on it, a print edition can
-    group by it, and two volunteers cataloguing the same box cannot produce
+    group by it, and two volunteers cataloging the same box cannot produce
     ``cassette``/``Cassette tape``/``audio cassette`` as three formats. The list is
     drawn from what community and movement collections actually hold (the README's
-    shoebox), not from a library-supply catalogue.
+    shoebox), not from a library-supply catalog.
 
     :data:`OTHER` exists so a volunteer is never blocked by the vocabulary, and it
     is deliberately the honest answer rather than a near-miss: an object filed as
@@ -514,7 +514,7 @@ class CustodyState(StrEnum):
     the reason the rest of this codebase has three-state verdicts:
 
     * :data:`NOT_RECORDED` — nobody wrote down who is holding it. A real gap in the
-      catalogue and the thing a steward most needs to see.
+      catalog and the thing a steward most needs to see.
     * :data:`WITHHELD` — it was recorded and this viewer may not see it.
     * :data:`DISCLOSED` — this viewer may see it, and the values are in the
       record's disclosed fields.
@@ -559,7 +559,7 @@ class PhysicalHolding:
 
     ``extent`` is the archivist's word for how much there is ("1 box, ~380
     flyers", "12 cassettes"). ``condition`` is free text because condition
-    reporting is a judgement a volunteer writes in their own words ("water damage
+    reporting is a judgment a volunteer writes in their own words ("water damage
     along the spine"), and a controlled vocabulary here would push them into
     picking a wrong word rather than describing what they see.
     """

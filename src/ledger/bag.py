@@ -321,7 +321,7 @@ def add_payload(bag_dir: Path, relpath: str, source: Path) -> None:
     """Add one payload file to an already-written bag, updating its payload manifests.
 
     Written for the one case that needs it: a surrogate — a phone photo, a scan of
-    one page — attached to a physical holding some time after it was catalogued
+    one page — attached to a physical holding some time after it was cataloged
     (#188). Everything else in this package writes a bag once and thereafter only
     reseals *tag* manifests (:func:`refresh_tag_manifests`), deliberately, because
     touching a payload manifest is how content rot gets papered over.
