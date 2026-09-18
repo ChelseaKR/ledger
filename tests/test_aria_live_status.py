@@ -41,7 +41,7 @@ from pathlib import Path
 
 import pytest
 
-from ledger import contribute
+from ledger import contribute, i18n
 from ledger.access.grants import anonymous, issue_grant_token
 from ledger.accessibility_check import check_html
 from ledger.config import Config
@@ -272,10 +272,11 @@ def _dynamic_states(tmp_path: Path) -> dict[str, str]:
         "edit:done": page(contribute.render_edit_done_main()),
         "transparency:stale": page(
             transparency_main_html(
-                heading="Legal-process transparency",
+                heading=i18n.t("en", "transparency_heading"),
                 latest=stale,
                 entries=log.all(),
                 cadence_days=90,
+                lang="en",
             )
         ),
     }

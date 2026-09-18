@@ -2,7 +2,7 @@
 
 Consent is revocable. A contributor who submits through the web form gets a reference
 and a withdrawal *code* (a claim token — a capability, never an identity) and can use
-them to withdraw the submission **while it is still pending review** — honouring "I
+them to withdraw the submission **while it is still pending review** — honoring "I
 changed my mind before it went live" without a steward in the loop, because nothing is
 public yet and it is their own content.
 

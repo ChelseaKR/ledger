@@ -462,7 +462,7 @@ def change_consent(
 
     Returns the updated record, a PREMIS ``CONSENT_CHANGE`` event, and a
     ``consent-change`` action. Consent is revocable and every change is logged
-    with its rationale, so a contributor's evolving wishes are honoured and the
+    with its rationale, so a contributor's evolving wishes are honored and the
     history is auditable (autonomy, accountability).
     """
     _require_reason(reason)
@@ -652,7 +652,7 @@ def execute_takedown(
     persisted FIRST — its audit trail of *why* must outlive the data — then every
     stored copy is removed and any sealed identity revoked through the single removal
     primitive (:meth:`Archive.remove_all_copies`). Factoring it here lets both callers
-    execute byte-identical behaviour without the server importing the CLI (which would
+    execute byte-identical behavior without the server importing the CLI (which would
     be circular), and keeps the "record before you remove" ordering in exactly one
     place (accountability, separation of concerns).
 

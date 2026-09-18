@@ -215,7 +215,7 @@ DEFAULT_CONDITIONS: tuple[str, ...] = (
 
 @dataclass
 class StorageLocation:
-    """A role-labelled place the archive keeps bags (redundancy, replication).
+    """A role-labeled place the archive keeps bags (redundancy, replication).
 
     ``kind`` is ``local`` for the authoritative on-box store or ``mirror`` for a
     replica target, so replication code can tell originals from copies by role
@@ -250,7 +250,7 @@ class StorageLocation:
     def from_dict(cls, data: dict[str, object]) -> StorageLocation:
         """Rebuild from a mapping, coercing values to ``str``.
 
-        Robustness: a JSON/TOML scalar is normalised to text so a non-string value
+        Robustness: a JSON/TOML scalar is normalized to text so a non-string value
         in the file becomes a clear validation error rather than a later type bug.
         """
         return cls(
@@ -276,7 +276,7 @@ class Config:
     default_policy: AccessPolicy = AccessPolicy.SEALED_UNTIL
     content_warnings: list[str] = field(default_factory=list)
     # The controlled vocabulary of SEALED_CONDITIONAL conditions this archive
-    # recognises. A steward may only attest a condition drawn from this list, so a
+    # recognizes. A steward may only attest a condition drawn from this list, so a
     # typo can never invent an ungoverned condition that quietly opens a seal
     # (correctness, mirrors ``content_warnings``).
     conditions: list[str] = field(default_factory=list)
@@ -298,7 +298,7 @@ class Config:
     objection_response_days: int = 0
     # Dual-control: how many DISTINCT stewards must approve a high-stakes action
     # (takedown, identity-unseal, publish-to-public) before it executes. 1 (the
-    # default) is single-steward — no change to existing behaviour; a community sets
+    # default) is single-steward — no change to existing behavior; a community sets
     # 2+ to require co-approval, so no one steward can act alone (user research D1).
     dual_control_threshold: int = 1
     # Duress posture (EXP-02). Optional: when absent, lockdown falls back to a safe
@@ -363,7 +363,7 @@ class Config:
         * a ``default_policy`` outside the documented vocabulary;
         * each storage location's own invariants.
 
-        Correctness/predictability: validation is centralised so callers can trust a
+        Correctness/predictability: validation is centralized so callers can trust a
         loaded ``Config`` without re-checking it.
         """
         if self.schema_version > CONFIG_SCHEMA_VERSION:

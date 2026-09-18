@@ -10,7 +10,7 @@ module mints a UUID URN deterministically from a record's opaque UUID, so:
   registering a resolver or borrowing an example ARK namespace; and
 * it is **discoverable** — the PID is added to the record's Dublin Core
   ``identifier`` element, the standard home for a resource's identifiers, so a
-  general-purpose catalogue indexes it (interoperability, standards-compliance).
+  general-purpose catalog indexes it (interoperability, standards-compliance).
 
 Registered ARKs remain supported as an explicit interoperability option. The
 ``99999`` example namespace is available only through :func:`mint_ark`; ingest
@@ -87,7 +87,7 @@ def is_ark(value: str) -> bool:
     A cheap, prefix-based check (``ark:/<naan-or-any>/…``) used by the citation
     block to pick the PID out of the Dublin Core ``identifier`` list without having
     to re-derive it. It accepts any ARK, not only the default NAAN, so a deployment
-    that has registered its own NAAN still has its PIDs recognised.
+    that has registered its own NAAN still has its PIDs recognized.
     """
     return value.startswith(f"{ARK_PREFIX}/") and value.count("/") >= 2
 

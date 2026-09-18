@@ -40,7 +40,23 @@ from ledger.models import HoldingKind, canonical_json
 
 # Schema version for the hand-off manifest, so a successor's tooling can tell which
 # shape it is reading and evolve it later without misreading an older file.
-HANDOFF_SCHEMA_VERSION: int = 1
+#
+# **2 adds ``fixity_status``** and is additive: every v1 key keeps its exact v1
+# meaning, ``all_fixity_ok`` included. #208 fixed the runbook *sentence* over an
+# archive with no bags and deliberately left this document's fields alone, because
+# moving a version is a different kind of change from rewording a paragraph. The
+# reason to move it now is that the argument for holding it — the one
+# :mod:`ledger.attestation` held for the signed public attestation until #205 — does
+# not apply here at all. That argument is a *disclosure*: publishing "there was
+# nothing to check" tells an anonymous reader the archive is empty, which is the
+# absolute count the no-outing rule keeps steward-only. (#205 then measured that the
+# attestation's chain head had already published it.) This manifest already
+# hands its reader ``total_records`` and the whole per-record ``records`` array in
+# the same file. There is no count here left to protect, so the only cost of
+# saying the honest third thing is the version, and the reader paying it — a
+# non-ops volunteer inheriting an archive — is the reader least able to work out
+# that ``all_fixity_ok: true`` beside ``records: []`` means nothing was checked.
+HANDOFF_SCHEMA_VERSION: int = 2
 
 
 @dataclass(frozen=True)
@@ -103,12 +119,12 @@ class HandoffManifest:
     def fixity_status(self) -> FixityStatus:
         """Three-state verdict over the audited bags, derived from :attr:`records`.
 
-        Not a serialized field: :meth:`to_dict` is unchanged and
-        :data:`HANDOFF_SCHEMA_VERSION` does not move, so a third party's verifier
-        written against this document still reads exactly what it read before. This
-        exists so the two places that *describe* the hand-off in prose — the
-        runbook and ``ledger handoff``'s summary line — classify it by one rule
-        instead of two copies that can drift apart.
+        Serialized as ``fixity_status`` at :data:`HANDOFF_SCHEMA_VERSION` 2, and
+        the reason it was not serialized at 1 — plus the reason it is now — is
+        recorded beside that constant. It is also what the two places that
+        *describe* the hand-off in prose — the runbook and ``ledger handoff``'s
+        summary line — classify by, so there is one rule rather than three copies
+        that can drift apart.
 
         :attr:`all_fixity_ok` cannot answer this question: it is ``all(report.ok)``,
         which is vacuously ``True`` over no bags, and ``False`` for both a corrupt
@@ -145,6 +161,11 @@ class HandoffManifest:
             "successor": self.successor,
             "total_records": self.total_records,
             "all_fixity_ok": self.all_fixity_ok,
+            # Schema 2. `all_fixity_ok` is `all(report.ok for ...)` and stays
+            # exactly that, so a v1 reader is not silently handed a new meaning
+            # under an old key; this is the field that can tell "every bag
+            # passed" from "there was no bag to check" (#208).
+            "fixity_status": str(self.fixity_status),
             "records": [r.to_dict() for r in self.records],
             "vault": {
                 "present": self.vault_present,

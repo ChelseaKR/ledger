@@ -1,6 +1,6 @@
 """Shared, typed value objects — the contract every layer agrees on.
 
-This module is deliberately behaviour-free: it defines *what* a record, a policy, a
+This module is deliberately behavior-free: it defines *what* a record, a policy, a
 grant, a fixity result, and a preservation event are, so that ingest, storage,
 disclosure, identity, replication, and the browse server can each depend on one
 stable shape (modularity, orthogonality, interchangeability).
@@ -171,6 +171,7 @@ class PremisEventType(StrEnum):
     # attached to a physical record. It links the record to the bytes of its
     # derivative, which is what makes the two findable from each other later.
     DIGITIZATION = "digitization"
+    ARRANGEMENT = "arrangement"  # #202: a container described, or a record placed in one
 
 
 # PREMIS ``linkingObjectIdentifierType`` values ledger writes (ADR 0012). PREMIS
@@ -200,6 +201,11 @@ OBJECT_TYPE_RECORD = "ledger-record"
 OBJECT_TYPE_CONTENT_ADDRESS = "content-address"
 OBJECT_TYPE_BAG = "ledger-bag"
 OBJECT_TYPE_PROPOSAL = "ledger-proposal"
+# * ``ledger-container`` — a collection or series id: the unit of *arrangement*
+#   an event describes or places a record into (#202). It is not a
+#   ``ledger-record``: a container holds description and policy and no bytes, so
+#   an event about it is never an event about a payload.
+OBJECT_TYPE_CONTAINER = "ledger-container"
 
 #: Every identifier type ledger writes. A writer must pick one of these or leave the
 #: type unset; nothing infers a type from an identifier's shape except the
@@ -212,6 +218,7 @@ OBJECT_TYPES = frozenset(
         OBJECT_TYPE_CONTENT_ADDRESS,
         OBJECT_TYPE_BAG,
         OBJECT_TYPE_PROPOSAL,
+        OBJECT_TYPE_CONTAINER,
     }
 )
 
@@ -244,7 +251,7 @@ class PremisEvent:
     is later revised, without making the address the object's *identity*.
 
     Both new fields are omitted from :meth:`to_dict` when unset, so an event written
-    before they existed serialises — and therefore hash-chains — byte-for-byte as it
+    before they existed serializes — and therefore hash-chains — byte-for-byte as it
     always did (chain stability is the reason; see :mod:`ledger.chain`).
     """
 
@@ -312,7 +319,7 @@ class PremisRights:
     * ``rights_basis`` — the PREMIS ``rightsBasis`` vocabulary value
       (``"license"``, ``"statute"``, ``"copyright"``, ``"other"``, …).
     * ``rights_note`` — a free-text ``rightsBasis``/``copyrightNote`` style
-      description of the terms (e.g. a licence name), never an identity.
+      description of the terms (e.g. a license name), never an identity.
     * ``granted_acts`` — the PREMIS ``act`` values that ARE permitted
       (``"disseminate"``, ``"replicate"``, ``"migrate"``, …).
     * ``restrictions`` — the PREMIS ``restriction`` values that constrain each
@@ -748,6 +755,12 @@ class Record:
     created_at: str = field(default_factory=now_iso)
     holding_kind: HoldingKind = HoldingKind.DIGITAL
     physical: PhysicalHolding | None = None
+    # #202: the one container this record sits in, or None for an unarranged
+    # record. A single id, never a list: archival arrangement gives an item one
+    # place, and one place is what keeps the policy resolution a chain. A
+    # placement that names a container the reader cannot resolve denies the
+    # record outright (fail closed) — see ledger.access.policy.arrangement_permits.
+    placement: str | None = None
 
     def field_named(self, name: str) -> Field | None:
         for f in self.fields:
@@ -805,6 +818,12 @@ class DisclosedRecord:
     # meaning what it meant: a record that says nothing about a holding is digital.
     holding_kind: HoldingKind = HoldingKind.DIGITAL
     physical: PhysicalHolding | None = None
+    # #202: the record's arrangement chain, root-first, trimmed to the containers
+    # whose own description this viewer may see. Empty for an unarranged record
+    # AND for a record whose container is hidden from this viewer — the two are
+    # deliberately indistinguishable here, because a placed record naming a
+    # container it may not describe would out the container by aggregation.
+    placement: tuple[PlacementStep, ...] = ()
 
     @property
     def redactions(self) -> tuple[str, ...]:
@@ -868,6 +887,12 @@ class DisclosedRecord:
             "content_warnings": list(self.content_warnings),
             "holding_kind": self.holding_kind.value,
             "custody_state": self.custody_state.value,
+            # Only the steps this viewer may see; `()` renders as `[]`, which is
+            # also what an unarranged record emits (see the field's comment).
+            "placement": [
+                {"container_id": step.container_id, "title": step.title, "level": step.level.value}
+                for step in self.placement
+            ],
         }
         if self.physical is not None:
             out["physical"] = self.physical.to_dict()
@@ -930,3 +955,137 @@ def with_redaction(record: Record, field_name: str) -> Record:
         replace(f, value="[redacted]") if f.name == field_name else f for f in record.fields
     ]
     return replace(record, fields=new_fields)
+
+
+# --- arrangement: collections, series, and a record's one place in them ------
+#
+# #202. Everything above describes *items*. An archive also has a shape: a
+# volunteer arrives with one organizer's four boxes, and the description that
+# makes any of it findable — whose it was, how it came in, what the run of
+# newsletters is — belongs to the group, not to each of 400 flyers.
+#
+# Two rules hold over everything in this section, and both are safety properties
+# rather than conveniences:
+#
+# 1. **A record has exactly one place.** `Record.placement` is a single container
+#    id or nothing. Archival arrangement says one parent, and one parent is also
+#    what keeps policy resolution a *chain* a reviewer can read end to end rather
+#    than a lattice they cannot.
+# 2. **Description and policy flow downward, and the flow can only ever narrow.**
+#    Placing a record in a container can remove visibility and can never add any:
+#    :func:`ledger.access.policy.arrangement_permits` is a logical AND over the
+#    root-to-parent chain, so there is no ordering over :class:`AccessPolicy` to
+#    get wrong and no case where a broad container widens a narrow record.
+#
+# A container carries *two* policies because it is two things at once (#202's
+# second "decide first" item). `policy` governs the container's own description —
+# a collection titled "2019 raid testimony, deposited by Casa Abierta" outs by
+# aggregation even when every record inside it is sealed, so its *existence* has
+# to be sealable on its own. `records_policy` is the ceiling the container puts
+# over the records placed in it, which is the "this whole box is community-only
+# until 2030" decision made once instead of 400 times.
+
+
+class ContainerLevel(StrEnum):
+    """The levels of arrangement ledger models: a collection, and a series in it.
+
+    Deliberately two, not an unbounded tree. A depth this shallow is what the
+    material ledger is for actually has (one organizer's deposit, a few runs
+    inside it), and it makes the policy chain at most two links long — short
+    enough that :func:`ledger.access.policy.arrangement_permits` can be read and
+    believed rather than trusted (simplicity, provability). Deeper arrangement is
+    a later entity, not a deeper recursion bolted onto this one.
+    """
+
+    COLLECTION = "collection"
+    SERIES = "series"
+
+
+@dataclass(frozen=True)
+class ArchivalContainer:
+    """One collection, or one series inside a collection (#202).
+
+    ``policy``/``unseal_at``/``unseal_condition`` govern this container's **own
+    description** — its title, scope note, extent, dates, and the fact that it
+    exists at all. ``records_policy``/``records_unseal_at``/
+    ``records_unseal_condition`` govern the **records placed in it**, and are
+    applied as a ceiling: a record inside is visible only if its own policy
+    permits *and* every ancestor's ``records_policy`` permits.
+
+    Immutable, like every other value object here. A container carries no
+    identity and no payload: it is description and policy, nothing else.
+    """
+
+    container_id: str
+    title: str
+    level: ContainerLevel = ContainerLevel.COLLECTION
+    parent_id: str | None = None
+    scope_and_content: str = ""
+    extent: str = ""
+    dates: str = ""
+    # The container's own description, including its existence.
+    policy: AccessPolicy = AccessPolicy.SEALED_UNTIL
+    unseal_at: str | None = None
+    unseal_condition: str | None = None
+    # The ceiling over every record placed in this container or below it.
+    records_policy: AccessPolicy = AccessPolicy.SEALED_UNTIL
+    records_unseal_at: str | None = None
+    records_unseal_condition: str | None = None
+    created_at: str = field(default_factory=now_iso)
+
+
+@dataclass(frozen=True)
+class PlacementStep:
+    """One link of a record's visible arrangement chain, root-first.
+
+    Carries only what a breadcrumb, a facet, an EAD component, an OAI ``setSpec``
+    and a Dublin Core ``isPartOf`` all need, and nothing a viewer is not already
+    entitled to: a step appears only when the container's own description is
+    visible to that viewer (:func:`ledger.access.policy.container_is_visible`).
+    """
+
+    container_id: str
+    title: str
+    level: ContainerLevel
+
+
+@dataclass(frozen=True)
+class DisclosedContainer:
+    """The ONLY container shape a read path may emit — the analogue of
+    :class:`DisclosedRecord`.
+
+    Produced solely by :func:`ledger.access.policy.disclose_container`. Carries no
+    policy values and no count of what it holds: a viewer learns which records are
+    in a container by being shown those records, never by being told a number they
+    cannot reconcile. That is what keeps *empty* and *everything inside is
+    withheld* indistinguishable from outside (#202's second "decide first" item).
+
+    ``scope_and_content`` is this container's own note, or — when it has none —
+    the nearest **visible** ancestor's, so a series reads with its collection's
+    context without an invisible ancestor's prose leaking through it.
+    """
+
+    container_id: str
+    title: str
+    level: ContainerLevel
+    scope_and_content: str = ""
+    extent: str = ""
+    dates: str = ""
+    inherited_scope: bool = False
+    ancestors: tuple[PlacementStep, ...] = ()
+
+    def to_dict(self) -> dict[str, object]:
+        """Serialize for an API response. Policy values are never included."""
+        return {
+            "container_id": self.container_id,
+            "title": self.title,
+            "level": self.level.value,
+            "scope_and_content": self.scope_and_content,
+            "inherited_scope": self.inherited_scope,
+            "extent": self.extent,
+            "dates": self.dates,
+            "ancestors": [
+                {"container_id": a.container_id, "title": a.title, "level": a.level.value}
+                for a in self.ancestors
+            ],
+        }

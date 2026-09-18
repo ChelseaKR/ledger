@@ -19,7 +19,7 @@ latest tagged release. Pin a tag and watch releases for advisories.
 **Use GitHub's private vulnerability reporting** ("Report a vulnerability" under the
 repository's *Security* tab). It opens a private advisory only maintainers can see.
 If you cannot use it, email **ckellyreif@gmail.com** with `ledger security` in the
-subject. Expect an acknowledgement within a few days; this is a volunteer project, so
+subject. Expect an acknowledgment within a few days; this is a volunteer project, so
 please be patient and do not disclose publicly until a fix is available.
 
 ### Redaction-safe reporting (please read)

@@ -36,7 +36,7 @@ check that stops being run.
 | Check | What it covers | Where |
 |---|---|---|
 | Structural gate | `lang`, `<title>`, single `<h1>`, `<main>`, skip link, `alt`, `<label for>`, table `<caption>`/`<th scope>`, no positive `tabindex` | `python -m ledger.accessibility_check web` (`accessibility` job) |
-| axe-core, real browser | WCAG-tagged violations on every canonical page, under **both** light and dark colour schemes | `axe.spec.ts` (`accessibility-browser` job) |
+| axe-core, real browser | WCAG-tagged violations on every canonical page, under **both** light and dark color schemes | `axe.spec.ts` (`accessibility-browser` job) |
 | Keyboard traversal | The contribute form reachable and operable with the keyboard alone | `keyboard.spec.ts` (same job) |
 | Reflow at 320 CSS px | SC 1.4.10 — no horizontal page scroll at 320×256, which is a 1280px screen at 400% zoom | `reflow.spec.ts` (same job) |
 | Status messages | SC 4.1.3 — every status message inside a live region, and no live region scoped wider than its message | `python -m ledger.accessibility_check` + `tests/test_aria_live_status.py` |
@@ -58,7 +58,7 @@ floor. They cannot judge whether the reading order makes sense, whether the
 content-warning interstitial is *announced* before the material is reached,
 whether an `aria-live` status is actually *heard* (the gate can prove the region
 is there and correctly scoped; it cannot prove a reader was told), or whether a
-form error is understandable when it is spoken. Those are judgements only a person using the
+form error is understandable when it is spoken. Those are judgments only a person using the
 technology can make.
 
 [`MANUAL-REVIEW-CADENCE.md`](./MANUAL-REVIEW-CADENCE.md) commits us to a quarterly

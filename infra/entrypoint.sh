@@ -3,7 +3,7 @@
 # start the browse server. The `ledger` CLI takes flags (--root, --name, --host,
 # --port), not environment variables, for these, so this thin shim translates.
 #
-# Behaviour:
+# Behavior:
 #   * If the archive at $LEDGER_ROOT has not been initialized yet (no
 #     store/config.json), run `ledger init` once. This makes the first
 #     `docker compose up` on an empty volume just work (operability).

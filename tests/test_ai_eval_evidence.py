@@ -127,7 +127,7 @@ def test_the_outing_refusal_model_held_rate_does_not_regress() -> None:
     floor = MODEL_HELD_FLOORS["outing_refusal"]
     assert suite["model_held"] >= floor, (
         f"outing-refusal model_held {suite['model_held']} is below the committed floor "
-        f"{floor}; the model's own behaviour regressed"
+        f"{floor}; the model's own behavior regressed"
     )
     assert suite["passed"] == suite["model_held"], (
         "the suite's headline `passed` must be the number that can move, not the "

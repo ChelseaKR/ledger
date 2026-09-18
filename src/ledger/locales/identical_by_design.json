@@ -1,5 +1,5 @@
 {
-  "_comment": "Reasoned exemptions from the identity-translation check in tools/check_catalog_parity.py: msgids whose translation is legitimately byte-identical to the English source. Two classes need no entry here because the checker recognises them mechanically -- a msgid with no alphabetic content once its {placeholders} are removed, and a single all-caps code token or bare URL (OK, CSV, PDF, https://...). Everything else that is genuinely the same in the target language -- a cognate, a product name, a borrowed word -- takes an entry with a written reason, because the judgement is not one a pattern can make. The checker deletes nothing for you: an entry whose msgid the template no longer declares, or whose msgstr has since been translated, fails the gate until it is removed. Every entry below records a choice the committed catalog ALREADY made; none of them is a new translation decision. Like the catalogs themselves, none has been read by a qualified speaker -- see docs/I18N.md, 'Translation review: drafted, not reviewed'.",
+  "_comment": "Reasoned exemptions from the identity-translation check in tools/check_catalog_parity.py: msgids whose translation is legitimately byte-identical to the English source. Two classes need no entry here because the checker recognizes them mechanically -- a msgid with no alphabetic content once its {placeholders} are removed, and a single all-caps code token or bare URL (OK, CSV, PDF, https://...). Everything else that is genuinely the same in the target language -- a cognate, a product name, a borrowed word -- takes an entry with a written reason, because the judgment is not one a pattern can make. The checker deletes nothing for you: an entry whose msgid the template no longer declares, or whose msgstr has since been translated, fails the gate until it is removed. Every entry below records a choice the committed catalog ALREADY made; none of them is a new translation decision. Like the catalogs themselves, none has been read by a qualified speaker -- see docs/I18N.md, 'Translation review: drafted, not reviewed'.",
   "identical_by_design": [
     {
       "locale": "es",
@@ -18,8 +18,23 @@
     },
     {
       "locale": "fr",
+      "msgid": "Collection",
+      "reason": "'Collection' is the French word, same spelling. The level label on a container page; its sibling level 'Series' -> 'Serie' is translated."
+    },
+    {
+      "locale": "fr",
+      "msgid": "Collections",
+      "reason": "'Collections' is the French plural, same spelling. The arrangement browse heading and its facet, beside 'Series' -> 'Serie'/'Serie' and 'Extent' -> 'Importance materielle', both of which are translated."
+    },
+    {
+      "locale": "fr",
       "msgid": "Date",
       "reason": "'Date' is the French word, same spelling. Not exempt mechanically, and correctly so: the code-token rule requires upper case precisely so a four-letter word is not waved through as an acronym."
+    },
+    {
+      "locale": "fr",
+      "msgid": "Dates",
+      "reason": "'Dates' is the French plural, same spelling. An archivist's inclusive/bulk-dates label on a container, beside the already-exempt singular 'Date'."
     },
     {
       "locale": "fr",
@@ -34,7 +49,7 @@
     {
       "locale": "fr",
       "msgid": "Type",
-      "reason": "'Type' is the French word, same spelling. A Dublin Core field label."
+      "reason": "'Type' is the French word, same spelling. A Dublin Core field label on the contribution form, and — since #225 — also the first column heading of /transparency's legal-demand table, which shares this msgid. Load-bearing in two places now: if a French speaker would write something else in either, translate the msgstr and delete this entry."
     },
     {
       "locale": "fr",

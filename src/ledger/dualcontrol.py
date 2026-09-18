@@ -55,8 +55,9 @@ ACTIONS: frozenset[str] = frozenset(
 
 _OPEN = "open"
 _EXECUTED = "executed"
-_CANCELLED = "cancelled"
-_STATUSES: frozenset[str] = frozenset({_OPEN, _EXECUTED, _CANCELLED})
+# The stored value keeps its original spelling: it is persisted in existing proposal stores.
+_CANCELED = "cancelled"
+_STATUSES: frozenset[str] = frozenset({_OPEN, _EXECUTED, _CANCELED})
 
 
 @dataclass(frozen=True)
@@ -65,7 +66,7 @@ class ActionProposal:
 
     ``approvals`` is the set of steward ids that have approved; the proposer is the
     first approver, so a threshold of 1 is satisfied by the proposal itself (which is
-    exactly the single-steward behaviour). ``target`` is opaque (a record id or an
+    exactly the single-steward behavior). ``target`` is opaque (a record id or an
     identity ref), never an identity or sealed value.
     """
 

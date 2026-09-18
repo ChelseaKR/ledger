@@ -17,7 +17,7 @@ Two properties are designed in on purpose:
   ``store/records``), the script does nothing and exits 0. Re-running it — on a
   container restart, or by hand — never duplicates or mutates anything.
 
-Like every ledger read/ingest path, the no-outing rule is honoured: the script
+Like every ledger read/ingest path, the no-outing rule is honored: the script
 NEVER prints a contributor identity or any sealed value. It prints only a short,
 identity-free summary (counts plus record ids). The one synthetic identity it
 seals (record 1's contributor) goes only into the encrypted vault via the public
@@ -188,7 +188,7 @@ def _seed(archive: Archive, work: Path) -> list[str]:
             subject=["mutual aid", "zine", "food security"],
             description=[
                 "(synthetic) A community zine documenting how to run a small "
-                "neighbourhood food pantry. Demo content only."
+                "neighborhood food pantry. Demo content only."
             ],
             type=["Text"],
             date=["2021"],

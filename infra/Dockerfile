@@ -8,8 +8,9 @@
 # Pinned by *digest*, not just tag, so the base cannot change under us between
 # builds (SEC-28/REL-18 — supply-chain reproducibility): a compromised or
 # silently-updated `python:3.12-slim` tag cannot swap out what we build from.
-# `python:3.12-slim` (3.12.13-slim-trixie) as of 2026-07-05. Renovate tracks this
-# digest and opens a PR when it moves (`renovate.json`); re-verify manually with
+# `python:3.12-slim` (3.12.13-slim-trixie) as of 2026-07-05. Dependabot's `docker`
+# ecosystem tracks this digest and opens a PR when it moves
+# (`.github/dependabot.yml`); re-verify manually with
 # `docker buildx imagetools inspect python:3.12-slim` if it ever needs a bump by
 # hand.
 FROM python:3.12-slim@sha256:423ed6ab25b1921a477529254bfeeabf5855151dc2c3141699a1bfc852199fbf

@@ -518,12 +518,12 @@ def _post_multipart(
 
 @pytest.mark.accessibility
 def test_form_offers_an_accessible_file_input(open_server: tuple[Archive, str]) -> None:
-    """The form is multipart and carries a labelled file input (backlog A2)."""
+    """The form is multipart and carries a labeled file input (backlog A2)."""
     _archive, base = open_server
     _status, body = _get(base, "/contribute")
     assert 'enctype="multipart/form-data"' in body
     assert 'type="file"' in body and 'id="upload"' in body
-    assert 'for="upload"' in body  # the input is labelled
+    assert 'for="upload"' in body  # the input is labeled
 
 
 @pytest.mark.disclosure
@@ -562,10 +562,10 @@ def test_valid_upload_is_ingested_sealed_pending(open_server: tuple[Archive, str
 
 
 @pytest.mark.disclosure
-def test_dot_dot_filename_is_sanitised_not_crashing(open_server: tuple[Archive, str]) -> None:
+def test_dot_dot_filename_is_sanitized_not_crashing(open_server: tuple[Archive, str]) -> None:
     """A '..' upload filename is stored under a safe name, never crashing the handler.
 
-    Security review: '..' once survived filename sanitisation and the handler wrote
+    Security review: '..' once survived filename sanitization and the handler wrote
     to ``tmpdir / '..'`` (a directory) — an unhandled error. It must now ingest under
     a safe filename instead."""
     archive, base = open_server

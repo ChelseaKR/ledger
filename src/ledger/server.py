@@ -33,7 +33,7 @@ is (a) not on the revocation list and (b) pre-provisioned in the grants file. A
 missing header, a missing secret, a forged/expired token, a revoked subject, or an
 unprovisioned subject all fall back to the same anonymous grant, so the header is
 never trusted beyond authenticating a lookup into an existing grant, and a bearer
-token by itself confers nothing (least privilege, securability). Each honoured
+token by itself confers nothing (least privilege, securability). Each honored
 grant use is recorded in a scrubbed audit line — subject and route class only,
 never the token (no-outing rule).
 """
@@ -71,7 +71,7 @@ from ledger import (
 )
 from ledger.access import anonymous, disclose, is_listable
 from ledger.access.grants import load_grants, load_revocations, verify_grant_token
-from ledger.attestation import HealthAttestation, latest_attestation_path
+from ledger.attestation import FixityDisclosure, HealthAttestation, latest_attestation_path
 from ledger.errors import (
     AccessDenied,
     LedgerError,
@@ -82,10 +82,12 @@ from ledger.errors import (
 from ledger.fixity import CHUNK_SIZE, FixityStatus
 from ledger.ingest import Archive
 from ledger.lockdown import is_locked_down
+from ledger.metadata.ead import to_ead_xml
 from ledger.models import (
     OBJECT_TYPE_RECORD,
     AccessPolicy,
     ContentAddress,
+    DisclosedContainer,
     DisclosedRecord,
     Grant,
     HashAlgo,
@@ -120,6 +122,8 @@ from ledger.render import (
     _record_main_html,
     _status_region,
     _timeline_html,
+    collection_main_html,
+    collections_main_html,
     transparency_main_html,
     transparency_unattested_main_html,
 )
@@ -298,6 +302,20 @@ _STATIC_FILES: dict[str, Path] = _load_static_files()
 # and the contributor status page so a steward can tell a subject's objection from a
 # contributor's own request at a glance (user research B3).
 # --- the request handler ----------------------------------------------------
+
+
+#: Which sentence ``/proof`` renders for each published fixity disclosure (#205).
+#: A mapping rather than a chain of conditionals so that adding a state to
+#: :class:`ledger.attestation.FixityDisclosure` without deciding what to *say*
+#: about it fails at the lookup, loudly, instead of silently falling through to
+#: the reassuring branch.
+_PROOF_HEALTH_KEYS: dict[FixityDisclosure, str] = {
+    FixityDisclosure.VERIFIED: "proof_attested_ok",
+    FixityDisclosure.FAILED: "proof_attested_failed",
+    FixityDisclosure.COULD_NOT_VERIFY: "proof_attested_could_not_verify",
+    FixityDisclosure.NOTHING_TO_VERIFY: "proof_attested_nothing",
+    FixityDisclosure.UNSTATED: "proof_attested_unstated",
+}
 
 
 class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
@@ -644,10 +662,20 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         if path.startswith("/api/record/"):
             self._handle_api_record(path[len("/api/record/") :])
             return True
+        if path.startswith("/collection/"):
+            return self._route_get_collection(path[len("/collection/") :])
         if path.startswith("/static/"):
             self._handle_static(path[len("/static/") :])
             return True
         return False
+
+    def _route_get_collection(self, rest: str) -> bool:
+        """One container's pages. ``/ead.xml`` must be tried before the catch-all."""
+        if rest.endswith("/ead.xml"):
+            self._handle_collection_ead(rest[: -len("/ead.xml")])
+            return True
+        self._handle_collection(rest)
+        return True
 
     def _route_get_record(self, rest: str, params: dict[str, list[str]]) -> bool:
         """One record's pages, dispatched on what follows the identifier.
@@ -756,7 +784,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         function fuzzed independently of this handler in
         ``tests/test_parsing_fuzz.py``. Each text part becomes a ``fields`` entry;
         the first part carrying a filename becomes the single ``upload``. The
-        filename is kept only to suggest a stored name and is sanitised elsewhere;
+        filename is kept only to suggest a stored name and is sanitized elsewhere;
         the bytes are never trusted on type until sniffed."""
         raw = self.rfile.read(length)
         return parse_multipart(raw, content_type)
@@ -1455,7 +1483,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         browse compose with the rest. Only the first value of each field is taken, so a
         crafted repeated param cannot AND a field against itself into nothing."""
         active: list[tuple[str, str]] = []
-        for field in ("subject", "type", "language", "coverage"):
+        for field in ("subject", "type", "language", "coverage", search.COLLECTION_FACET):
             values = params.get(field)
             if values and values[0]:
                 active.append((field, values[0]))
@@ -1517,7 +1545,18 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         if query:
             heading = f"Search results for “{query}”"
         elif len(active) == 1:
-            heading = f"{active[0][0].capitalize()}: {active[0][1]}"
+            # Every Dublin Core facet's value IS its label; the arrangement facet's
+            # value is a container id (#202), so the heading resolves it back to the
+            # title through the same facet list the sidebar renders — which means it
+            # can only ever name a container this viewer may already describe.
+            field_name, value = active[0]
+            label = value
+            if field_name == search.COLLECTION_FACET:
+                label = next(
+                    (f.label for f in search.facet_by_collection(records) if f.value == value),
+                    value,
+                )
+            heading = f"{field_name.capitalize()}: {label}"
         elif active:
             heading = "Filtered records"
         else:
@@ -1902,8 +1941,8 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
 
         The bytes are the only thing trusted: the file is refused if it is larger than
         :data:`upload.MAX_UPLOAD_BYTES` or if :func:`upload.sniff_media_type` does not
-        recognise it as one of the allowlisted types. On success the bytes are written
-        under ``tmpdir`` with a sanitised filename and a :class:`PayloadFile` is
+        recognize it as one of the allowlisted types. On success the bytes are written
+        under ``tmpdir`` with a sanitized filename and a :class:`PayloadFile` is
         pre-declared on ``record`` so the one ingest path stores it with the
         *server-sniffed* media type and the record's sealed-pending policy — never a
         type taken from the client. The returned error names no submitted value
@@ -2579,42 +2618,46 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         lang = self._lang()
         attestation = self._load_latest_attestation()
         if attestation is None:
-            chain_html = (
-                "    <p>Preservation and moderation events are hash-chained, so editing "
-                "history after the fact changes the archive chain head. This archive has "
-                "not published an attestation yet, so there is no chain head here to note "
-                "— the value is not computed live for visitors, because a per-request "
-                "value would date every deposit, including a sealed one.</p>\n"
-            )
+            chain_html = f"    <p>{_esc(i18n.t(lang, 'proof_chain_unpublished'))}</p>\n"
             attestation_html = (
-                "    <h2>Verify it yourself</h2>\n"
-                "    <p>No transparency attestation has been published yet. A steward "
-                "publishes one, on a schedule, by running "
-                "<code>ledger attest-health</code>.</p>"
+                f"    <h2>{_esc(i18n.t(lang, 'proof_verify_heading'))}</h2>\n"
+                f"    <p>{_esc(i18n.t(lang, 'proof_not_attested'))} "
+                "<code>ledger attest-health</code></p>"
             )
         else:
-            health = (
-                "passed its most recent fixity check"
-                if attestation.fixity_ok
-                else "did NOT pass its most recent fixity check — a steward has been notified"
-            )
-            signed = (
-                f"signed (format: {_esc(attestation.signature_format or 'unknown')})"
-                if attestation.signature
-                else "unsigned — this archive has not configured a signing key"
+            # Four published states plus "an older ledger wrote this", not two.
+            # `fixity_ok` was the whole reading until #205, and it is the fold that
+            # is vacuously true over an archive with no bags — so this page told an
+            # anonymous visitor that an archive holding nothing had "passed every
+            # integrity check". It is the page an at-risk contributor reads before
+            # deciding whether to hand this archive their material.
+            health_key = _PROOF_HEALTH_KEYS[attestation.fixity]
+            # Two branches, not three: `HealthAttestation.from_json` — the only
+            # way an attestation reaches this handler — rejects any signature
+            # whose format is not "ssh", so a signed attestation always has a
+            # format and the old `signature_format or "unknown"` was dead.
+            signature_key = (
+                "proof_signature_signed" if attestation.signature else "proof_signature_unsigned"
             )
             chain_html = (
-                "    <p>Preservation and moderation events are hash-chained, so editing "
-                "history after the fact changes the archive chain head. Anyone who "
-                "previously noted the head published on "
-                f"{_esc(attestation.generated_at)} can confirm it only moved forward: "
-                f"<code>{_esc(attestation.chain_head_summary)}</code>.</p>\n"
+                "    <p>"
+                + _esc(i18n.t(lang, "proof_chain_published", when=attestation.generated_at))
+                + f" <code>{_esc(attestation.chain_head_summary)}</code></p>\n"
             )
             attestation_html = (
-                "    <h2>Verify it yourself</h2>\n"
-                f"    <p>As of {_esc(attestation.generated_at)}, this archive {_esc(health)}, "
-                f"running ledger {_esc(attestation.software_version)}. The attestation is "
-                f"{_esc(signed)}.</p>\n"
+                f"    <h2>{_esc(i18n.t(lang, 'proof_verify_heading'))}</h2>\n"
+                "    <p>"
+                + _esc(
+                    i18n.t(
+                        lang,
+                        health_key,
+                        when=attestation.generated_at,
+                        version=attestation.software_version,
+                    )
+                )
+                + " "
+                + _esc(i18n.t(lang, signature_key, format=attestation.signature_format or ""))
+                + "</p>\n"
                 # #188. A fixity check is a statement about files this archive
                 # stores. Some records here may describe a physical object it does
                 # not store — a box of flyers in somebody's flat — and no check,
@@ -2623,35 +2666,31 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
                 # count of physical holdings would tell an anonymous visitor part
                 # of the archive's size, which is the line /healthz's gated block
                 # exists to hold.
-                "    <p>A fixity check covers files this archive stores. Records that "
-                "describe a physical object the archive does not hold a copy of have no "
-                "stored content to check, and no attestation — this one included — says "
-                "anything about whether those objects are safe.</p>\n"
-                "    <p>The full, machine-readable attestation is at "
-                '<a href="/proof/attestation.json">/proof/attestation.json</a>. Its '
-                "<code>chain_head_summary</code> field changes the instant any record's or "
-                "log's history anywhere in the archive is rewritten, so saving two dated "
-                "copies over time and comparing them is enough to catch a rolled-back archive "
-                "— without trusting this server or any steward. See "
-                "<code>docs/VERIFYING-ATTESTATIONS.md</code> in the ledger source for how to "
-                "check the signature.</p>"
+                + f"    <p>{_esc(i18n.t(lang, 'proof_physical_caveat'))}</p>\n"
+                + f"    <p>{_esc(i18n.t(lang, 'proof_machine_readable_at'))} "
+                '<a href="/proof/attestation.json">/proof/attestation.json</a></p>\n'
+                + "    <p><code>chain_head_summary</code> — "
+                + _esc(i18n.t(lang, "proof_chain_head_field"))
+                + "</p>\n"
+                + f"    <p>{_esc(i18n.t(lang, 'proof_check_signature'))} "
+                "<code>docs/VERIFYING-ATTESTATIONS.md</code></p>"
             )
         main_html = (
-            "    <h1>Our promise, proven</h1>\n"
-            "    <p>The claim 'contributor identities are never shown here' is not an "
-            "honour-system promise — it is a test the software must pass on every build.</p>\n"
-            "    <p>A contributor's identity is stored only as an opaque token plus encrypted "
-            "data in a separate vault. The record a page is built from has no place to put an "
-            "identity, so there is nothing to leak.</p>\n"
-            "    <p>The project's audit ingests a sentinel identity and then checks that it "
-            "appears on no page, in no data file, in no backup, and in no log — and that a "
-            "sealed record cannot even be confirmed to exist by an outsider.</p>\n"
+            f"    <h1>{_esc(i18n.t(lang, 'proof_heading'))}</h1>\n"
+            f"    <p>{_esc(i18n.t(lang, 'proof_claim'))}</p>\n"
+            f"    <p>{_esc(i18n.t(lang, 'proof_identity_storage'))}</p>\n"
+            f"    <p>{_esc(i18n.t(lang, 'proof_sentinel_audit'))}</p>\n"
             f"{chain_html}"
             f"{attestation_html}"
         )
         self._send_html(
             200,
-            _page("Our promise, proven", lang=lang, main_html=main_html, nav_html=self._nav()),
+            _page(
+                i18n.t(lang, "proof_heading"),
+                lang=lang,
+                main_html=main_html,
+                nav_html=self._nav(),
+            ),
         )
 
     def _handle_proof_attestation(self) -> None:
@@ -2695,14 +2734,11 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         """
         lang = self._lang()
         cfg = self._archive().config
-        heading = "Legal-process transparency"
+        heading = i18n.t(lang, "transparency_heading")
         log_path = cfg.transparency_log_path.strip()
         if not log_path:
             main_html = transparency_unattested_main_html(
-                heading,
-                "This archive has not configured legal-process transparency "
-                "attestations. It publishes no statement here, positive or negative — "
-                "absence of the feature is not evidence of anything.",
+                heading, i18n.t(lang, "transparency_not_configured"), lang=lang
             )
             self._send_html(
                 200, _page(heading, lang=lang, main_html=main_html, nav_html=self._nav())
@@ -2714,9 +2750,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             entries = log.all()
         except LedgerError:
             main_html = transparency_unattested_main_html(
-                heading,
-                "The configured transparency log could not be verified. Treat the "
-                "legal-process statement as unavailable until a steward repairs it.",
+                heading, i18n.t(lang, "transparency_log_unverifiable"), lang=lang
             )
             self._send_html(
                 200, _page(heading, lang=lang, main_html=main_html, nav_html=self._nav())
@@ -2725,9 +2759,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         latest = entries[-1] if entries else None
         if latest is None:
             main_html = transparency_unattested_main_html(
-                heading,
-                "This archive has enabled legal-process transparency but has not yet "
-                "published a first attestation.",
+                heading, i18n.t(lang, "transparency_never_attested"), lang=lang
             )
             self._send_html(
                 200, _page(heading, lang=lang, main_html=main_html, nav_html=self._nav())
@@ -2739,6 +2771,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             latest=latest,
             entries=entries,
             cadence_days=cfg.transparency_cadence_days,
+            lang=lang,
         )
         self._send_html(200, _page(heading, lang=lang, main_html=main_html, nav_html=self._nav()))
 
@@ -2895,14 +2928,114 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         """Records disclosed to the anonymous public — the only set harvest exposes."""
         return self._archive().browse(anonymous())
 
+    def _public_containers(self) -> list[DisclosedContainer]:
+        """The arrangement disclosed to the anonymous public — what harvest sees."""
+        return self._archive().browse_containers(anonymous())
+
     def _base_url(self) -> str:
         host = self.headers.get("Host", "localhost")
         return f"http://{host}"
 
+    def _handle_collections(self) -> None:
+        """``GET /collections`` — the archive's arrangement, as this viewer may see it.
+
+        A container whose own description this viewer may not read is absent,
+        not withheld-with-a-placeholder: an archive with no arrangement and an
+        archive whose every collection is sealed from this reader render the
+        same page (#202).
+        """
+        lang = self._lang()
+        grant = self._resolve_grant()
+        containers = self._archive().browse_containers(grant)
+        self._send_html(
+            200,
+            _page(
+                "Collections",
+                lang=lang,
+                main_html=collections_main_html(containers, lang=lang),
+                nav_html=self._nav(),
+            ),
+        )
+
+    def _handle_collection(self, raw_id: str) -> None:
+        """``GET /collection/{id}`` — one container and what is filed in it.
+
+        A container this viewer may not describe answers with the *same* 404 as
+        one that does not exist, so probing ids establishes nothing (#202).
+        """
+        container_id = _decode_id(raw_id)
+        grant = self._resolve_grant()
+        archive = self._archive()
+        try:
+            container = archive.disclose_container(container_id, grant)
+        except (AccessDenied, LedgerError):
+            self._handle_not_found()
+            return
+        lang = self._lang()
+        records = search.filter_by_facet(
+            archive.browse(grant), search.COLLECTION_FACET, container_id
+        )
+        children = [
+            child
+            for child in archive.browse_containers(grant)
+            if child.ancestors and child.ancestors[-1].container_id == container_id
+        ]
+        self._send_html(
+            200,
+            _page(
+                container.title,
+                lang=lang,
+                main_html=collection_main_html(container, records, children, lang=lang),
+                nav_html=self._nav(),
+            ),
+        )
+
+    def _handle_collection_ead(self, raw_id: str) -> None:
+        """``GET /collection/{id}/ead.xml`` — one collection's EAD finding aid.
+
+        The first caller `ledger.metadata.ead` has ever had from a read path.
+        The ``archdesc`` is this container; its series become ``<c01>`` and the
+        items under them ``<c02>``, which is the hierarchy the module's own
+        docstring has always described and never produced.
+
+        Everything in it went through :func:`ledger.access.disclose` or
+        :func:`ledger.access.policy.disclose_container` first, so the finding
+        aid carries exactly what this viewer's browse page does — no more.
+        """
+        container_id = _decode_id(raw_id)
+        grant = self._resolve_grant()
+        archive = self._archive()
+        try:
+            container = archive.disclose_container(container_id, grant)
+        except (AccessDenied, LedgerError):
+            self._handle_not_found()
+            return
+        records = search.filter_by_facet(
+            archive.browse(grant), search.COLLECTION_FACET, container_id
+        )
+        children = [
+            child
+            for child in archive.browse_containers(grant)
+            if child.ancestors and child.ancestors[-1].container_id == container_id
+        ]
+        xml = to_ead_xml(
+            container.title,
+            records,
+            created=now_iso()[:10],
+            collection_id=container.container_id,
+            base_url=self._base_url(),
+            repository=self._archive().config.archive_name,
+            arrangement=children,
+            scope_and_content=container.scope_and_content,
+            extent=container.extent,
+            dates=container.dates,
+        )
+        self._send(200, xml.encode("utf-8"), "text/xml; charset=utf-8")
+
     def _handle_overview(self) -> None:
         """``GET /overview`` — an at-a-glance summary of the public collection.
 
-        Summarises only the anonymous-public set, so the totals, top facets, and date
+        Summarizes only the anonymous-public set, so the totals, top facets, and date
         span describe what is publicly visible and never reveal the existence or count
         of sealed records (no-outing rule / P2-2). Each facet links into the faceted
         browse, turning the overview into a finding aid (P2-3)."""
@@ -2966,6 +3099,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             flat.get("verb", ""),
             flat,
             records=self._public_records(),
+            containers=self._public_containers(),
             archive_name=cfg.archive_name,
             base_url=self._base_url() + "/oai",
             admin_email=cfg.contact or "",
@@ -3103,6 +3237,7 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
         "/withdraw": _handle_withdraw_form,
         "/edit": _handle_edit_form,
         "/api/records": _handle_api_records,
+        "/collections": _handle_collections,
     }
 
     #: Exact GET paths whose handler reads the query string.

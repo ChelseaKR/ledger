@@ -42,7 +42,7 @@ from pathlib import Path
 
 from ledger.bag import validate_bag, write_bag
 from ledger.export import records_csv
-from ledger.fixity import hash_file
+from ledger.fixity import FixityStatus, hash_file, overall_status
 from ledger.ingest import Archive
 from ledger.models import DisclosedRecord, Grant, HashAlgo, HoldingKind, now_iso
 from ledger.print_edition import CUSTODY_SENTENCES
@@ -63,12 +63,27 @@ class ExportDriveResult:
     Carries only counts and the output path — never a title, a field value, or an
     identity (no-outing rule); the package on disk is the artifact, this is just a
     receipt.
+
+    :attr:`bags_verified` and :attr:`bags_written` are the receipt's two numbers,
+    and they exist because :attr:`all_bags_valid` cannot be read on its own.
+    That field is ``all(report.ok for ...)`` folded over the bags this build
+    wrote, and ``all(...)`` is :data:`True` over an empty sequence — so a package
+    that received **no records at all** reported ``all_bags_valid=True`` and the
+    CLI printed *"0 record(s), 0 file(s) packaged ...; all bags verified"* with
+    exit ``0``, to the person about to hand the drive to a courier (#208).
+    :attr:`status` is the three-state verdict over the same sequence
+    (:func:`ledger.fixity.overall_status`), so "every bag passed" and "there was
+    no bag to check" are different answers; ``all_bags_valid`` keeps its exact
+    previous meaning so the exit code does not move.
     """
 
     out_dir: Path
     records_packaged: int
     files_packaged: int
     all_bags_valid: bool
+    bags_written: int = 0
+    bags_verified: int = 0
+    status: FixityStatus = FixityStatus.UNVERIFIED
 
 
 def _record_page_html(record: DisclosedRecord, *, lang: str) -> str:
@@ -130,6 +145,16 @@ def _record_page_html(record: DisclosedRecord, *, lang: str) -> str:
         if withheld_items
         else ""
     )
+    # #202: a courier package has no server to link back to, so the arrangement
+    # is stated as plain text. Named only when this viewer may describe the
+    # container — an unarranged record and one filed somewhere hidden from the
+    # reader produce the same (empty) block.
+    part_of_block = (
+        f'<p class="part-of">Part of: '
+        f"{_esc(' / '.join(step.title for step in record.placement))}</p>\n"
+        if record.placement
+        else ""
+    )
     return (
         "<!doctype html>\n"
         f'<html lang="{_esc(lang)}">\n<head>\n<meta charset="utf-8">\n'
@@ -140,6 +165,7 @@ def _record_page_html(record: DisclosedRecord, *, lang: str) -> str:
         '<a class="skip-link" href="#main">Skip to content</a>\n'
         '<header><p><a href="../index.html">&larr; Back to index</a></p></header>\n'
         f'<main id="main" tabindex="-1">\n<h1>{_esc(record.title)}</h1>\n'
+        f"{part_of_block}"
         f"{cw_block}"
         f"{holding_block}"
         f"<table><caption>Descriptive metadata</caption><tbody>{dc_rows}{field_rows}"
@@ -250,6 +276,7 @@ def build_export_drive(
 
     files_packaged = 0
     all_valid = True
+    bag_reports = []
     for record in records:
         payload_sources: dict[str, Path] = {}
         for p in record.payloads:
@@ -274,6 +301,7 @@ def build_export_drive(
             },
         )
         report = validate_bag(bag_dir)
+        bag_reports.append(report)
         all_valid = all_valid and report.ok
         files_packaged += len(payload_sources)
         (records_dir / f"{record.record_id}.html").write_text(
@@ -312,4 +340,7 @@ def build_export_drive(
         records_packaged=len(records),
         files_packaged=files_packaged,
         all_bags_valid=all_valid,
+        bags_written=len(bag_reports),
+        bags_verified=sum(1 for report in bag_reports if report.ok),
+        status=overall_status(bag_reports),
     )

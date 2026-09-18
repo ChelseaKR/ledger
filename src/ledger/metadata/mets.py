@@ -42,7 +42,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from xml.sax.saxutils import escape as _sax_escape
 
-from ledger.metadata.dublincore import to_oai_dc_xml
+from ledger.metadata.dublincore import is_part_of, to_oai_dc_xml
 from ledger.metadata.premis import to_premis_xml
 from ledger.models import DisclosedRecord, DublinCore, HashAlgo, PremisEvent
 
@@ -171,7 +171,20 @@ def to_mets_xml(
     lines.append('  <mets:dmdSec ID="dmd-1">')
     lines.append('    <mets:mdWrap MDTYPE="DC">')
     lines.append("      <mets:xmlData>")
-    lines.extend(_reindent(to_oai_dc_xml(_dublin_core_of(record)), "        "))
+    lines.extend(
+        _reindent(
+            to_oai_dc_xml(
+                _dublin_core_of(record),
+                # #202: where this item is filed, as DCMI `isPartOf` (a
+                # refinement of `relation`). Empty for an unarranged record and
+                # — identically — for one whose container this viewer may not
+                # describe, so the export cannot out a depositor by naming the
+                # collection their material arrived in.
+                part_of=is_part_of(record, base_url=base_url),
+            ),
+            "        ",
+        )
+    )
     lines.append("      </mets:xmlData>")
     lines.append("    </mets:mdWrap>")
     if record.withheld:
@@ -219,6 +232,26 @@ def to_mets_xml(
         lines.append("      </mets:file>")
     lines.append("    </mets:fileGrp>")
     lines.append("  </mets:fileSec>")
+
+    # A logical structMap when — and only when — this viewer may see where the
+    # item is filed (#202). METS's own way of saying "this item sits inside these
+    # units"; the physical map below is unchanged and is what every existing
+    # consumer reads.
+    if record.placement:
+        lines.append('  <mets:structMap TYPE="logical">')
+        depth = 0
+        for step in record.placement:
+            pad = "    " + "  " * depth
+            lines.append(
+                f'{pad}<mets:div TYPE="{escape(step.level.value)}" '
+                f'LABEL="{escape(step.title)}" ID="c-{escape(step.container_id)}">'
+            )
+            depth += 1
+        pad = "    " + "  " * depth
+        lines.append(f'{pad}<mets:div TYPE="item" LABEL="{escape(record.title)}" DMDID="dmd-1"/>')
+        for level in range(depth - 1, -1, -1):
+            lines.append("    " + "  " * level + "</mets:div>")
+        lines.append("  </mets:structMap>")
 
     lines.append('  <mets:structMap TYPE="physical">')
     lines.append(f'    <mets:div TYPE="item" LABEL="{escape(record.title)}" DMDID="dmd-1">')

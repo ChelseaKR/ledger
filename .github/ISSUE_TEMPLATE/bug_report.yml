@@ -28,7 +28,7 @@ body:
     id: what-happened
     attributes:
       label: What happened
-      description: What did you observe? Describe behaviour, not protected content.
+      description: What did you observe? Describe behavior, not protected content.
     validations:
       required: true
   - type: textarea

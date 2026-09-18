@@ -17,7 +17,7 @@ the archive's controlled vocabulary, a requested visibility, an optional sealed
 contact, and — since backlog A2 — an optional single binary file (image, audio, or
 PDF). The file is validated by its *bytes*, not its filename or declared type: the
 server sniffs the leading magic bytes against a small allowlist
-(:mod:`ledger.upload`) and refuses anything it does not recognise, so the form is a
+(:mod:`ledger.upload`) and refuses anything it does not recognize, so the form is a
 safe upload surface rather than an arbitrary-file sink.
 
 This module is HTTP-agnostic: it renders the form markup (including the file input)
@@ -208,7 +208,7 @@ def apply_edit(existing: Record, form: dict[str, str], config: Config) -> Record
 
 
 def _checkbox(warning: str, *, checked: bool = False) -> str:
-    """One labelled content-warning checkbox (id + matching ``<label for>``)."""
+    """One labeled content-warning checkbox (id + matching ``<label for>``)."""
     cid = f"cw-{warning}"
     mark = " checked" if checked else ""
     return (
@@ -223,7 +223,7 @@ def _checkbox(warning: str, *, checked: bool = False) -> str:
 def _details_fieldset(lang: str, vals: Mapping[str, str]) -> str:
     """The optional descriptive-metadata fieldset shared by the contribute/edit forms.
 
-    Renders labelled, hinted single-line inputs for the Dublin Core ``subject`` (comma
+    Renders labeled, hinted single-line inputs for the Dublin Core ``subject`` (comma
     separated), ``type``, ``date``, and ``language`` so a contributor can make their
     record findable by topic and browsable by facet. Each input is associated with its
     hint via ``aria-describedby`` (accessibility); every value is escaped (security)."""
@@ -267,7 +267,7 @@ def preview_record(submission: Submission) -> Record:
 
 
 def _visibility_radio(value: str, *, checked: bool, lang: str) -> str:
-    """One labelled visibility radio (id + matching ``<label for>``), label localized."""
+    """One labeled visibility radio (id + matching ``<label for>``), label localized."""
     rid = f"vis-{value}"
     mark = " checked" if checked else ""
     label = i18n.t(lang, f"visibility_{value}")
@@ -290,11 +290,11 @@ def render_contribute_main(
 ) -> str:
     """Render the ``<main>`` for the accessible contribution form.
 
-    Every control is labelled (``<label for>``), grouped choices sit in a
+    Every control is labeled (``<label for>``), grouped choices sit in a
     ``<fieldset>`` with a ``<legend>``, and the page is plain about what happens to a
     submission: it is reviewed before publishing, and any contact details are sealed
     and never shown. The markup is authored to pass the structural accessibility
-    gate (one ``<h1>``, labelled inputs, no positive tabindex).
+    gate (one ``<h1>``, labeled inputs, no positive tabindex).
 
     ``values`` re-fills the form after a preview or a validation error, so a
     contributor never loses what they typed. ``preview_html`` is an optional panel
@@ -539,7 +539,7 @@ def render_thanks_main(
     **withdraw** the submission themselves before a steward publishes it. Showing
     these does not breach no-outing: neither says who contributed — they only prove
     authorship of this one record. The page tells the contributor to keep them
-    private, since together they authorise withdrawal."""
+    private, since together they authorize withdrawal."""
     if reference and claim_token:
         link = f'<a href="/withdraw">{_esc(i18n.t(lang, "withdrawal_page_link_text"))}</a>'
         edit_link = f'<a href="/edit">{_esc(i18n.t(lang, "edit_page_link_text"))}</a>'
@@ -601,10 +601,10 @@ def render_withdraw_main(
     """Render the ``<main>`` for the self-service withdrawal form.
 
     A contributor who kept the reference and withdrawal code from their confirmation
-    can withdraw a submission that *is still pending review* — honouring "I changed my
+    can withdraw a submission that *is still pending review* — honoring "I changed my
     mind before it went live" without a steward in the loop, because nothing is public
     yet and it is their own content (consent is revocable). The form is accessible
-    (labelled inputs) and plain about what withdrawal does, in the reader's language.
+    (labeled inputs) and plain about what withdrawal does, in the reader's language.
     The reference is re-filled on error so a mistyped code does not lose it; the code
     itself is never echoed back.
     """

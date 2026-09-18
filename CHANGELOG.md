@@ -63,6 +63,89 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   fixity is not applicable. Thirty-five new msgids, translated in all four catalogs.
 
 ### Fixed
+- **An archive with nothing in it read as verified on four of eleven published
+  fixity claims (#208).** #207, #218 and #219 each closed one such surface, found
+  by reading code one surface at a time, which is why there were three of them and
+  why #208 stayed open after two. Measured first, by rendering every surface that
+  publishes a fixity verdict over an archive with no bags and over one whose every
+  bag had just been re-hashed: **7 of 11 published claims were backed by a
+  verification**; four said the same thing over both.
+
+  Two of the four were live defects nothing had looked at. `ledger export-drive`
+  printed `0 record(s), 0 file(s) packaged ...; all bags verified` and exited `0`
+  — to the person about to hand the drive to a courier — because
+  `all_bags_valid` is `all(report.ok for ...)` folded over the bags the build
+  wrote, and that fold is vacuously true over none. It now reports two numbers
+  (`0 of 0 bag(s) verified`) and a three-state verdict. The hand-off manifest
+  published `all_fixity_ok: true` beside `records: []`; it now also publishes
+  `fixity_status`, at `HANDOFF_SCHEMA_VERSION` 2.
+
+  **After: 9 of 11.** The two that remain are decisions, not oversights, and are
+  declared in `_UNBACKED_BY_DESIGN` with their reasons: `/healthz`'s anonymous
+  `all_verified` (making it honest would make `200 + ok + all_verified: false`
+  reachable only by an empty archive, telling an anonymous caller the absolute
+  fact the gated counts exist to withhold — the honest three-state verdict is
+  served to the steward or monitor grant that may hear it), and the signed
+  attestation's `fixity_ok` (#205).
+
+  **Then 10 of 11**, once #205 landed (#230): the attestation now distinguishes an
+  empty archive from a verified one, so its exemption went stale and the
+  self-limiting check failed on the merged head until the entry was deleted.
+  `/healthz`'s anonymous `all_verified` is the one declared exception left.
+
+  The number is now a gate rather than a finding. `tests/test_fixity_claim_census.py`
+  walks the AST of `src/ledger` for every call to the five functions that can
+  produce a fixity verdict and requires each call site to be mapped to a probed
+  surface or to a named reason it is not a claim, so a new surface cannot appear
+  unjudged; both lists are self-limiting, so an exemption that stops being needed
+  fails. The two numbers print from `pytest_terminal_summary`, because a `print`
+  in a passing test is captured and never read.
+
+- **`/proof` and `/transparency` were served 100% English to `es`, `fr` and `ar`
+  (#225).** The hash-chain explanation and the warrant-canary page are the two routes
+  an at-risk contributor is sent to *before* deciding whether to hand this archive
+  their material, and every sentence on both was an English literal in `server.py` and
+  `render.py`. Measured on the gate's own fixture before the change: **0 strings
+  translated of 8, 14, 3, 3 and 16 examinable**, across the five bodies the two
+  handlers can render, in each of `es`, `fr` and `ar`. All thirteen required checks
+  were green over it.
+
+  41 msgids added and translated in all four catalogs, `make i18n-compile` run. After:
+  every string this project may translate is translated in all three locales. What is
+  left in English is named, and is named *on the page* rather than left to be
+  inferred: the canary's statement text and the counsel note on it (a legal
+  instrument — a translation is a different wording, and this project cannot say the
+  two assert the same thing), the `DEMAND_TYPES` vocabulary (`national_security_letter`
+  names one specific US instrument; a target-language word would assert an equivalence
+  across jurisdictions that may not exist), and four identifiers — `attest-health`,
+  `/proof/attestation.json`, `chain_head_summary`, `docs/VERIFYING-ATTESTATIONS.md`.
+  Two new translated sentences say which is which, so a page whose scaffolding is in
+  Spanish never implies its operative sentence was translated too.
+
+  **The gate moves from 8 of 17 routes to 10 of 17, and gains a second denominator.**
+  #226 gave the route rule its denominator; a route number alone is the same
+  half-truth one level down, because these two routes render **nine** bodies between
+  them, not two. `_STATEFUL_BODY_STATES` judges every branch — `/proof` attested and
+  not, healthy and failed, signed and unsigned; `/transparency` unconfigured, log
+  unreadable, never attested, attested, stale-and-uncounselled, and future-dated with
+  a broken chain — and `test_every_branch_of_a_stateful_route_is_reached_by_some_state`
+  reads the handlers' own source by AST and fails when a message key they resolve is
+  reached by no state. A new branch cannot be added silently English behind a route
+  already marked judged. The pytest summary now prints both numbers.
+
+  The per-locale check asserts the served string **differs** from its English source,
+  because a verbatim-English `msgstr` satisfies key parity, non-emptiness and
+  placeholder parity alike — and consults
+  `locales/identical_by_design.json` for the strings where being identical is the
+  right answer, rather than making "must differ" the rule.
+
+  Two incidental findings, both now recorded in the code: `_handle_proof`'s third
+  signature branch was unreachable (`HealthAttestation.from_json` rejects any format
+  but `ssh`, so a signed attestation always has one) and is gone; and the counsel
+  warning is now two paragraphs so its emphasis does not have to live inside a
+  translatable string. `docs/I18N.md` gains a "left in English on purpose" table and
+  `docs/TRANSPARENCY.md` a section on why the statement is never translated.
+
 - **The three plain-language safety pages were English only, and the gate for that
   was blind to them (#216).** `/about`, `/governance` and `/how-it-works` are where
   an at-risk contributor is sent to find out who runs this archive and how it
@@ -85,6 +168,55 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and that a green shell says nothing about a body.
 
 ### Added
+- **Records have a place in the archive: collections and series (#202, ADR 0020).**
+  `ledger` described items and nothing above them. It now has an arrangement — a
+  `Collection`, a `Series` under it, and a record's placement in exactly one of
+  them — with its own title, scope-and-content note, extent, dates, and two
+  policies. `ledger arrange describe|place|list|check` and `ledger ingest
+  --collection` are the steward's surface; `/collections`, `/collection/{id}` and
+  a `collection` facet that composes with search and the Dublin Core facets are
+  the reader's.
+
+  **The resolution is a logical AND over the root-to-parent chain.** Placing a
+  record in a container can remove visibility and can never add any: there is no
+  ordering over `AccessPolicy` to get wrong, and no cell where a broad container
+  widens a narrow record. All 144 cells of (6 record policies × 8 container
+  ceilings × 3 viewers) are asserted against a hand-written truth table.
+
+  **A container carries two policies, because it is two things at once.** One
+  governs its own description — a collection titled "2019 raid testimony,
+  deposited by Casa Abierta" outs its depositor by aggregation even when every
+  record inside it is sealed — and one is the ceiling over what it holds. A public
+  record filed in a hidden collection renders, facets, harvests, exports and
+  breadcrumbs exactly like an unarranged one; three differential tests assert the
+  anonymous bodies are byte-identical across 22 routes.
+
+  **Nothing is migrated and no bag is rewritten.** Placement is optional forever,
+  an unarranged record has an empty chain, and `serialize_record` omits the
+  property entirely when there is none — so every manifest written before this
+  change serializes to exactly the bytes it always did.
+
+  **Everything fails closed, and says so.** A dangling placement, a corrupt parent
+  link, or a read path that was never given the arrangement all deny the record,
+  to stewards too. `ledger arrange check` names every record the resolver is
+  hiding for that reason and exits non-zero.
+
+  EAD now emits the hierarchy its own docstring has described since it was
+  written (`<c01 level="collection">` / `<c02 level="series">` / items), and
+  `/collection/{id}/ead.xml` is the first read path ever to call it. OAI-PMH gains
+  `ListSets`, a `<setSpec>` per visible level, and `&set=` filtering. METS gains a
+  `logical` structMap and DCMI `isPartOf`; the CSV gains a `collection` column,
+  appended so a consumer reading by position is unaffected; the print booklet and
+  the courier drive state it as plain text. 15 new interface strings in
+  en/es/fr/ar.
+
+- **`tests/test_sealed_existence_leaks.py`'s completeness check checks something
+  again.** `test_the_route_list_covers_every_anonymous_get` recovered routes with
+  a regex over `do_GET`'s source text; #83 moved them into route tables as data,
+  so it had matched **zero** routes ever since and its set difference was against
+  an empty set. Green, in the one file whose inventory is a disclosure control. It
+  reads the tables now, under a floor.
+
 - **`/healthz` tells a steward when nothing was verified (#208, #205).** The #208
   sweep closed the vacuous fixity fold on `/status`, the hand-off runbook and
   `ledger handoff`'s summary line, and left `/healthz`'s `all_verified` alone as a
@@ -194,7 +326,7 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
   While adding it: a claim kind with no `_KIND_LABEL` entry was still enforced but
   vanished from the gate's own passing line, so the output would have understated what
-  it verified. The summary now refuses to build with an unlabelled kind, with
+  it verified. The summary now refuses to build with an unlabeled kind, with
   `ReferenceExists` named as the one deliberate exception rather than left as a hole.
 - **The release notes' own date was the one value nothing checked, and it is
   already wrong.** `release.yml`'s REL-10 step greps for the `## [0.1.0]` heading
@@ -239,14 +371,14 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   *every* string in the staged config rather than three known fields, so a path
   field added later cannot quietly reopen it.
 - **An archive with nothing in it verified as a good backup, and that verdict was
-  what authorised shredding the vault.** `lockdown.verify_backup_location` ended in
+  what authorized shredding the vault.** `lockdown.verify_backup_location` ended in
   `all_ok = all(bag.ok for bag in bags)`, and `all([])` is `True`. An off-box replica
   holding `store/config.json` and an `identity.vault` but **none of the archive's
   content** — a partial rsync, a copy that stopped after the metadata, an emptied
   replica disk — passed `check_readiness`, audited zero bags, and came back
   `ok=True` with an empty `reason`. That is the gate `execute_lockdown` consults
   before it *irreversibly shreds the local identity vault*, so under duress an empty
-  replica read as "your archive survived" and authorised destroying the only real
+  replica read as "your archive survived" and authorized destroying the only real
   copy. A test now drives the full path and shows the pre-fix code shredding it.
 
   The same vacuous truth sat on three more surfaces: `ledger verify-backup` printed
@@ -278,7 +410,7 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   needs a new attestation field, therefore `ATTESTATION_SCHEMA_VERSION` 2 and a break
   for every third-party verifier, and it would publish the absolute fact that the
   archive is empty — the anti-enumeration line `ledger.attestation`'s docstring exists
-  to hold. Recorded at #205; `tests/test_audit_missing_bags.py` pins today's behaviour
+  to hold. Recorded at #205; `tests/test_audit_missing_bags.py` pins today's behavior
   on purpose.
 - **The skip link parked itself 9,999 pixels off the page, which is nine and a half
   thousand pixels of horizontal scroll in Arabic.** `.skip-link` used the old
@@ -304,7 +436,7 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
   `en` is the source language, so its `msgstr` must **equal** its `msgid`; every
   other catalog's must **differ**. Three ways out, and only the third is a
-  judgement: nothing alphabetic left once `{placeholders}` are removed; a single
+  judgment: nothing alphabetic left once `{placeholders}` are removed; a single
   **all-caps** code token or bare URL (upper case is load-bearing, so `CSV` is
   exempt and `Date` is not); or a written reason in
   `src/ledger/locales/identical_by_design.json`. ledger needs **eight** entries —
@@ -543,6 +675,33 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   to say about a prose summary elsewhere in the docs; the paragraph now names the
   rows that are actually partial and says which document is authoritative.
 
+### Changed
+- **A signed attestation over an archive with nothing in it no longer says the
+  archive passed (#205).** `ledger attest-health` published `fixity_ok: true` for an
+  archive holding no bags at all — `all(...)` over an empty sequence — and `/proof`
+  rendered it to an anonymous visitor as *"this archive passed its most recent
+  fixity check"*, on the page an at-risk contributor reads before deciding whether
+  to hand this archive their material.
+
+  `ATTESTATION_SCHEMA_VERSION` is now **2**. The attestation carries a signed
+  `fixity` field — `verified`, `failed`, `could-not-verify`, or `nothing-to-verify`
+  — and `fixity_ok` is `true` only for `verified`. `/proof` renders a sentence for
+  each, translated in `es`, `fr` and `ar`, plus a fifth for a schema-1 attestation
+  still on disk after an upgrade, which it reads as *unstated* rather than
+  upgrading to *verified* by guesswork. Schema-1 signatures still verify: their
+  signed bytes are never given a `fixity` key.
+
+  The objection recorded on #205 was that saying "nothing to check" publishes the
+  absolute fact that the archive is empty. **Measured, the attestation already
+  published it**: `chain_head_summary` over an archive with no logs is `sha256("[]")`
+  (`4f53cda1…202b945`), identical for every empty archive, so `fixity_ok: true`
+  bought no privacy — it only made a signed document false. Refusing to attest an
+  empty archive would disclose the same thing by the attestation's absence.
+
+  `ledger attest-health` exits `0` for `nothing-to-verify` and `1` for `failed` or
+  `could-not-verify`: the published field is the statement, the exit code is the
+  alarm, and a fresh install's cron does not go red for holding nothing.
+
 ## [0.1.0] — 2026-09-02
 
 > **Note (2026-09-01):** this is the content of the first release, gathered from the
@@ -711,7 +870,7 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is an AST gate with **no allowlist** that fails the build on any `PremisLog` write-back
   outside `file_lock`, and carries eight tests of its own teeth, because an AST gate is
   exactly the kind that silently matches nothing after a rename.
-  `tests/test_audit_log_concurrency.py` covers the sites behaviourally; the suite had no
+  `tests/test_audit_log_concurrency.py` covers the sites behaviorally; the suite had no
   concurrency coverage of any PREMIS log before this.
 
 - **The moderation `reason` is durable, and the moderation log is now part of the
@@ -913,10 +1072,10 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   deliberately outside `make verify`, which must not depend on the network.
 - **JPEG 2000 is identified** — JP2, JPX, JPM, MJ2, and bare codestreams (`x-fmt/392`,
   `fmt/151`, `fmt/463`, `fmt/337`, `fmt/1794`). This is the preservation *master*
-  format of most digitisation programmes and 18 of them were previously recorded as
-  `application/octet-stream`. The four container flavours share one signature box and
+  format of most digitization programs and 18 of them were previously recorded as
+  `application/octet-stream`. The four container flavors share one signature box and
   differ only in the `ftyp` brand at offset 20, which a fixed-offset signature table
-  could not express; an unrecognised brand degrades to JP2, never to unknown.
+  could not express; an unrecognized brand degrades to JP2, never to unknown.
 - **Rich Text Format is identified** (`fmt/45`). RTF is ASCII, so with no signature for
   it the UTF-8 fallback claimed it first and filed a structured word-processing
   document as `text/plain`.
@@ -985,11 +1144,11 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
   Enforced structurally rather than by sweep: `tests/test_premis_linking_identifier_types.py`
   parses the package and fails on any `PremisEvent(...)` that names an object without a
-  type, reporting file and line, so it covers writers no behavioural test exercises and
+  type, reporting file and line, so it covers writers no behavioral test exercises and
   refuses the next one. Against the pre-change tree it names all eighteen.
 
   Nothing migrates and no chain moves. `to_dict` still omits the field when unset, so
-  every event already on disk serialises — and hash-chains — byte-for-byte as it always
+  every event already on disk serializes — and hash-chains — byte-for-byte as it always
   did, and the XML `or "local"` fallback now applies only to pre-ADR-0012 events, which
   is what it was always for.
 - **`make verify` now runs Semgrep, and four documents stopped describing a repository
@@ -1039,7 +1198,7 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `coverage report --include="src/ledger/access/*,src/ledger/consent.py,src/ledger/dualcontrol.py" --fail-under=95`.
   That flag gates a report's **TOTAL row**, not each module in it, so the line passed at
   exactly 95% while `grants.py` sat at 92% and `consent.py` at 91%, carried by three
-  neighbours at 100%. Two of the six modules in the declared security core were under
+  neighbors at 100%. Two of the six modules in the declared security core were under
   the floor their own gate advertised, and the gate could not say so.
   `DEFINITION_OF_DONE.md` had described this as a "per-module floor" for months; the
   document was right about the intent, the implementation was one pooled number.
@@ -1058,7 +1217,7 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   pooled report could never see are now build failures: a module matching
   `[tool.ledger].security_core` with no floor (previously invisible, and the obvious
   remedy of appending it to the pooled `--include` would have bought it a passing grade
-  from its neighbours), and a floor naming a module that no longer exists. An empty
+  from its neighbors), and a floor naming a module that no longer exists. An empty
   floors table fails too. The comparison is coverage's own `should_fail_under` at its
   own precision, so this gate cannot disagree with `--fail-under` elsewhere in the repo
   at the rounding boundary.
@@ -1066,7 +1225,7 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   34 new tests across `tests/test_access_and_consent_edges.py` (the refusal and
   corruption edges) and `tests/test_coverage_floors_gate.py`, which holds the new gate
   to the standard the old line failed: every rule it claims is shown failing on input
-  that violates it, including that a neighbour at 100% cannot lift a module at 91%.
+  that violates it, including that a neighbor at 100% cannot lift a module at 91%.
 - **The archive's remaining silent-loss stores: takedown tombstones are serialized, and
   a damaged store fails closed** (#155, #154). `src/ledger/_filelock.py` exists because
   a whole-document read-modify-write loses concurrent writes, and says so in this
@@ -1101,11 +1260,11 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   a steward shown an empty console while submissions wait is exactly that.
 
   A `disclosure`-marked, merge-blocking test named `test_corrupt_proposal_file_reads_as_empty`
-  had asserted the empty-read behaviour: the defect was not merely untested, it was
+  had asserted the empty-read behavior: the defect was not merely untested, it was
   pinned in place by a safety-marked test. It is replaced by its inverse. 17 new tests
   in `tests/test_silent_loss_stores.py`, and `tombstones.py` (89%) and `review.py` (97%)
   each gain a coverage floor of their own rather than joining the pooled scope, where
-  they would have read as covered because their neighbours are. Recorded as
+  they would have read as covered because their neighbors are. Recorded as
   [ADR 0014](docs/adr/0014-json-stores-fail-closed-and-serialize.md).
 - **BagIt manifests are percent-encoded per RFC 8493 §2.1.3** (#143). `%`, CR, and LF
   are encoded on write and decoded on read; ledger previously wrote a payload named
@@ -1118,7 +1277,7 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   decoder handles only the three escapes the RFC defines, so **bags written before this
   change keep validating untouched** — a general percent-decoder would have turned a
   pre-migration payload named `%41` into a lookup for `A`. `bag.migrate_manifest_encoding()`
-  re-serialises manifests and reseals the tag manifests for an archive that wants
+  re-serializes manifests and reseals the tag manifests for an archive that wants
   unambiguous ones; it is idempotent and only matters to an archive holding `%`, CR, or
   LF in a payload name.
 - **A SEALED payload larger than the cap is refused instead of OOM-killing the ingest**
@@ -1206,7 +1365,7 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   are now written down instead of implied.
 - **Five stale README/architecture statements corrected, and the truthfulness gate
   widened so this class of claim is inside it.** All five drifted in the same
-  direction — describing work as still owed that had shipped, or behaviour the code
+  direction — describing work as still owed that had shipped, or behavior the code
   had since tightened — and `tools/check_claims.py` was green throughout, because a
   claim it does not hold cannot fail it. Corrected: dependency pinning is not "a
   range today" (a hash-pinned `uv.lock` is committed, `uv sync --locked` installs
@@ -1445,7 +1604,7 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ledger performs no speech-to-text.
 - **Disclosure-policy workflow.** First-class, accountable steward commands to set and
   apply a disclosure policy on an already-archived item, enforced by the core engine and
-  honoured by the reading-room:
+  honored by the reading-room:
   - `ledger seal` sets the policy of a single field, a payload, or the record default —
     including a temporal embargo (`--field … --level sealed-until --until <date>`,
     time-gated release), a conditional seal (`--condition`), or an absolute seal. Backed

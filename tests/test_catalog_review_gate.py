@@ -148,7 +148,7 @@ def test_an_ordinary_word_is_not_exempt_just_for_being_short(msgid: str) -> None
 
     `CSV` is a code token; `Date` is a four-letter English word that happens to be
     spelled the same in French. Both are single tokens and only one is mechanically
-    exempt — the other takes a written reason, which is exactly the judgement a
+    exempt — the other takes a written reason, which is exactly the judgment a
     pattern cannot make. A blanket must-differ rule gets this backwards in both
     directions.
     """

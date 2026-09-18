@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ledger.example/schema/container.schema.json",
+  "title": "Ledger arrangement container manifest",
+  "description": "The serialized description + access manifest for one unit of arrangement: a collection, or a series inside a collection (#202). A container carries description and policy and no bytes and no identity; this schema structurally forbids any top-level `contributor_name`, `identity`, or `name` property, exactly as the record schema does (no-outing rule). A container's existence is itself disclosable material — a collection titled after the event its records document outs by aggregation even when every record inside it is sealed — which is why `policy` (who may know this container exists and read its description) is separate from `records_policy` (the ceiling over the records filed in it).",
+  "type": "object",
+  "additionalProperties": false,
+  "unevaluatedProperties": false,
+  "required": [
+    "container_id",
+    "title",
+    "level",
+    "parent_id",
+    "scope_and_content",
+    "extent",
+    "dates",
+    "policy",
+    "unseal_at",
+    "unseal_condition",
+    "records_policy",
+    "records_unseal_at",
+    "records_unseal_condition",
+    "created_at"
+  ],
+  "not": {
+    "anyOf": [
+      { "required": ["contributor_name"] },
+      { "required": ["identity"] },
+      { "required": ["name"] }
+    ]
+  },
+  "propertyNames": {
+    "not": {
+      "enum": ["contributor_name", "identity", "name"]
+    }
+  },
+  "properties": {
+    "container_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[A-Za-z0-9_-]+$",
+      "description": "Stable identifier, one allow-listed path component. It becomes a filename, a URL segment, an EAD `id` attribute and an OAI-PMH `setSpec`, so the allow-list is the same one record ids use."
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Human-readable title of the collection or series. Disclosed under this container's own `policy`, never under the policy of what it holds."
+    },
+    "level": {
+      "type": "string",
+      "enum": ["collection", "series"],
+      "description": "Two levels, not an unbounded tree: a collection is a root and a series sits directly under one. This bounds every root-to-node chain at two links, which is what makes the policy resolution a loop rather than a recursion."
+    },
+    "parent_id": {
+      "type": ["string", "null"],
+      "description": "The collection this series belongs to; null for a collection. A collection that names a parent, or a series that does not, is refused by `ledger.arrangement.validate_container` and fails closed in `Arrangement.chain` (every record below it becomes invisible rather than unclamped)."
+    },
+    "scope_and_content": {
+      "type": "string",
+      "description": "The archivist's scope-and-content note: whose material this is, how it came in, what is in it. A series with an empty note inherits the nearest VISIBLE ancestor's at disclosure time; the note of an ancestor a viewer may not see is never inherited through a container they may."
+    },
+    "extent": {
+      "type": "string",
+      "description": "Free-text extent as an archivist would write it (\"4 boxes\", \"1 linear foot\", \"12 cassettes\"). Deliberately not a count of the records ledger holds: a count derived from the archive would change as sealed material is added, which is an oracle about material the reader cannot list."
+    },
+    "dates": {
+      "type": "string",
+      "description": "Free-text inclusive/bulk dates as an archivist would write them (\"1987-1994, bulk 1991\")."
+    },
+    "policy": {
+      "$ref": "#/$defs/accessPolicy",
+      "description": "Who may know this container exists and read its own description (title, scope note, extent, dates). Narrows down the chain: a container is visible only if every container above it is."
+    },
+    "unseal_at": {
+      "type": ["string", "null"],
+      "description": "ISO-8601 instant at which a sealed-until container's own description opens, or null."
+    },
+    "unseal_condition": {
+      "type": ["string", "null"],
+      "description": "Free-text condition for a sealed-conditional container's own description, or null."
+    },
+    "records_policy": {
+      "$ref": "#/$defs/accessPolicy",
+      "description": "The ceiling over every record filed in this container or below it. Applied as a logical AND with the record's own policy, so it can only ever remove visibility: a broad container never widens a narrow record."
+    },
+    "records_unseal_at": {
+      "type": ["string", "null"],
+      "description": "ISO-8601 instant at which the ceiling over this container's records lifts, or null."
+    },
+    "records_unseal_condition": {
+      "type": ["string", "null"],
+      "description": "Free-text condition for a sealed-conditional ceiling over this container's records, or null."
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "UTC ISO-8601 creation timestamp."
+    }
+  },
+  "$defs": {
+    "accessPolicy": {
+      "type": "string",
+      "enum": [
+        "public",
+        "community",
+        "stewards",
+        "sealed-until",
+        "sealed-conditional",
+        "sealed"
+      ]
+    }
+  }
+}

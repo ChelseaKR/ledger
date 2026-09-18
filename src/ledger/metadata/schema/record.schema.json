@@ -78,6 +78,10 @@
     "physical": {
       "$ref": "#/$defs/physicalHolding",
       "description": "The description of an object ledger does not hold the bytes of. Present if and only if `holding_kind` is `physical` or `physical_with_surrogate`. Carries NO custody information: where the object is and who is keeping it are ordinary sealed `custody.location` / `custody.custodian` entries in `fields`, so they pass through the one disclosure decision point like every other sealed value (no-outing rule, extended from authorship to possession)."
+    },
+    "placement": {
+      "type": ["string", "null"],
+      "description": "#202: the id of the one collection or series this record is filed in, or null/absent for an unarranged record. A record has exactly one place. The container's own description and policy live in the separate container manifest (container.schema.json), never here: this property says only WHERE the record is filed, so a record manifest can be read by something that may not know what that place is called. Absent on every record written before #202 (unarranged), which is why it is not required."
     }
   },
   "$defs": {

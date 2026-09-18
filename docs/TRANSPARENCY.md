@@ -39,9 +39,10 @@ posture it cannot back.
 So, concretely:
 
 - Every `Attestation` carries a `counsel_reviewed` flag. `/transparency` shows an
-  explicit, unmissable warning on any attestation where this is `false`: *"This
-  statement has **not** been reviewed by counsel. Its wording is a placeholder and
-  carries no asserted legal effect."*
+  explicit, unmissable warning on any attestation where this is `false`: **"This
+  statement has not been reviewed by counsel."**, followed by *"Its wording is a
+  placeholder and carries no asserted legal effect."* Two sentences rather than one,
+  so the emphasis does not have to live inside a translatable string.
 - `ledger transparency attest` requires `--statement` explicitly (no built-in
   default text a steward could accidentally ship unreviewed) and prints the same
   warning to stderr whenever `--counsel-reviewed` is not passed.
@@ -52,6 +53,35 @@ So, concretely:
   restricted), and what a steward must do if a demand arrives that prevents
   further truthful re-attestation. Once reviewed, attest with
   `--counsel-reviewed --counsel-note "<date, reviewer, scope>"`.
+
+### The statement is never translated
+
+`/transparency` is served in English, Spanish, French and Arabic. **The statement
+itself is not.** It is reproduced byte for byte as the stewards published it, in the
+language they wrote it in, and so is the counsel note beside it.
+
+That is the same reasoning as the section above, one step further on. The wording is
+the instrument; a translation of it is a *different* wording, and this project — which
+has no retained counsel and did not write the statement — cannot say the two assert
+the same thing. A canary that says slightly less in Arabic than it says in English is
+not a localization bug, it is a false statement about legal process to the reader
+least able to check it.
+
+So the page tells the reader what they are looking at, in their own language, in the
+sentence immediately above the statement: that it is reproduced exactly as published,
+in the language it was written in, because its wording is a legal instrument — and
+that everything else on the page is this project's own explanation and *is*
+translated. The same applies to the demand-type vocabulary
+(`transparency.DEMAND_TYPES`): `national_security_letter` names one specific US
+instrument, and a target-language word for it would assert an equivalence across
+jurisdictions that may not exist, so the terms stay in the legal system's own words
+with a translated sentence saying why.
+
+A steward who serves a non-English readership should write the statement in the
+language that readership reads, with counsel who practices there — the page will
+reproduce whatever they publish. `tests/test_i18n_rtl.py` holds this line from the
+other side: the statement text and the demand-type keys are the only things allowed to
+survive un-seamed in that page's body, and each is named there with this reason.
 
 ## Using it
 

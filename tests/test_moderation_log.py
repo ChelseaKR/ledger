@@ -288,7 +288,7 @@ def test_a_recorded_decision_survives_a_reload_with_its_reason(tmp_path: Path) -
     assert reloaded[0].target_record == "rec-1"
 
 
-def test_recent_returns_newest_first_and_honours_its_limit(tmp_path: Path) -> None:
+def test_recent_returns_newest_first_and_honors_its_limit(tmp_path: Path) -> None:
     """``recent`` is the reading order an audit view wants, capped but never padded."""
     store = ModerationLogStore(tmp_path / "moderation.json")
     for i in range(5):

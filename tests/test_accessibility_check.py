@@ -32,7 +32,7 @@ from ledger.accessibility_check import (
 )
 
 # A minimal, fully accessible document: declared lang, non-empty title, exactly one
-# h1, a main landmark, a skip link, a labelled input, and a captioned, scoped table.
+# h1, a main landmark, a skip link, a labeled input, and a captioned, scoped table.
 _GOOD_HTML = """<!doctype html>
 <html lang="en">
 <head><title>Good page</title></head>
@@ -89,7 +89,7 @@ def test_missing_lang_alt_caption_fails_with_clear_messages() -> None:
     assert problems, "expected the broken page to fail the accessibility check"
     joined = "\n".join(problems)
 
-    # Every reported problem is labelled with its source.
+    # Every reported problem is labeled with its source.
     assert all(p.startswith("bad.html:") for p in problems)
 
     # Each specific failure is named clearly, with its WCAG reference.
@@ -114,7 +114,7 @@ def test_missing_skip_link_and_main_fail() -> None:
     assert "<main> landmark" in joined
 
 
-def test_unlabelled_input_and_positive_tabindex_fail() -> None:
+def test_unlabeled_input_and_positive_tabindex_fail() -> None:
     """An input with no associated label and a positive tabindex are both flagged."""
     markup = (
         '<!doctype html><html lang="en"><head><title>T</title></head>'
@@ -129,13 +129,13 @@ def test_unlabelled_input_and_positive_tabindex_fail() -> None:
 
 
 def test_contrast_ratio_known_values() -> None:
-    """Black on white is the maximum 21:1; identical colours are 1:1."""
+    """Black on white is the maximum 21:1; identical colors are 1:1."""
     assert round(contrast_ratio("#000000", "#ffffff"), 1) == 21.0
     assert round(contrast_ratio("#777777", "#777777"), 1) == 1.0
 
 
 def test_contrast_audit_passes_real_stylesheet() -> None:
-    """Every colour pair in the shipped stylesheet meets WCAG AA (verified, not owed)."""
+    """Every color pair in the shipped stylesheet meets WCAG AA (verified, not owed)."""
     css = (Path(__file__).resolve().parent.parent / "web" / "static" / "app.css").read_text()
     assert audit_css_contrast(css, label="app.css") == []
 
@@ -202,7 +202,7 @@ def test_web_has_no_static_html_so_the_gate_rests_on_rendered_samples() -> None:
     assert list(web_root.rglob("*.html")) == []
 
 
-def test_render_sample_pages_returns_the_nine_documented_routes() -> None:
+def test_render_sample_pages_returns_the_eleven_documented_routes() -> None:
     """The exact set of routes the static gate's rendered-sample coverage reaches.
 
     Pinned so a change here is a conscious, reviewed edit (e.g. adding coverage
@@ -219,6 +219,8 @@ def test_render_sample_pages_returns_the_nine_documented_routes() -> None:
         "rendered:/overview",
         "rendered:/withdraw",
         "rendered:/edit",
+        "rendered:/collections",
+        "rendered:/collection/{id}",
     }
 
 
@@ -346,8 +348,8 @@ def test_main_reports_document_count_and_names_on_a_pass(
     out = capsys.readouterr().out
     assert exit_code == 0
     assert "passed" in out
-    # Nine rendered samples plus the one static file just written.
-    assert "10 HTML document(s)" in out
+    # Eleven rendered samples plus the one static file just written.
+    assert "12 HTML document(s)" in out
     assert str(tmp_path / "index.html") in out
     assert "rendered:/contribute" in out
 

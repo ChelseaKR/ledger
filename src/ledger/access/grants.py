@@ -149,7 +149,7 @@ def load_grants(path: Path) -> dict[str, Grant]:
 # ``subject`` and ``expiry`` are individually base64url-encoded so an arbitrary
 # subject (an email, a name with punctuation) can never collide with the ``:``
 # field separator or with the colons inside an ISO-8601 timestamp. The token is a
-# *sealed* value — like a claim token it authorises action — so it is never logged
+# *sealed* value — like a claim token it authorizes action — so it is never logged
 # and never placed in an error message.
 
 _GRANT_TOKEN_PARTS = 3
@@ -258,7 +258,7 @@ def revoke_subject(path: Path, subject: str) -> set[str]:
     """Add ``subject`` to the revocation list and return the updated set.
 
     Idempotent: revoking an already-revoked subject is a no-op on the set. Any
-    live token for the subject stops being honoured the moment this file is
+    live token for the subject stops being honored the moment this file is
     re-read, without needing to rotate the server secret (immediate retraction).
     """
     revocations = load_revocations(path)
@@ -271,7 +271,7 @@ def unrevoke_subject(path: Path, subject: str) -> set[str]:
     """Remove ``subject`` from the revocation list and return the updated set.
 
     Idempotent: un-revoking a subject that was not revoked leaves the set
-    unchanged. After this the subject's still-unexpired tokens are honoured again.
+    unchanged. After this the subject's still-unexpired tokens are honored again.
     """
     revocations = load_revocations(path)
     revocations.discard(subject)

@@ -93,7 +93,7 @@ def _submit_with_subjects(base: str, count: int) -> tuple[int, str]:
         {
             "action": "submit",
             "title": "An account that names other people",
-            "account": "We organised together.",
+            "account": "We organized together.",
             "visibility": "public",
             "named_subjects_count": str(count),
         },

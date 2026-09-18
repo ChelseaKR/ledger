@@ -3,7 +3,7 @@
 These fixtures give every preservation test the same three primitives — a fresh
 on-disk :class:`~ledger.cas.ContentStore`, a deterministic block of sample bytes,
 and a builder for a small :class:`~ledger.models.Record` — so the tests describe
-*behaviour* rather than rebuilding scaffolding (modularity, reproducibility).
+*behavior* rather than rebuilding scaffolding (modularity, reproducibility).
 
 Determinism: the record builder accepts an explicit ``record_id`` and ``created_at``
 default so a built record is byte-stable across runs, and never consults the wall
@@ -138,3 +138,109 @@ def sample_payload_file(sample_bytes: bytes) -> PayloadFile:
         size_bytes=len(sample_bytes),
         policy=AccessPolicy.PUBLIC,
     )
+
+
+# --- the G9 body-gate census ------------------------------------------------
+#
+# `tests/test_i18n_rtl.py` measures how many of the server's served HTML routes the
+# body-level pseudolocale gate actually judges. A `print` inside that test is
+# swallowed twice over — by the fixture's `redirect_stdout` and then by pytest's
+# capture on a passing test — so the number would exist and never be read, which is
+# the same failure the census exists to catch. It is recorded here and written into
+# the terminal summary of every run instead, pass or fail.
+
+_BODY_GATE_CENSUS: dict[str, int] = {}
+
+
+def record_body_gate_census(
+    *, judged: int, served: int, leaking: int, unreachable: int, branches: int, stateful: int
+) -> None:
+    _BODY_GATE_CENSUS.update(
+        judged=judged,
+        served=served,
+        leaking=leaking,
+        unreachable=unreachable,
+        branches=branches,
+        stateful=stateful,
+    )
+
+
+# The same shape for the fixity-claim census (#208). A hook defined in a test
+# module is not collected — only conftest.py and registered plugins supply hooks —
+# so the number would have been computed and never printed, which is the failure
+# this reporting shape exists to avoid.
+_FIXITY_CLAIM_CENSUS: dict[str, object] = {}
+
+
+def record_fixity_claim_census(
+    *, backed: int, published: int, declared: list[str], undeclared: list[str]
+) -> None:
+    _FIXITY_CLAIM_CENSUS.update(
+        backed=backed, published=published, declared=declared, undeclared=undeclared
+    )
+
+
+def pytest_terminal_summary(terminalreporter: pytest.TerminalReporter) -> None:
+    _report_fixity_claim_census(terminalreporter)
+    if not _BODY_GATE_CENSUS:
+        # Not "nothing to say": the census test did not run (a `-k` selection, a
+        # collection error). Say which, rather than printing a reassuring silence.
+        terminalreporter.write_line(
+            "G9 body gate: census not taken in this run — "
+            "test_the_body_gate_says_how_many_routes_it_judges did not execute"
+        )
+        return
+    c = _BODY_GATE_CENSUS
+    terminalreporter.write_line(
+        f"G9 body gate: judged {c['judged']} of {c['served']} served HTML route(s); "
+        f"{c['leaking']} leak un-seamed English prose and {c['unreachable']} are "
+        "unreachable on the i18n fixture (see _BODY_GATE_UNJUDGED)"
+    )
+    # A route number alone was the *previous* half-truth: `/proof` and
+    # `/transparency` render several bodies each, and judging one of them would
+    # have reported the route green. The second line is the branch denominator.
+    terminalreporter.write_line(
+        f"G9 body gate: of those, {c['stateful']} route(s) render more than one "
+        f"body; {c['branches']} branch(es) are judged, and every message key their "
+        "handlers resolve is asserted reachable from one of them "
+        "(see _STATEFUL_BODY_STATES)"
+    )
+
+
+def _report_fixity_claim_census(terminalreporter: pytest.TerminalReporter) -> None:
+    """Two numbers: fixity claims backed by a verification, of claims published.
+
+    "Not run" is reported as not run rather than as silence, for the same reason
+    the body-gate census above does: a census that did not happen must not be
+    indistinguishable from one that found nothing to say (#208).
+    """
+    if not _FIXITY_CLAIM_CENSUS:
+        terminalreporter.write_line(
+            "fixity claim census: NOT TAKEN in this run — "
+            "test_the_census_of_published_fixity_claims did not execute"
+        )
+        return
+    census = _FIXITY_CLAIM_CENSUS
+    declared = census["declared"]
+    undeclared = census["undeclared"]
+    assert isinstance(declared, list)
+    assert isinstance(undeclared, list)
+    # Declared and undeclared are reported apart. They were one list, printed
+    # under the heading "declared in _UNBACKED_BY_DESIGN", so on the very run
+    # this census exists to catch — a surface regressing to a vacuous pass — the
+    # summary named the regressed surface as a declared decision (#208).
+    unbacked = len(declared) + len(undeclared)
+    terminalreporter.write_line(
+        f"fixity claim census: {census['backed']} of {census['published']} published "
+        "fixity claim(s) are backed by a verification; an archive with nothing in it "
+        f"still reads as verified on {unbacked}"
+    )
+    terminalreporter.write_line(
+        f"fixity claim census: declared in _UNBACKED_BY_DESIGN: {', '.join(declared) or 'none'}"
+    )
+    if undeclared:
+        terminalreporter.write_line(
+            "fixity claim census: UNDECLARED — reads as verified over nothing with no "
+            f"recorded decision: {', '.join(undeclared)}",
+            red=True,
+        )

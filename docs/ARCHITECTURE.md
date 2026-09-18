@@ -1,7 +1,7 @@
 # ledger — Architecture
 
 This document describes how ledger is built and, more importantly, *why* it is built
-that way. The central design claim is simple to state and hard to honour: a community
+that way. The central design claim is simple to state and hard to honor: a community
 can keep rigorous, durable preservation of its records and, at the same time, a
 structural guarantee that holding a record can never out the person who contributed
 it. Most preservation tooling treats contributor safety as policy bolted onto a
@@ -17,7 +17,7 @@ quality-attribute argument. This document is the layered design and the data flo
 
 ledger is a small set of layers, each depending only on the ones beneath it. The
 dependency direction is deliberate: the lower a layer sits, the less it knows about
-disclosure, and the *contract* layer at the bottom knows nothing about behaviour at
+disclosure, and the *contract* layer at the bottom knows nothing about behavior at
 all. Identity is not a layer in this stack — it is a sealed sidecar that the ingest
 layer writes to and the disclosure layer (transitively) reads from, never inline with
 a record. That separation is the subject of section 3.
@@ -43,12 +43,12 @@ a record. That separation is the subject of section 3.
                       └──────┬───────┘
                              ▼
                 config.py             models.py / errors.py
-                config-as-data        the shared contract (no behaviour)
+                config-as-data        the shared contract (no behavior)
 ```
 
 ### 1.1 The contract: `models.py` and `errors.py`
 
-`ledger.models` is deliberately behaviour-free. It defines the value objects every
+`ledger.models` is deliberately behavior-free. It defines the value objects every
 other layer agrees on — `Record`, `Field`, `PayloadFile`, `DisclosedRecord`, `Grant`,
 `ContentAddress`, `FixityResult`, `DublinCore`, `PremisEvent`, and the enums
 `AccessPolicy`, `HashAlgo`, `PremisEventType` — so that ingest, storage, disclosure,
@@ -168,7 +168,7 @@ names write two contradictory verdicts against one identifier (#149). `PremisLog
 now refuses a second, different verdict for the same object and bytes
 (`PremisContradictionError`), and `PremisLog.contradictions()` reports any a pre-ADR,
 address-keyed log already carries instead of surfacing whichever was written last. Both
-new keys are omitted when unset, so every log written before the ADR serialises — and
+new keys are omitted when unset, so every log written before the ADR serializes — and
 hash-chains — exactly as it did.
 
 `metadata/dublincore.py` serializes a `DublinCore` (the fifteen ISO 15836 elements)
@@ -177,7 +177,8 @@ OAI-PMH harvesters. The no-outing rule is explicit here too: `dc.creator` and
 `dc.contributor` describe the *collection or community*, never the individual who
 contributed an item.
 
-The versioned record schema lives at `metadata/schema/record.schema.json`.
+The versioned record schema lives at `metadata/schema/record.schema.json`, and the
+arrangement container's at `metadata/schema/container.schema.json`.
 
 ### 1.4 Access: the single disclosure decision point — `access/`
 
@@ -204,9 +205,35 @@ from `access/__init__.py`: `disclose`, `is_visible`, `is_listable`, `redact_fiel
   no-outing boundary is enforced *structurally* — there is no way to leak identity out
   of `disclose` because there is nowhere in the result to put it.
 
-- **`is_listable(...)`** resolves a record's *default* policy through `is_visible`, so
-  a record whose existence is sealed never appears in a listing — no padded list with
-  locked rows betraying that something is there.
+- **`is_listable(...)`** resolves a record's *default* policy through `is_visible`
+  **and** every ceiling above it through `arrangement_permits`, so a record whose
+  existence is sealed — by its own policy or by the collection it sits in — never
+  appears in a listing. No padded list with locked rows betraying that something is
+  there.
+
+- **`arrangement_permits(...)`** is the #202 addition, and it is a logical AND over
+  the root-to-parent chain rather than a comparison between policies. That is the
+  whole design: an AND has no ordering over `AccessPolicy` to get wrong, so there is
+  no cell in which a broad container makes a narrow record more visible. It fails
+  closed on everything — an unknown container, a corrupt parent link, a chain deeper
+  than the two-level vocabulary, and a caller that supplied no arrangement at all —
+  because a ceiling that cannot be applied is a ceiling of unknown height. See ADR
+  0020.
+
+- **`container_is_visible(...)` / `disclose_container(...)`** answer the *other*
+  question a container raises: may this viewer know it exists? A collection's title
+  is its own disclosure — "2019 raid testimony, deposited by Casa Abierta" outs its
+  depositor by aggregation even when every record inside it is sealed — so a
+  container carries a `policy` over its own description separately from the
+  `records_policy` ceiling over what it holds. `disclose_container` is the sole
+  constructor of `DisclosedContainer`, raises the same `AccessDenied` for a hidden
+  container as for an absent one, and carries out no policy value and no count of
+  holdings.
+
+- **`visible_placement(...)`** trims a record's chain to the containers this viewer
+  may *describe*, which is deliberately not the same question as whether they may see
+  the record. A public flyer inside a hidden collection is disclosed with an empty
+  placement, indistinguishable from an unarranged record.
 
 - **`access/grants.py`** builds grants under least privilege. The crucial separation:
   `identity_unseal` (the set of `identity_ref` tokens a grant may resolve to a real
@@ -221,6 +248,36 @@ from `access/__init__.py`: `disclose`, `is_visible`, `is_listable`, `redact_fiel
   whose detail names only the field/filename, never its withheld value. The original
   stays access-controlled wherever the caller keeps it; the lossy view never
   masquerades as the original.
+
+### 1.4b Arrangement: `arrangement.py`
+
+The graph over the archive's collections and series, their shape rules, and their
+store. Deliberately the only module that knows a container has a parent, so the
+hierarchy's shape is decided once.
+
+- **Two levels and one parent.** A `COLLECTION` is a root; a `SERIES` sits directly
+  under one. A record has exactly one place. That bounds every root-to-node chain at
+  two links, makes a cycle unrepresentable rather than merely guarded against, and
+  keeps `Arrangement.chain` a loop with a hard bound instead of a recursion.
+- **`chain()` returns `None`, never a partial chain**, for anything it cannot
+  resolve. `()` means "nothing above this record", which permits; `None` means "I
+  could not work out what is above this record", which denies. Conflating the two
+  would widen every dangling placement.
+- **The write path is strict and loud; the read path is forgiving and silent — but
+  only in the direction that hides.** `validate_container` refuses a malformed
+  container before it is stored, because a store that accepts one turns a steward's
+  typo into 400 invisible records with no error. `load_arrangement` skips a manifest
+  it cannot parse, because one broken file must not take down browse — and skipping
+  it cannot widen anything, since every record placed in it now resolves to `None`.
+  `Archive.arrangement_problems()` (`ledger arrange check`) is what makes the silence
+  operable: it names every record the resolver is denying to everyone.
+- **No disclosure decision lives here.** This module never sees a `Grant`. Who may
+  see what is decided in `access/policy.py`, the one place the archive audits for it.
+
+Containers live in `containers/` beside `records/`, one JSON manifest each, because a
+container is not an item: it has no payload and it outlives any single record filed in
+it. An archive with no `containers/` directory has an empty arrangement and behaves
+exactly as it did before #202.
 
 ### 1.5 Identity vault: `identity.py`
 
@@ -237,7 +294,7 @@ choices, each tied to a property:
   so the decision does not depend on whether the ref exists, and raises `AccessDenied`
   otherwise (least privilege).
 - Fernet authentication detects tampering on read (integrity); `revoke` deletes a
-  mapping so consent revocation and takedown are honoured at the storage layer.
+  mapping so consent revocation and takedown are honored at the storage layer.
 - `__repr__`/`__str__` of both the identity and the vault are redacted, and no
   identity, ciphertext, or key is ever logged or placed in an exception message.
 
@@ -395,8 +452,9 @@ content-warning interstitial before the content, and a missing record and a
 not-permitted record render the *same* neutral 404, so the response never reveals
 whether a sealed record exists. `/healthz` answers an anonymous request with `status`,
 `all_verified`, and `ready` only (plus a generic `reason` code when the readiness probe
-fails); the absolute counts — bags audited, passed, failed, files checked — and the live
-`chain_head` commitment are both gated to a steward grant. The counts include sealed and
+fails); the absolute counts — bags audited, passed, failed, files checked — the
+three-state `fixity.status`, and the live
+`chain_head` commitment are all gated to a steward grant. The counts include sealed and
 community records, so they would let an outsider learn the archive's size and poll for
 the moment a sealed record is added (P2-2). The live commitment carries no count, but it
 moves the instant any record is written, so polling it while the sitemap, feed, and
@@ -412,8 +470,8 @@ The site binds to `127.0.0.1` by default.
 `cli.py` is the one discoverable steward surface: 43 subcommands, which `ledger --help`
 lists in full — `init`, `ingest`, `browse`, `show`, `serve`, `audit`, `policy`,
 `takedown`, `replicas`, `heal`, `surrogate`, `add-location`, `demo`, `acr`, and the
-`grant`, `vault`, `mutual-aid`, `transparency`, `moderation`, and `session` groups among
-them. A capability with no
+`grant`, `vault`, `mutual-aid`, `transparency`, `moderation`, `arrange`, and `session` groups
+among them. A capability with no
 subcommand is not a capability a steward has (#123), so the count above is asserted
 against the parser itself in `tests/test_cli.py`. Exit codes are meaningful (`audit`
 returns non-zero on any failing bag so cron/CI can branch). It is held to the no-outing rule: a contributor name/contact is accepted only
@@ -710,7 +768,7 @@ function that realizes it. This is a sample; the README works through the full l
 | **Recoverability**           | `replicate.heal` (rebuild only from a just-validated replica), reachable as `ledger heal`, and `replicate._quarantine` |
 | **Failure transparency**     | `replicate.verify_replicas` (degrade, never raise); `QUARANTINE` event attached to `ReplicationError`; `errors.py` (failures surfaced, never swallowed) |
 | **Auditability / Provability** | `metadata.premis.PremisLog` (append-only); `moderate.ModerationLog` (justified, attributed, contestable) |
-| **Autonomy / Consent**       | `moderate.change_consent`; `identity.IdentityVault.revoke` (takedown honoured at storage) |
+| **Autonomy / Consent**       | `moderate.change_consent`; `identity.IdentityVault.revoke` (takedown honored at storage) |
 | **Determinism / Reproducibility** | `models.canonical_json`/`now_iso`; `bag.write_bag` (sorted manifests, byte-identical bags); injected `now` throughout |
 | **Standards compliance**     | `bag.py` (RFC 8493 BagIt); `metadata.premis.to_premis_xml` (PREMIS v3); `metadata.dublincore.to_oai_dc_xml` (ISO 15836 / `oai_dc`); `oais.py` (ISO 14721 SIP/AIP/DIP) |
 | **Interoperability / Portability** | `bag.validate_bag` (any RFC 8493 tool can read a bag); `metadata` XML exporters; `config.load` (JSON *or* TOML) |

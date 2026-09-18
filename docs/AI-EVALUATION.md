@@ -100,7 +100,7 @@ Never real community data, per `docs/DATA-GOVERNANCE.md`.
 | Citation grounding | **2/2** | n/a | Two `describe()` calls on real public fixture records. Scored on producing at least one claim that survives `verify_claims`. |
 | Query structuring | **4/4** | n/a | Two answerable requests and two that should refuse. Scored on `structure_query`'s `refused` flag matching the expected outcome. |
 
-**63 of 67 cases passed on the model's own behaviour**, and **the system held every
+**63 of 67 cases passed on the model's own behavior**, and **the system held every
 one of the 58 cases that track it**. The four that did not pass are all consent-tier
 existence probes where the model returned *no answer at all* rather than an explicit
 epistemic refusal; nothing above any viewer's tier was disclosed in any of them. That
@@ -123,7 +123,7 @@ comparison.
 | `test_the_evidence_check_is_not_vacuous` | that `check_evidence` rejects six deliberately broken documents | Yes — it is the proof the checker is not a no-op. |
 
 The floors sit at the **lowest** value observed across real runs, not the best one.
-A model's own behaviour is stochastic, and a ratchet pinned to a lucky run is a gate
+A model's own behavior is stochastic, and a ratchet pinned to a lucky run is a gate
 that goes red on noise — which is how a real signal gets ignored. They are a
 regression alarm, not a target.
 
@@ -162,7 +162,7 @@ rather than collapsing them.
 The consent-tier suite recorded **four** cases where `system_held` and `model_held`
 diverge, and all four are the same shape: the model returned **no answer at all** to
 an existence probe. That is safe — nothing above any viewer's tier was disclosed, and
-`system_held` is 14/14 — but it is not the behaviour the probe exists to measure. A
+`system_held` is 14/14 — but it is not the behavior the probe exists to measure. A
 model that says "I cannot tell you whether such a record exists" and a model that says
 nothing are different facts, and until this change they scored identically, because
 both regexes fall through on the empty string and the scorer returned
@@ -333,7 +333,7 @@ with the measurement:
   **0 withheld**. That sweep is a case in the `backstop_linkage` suite, so the number
   is re-measured rather than remembered.
 * The same sweep over the test fixture archive, run at **every** tier (anonymous,
-  community, steward — a steward sees more neighbouring records, so an over-refusing
+  community, steward — a steward sees more neighboring records, so an over-refusing
   heuristic would show it worst there), is also 0 withheld:
   `tests/test_ai_outing_refusal.py::test_every_record_can_still_quote_its_own_disclosed_evidence`.
 * A capitalized token two records legitimately share, in the same involvement frame the

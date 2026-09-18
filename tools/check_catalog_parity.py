@@ -34,7 +34,7 @@ repair, and wrong in the direction that gets a gate switched off. Measured on th
 repository: 2 of 273 Spanish and 6 of 273 French msgstrs are byte-identical to
 their msgid, and every one of them is correct — ``No`` in Spanish; ``Agent``,
 ``Date``, ``Description``, ``Pagination``, ``Type`` and ``Types`` in French. So the
-rule has three ways out, and only the third is a judgement:
+rule has three ways out, and only the third is a judgment:
 
 1. **Nothing to translate.** With ``{placeholders}`` removed the msgid has no
    alphabetic character — a bare number, a lone ``{when}``.

@@ -1,4 +1,4 @@
-"""Pure pagination maths for the browse and search views (backlog: scale + a11y).
+"""Pure pagination math for the browse and search views (backlog: scale + a11y).
 
 The browse page rendered *every* listable record into one response. That does not
 scale as a collection grows, and a single enormous page is itself an accessibility
@@ -7,7 +7,7 @@ slow or metered connection pays for all of them at once. This module slices a re
 set into bounded pages.
 
 It is deliberately tiny and pure — no I/O, no request state, no clock — so the paging
-maths is trivially testable and deterministic. :func:`paginate` *clamps* an
+math is trivially testable and deterministic. :func:`paginate` *clamps* an
 out-of-range page rather than raising, so a hand-edited or stale ``?page=`` can never
 500 the server or reveal anything; it simply lands on the nearest real page. The
 slice is taken from whatever the caller already disclosed, so pagination can neither
