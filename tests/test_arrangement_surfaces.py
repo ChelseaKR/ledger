@@ -579,12 +579,12 @@ def test_a_community_only_ceiling_changes_no_anonymous_surface(tmp_path: Path) -
             ),
             now=_NOW,
         )
-        # Both archives hold one ordinary public record. Without it the
-        # comparison would be "three hidden records" against "no records at
-        # all", and `/status` tells those two apart on `main` already — see
-        # `test_status_already_distinguishes_an_empty_archive_from_a_hidden_one`
-        # below. That is a pre-existing oracle and the owner's to decide; this
-        # test is about whether *arrangement* adds one.
+        # Both archives hold one ordinary public record, so this compares "a
+        # listed record plus three hidden ones" with "a listed record alone".
+        # "Three hidden records" against "no records at all" is the emptiness
+        # oracle `/status` used to answer, held closed on its own by
+        # `test_status_answers_an_empty_archive_and_a_hidden_one_identically`
+        # below; this test is about whether *arrangement* adds a channel.
         archive.ingest(
             {"flyer.txt": payload},
             _record("rec-open", "An open flyer", policy=AccessPolicy.PUBLIC),
@@ -632,30 +632,22 @@ def test_a_hidden_container_page_answers_exactly_as_an_absent_one(tmp_path: Path
     assert "March raid" not in hidden_body
 
 
-def test_status_already_distinguishes_an_empty_archive_from_a_hidden_one(
+def test_status_answers_an_empty_archive_and_a_hidden_one_identically(
     tmp_path: Path,
 ) -> None:
-    """A pre-existing oracle on `main`, measured here and deliberately NOT fixed.
+    """The emptiness oracle on `/status`, closed (owner decision, 2026-09-18).
 
-    `/status`'s anonymous headline is derived from a fixity sweep over **every**
-    bag, not over the records the caller may list. So an archive holding
-    nothing says *"This archive holds nothing yet."* and an archive whose
-    records are all invisible to this reader says *"Everything is healthy."*
-    That is the emptiness oracle `/healthz`'s docstring spends a paragraph
-    refusing, on the neighbouring route, and it arrived with #218. It is
-    recorded in `_drain-2026-09-06/OWNER-DECISIONS.md` §H item 4 as the owner's
-    call, because closing it means either gating `/status`'s headlines to
-    stewards or relaxing `/healthz`'s reasoning to match — a published-contract
-    decision either way.
+    `/status`'s headline is derived from a fixity sweep over **every** bag, not
+    over the records the caller may list. Until this was closed, an archive
+    holding nothing said *"This archive holds nothing yet."* to an outsider and
+    an archive whose records were all invisible to them said *"Everything is
+    healthy."* That is the oracle `/healthz`'s docstring spends a paragraph
+    refusing, on the neighboring route, and it arrived with #218. This test used
+    to pin it, so that closing it would turn it red; it now pins the closure.
 
-    #202 does not create it and does not widen what it distinguishes: the same
-    two sentences, for the same reason (is there anything in the store?). What
-    it adds is one more way for a record to be invisible while still counting
-    toward "not empty" — a container ceiling, alongside a sealed record.
-
-    This test exists so that fact is written down and pinned, rather than
-    surfacing as an unexplained exclusion in the differentials above. If the
-    owner closes the oracle, this test is what will go red and say so.
+    A container ceiling is one way for a record to be invisible while still
+    counting toward "not empty", alongside a sealed record, so both archives here
+    are otherwise identical and the hidden one hides its only record that way.
     """
     empty = _archive(tmp_path / "empty")
     hidden = _archive(tmp_path / "hidden")
@@ -674,6 +666,8 @@ def test_status_already_distinguishes_an_empty_archive_from_a_hidden_one(
     )
     assert hidden.browse(anonymous(), now=_NOW) == []
     assert empty.browse(anonymous(), now=_NOW) == []
+    # Floor: the hidden archive really does hold a record, for someone entitled to it.
+    assert len(hidden.browse(steward("warden"), now=_NOW)) == 1
 
     server_empty, server_hidden = _serve(empty), _serve(hidden)
     port_empty, port_hidden = next(server_empty), next(server_hidden)
@@ -685,10 +679,14 @@ def test_status_already_distinguishes_an_empty_archive_from_a_hidden_one(
             with pytest.raises(StopIteration):
                 next(server)
 
-    assert "This archive holds nothing yet." in empty_body
-    assert "Everything is healthy." in hidden_body
-    # Whatever else it says, it still publishes no count to an outsider.
-    assert "1 of 1" not in hidden_body
+    ports = (port_empty, port_hidden)
+    assert _normalize(empty_body, ports) == _normalize(hidden_body, ports)
+    assert "Nothing public to report on." in empty_body
+    # Neither of the two sentences that told them apart, and no count.
+    for body in (empty_body, hidden_body):
+        assert "This archive holds nothing yet." not in body
+        assert "Everything is healthy." not in body
+        assert "1 of 1" not in body
 
 
 def test_a_record_with_no_visible_placement_renders_no_breadcrumb_at_all(

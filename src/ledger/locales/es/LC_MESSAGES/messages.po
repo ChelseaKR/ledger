@@ -1688,3 +1688,9 @@ msgstr "Parte de"
 
 msgid "Level"
 msgstr "Nivel"
+
+msgid "Nothing public to report on."
+msgstr "No hay nada público sobre lo que informar."
+
+msgid "No record here is visible to you, so there is nothing for this page to report. Whether the archive holds records you cannot see, and whether they passed their integrity checks, is shown only to its stewards."
+msgstr "Aquí no hay ningún registro visible para usted, así que esta página no tiene nada que informar. Si el archivo contiene registros que usted no puede ver, y si superaron sus comprobaciones de integridad, solo se muestra a las personas responsables."

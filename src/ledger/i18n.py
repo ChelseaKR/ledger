@@ -213,6 +213,14 @@ def _messages(translation: gettext.NullTranslations) -> dict[str, str]:
         "status_detail_empty": _(
             "There is no record package here to check, so no integrity check has run. An empty archive is not a verified one."
         ),
+        # What a non-steward who can list no records is told when nothing has
+        # failed, in place of both "empty" and "verified" (#218; owner decision
+        # 2026-09-18). True of an empty archive and of one whose records are all
+        # hidden from this reader, so it cannot tell the two apart for them.
+        "status_headline_public_none": _("Nothing public to report on."),
+        "status_detail_public_none": _(
+            "No record here is visible to you, so there is nothing for this page to report. Whether the archive holds records you cannot see, and whether they passed their integrity checks, is shown only to its stewards."
+        ),
         "status_detail_counts": _(
             "{passed} of {total} record package(s) passed every integrity check ({files} file checksum(s) verified)."
         ),

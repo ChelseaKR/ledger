@@ -2318,6 +2318,30 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             }
         self._send_json(code, body)
 
+    def _status_slug_for(self, grant: Grant, slug: str) -> str:
+        """The verdict word a viewer is told, given the whole-archive ``slug``.
+
+        THE EMPTINESS ORACLE (#218; owner decision 2026-09-18: close it). The
+        verdict is a sweep over every bag, sealed ones included, so a reader who
+        can list nothing was told *"This archive holds nothing yet."* over an
+        empty archive and *"Everything is healthy."* over one whose records are all
+        hidden from them — whether hidden records exist, answered by the headline.
+        ``/healthz`` refuses the same oracle by answering an empty archive exactly
+        as a healthy one; this page could not copy that literally, because "every
+        stored record passed" over nothing is the vacuous claim #208 removed.
+
+        So a non-steward who can list no records, over an archive where nothing
+        has failed, is told the one sentence true of both: there is nothing public
+        here to report on, and whether there is anything else is for the stewards.
+        A reader who can list a record already knows the archive is not empty, so
+        the verdict they are told is unchanged; and a failure is still said to
+        everyone, as ``/healthz`` still answers 503 to everyone. A steward, who
+        sees the counts, is told the precise word.
+        """
+        if grant.is_steward or slug not in ("empty", "verified"):
+            return slug
+        return slug if self._archive().browse(grant) else "public_none"
+
     def _handle_status(self) -> None:
         """``GET /status`` — a human-readable health page (not raw JSON).
 
@@ -2375,10 +2399,11 @@ class ArchiveRequestHandler(http.server.BaseHTTPRequestHandler):
             # fifth, since #188: an archive of physical holdings has nothing to
             # check either, and for an entirely different and entirely healthy
             # reason.
-            slug = (
+            slug = self._status_slug_for(
+                grant,
                 "empty"
                 if (verdict is FixityStatus.UNVERIFIED and not total)
-                else verdict.name.lower()
+                else verdict.name.lower(),
             )
             headline = i18n.t(lang, f"status_headline_{slug}")
             # Absolute counts include sealed records, so the exact numbers are shown

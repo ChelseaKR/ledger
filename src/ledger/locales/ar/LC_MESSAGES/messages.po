@@ -1627,3 +1627,9 @@ msgstr "جزء من"
 
 msgid "Level"
 msgstr "المستوى"
+
+msgid "Nothing public to report on."
+msgstr "لا شيء علنيّ للإبلاغ عنه."
+
+msgid "No record here is visible to you, so there is nothing for this page to report. Whether the archive holds records you cannot see, and whether they passed their integrity checks, is shown only to its stewards."
+msgstr "لا يوجد هنا أي سجل مرئي لك، لذا ليس لدى هذه الصفحة ما تُبلغ عنه. أمّا ما إذا كان الأرشيف يحتوي على سجلات لا يمكنك رؤيتها، وما إذا كانت قد اجتازت فحوص السلامة، فلا يُعرض إلا على المشرفين عليه."

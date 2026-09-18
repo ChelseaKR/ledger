@@ -170,13 +170,29 @@ def seeded_site(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[str
 
 
 def test_status_over_an_empty_archive_does_not_claim_health(empty_site: str) -> None:
-    """The live defect: 0 bags rendered "Everything is healthy.\""""
+    """The live defect: 0 bags rendered "Everything is healthy.\"
+
+    To an outsider it now says there is nothing public to report on, which is
+    also what it says over an archive whose records are all hidden from them
+    (#218's emptiness oracle, closed by the owner on 2026-09-18). It still claims
+    no health it cannot show.
+    """
     body = _get(empty_site, "/status")
     assert "Archive status" in body, "the status page did not render; this proves nothing"
-    assert "This archive holds nothing yet." in body
-    assert "no integrity check has run" in body
+    assert "Nothing public to report on." in body
     assert "Everything is healthy." not in body
     assert "Every stored record passed its most recent integrity check." not in body
+    # "Holds nothing" is a claim about the whole archive, sealed records included,
+    # and only a steward is told it (below).
+    assert "This archive holds nothing yet." not in body
+
+
+def test_a_steward_is_told_an_empty_archive_holds_nothing(empty_site: str) -> None:
+    """The precise word, for the one reader already permitted to know the size."""
+    body = _get(empty_site, "/status", steward=True)
+    assert "This archive holds nothing yet." in body
+    assert "no integrity check has run" in body
+    assert "Nothing public to report on." not in body
 
 
 def test_status_over_an_empty_archive_does_not_claim_damage_either(empty_site: str) -> None:

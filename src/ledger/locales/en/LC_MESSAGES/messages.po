@@ -1630,3 +1630,9 @@ msgstr "Part of"
 
 msgid "Level"
 msgstr "Level"
+
+msgid "Nothing public to report on."
+msgstr "Nothing public to report on."
+
+msgid "No record here is visible to you, so there is nothing for this page to report. Whether the archive holds records you cannot see, and whether they passed their integrity checks, is shown only to its stewards."
+msgstr "No record here is visible to you, so there is nothing for this page to report. Whether the archive holds records you cannot see, and whether they passed their integrity checks, is shown only to its stewards."

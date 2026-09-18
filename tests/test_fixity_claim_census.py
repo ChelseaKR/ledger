@@ -354,9 +354,17 @@ def test_the_surfaces_fixed_for_208_are_held(census: dict[str, tuple[str, str]])
     assert empty_audit.startswith("NOTHING AUDITED")
     assert healthy_audit.startswith("PASS")
 
+    # An outsider is not told "holds nothing yet" since the emptiness oracle was
+    # closed (owner decision, 2026-09-18): the sentence they get is also what an
+    # archive whose records are all hidden from them says. It is still not a
+    # claim of health, which is the #208 property.
     empty_status, healthy_status = census["GET /status (anonymous)"]
-    assert "holds nothing yet" in empty_status
+    assert "Nothing public to report on" in empty_status
+    assert "healthy" not in empty_status
     assert "healthy" in healthy_status
+
+    empty_steward, _healthy_steward = census["GET /status (steward)"]
+    assert "holds nothing yet" in empty_steward
 
 
 # --- the denominator --------------------------------------------------------

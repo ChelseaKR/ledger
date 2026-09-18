@@ -628,6 +628,12 @@ msgstr ""
 msgid "No open requests."
 msgstr ""
 
+msgid ""
+"No record here is visible to you, so there is nothing for this page to "
+"report. Whether the archive holds records you cannot see, and whether "
+"they passed their integrity checks, is shown only to its stewards."
+msgstr ""
+
 msgid "No recorded events yet."
 msgstr ""
 
@@ -664,6 +670,9 @@ msgid "Not shown publicly."
 msgstr ""
 
 msgid "Notebook"
+msgstr ""
+
+msgid "Nothing public to report on."
 msgstr ""
 
 msgid "Object"
