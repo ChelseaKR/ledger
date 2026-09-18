@@ -469,7 +469,7 @@ The site binds to `127.0.0.1` by default.
 
 ### 1.11 CLI: `cli.py` and `config.py`
 
-`cli.py` is the one discoverable steward surface: 43 subcommands, which `ledger --help`
+`cli.py` is the one discoverable steward surface: 44 subcommands, which `ledger --help`
 lists in full — `init`, `ingest`, `browse`, `show`, `serve`, `audit`, `policy`,
 `takedown`, `replicas`, `heal`, `surrogate`, `add-location`, `demo`, `acr`, and the
 `grant`, `vault`, `mutual-aid`, `transparency`, `moderation`, `arrange`, and `session` groups
