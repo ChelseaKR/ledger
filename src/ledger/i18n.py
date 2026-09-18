@@ -623,13 +623,18 @@ def _messages(translation: gettext.NullTranslations) -> dict[str, str]:
         "holding_extent": _("Extent"),
         "holding_condition": _("Condition"),
         "holding_custody": _("Custody"),
-        # The three custody states. "Recorded, not shown" and "not recorded" are
-        # deliberately different sentences: a reader must be able to tell an
-        # archive that knows who is keeping a box from one that has lost track of
-        # it, without either one naming a person.
+        # The three custody states an insider sees. "Recorded, not shown" and "not
+        # recorded" are deliberately different sentences: a steward must be able to
+        # tell an archive that knows who is keeping a box from one that has lost
+        # track of it, without either one naming a person.
         "custody_disclosed": _("Recorded and shown below."),
         "custody_withheld": _("Recorded. Not shown at your level of access."),
         "custody_not_recorded": _("Not recorded — nobody has written down who is keeping this."),
+        # The one custody state an outsider sees, in place of both of the two
+        # above (owner decision, 2026-09-18). True whether or not a custodian was
+        # recorded, so it tells an anonymous reader neither that somebody is
+        # keeping the object nor that nobody is.
+        "custody_not_shown": _("Not shown publicly."),
         "holding_no_fixity": _(
             "ledger holds no copy of this object, so it cannot check whether it is intact. Its condition is whatever the last person to look at it wrote down."
         ),

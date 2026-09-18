@@ -22,9 +22,11 @@ Three properties carry most of the weight here.
    access still fails on the payload it continues to declare.
 3. **Custody is on the no-outing path.** Where the object is and who keeps it are
    ordinary sealed ``custody.*`` fields, so they go through the one disclosure
-   decision point rather than a second one beside it. What every viewer sees is a
-   three-state *word* — recorded-and-shown, recorded-and-withheld, not-recorded —
-   which says whether a fact exists without ever saying what it is.
+   decision point rather than a second one beside it. What a steward or community
+   member sees is a three-state *word* — recorded-and-shown, recorded-and-withheld,
+   not-recorded — which says whether a fact exists without ever saying what it is.
+   An outsider sees one neutral word for the last two, and gets the same bytes for
+   both (owner decision, 2026-09-18).
 
 The migration is deliberately invisible: a manifest with no ``holding_kind`` reads
 as ``digital``, and a digital record serializes byte-for-byte as it did before this
@@ -44,7 +46,8 @@ from typing import Any
 import pytest
 
 from ledger import i18n, render
-from ledger.access.grants import anonymous, issue_grant_token, steward
+from ledger.access import policy as policy_module
+from ledger.access.grants import anonymous, community_member, issue_grant_token, steward
 from ledger.access.policy import disclose
 from ledger.bag import validate_bag
 from ledger.config import Config
@@ -71,6 +74,7 @@ from ledger.models import (
     AccessPolicy,
     ContentAddress,
     CustodyState,
+    DisclosedRecord,
     DublinCore,
     Field,
     FixityResult,
@@ -81,9 +85,10 @@ from ledger.models import (
     PhysicalHolding,
     PremisEventType,
     Record,
+    Redaction,
     custody_fields,
 )
-from ledger.print_edition import build_print_edition
+from ledger.print_edition import CUSTODY_SENTENCES, build_print_edition
 from ledger.succession import build_handoff
 
 pytestmark = pytest.mark.preservation
@@ -529,14 +534,14 @@ def test_a_steward_with_a_grant_does_see_the_custody_values(
     assert disclosed.custody_state is CustodyState.DISCLOSED
 
 
-def test_the_custody_state_word_has_three_distinct_values(
+def test_an_insider_is_told_which_of_three_custody_states_a_record_is_in(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Three states, and the third is the one a collapse would lose.
+    """Three states for an insider, and the third is the one a collapse would lose.
 
     "Recorded but not shown to you" and "nobody wrote it down" are different facts,
-    and rendering the second as the first publishes *somebody is looking after
-    this* over a record where nobody is.
+    and rendering the second as the first to a steward publishes *somebody is
+    looking after this* over a record where nobody is.
     """
     archive = _archive(tmp_path / "arc", monkeypatch)
     with_custody = _physical_record()
@@ -549,19 +554,252 @@ def test_the_custody_state_word_has_three_distinct_values(
     assert stored_with.has_custody()
     assert not stored_without.has_custody()
 
-    assert disclose(stored_with, anonymous(), _NOW).custody_state is CustodyState.WITHHELD
+    member = community_member("m")
+    assert disclose(stored_with, member, _NOW).custody_state is CustodyState.WITHHELD
     assert disclose(stored_with, steward("w"), _NOW).custody_state is CustodyState.DISCLOSED
-    assert disclose(stored_without, anonymous(), _NOW).custody_state is CustodyState.NOT_RECORDED
+    assert disclose(stored_without, member, _NOW).custody_state is CustodyState.NOT_RECORDED
     assert disclose(stored_without, steward("w"), _NOW).custody_state is CustodyState.NOT_RECORDED
+
+
+def test_an_outsider_is_told_one_neutral_custody_state_either_way(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The owner's decision (2026-09-18): one neutral word for an anonymous reader.
+
+    Telling an outsider "recorded, not shown to you" tells them somebody is keeping
+    the object. "Not shown publicly" is true whether or not anybody wrote a
+    custodian down, so it says neither.
+    """
+    archive = _archive(tmp_path / "arc", monkeypatch)
+    with_custody = _physical_record()
+    without = _physical_record("An orphaned box of negatives", custody=False)
+    archive.ingest({}, with_custody, now=_NOW)
+    archive.ingest({}, without, now=_NOW)
+
+    for stored in (archive.get(with_custody.record_id), archive.get(without.record_id)):
+        disclosed = disclose(stored, anonymous(), _NOW)
+        assert disclosed.custody_state is CustodyState.NOT_SHOWN
+        assert not {r.name for r in disclosed.withheld} & {
+            CUSTODY_CUSTODIAN_FIELD,
+            CUSTODY_LOCATION_FIELD,
+        }, "a withheld custody field would still be counted on the outsider's page"
+
+
+def test_custody_an_outsider_may_see_is_still_shown_to_them() -> None:
+    """The collapse is over what is hidden, never over what is public: public
+    custody is on the page, so the word says nothing the values do not."""
+    fields = [
+        Field("summary", "Leaflets.", AccessPolicy.PUBLIC),
+        *custody_fields(
+            location="The library", custodian="Archive desk", policy=AccessPolicy.PUBLIC
+        ),
+    ]
+    record = Record(
+        title="A box at the library",
+        default_policy=AccessPolicy.PUBLIC,
+        fields=fields,
+        holding_kind=HoldingKind.PHYSICAL,
+        physical=PhysicalHolding(format=PhysicalFormat.FLYER, extent="1 box"),
+    )
+    disclosed = disclose(record, anonymous(), _NOW)
+    assert disclosed.custody_state is CustodyState.DISCLOSED
+    assert disclosed.fields[CUSTODY_CUSTODIAN_FIELD] == "Archive desk"
+
+
+def test_every_custody_state_has_its_own_sentence_on_every_surface() -> None:
+    """The offline sentences and the web keys each cover every state, and no two
+    states share a sentence, so no surface can render one state as another."""
+    offline = [CUSTODY_SENTENCES[state] for state in CustodyState]
+    web = [render._custody_sentence(_state_probe(state), lang="en") for state in CustodyState]
+    assert len(set(offline)) == len(set(web)) == len(CustodyState)
+
+
+def _state_probe(state: CustodyState) -> DisclosedRecord:
+    """A disclosed record whose derived custody state is ``state``."""
+    fields = {CUSTODY_CUSTODIAN_FIELD: "x"} if state is CustodyState.DISCLOSED else {}
+    withheld = (
+        (Redaction(CUSTODY_CUSTODIAN_FIELD, "sealed", "sealed"),)
+        if state is CustodyState.WITHHELD
+        else ()
+    )
+    probe = DisclosedRecord(
+        record_id="r",
+        title="t",
+        dublin_core={},
+        fields=fields,
+        payloads=(),
+        content_warnings=(),
+        withheld=withheld,
+        outsider=state is CustodyState.NOT_SHOWN,
+    )
+    assert probe.custody_state is state
+    return probe
 
 
 def test_the_custody_state_word_is_derived_from_the_projection_not_supplied() -> None:
     """It cannot disagree with the values beside it, because both come from one place."""
     record = _physical_record()
-    withheld = disclose(record, anonymous(), _NOW)
+    withheld = disclose(record, community_member("m"), _NOW)
     assert withheld.custody_state is CustodyState.WITHHELD
     assert CUSTODY_CUSTODIAN_FIELD not in withheld.fields
     assert CUSTODY_CUSTODIAN_FIELD in {r.name for r in withheld.withheld}
+
+
+# --- an outsider's view of withheld custody is the view of no custody -------
+#
+# The owner's decision of 2026-09-18, held as bytes rather than as a state value:
+# two archives that differ ONLY in whether one record's custody was recorded
+# (sealed) must hand an anonymous reader the same bytes on every surface that
+# renders the record. A state-value assertion alone would pass over a page that
+# still said "2 parts withheld" under the neutral line.
+
+_TWIN_ID = "rec-shoebox"
+
+
+def _custody_twins(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Archive, Archive]:
+    """Two archives, identical except that one record's custody was recorded."""
+    withheld = _archive(tmp_path / "withheld", monkeypatch)
+    unrecorded = _archive(tmp_path / "unrecorded", monkeypatch)
+    withheld.ingest({}, _physical_record(record_id=_TWIN_ID), now=_NOW)
+    unrecorded.ingest({}, _physical_record(record_id=_TWIN_ID, custody=False), now=_NOW)
+    assert withheld.get(_TWIN_ID).has_custody()
+    assert not unrecorded.get(_TWIN_ID).has_custody()
+    return withheld, unrecorded
+
+
+def _outsider_surfaces(archive: Archive, out: Path) -> dict[str, str]:
+    """Everything an outsider can be handed about the twin record, as text."""
+    grant = anonymous()
+    disclosed = disclose(archive.get(_TWIN_ID), grant, _NOW)
+    surfaces = {
+        "custody state": disclosed.custody_state.value,
+        "to_dict(outsider form)": json.dumps(disclosed.to_dict(withheld_reasons=False)),
+        "to_dict(insider form)": json.dumps(disclosed.to_dict()),
+        "browse list": render._records_list_html([disclosed]),
+        "browse table": render._records_table_html([disclosed]),
+    }
+    for lang in ("en", "es", "fr", "ar"):
+        surfaces[f"record page ({lang})"] = render._record_main_html(
+            disclosed, proceed=True, insider=False, lang=lang
+        )
+    booklet = out / "booklet.html"
+    build_print_edition(archive, booklet, base_url="https://example.test", now=_NOW)
+    surfaces["print edition"] = booklet.read_text(encoding="utf-8")
+    drive = out / "drive"
+    build_export_drive(archive, drive, grant=grant, now=_NOW)
+    for path in sorted(p for p in drive.rglob("*") if p.is_file()):
+        surfaces[f"courier package: {path.relative_to(drive)}"] = path.read_bytes().hex()
+    return surfaces
+
+
+def _differing(a: dict[str, str], b: dict[str, str]) -> set[str]:
+    return {name for name in a.keys() | b.keys() if a.get(name) != b.get(name)}
+
+
+def test_an_outsider_gets_the_same_bytes_for_withheld_and_unrecorded_custody(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    withheld, unrecorded = _custody_twins(tmp_path, monkeypatch)
+    a = _outsider_surfaces(withheld, tmp_path / "out-withheld")
+    b = _outsider_surfaces(unrecorded, tmp_path / "out-unrecorded")
+
+    assert _differing(a, b) == set()
+    # Floors, so the comparison is not two empty strings agreeing: the neutral
+    # line is on the page, and the courier package really was written.
+    assert i18n.t("en", "custody_not_shown") in a["record page (en)"]
+    assert "Not shown publicly." in a["print edition"]
+    assert sum(name.startswith("courier package:") for name in a) >= 3
+
+
+def test_an_outsider_gets_the_same_bytes_over_http(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The same property through the running server, where the grant is resolved
+    from the request rather than handed to `disclose` by the test."""
+    withheld, unrecorded = _custody_twins(tmp_path, monkeypatch)
+    servers = [_serve(withheld, tmp_path, "withheld"), _serve(unrecorded, tmp_path, "unrecorded")]
+    bases = [next(server) for server in servers]
+    try:
+        routes = (f"/record/{_TWIN_ID}", f"/api/record/{_TWIN_ID}", "/", "/api/records")
+        bodies = [
+            {route: _get(base, route)[1].replace(base, "BASE") for route in routes}
+            for base in bases
+        ]
+    finally:
+        for server in servers:
+            server.close()
+    assert _differing(bodies[0], bodies[1]) == set()
+    assert i18n.t("en", "custody_not_shown") in bodies[0][f"/record/{_TWIN_ID}"]
+    assert json.loads(bodies[0][f"/api/record/{_TWIN_ID}"])["custody_state"] == "not-shown"
+
+
+def test_the_twin_comparison_catches_the_three_state_answer_returning(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The negative control, kept in the suite.
+
+    With the collapse switched off (every viewer treated as an insider, which is
+    what this branch did before the owner's decision), the same comparison must
+    find the difference. A comparison that could not would pass over any
+    regression, including one that restored the old answer.
+    """
+    monkeypatch.setattr(policy_module, "is_insider", lambda _grant: True)
+    withheld, unrecorded = _custody_twins(tmp_path, monkeypatch)
+    a = _outsider_surfaces(withheld, tmp_path / "out-withheld")
+    b = _outsider_surfaces(unrecorded, tmp_path / "out-unrecorded")
+
+    assert {
+        "custody state",
+        "to_dict(outsider form)",
+        "record page (en)",
+        "print edition",
+    } <= _differing(a, b)
+    assert a["custody state"] == CustodyState.WITHHELD.value
+    assert b["custody state"] == CustodyState.NOT_RECORDED.value
+
+
+def test_a_steward_still_sees_all_three_custody_states(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The other half of the decision: stewards keep the distinction.
+
+    Recorded and shown, recorded and sealed even from a steward, and never
+    recorded: three records, three different sentences on a steward's page, and
+    the outsider's word on none of them.
+    """
+    archive = _archive(tmp_path / "arc", monkeypatch)
+    shown = _physical_record("Shown", record_id="rec-shown")
+    sealed = _physical_record("Sealed", record_id="rec-sealed", custody=False)
+    sealed.fields.extend(
+        custody_fields(location=_SENTINEL_LOCATION, custodian="x", policy=AccessPolicy.SEALED)
+    )
+    unrecorded = _physical_record("Unrecorded", record_id="rec-unrecorded", custody=False)
+    for record in (shown, sealed, unrecorded):
+        archive.ingest({}, record, now=_NOW)
+
+    ward = steward("warden")
+    states = {
+        rid: disclose(archive.get(rid), ward, _NOW).custody_state
+        for rid in ("rec-shown", "rec-sealed", "rec-unrecorded")
+    }
+    assert states == {
+        "rec-shown": CustodyState.DISCLOSED,
+        "rec-sealed": CustodyState.WITHHELD,
+        "rec-unrecorded": CustodyState.NOT_RECORDED,
+    }
+    site = _serve(archive, tmp_path, "steward")
+    base = next(site)
+    try:
+        pages = {
+            rid: _get(base, f"/record/{rid}", steward_token=True)[1]
+            for rid in ("rec-shown", "rec-sealed", "rec-unrecorded")
+        }
+    finally:
+        site.close()
+    assert i18n.t("en", "custody_disclosed") in pages["rec-shown"]
+    assert i18n.t("en", "custody_withheld") in pages["rec-sealed"]
+    assert i18n.t("en", "custody_not_recorded") in pages["rec-unrecorded"]
+    assert not any(i18n.t("en", "custody_not_shown") in page for page in pages.values())
 
 
 # --- what browse and the record page render ---------------------------------
@@ -600,13 +838,14 @@ def test_the_badge_is_translated_in_the_rendered_page_not_only_at_the_seam(lang:
 
 def test_the_record_page_renders_format_extent_and_the_custody_state_word() -> None:
     """Done-when 1: browse and the record view render the format, the extent, and
-    the custody state word."""
+    the custody state word (for an outsider, the neutral one)."""
     disclosed = disclose(_physical_record(), anonymous(), _NOW)
     page = render._record_main_html(disclosed, proceed=True)
     assert i18n.t("en", "holding_heading") in page
     assert i18n.physical_format_label("en", "flyer") in page
     assert "1 box, ~380 flyers" in page
-    assert i18n.t("en", "custody_withheld") in page
+    assert i18n.t("en", "custody_not_shown") in page
+    assert i18n.t("en", "custody_withheld") not in page
     # The line that stops the page reading like a record whose files verified.
     assert i18n.t("en", "holding_no_fixity") in page
 

@@ -1582,6 +1582,9 @@ msgstr "Formato"
 msgid "Not recorded — nobody has written down who is keeping this."
 msgstr "Sin registrar: nadie ha anotado quién lo guarda."
 
+msgid "Not shown publicly."
+msgstr "No se muestra públicamente."
+
 msgid "Notebook"
 msgstr "Cuaderno"
 

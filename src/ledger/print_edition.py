@@ -169,13 +169,14 @@ def _holding_html(record: DisclosedRecord) -> str:
     be corrected, and a reader holding a printed catalog two years from now has
     no way to check anything against the live site. So the entry states, in words
     on the page, that this is an object the archive does not hold a copy of, what
-    it is, how much there is, and whether anyone recorded who is keeping it.
+    it is, and how much there is.
 
     Custody *values* are never here. The booklet is built under the anonymous
     grant, so a sealed ``custody.*`` field never reached
     :attr:`~ledger.models.DisclosedRecord.fields` in the first place — this block
-    prints only the state word, which is the same three-state sentence the web
-    record page shows.
+    prints only the state word, which is the same sentence the web record page
+    shows an outsider: "Not shown publicly." whether or not a custodian was
+    recorded (owner decision, 2026-09-18).
     """
     if not record.holding_kind.is_physical or record.physical is None:
         return ""
@@ -218,17 +219,21 @@ def _fixity_scope_note(record: DisclosedRecord) -> str:
     )
 
 
-#: The three custody sentences, in English, for ledger's OFFLINE artifacts — the
+#: The custody sentences, in English, for ledger's OFFLINE artifacts — the
 #: print booklet and the courier package. Both are English-only today (neither
 #: renders gettext chrome), so these are literals here rather than catalog keys;
 #: the web surface's ``custody_*`` keys are the translated pair. One dict, shared
-#: by both offline surfaces on purpose: two copies of three sentences is two
+#: by both offline surfaces on purpose: two copies of these sentences is two
 #: copies that can come to disagree about what "withheld" means.
-#: ``tests/test_physical_holdings.py`` holds all three states to being distinct.
+#: ``tests/test_physical_holdings.py`` holds every state to being distinct.
 CUSTODY_SENTENCES: dict[CustodyState, str] = {
     CustodyState.DISCLOSED: "Recorded and shown above.",
     CustodyState.WITHHELD: "Recorded. Not shown in a public booklet.",
     CustodyState.NOT_RECORDED: "Not recorded — nobody has written down who is keeping this.",
+    # What an outsider is told in place of the two above (owner decision,
+    # 2026-09-18). The booklet is always built under the anonymous grant, so this
+    # is the only one of the two it prints unless custody itself is public.
+    CustodyState.NOT_SHOWN: "Not shown publicly.",
 }
 
 

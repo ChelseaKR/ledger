@@ -502,7 +502,7 @@ class PhysicalFormat(StrEnum):
 
 
 class CustodyState(StrEnum):
-    """What a read path may say about custody, in three states.
+    """What a read path may say about custody: three states to an insider, one to an outsider.
 
     Custody — where the object is and who is keeping it — is the most exposed
     datum in a physical holding: the custodian is often the person whose apartment
@@ -510,8 +510,9 @@ class CustodyState(StrEnum):
     :class:`Field` values that go through the one disclosure decision point
     (:func:`ledger.access.policy.is_visible`), never as a second channel beside it.
 
-    What a viewer sees *about* custody is this word, and it has three values for
-    the reason the rest of this codebase has three-state verdicts:
+    What an **insider** (a steward or a community member) sees *about* custody is
+    one of three words, for the reason the rest of this codebase has three-state
+    verdicts:
 
     * :data:`NOT_RECORDED` — nobody wrote down who is holding it. A real gap in the
       catalog and the thing a steward most needs to see.
@@ -519,18 +520,25 @@ class CustodyState(StrEnum):
     * :data:`DISCLOSED` — this viewer may see it, and the values are in the
       record's disclosed fields.
 
-    Collapsing the first two — always saying "withheld" — would publish "somebody
-    is looking after this" over a record where nobody is, which is this project's
-    named defect (absence rendered as a value) pointed at the one number a steward
-    reads to decide whether a collection is safe. Collapsing them the other way
-    would out the gap only when it is absent. So all three are rendered, to every
-    viewer, and the *values* are gated. The state word says whether a fact was
-    recorded; it never says what the fact is.
+    Collapsing the first two for a steward — always saying "withheld" — would
+    publish "somebody is looking after this" over a record where nobody is, which
+    is this project's named defect (absence rendered as a value) pointed at the one
+    number a steward reads to decide whether a collection is safe.
+
+    An **outsider** is told :data:`NOT_SHOWN` in place of both (owner decision,
+    2026-09-18). Telling an anonymous reader "recorded, not shown to you" tells
+    them that somebody is keeping the object, and how many such records there
+    are, which is a step toward the person #188 exists to protect. "Not shown
+    publicly" is true whether or not anybody wrote a custodian down, so it claims
+    neither. :data:`DISCLOSED` still reaches an outsider when the custody fields
+    themselves are public: the values are on the page then, so the word says
+    nothing they do not.
     """
 
     NOT_RECORDED = "not-recorded"
     WITHHELD = "withheld"
     DISCLOSED = "disclosed"
+    NOT_SHOWN = "not-shown"
 
 
 #: The reserved :class:`Field` names a custody block occupies. Custody deliberately
@@ -818,6 +826,11 @@ class DisclosedRecord:
     # meaning what it meant: a record that says nothing about a holding is digital.
     holding_kind: HoldingKind = HoldingKind.DIGITAL
     physical: PhysicalHolding | None = None
+    # Whether this projection was made for an outsider: neither a steward nor a
+    # community member (:func:`ledger.access.policy.is_insider`). Set only by
+    # `disclose`, from the grant, never by a read path, and never serialized. It
+    # is what lets :attr:`custody_state` answer an outsider with one neutral word.
+    outsider: bool = False
     # #202: the record's arrangement chain, root-first, trimmed to the containers
     # whose own description this viewer may see. Empty for an unarranged record
     # AND for a record whose container is hidden from this viewer — the two are
@@ -832,11 +845,13 @@ class DisclosedRecord:
 
     @property
     def custody_state(self) -> CustodyState:
-        """What this viewer may be told about custody, in three states.
+        """What this viewer may be told about custody.
 
-        Derived from what disclosure actually did, never from a flag a caller could
-        set: :data:`CustodyState.DISCLOSED` when a custody field survived into
-        :attr:`fields`, :data:`CustodyState.WITHHELD` when one was withheld, and
+        Derived from what disclosure actually did, never from a flag a read path
+        could set: :data:`CustodyState.DISCLOSED` when a custody field survived into
+        :attr:`fields`; for an outsider, :data:`CustodyState.NOT_SHOWN` otherwise,
+        whether custody was withheld or never recorded; and for an insider,
+        :data:`CustodyState.WITHHELD` when one was withheld and
         :data:`CustodyState.NOT_RECORDED` when the record carries none at all.
 
         Deriving it here rather than passing it in is what makes it impossible for
@@ -846,6 +861,8 @@ class DisclosedRecord:
         """
         if any(name in CUSTODY_FIELDS for name in self.fields):
             return CustodyState.DISCLOSED
+        if self.outsider:
+            return CustodyState.NOT_SHOWN
         if any(r.name in CUSTODY_FIELDS for r in self.withheld):
             return CustodyState.WITHHELD
         return CustodyState.NOT_RECORDED
@@ -859,11 +876,11 @@ class DisclosedRecord:
         each withheld part is named for a legitimate viewer (honesty, P1-3).
 
         ``holding_kind`` and ``custody_state`` are emitted on **every** response,
-        including the outsider's. Both are facts about what the archive knows, not
-        about who anybody is: the first is already visible as the browse badge, and
-        the second says whether a custodian was recorded without saying who. Hiding
-        the second would publish "somebody is looking after this" over a record
-        where nobody is (#188). ``physical`` is emitted only for a physical holding,
+        including the outsider's. The first is already visible as the browse badge.
+        The second says, to an insider, whether a custodian was recorded without
+        saying who; to an outsider it is ``not-shown`` whether or not one was, so
+        the key's presence is constant and its value answers nothing (#188, owner
+        decision 2026-09-18). ``physical`` is emitted only for a physical holding,
         where it is the description that makes the object findable.
         """
         out: dict[str, object] = {

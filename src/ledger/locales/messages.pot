@@ -660,6 +660,9 @@ msgstr ""
 msgid "Not recorded — nobody has written down who is keeping this."
 msgstr ""
 
+msgid "Not shown publicly."
+msgstr ""
+
 msgid "Notebook"
 msgstr ""
 

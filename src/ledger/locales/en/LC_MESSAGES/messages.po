@@ -1551,6 +1551,9 @@ msgstr "Format"
 msgid "Not recorded — nobody has written down who is keeping this."
 msgstr "Not recorded — nobody has written down who is keeping this."
 
+msgid "Not shown publicly."
+msgstr "Not shown publicly."
+
 msgid "Notebook"
 msgstr "Notebook"
 

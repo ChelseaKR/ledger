@@ -1548,6 +1548,9 @@ msgstr "الشكل المادي"
 msgid "Not recorded — nobody has written down who is keeping this."
 msgstr "غير مسجَّل: لم يدوِّن أحد من يحتفظ به."
 
+msgid "Not shown publicly."
+msgstr "لا تُعرض علنًا."
+
 msgid "Notebook"
 msgstr "دفتر"
 

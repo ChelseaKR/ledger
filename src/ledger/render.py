@@ -17,9 +17,9 @@ from collections.abc import Iterable, Sequence
 from urllib.parse import parse_qsl, quote, urlencode, urlsplit
 
 from ledger import i18n, pagination, search, transparency
+from ledger.access.policy import is_insider
 from ledger.metadata.pid import is_pid
 from ledger.models import (
-    AccessPolicy,
     ContainerLevel,
     CustodyState,
     DisclosedContainer,
@@ -41,8 +41,9 @@ def _is_insider(grant: Grant) -> bool:
 
     An insider is shown *why* each part is withheld (honesty, P1-3); an outsider
     gets only a count, so the set of redaction reasons cannot be scraped as
-    targeting metadata about what a record hides (P2-2)."""
-    return grant.is_steward or AccessPolicy.COMMUNITY in grant.levels
+    targeting metadata about what a record hides (P2-2). The predicate itself
+    lives beside ``disclose``, which uses it too (#188)."""
+    return is_insider(grant)
 
 
 # --- HTML rendering ---------------------------------------------------------
@@ -247,18 +248,20 @@ def _holding_badge_html(record: DisclosedRecord, *, lang: str) -> str:
 
 
 def _custody_sentence(record: DisclosedRecord, *, lang: str) -> str:
-    """The plain-language custody state word for ``record`` (three states).
+    """The plain-language custody state word for ``record``.
 
     Never the custodian, never the location — those are the sealed ``custody.*``
     field values and are disclosed, if at all, by the field loop in
-    :func:`ledger.access.policy.disclose` like any other sealed field. This says
-    only *whether* somebody wrote the fact down, which is the part a reader needs
-    in order to know whether the catalog is complete.
+    :func:`ledger.access.policy.disclose` like any other sealed field. To an
+    insider this says only *whether* somebody wrote the fact down, which is the
+    part a steward needs in order to know whether the catalog is complete. To an
+    outsider it is "Not shown publicly." either way (owner decision, 2026-09-18).
     """
     return {
         CustodyState.DISCLOSED: i18n.t(lang, "custody_disclosed"),
         CustodyState.WITHHELD: i18n.t(lang, "custody_withheld"),
         CustodyState.NOT_RECORDED: i18n.t(lang, "custody_not_recorded"),
+        CustodyState.NOT_SHOWN: i18n.t(lang, "custody_not_shown"),
     }[record.custody_state]
 
 

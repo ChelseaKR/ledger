@@ -93,14 +93,19 @@ central safety decision in the ADR: the cost is that custody is not structurally
 typed and needs a reserved-name rule; the benefit is that there is still exactly one
 place to audit.
 
-**What a viewer is told about custody is a three-state word.**
-`CustodyState` is `DISCLOSED` / `WITHHELD` / `NOT_RECORDED`, derived from what
-disclosure actually did rather than passed in, so it cannot disagree with the values
-beside it. All three are rendered to every viewer, including an anonymous one.
-Collapsing `NOT_RECORDED` into `WITHHELD` would publish *somebody is looking after
-this* over a record where nobody is — the same defect as reporting a physical holding
-as verified, one field along. The word says whether a fact was recorded; it never
-says what the fact is.
+**What an insider is told about custody is a three-state word; an outsider is told
+one.** `CustodyState` is derived from what disclosure actually did rather than
+passed in, so it cannot disagree with the values beside it. A steward or community
+member sees `DISCLOSED` / `WITHHELD` / `NOT_RECORDED`: collapsing `NOT_RECORDED` into
+`WITHHELD` for them would publish *somebody is looking after this* over a record where
+nobody is — the same defect as reporting a physical holding as verified, one field
+along. An outsider sees `NOT_SHOWN` ("Not shown publicly.") for both of the last two,
+and a custody field withheld from them is not counted among the record's withheld
+parts either (owner decision, 2026-09-18). Telling an anonymous reader "recorded, not
+shown to you" tells them somebody is keeping the object; the neutral sentence is true
+either way, and a test holds the outsider's bytes identical for the two cases on every
+surface that renders the record. Custody that is itself public is still `DISCLOSED`
+to everyone. The word never says what the fact is.
 
 **Surrogates are ordinary digital content attached to a holding that stays
 unverifiable.** `Archive.attach_surrogate` stores the bytes, adds them to the bag's

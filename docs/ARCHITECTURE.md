@@ -82,8 +82,10 @@ half of a physical holding — where the object is and who keeps it — is **not
 `PhysicalHolding`: it is carried as ordinary sealed `custody.location` /
 `custody.custodian` `Field`s, so it passes through the one disclosure decision point
 rather than a second one beside it. What a read path shows about custody is
-`CustodyState`, a three-state word (`DISCLOSED` / `WITHHELD` / `NOT_RECORDED`) derived
-from what disclosure actually did, so the word can never disagree with the values. Determinism helpers (`now_iso`, `parse_iso`,
+`CustodyState`, derived from what disclosure actually did, so the word can never
+disagree with the values: a three-state word (`DISCLOSED` / `WITHHELD` /
+`NOT_RECORDED`) for a steward or community member, and `NOT_SHOWN` ("Not shown
+publicly.") for an outsider whether custody was withheld or never recorded. Determinism helpers (`now_iso`, `parse_iso`,
 `canonical_json`) live here too, so any layer that must be reproducible (golden bags,
 audit records) sorts keys and stamps an injected time rather than reaching for the
 wall clock.

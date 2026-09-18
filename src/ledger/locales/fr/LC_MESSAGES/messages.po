@@ -1642,6 +1642,9 @@ msgstr "Support"
 msgid "Not recorded — nobody has written down who is keeping this."
 msgstr "Non consigné : personne n'a noté qui le conserve."
 
+msgid "Not shown publicly."
+msgstr "Non affichée publiquement."
+
 msgid "Notebook"
 msgstr "Carnet"
 

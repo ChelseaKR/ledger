@@ -46,11 +46,16 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ordinary sealed `custody.location` / `custody.custodian` fields, not a structured
   block with a disclosure branch of its own — so they pass through the one decision
   point every other sealed value does, and inherit at-rest encryption, the redaction
-  verb and every existing sentinel with no new read-path code. What a viewer sees is
-  a three-state word (`CustodyState`): recorded-and-shown, recorded-and-withheld, or
-  not-recorded. The third is not collapsed into the second, because saying "withheld"
-  over a record where nobody wrote anything down publishes *somebody is looking after
-  this* about an object nobody is.
+  verb and every existing sentinel with no new read-path code. A steward or community
+  member sees a three-state word (`CustodyState`): recorded-and-shown,
+  recorded-and-withheld, or not-recorded, and the third is not collapsed into the
+  second for them, because saying "withheld" over a record where nobody wrote anything
+  down publishes *somebody is looking after this* about an object nobody is. An
+  anonymous reader sees one neutral line, "Custody: Not shown publicly.", whether
+  custody was withheld or never recorded, and a withheld custody field is not counted
+  among the parts withheld from them (owner decision, 2026-09-18). Their record page,
+  API response, browse views, print booklet and courier package are byte-identical
+  for the two cases, and a test holds that.
 
   The migration is an absence: `holding_kind` and `physical` are omitted from the
   serialized manifest at their defaults, so a record written before this feature

@@ -48,11 +48,19 @@ policy, removable by the redaction verb, and covered by the existing sentinel
 tests. There is no new output boundary to enforce, which is the whole reason for
 carrying them this way.
 
-What every viewer *is* told is a three-state word — `CustodyState`:
-recorded-and-shown, recorded-and-withheld, or not-recorded. That word says whether a
-fact was recorded; it never says what the fact is. The third state is deliberately
-not collapsed into the second: rendering "not recorded" as "withheld" would publish
-*somebody is looking after this* over an object nobody is looking after.
+What a steward or community member *is* told is a three-state word —
+`CustodyState`: recorded-and-shown, recorded-and-withheld, or not-recorded. That word
+says whether a fact was recorded; it never says what the fact is. The third state is
+deliberately not collapsed into the second for them: rendering "not recorded" as
+"withheld" would publish *somebody is looking after this* over an object nobody is
+looking after.
+
+An outsider is told less (owner decision, 2026-09-18). "Recorded, not shown to you"
+tells an anonymous reader that somebody is keeping the object, so they see one
+neutral line, "Not shown publicly.", for both withheld and not-recorded custody, and a
+withheld custody field is left out of the count of parts withheld from them. Their
+view of a record with sealed custody is byte-identical to their view of the same
+record with none.
 
 ## Provenance and lineage
 
