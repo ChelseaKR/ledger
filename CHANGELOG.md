@@ -138,7 +138,7 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   **Nothing is migrated and no bag is rewritten.** Placement is optional forever,
   an unarranged record has an empty chain, and `serialize_record` omits the
   property entirely when there is none — so every manifest written before this
-  change serialises to exactly the bytes it always did.
+  change serializes to exactly the bytes it always did.
 
   **Everything fails closed, and says so.** A dangling placement, a corrupt parent
   link, or a read path that was never given the arrangement all deny the record,

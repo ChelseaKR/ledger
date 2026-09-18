@@ -127,7 +127,7 @@ def deserialize_container(text: str) -> ArchivalContainer:
 
     The inverse of :func:`serialize_container`. Unknown keys are ignored so a
     file written by a newer ledger degrades gracefully (robustness), but an
-    unrecognised ``level`` or ``policy`` is a hard refusal rather than a default:
+    unrecognized ``level`` or ``policy`` is a hard refusal rather than a default:
     guessing a policy is how a seal becomes a disclosure (fail closed).
     """
     raw: object = json.loads(text)
@@ -141,7 +141,7 @@ def deserialize_container(text: str) -> ArchivalContainer:
             str(data.get("records_policy", AccessPolicy.SEALED_UNTIL.value))
         )
     except ValueError as exc:  # an unknown enum member, never a value we may guess
-        raise LedgerError("container manifest carries an unrecognised level or policy") from exc
+        raise LedgerError("container manifest carries an unrecognized level or policy") from exc
     return ArchivalContainer(
         container_id=str(data.get("container_id", "")),
         title=str(data.get("title", "")),
@@ -205,7 +205,7 @@ class Arrangement:
         """The root-first chain from the top collection down to ``container_id``.
 
         ``()`` for ``None`` (an unarranged record has an empty chain, and an empty
-        AND is permissive — that is the pre-#202 behaviour, unchanged).
+        AND is permissive — that is the pre-#202 behavior, unchanged).
 
         ``None`` — never a partial chain — whenever the arrangement cannot be
         resolved: an id that is not here, a series whose parent is missing or is

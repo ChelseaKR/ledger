@@ -96,7 +96,7 @@ def test_the_manifest_is_canonical_so_the_same_container_is_the_same_bytes() -> 
     assert keys == sorted(keys)
 
 
-def test_an_unrecognised_policy_is_refused_rather_than_defaulted() -> None:
+def test_an_unrecognized_policy_is_refused_rather_than_defaulted() -> None:
     """A policy nobody can parse is not quietly read as the default.
 
     The default here would be `sealed-until`, which is *narrow*, so defaulting
@@ -105,13 +105,13 @@ def test_an_unrecognised_policy_is_refused_rather_than_defaulted() -> None:
     container that claims to mean something it does not.
     """
     text = serialize_container(_collection()).replace('"policy":"sealed-until"', '"policy":"open"')
-    with pytest.raises(LedgerError, match="unrecognised level or policy"):
+    with pytest.raises(LedgerError, match="unrecognized level or policy"):
         deserialize_container(text)
 
     bad_level = serialize_container(_collection()).replace(
         '"level":"collection"', '"level":"fonds"'
     )
-    with pytest.raises(LedgerError, match="unrecognised level or policy"):
+    with pytest.raises(LedgerError, match="unrecognized level or policy"):
         deserialize_container(bad_level)
 
 

@@ -260,7 +260,7 @@ def to_ead_xml(
 
     ``scope_and_content``, ``extent`` and ``dates`` describe the unit the
     ``archdesc`` is about. ``extent`` falls back to the item count when the
-    caller gives none, which is the pre-#202 behaviour; an archivist's own
+    caller gives none, which is the pre-#202 behavior; an archivist's own
     "4 boxes" replaces it when there is one.
     """
     lines = ['<?xml version="1.0" encoding="UTF-8"?>']

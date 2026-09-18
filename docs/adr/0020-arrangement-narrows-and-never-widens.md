@@ -120,7 +120,7 @@ clamped. A migration that silently narrows an existing archive is the opposite o
 what this feature is for.
 
 `serialize_record` omits `placement` entirely when there is none, so every
-manifest written before #202 serialises to exactly the bytes it always did: no
+manifest written before #202 serializes to exactly the bytes it always did: no
 committed manifest, bag manifest or tag-file digest moves.
 
 ## Consequences
@@ -154,7 +154,7 @@ structMap and `dc:relation` (DCMI `isPartOf`, which has no element of its own in
 **Deferred, deliberately: accession.** #202's fourth "decide first" item asks
 whether accession-level records (what came in, from whom, when, under what
 agreement) belong here. They do not: an accession is a *custody* event with its
-own dates, agreement and depositor, and modelling it as a third container level
+own dates, agreement and depositor, and modeling it as a third container level
 would put a depositor's name into the arrangement — the one place the no-outing
 rule most needs it absent. Nothing here forecloses it; a future `Accession`
 entity can reference a `Collection` by id without either schema moving.
