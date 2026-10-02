@@ -707,6 +707,13 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `could-not-verify`: the published field is the statement, the exit code is the
   alarm, and a fresh install's cron does not go red for holding nothing.
 
+- **The standards pin moves from portfolio-standards v1.0.1 to v3.0.0.** The
+  `standards` workflow's freshness gate was failing on `main`: four v1.0.1
+  documents (CI/CD, Code Quality, Quality & Metrics, Responsible Tech) were last
+  verified 2026-06-21, past their 92-day recheck. v3.0.0 re-verifies them.
+  `.standards-version`, the workflow's checkout `ref`, and the two pinned links in
+  `docs/I18N.md` move together; nothing from the standards is vendored here.
+
 ## [0.1.0] — 2026-09-02
 
 > **Note (2026-09-01):** this is the content of the first release, gathered from the
