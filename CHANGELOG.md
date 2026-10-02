@@ -714,6 +714,12 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `.standards-version`, the workflow's checkout `ref`, and the two pinned links in
   `docs/I18N.md` move together; nothing from the standards is vendored here.
 
+- **The standards pin moves from portfolio-standards v3.0.0 to v3.0.1.** v3.0.1 is
+  a patch release (re-verified stamps, text corrections, tooling fixes) with no
+  control, threshold, or gate change. `.standards-version`, the `standards`
+  workflow's checkout `ref`, and the two pinned links in `docs/I18N.md` move
+  together.
+
 ## [0.1.0] — 2026-09-02
 
 > **Note (2026-09-01):** this is the content of the first release, gathered from the
