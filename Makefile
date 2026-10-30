@@ -218,13 +218,14 @@ semgrep: ## Semgrep SAST (p/ci) — mirrors semgrep.yml locally (SEC-11/13, CICD
 	# SECURITY-AND-SUPPLY-CHAIN-STANDARD §4 forbids muting the audit gate instead.
 	# So semgrep is treated exactly as `gitleaks` and `osv-scanner` are: an external
 	# tool this target uses when present, never a dependency of this package.
-	# Install it however you like, e.g. `pipx install semgrep==1.145.0`.
+	# Install it however you like, e.g. `pipx install semgrep==1.181.0` (the
+	# version semgrep.yml pins; 1.145.0 no longer starts against pydantic 2.14).
 	#
 	# `--config p/ci` fetches the ruleset from semgrep.dev, so this target needs
 	# network — a property of the dev tool, not of ledger, whose runtime stays
 	# offline (README hard rules).
 	@command -v semgrep >/dev/null 2>&1 || { \
-		echo "semgrep not found locally; skipping (CI is authoritative — see semgrep.yml). Install it as an external tool, e.g. pipx install semgrep==1.145.0"; \
+		echo "semgrep not found locally; skipping (CI is authoritative — see semgrep.yml). Install it as an external tool, e.g. pipx install semgrep==1.181.0"; \
 		exit 0; \
 	}
 	semgrep scan --config p/ci --error src tests
