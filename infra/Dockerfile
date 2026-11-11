@@ -13,7 +13,7 @@
 # (`.github/dependabot.yml`); re-verify manually with
 # `docker buildx imagetools inspect python:3.12-slim` if it ever needs a bump by
 # hand.
-FROM python:3.12-slim@sha256:423ed6ab25b1921a477529254bfeeabf5855151dc2c3141699a1bfc852199fbf
+FROM python:3.15-slim@sha256:65a65fc7b30b06cb6df4930fd4650697cb23f4c2698ab81fc87e4b031bc36928
 
 # Apply Debian security updates on top of the pinned digest.
 #
